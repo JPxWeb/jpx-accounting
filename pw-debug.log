@@ -1,0 +1,332 @@
+2026-03-18T18:19:16.170Z pw:webserver HTTP GET: http://127.0.0.1:3001/health
+2026-03-18T18:19:16.184Z pw:webserver HTTP Status: 200
+2026-03-18T18:19:16.186Z pw:webserver WebServer is already available
+2026-03-18T18:19:16.187Z pw:webserver Waiting for availability...
+2026-03-18T18:19:16.187Z pw:webserver HTTP GET: http://127.0.0.1:3001/health
+2026-03-18T18:19:16.189Z pw:webserver HTTP Status: 200
+2026-03-18T18:19:16.191Z pw:webserver WebServer available
+2026-03-18T18:19:16.192Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:15.864Z pw:webserver Error while checking if http://127.0.0.1:3000/ is available: read ECONNRESET
+2026-03-18T20:46:15.878Z pw:webserver Starting WebServer process pnpm --filter @jpx-accounting/web exec next start --hostname 127.0.0.1 --port 3000...
+2026-03-18T20:46:15.957Z pw:webserver Process started
+2026-03-18T20:46:15.958Z pw:webserver Waiting for availability...
+2026-03-18T20:46:15.971Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:16.338Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:16.339Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:16.390Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:16.391Z pw:webserver Waiting 100ms
+2026-03-18T20:46:16.499Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:16.504Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:16.504Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:16.520Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:16.520Z pw:webserver Waiting 250ms
+2026-03-18T20:46:16.775Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:16.782Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:16.782Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:16.806Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:16.806Z pw:webserver Waiting 500ms
+2026-03-18T20:46:17.308Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:17.314Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:17.315Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:17.319Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:17.320Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:18.333Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:18.338Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:18.338Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:18.342Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:18.342Z pw:webserver Waiting 1000ms
+[1A[2K[2m[WebServer] [22m[1m[38;2;173;127;168m▲ Next.js 16.2.0[39m[22m
+[2m[WebServer] [22m- Local:         http://127.0.0.1:3000
+
+[1A[2K[2m[WebServer] [22m- Network:       http://127.0.0.1:3000
+[2m[WebServer] [22m[32m[1m✓[22m[39m Ready in 756ms
+
+2026-03-18T20:46:19.348Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:19.351Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:19.351Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:19.354Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:19.354Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:20.362Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:20.372Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:20.373Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:20.378Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:20.378Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:21.391Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:21.394Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:21.394Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:21.396Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:21.396Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:22.407Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:22.411Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:22.412Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:22.413Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:22.413Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:23.427Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:23.430Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:23.430Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:23.433Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:23.433Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:24.445Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:24.448Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:24.448Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:24.452Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:24.452Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:25.460Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:25.462Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:25.462Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:25.464Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:25.464Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:26.472Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:26.474Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:26.475Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:26.476Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:26.477Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:27.485Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:27.493Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:27.494Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:27.499Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:27.499Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:28.502Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:28.505Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:28.506Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:28.508Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:28.508Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:29.510Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:29.515Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:29.515Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:29.520Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:29.520Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:30.535Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:30.539Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:30.540Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:30.570Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:30.570Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:31.583Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:31.585Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:31.586Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:31.589Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:31.590Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:32.604Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:32.607Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:32.607Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:32.609Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:32.609Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:33.617Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:33.621Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:33.621Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:33.624Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:33.624Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:34.634Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:34.637Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:34.637Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:34.639Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:34.639Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:35.649Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:35.652Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:35.652Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:35.655Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:35.655Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:36.670Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:36.673Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:36.674Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:36.676Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:36.677Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:37.681Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:37.684Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:37.684Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:37.686Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:37.686Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:38.699Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:38.702Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:38.702Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:38.705Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:38.705Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:39.706Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:39.711Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:39.711Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:39.714Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:39.715Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:40.725Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:40.728Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:40.728Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:40.730Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:40.730Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:41.743Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:41.745Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:41.746Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:41.747Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:41.747Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:42.758Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:42.760Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:42.761Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:42.762Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:42.762Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:43.762Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:43.764Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:43.765Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:43.766Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:43.767Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:44.768Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:44.770Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:44.770Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:44.772Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:44.772Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:45.773Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:45.776Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:45.776Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:45.778Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:45.778Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:46.779Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:46.781Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:46.781Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:46.783Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:46.783Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:47.797Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:47.801Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:47.801Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:47.806Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:47.806Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:48.811Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:48.814Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:48.814Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:48.815Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:48.815Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:49.826Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:49.830Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:49.830Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:49.832Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:49.832Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:50.848Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:50.851Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:50.851Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:50.853Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:50.853Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:51.863Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:51.865Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:51.866Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:51.868Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:51.868Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:52.877Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:52.879Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:52.880Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:52.881Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:52.881Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:53.894Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:53.897Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:53.897Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:53.903Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:53.903Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:54.913Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:54.916Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:54.916Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:54.918Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:54.918Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:55.929Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:55.931Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:55.931Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:55.934Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:55.934Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:56.944Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:56.946Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:56.946Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:56.948Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:56.948Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:57.958Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:57.961Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:57.961Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:57.963Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:57.963Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:58.973Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:58.975Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:58.975Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:58.979Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:58.979Z pw:webserver Waiting 1000ms
+2026-03-18T20:46:59.980Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:46:59.982Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:59.982Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:46:59.986Z pw:webserver HTTP Status: 404
+2026-03-18T20:46:59.986Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:00.986Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:00.989Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:00.989Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:00.990Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:00.990Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:01.990Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:01.993Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:01.993Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:01.995Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:01.995Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:02.997Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:03.000Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:03.000Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:03.002Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:03.003Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:04.015Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:04.022Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:04.023Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:04.026Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:04.026Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:05.029Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:05.034Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:05.034Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:05.038Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:05.039Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:06.051Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:06.054Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:06.054Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:06.056Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:06.056Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:07.057Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:07.059Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:07.059Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:07.061Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:07.061Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:08.076Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:08.078Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:08.078Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:08.079Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:08.079Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:09.092Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:09.094Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:09.095Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:09.096Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:09.096Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:10.105Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:10.110Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:10.111Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:10.119Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:10.119Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:11.135Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:11.138Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:11.138Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:11.145Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:11.145Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:12.149Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:12.152Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:12.152Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:12.155Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:12.155Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:13.166Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:13.169Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:13.169Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:13.171Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:13.171Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:14.179Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:14.182Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:14.183Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:14.185Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:14.185Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:15.193Z pw:webserver HTTP GET: http://127.0.0.1:3000/
+2026-03-18T20:47:15.196Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:15.197Z pw:webserver HTTP GET: http://127.0.0.1:3000/index.html
+2026-03-18T20:47:15.198Z pw:webserver HTTP Status: 404
+2026-03-18T20:47:15.198Z pw:webserver Waiting 1000ms
+2026-03-18T20:47:15.985Z pw:webserver Terminating the WebServer
+2026-03-18T20:47:17.858Z pw:webserver Terminated the WebServer
+Error: Timed out waiting 60000ms from config.webServer.
+
+2026-03-18T20:47:17.878Z pw:webserver Terminating the WebServer
+2026-03-18T20:47:17.879Z pw:webserver Terminated the WebServer
+2026-03-18T20:47:17.879Z pw:webserver Terminating the WebServer
+2026-03-18T20:47:17.879Z pw:webserver Terminated the WebServer
+[1A[2K

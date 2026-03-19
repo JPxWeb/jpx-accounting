@@ -1,0 +1,19 @@
+{
+  "name": "@jpx-accounting/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hono/node-server": "1.19.11",
+    "@jpx-accounting/ai-core": "workspace:*",
+    "@jpx-accounting/contracts": "workspace:*",
+    "@jpx-accounting/domain": "workspace:*",
+    "hono": "4.12.8",
+    "zod": "4.3.6"
+  }
+}

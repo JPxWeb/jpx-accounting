@@ -1,0 +1,38 @@
+:root {
+  --font-sans: "Manrope", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
+  --color-bg: #e9eff2;
+  --color-bg-alt: #f8fbfd;
+  --color-bg-strong: #dfe7eb;
+  --color-surface: rgba(255, 255, 255, 0.78);
+  --color-surface-strong: rgba(255, 255, 255, 0.95);
+  --color-surface-muted: rgba(244, 248, 250, 0.82);
+  --color-surface-inset: rgba(11, 23, 32, 0.045);
+  --color-chrome: rgba(255, 255, 255, 0.66);
+  --color-border: rgba(24, 36, 44, 0.08);
+  --color-border-strong: rgba(24, 36, 44, 0.12);
+  --color-text: #0b1720;
+  --color-text-muted: #607280;
+  --color-text-soft: #7f909b;
+  --color-accent: #0a8f82;
+  --color-accent-strong: #06756a;
+  --color-accent-soft: rgba(10, 143, 130, 0.12);
+  --color-info: #2f79a8;
+  --color-danger: #bf4e63;
+  --color-warning: #c88a18;
+  --color-shadow: 0 26px 80px rgba(11, 20, 28, 0.14);
+  --color-shadow-soft: 0 14px 36px rgba(11, 20, 28, 0.09);
+  --glass-blur: 24px;
+  --radius-xl: 28px;
+  --radius-lg: 22px;
+  --radius-md: 18px;
+  --radius-sm: 14px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+}
