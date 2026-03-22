@@ -6,7 +6,8 @@
         "name": "next"
       }
     ],
-    "incremental": true
+    "incremental": true,
+    "tsBuildInfoFile": "node_modules/.cache/web.tsbuildinfo"
   },
   "include": [
     "next-env.d.ts",
@@ -16,4 +17,3 @@
   ],
   "exclude": ["node_modules"]
 }
-

@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @import "@jpx-accounting/ui-tokens/styles.css";
 
+@theme {
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 22px;
+  --radius-3xl: 28px;
+  --radius-4xl: 32px;
+}
+
 :root {
   color-scheme: light;
 }
@@ -9,8 +19,8 @@ html,
 body {
   min-height: 100%;
   background:
-    radial-gradient(circle at 10% 0%, rgba(10, 143, 130, 0.22), transparent 32%),
-    radial-gradient(circle at 100% 10%, rgba(47, 121, 168, 0.16), transparent 28%),
+    radial-gradient(circle at 10% 0%, rgba(15, 118, 110, 0.22), transparent 32%),
+    radial-gradient(circle at 100% 10%, rgba(30, 64, 175, 0.14), transparent 28%),
     radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.68), transparent 34%),
     linear-gradient(180deg, var(--color-bg-alt), var(--color-bg));
   color: var(--color-text);
@@ -36,13 +46,13 @@ a {
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid rgba(255, 255, 255, 0.62);
-  box-shadow: 0 18px 55px rgba(11, 20, 28, 0.12);
+  box-shadow: var(--shadow-chrome);
 }
 
 .glass-panel {
   background: linear-gradient(180deg, var(--color-surface-strong), rgba(248, 250, 252, 0.92));
   border: 1px solid var(--color-border-strong);
-  box-shadow: var(--color-shadow-soft);
+  box-shadow: var(--shadow-panel);
 }
 
 .glass-panel-soft {
@@ -140,8 +150,60 @@ a {
 
 .accent-ring {
   box-shadow:
-    0 0 0 1px rgba(10, 143, 130, 0.12),
-    0 18px 42px rgba(10, 143, 130, 0.22);
+    0 0 0 1px rgba(15, 118, 110, 0.12),
+    0 18px 42px rgba(15, 118, 110, 0.22);
+}
+
+/* Typography utilities */
+.text-eyebrow {
+  font-size: 0.6875rem;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--color-text-muted);
+}
+
+.text-caption {
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+/* Tabular figures for financial data */
+.text-mono,
+.tabular-nums {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Skeleton loading shimmer */
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--color-surface-muted) 0%, var(--color-bg-alt) 50%, var(--color-surface-muted) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+  border-radius: var(--radius-lg);
+}
+
+/* Micro-interactions */
+button {
+  transition: transform 100ms ease, box-shadow 150ms ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) {
+  .glass-panel {
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .glass-panel:hover {
+    border-color: var(--color-border-strong);
+  }
 }
 
 @media (min-width: 768px) {

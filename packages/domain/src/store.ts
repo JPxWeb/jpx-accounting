@@ -6,6 +6,7 @@ import type {
   CloseRun,
   EvidenceComposeInput,
   EvidenceCreateInput,
+  EvidenceCreateResult,
   EvidenceObject,
   EvidencePacket,
   ExtractedField,
@@ -25,6 +26,29 @@ import { buildEventHash } from "./hash-chain";
 import { createId, nowIso } from "./ids";
 
 type LedgerLine = Parameters<typeof buildJournal>[0][number];
+export type ReviewAction = "approve" | "reject" | "book-without-vat";
+
+export interface LedgerStore {
+  createEvidence(input: EvidenceCreateInput): EvidenceCreateResult;
+  composeEvidence(input: EvidenceComposeInput): EvidencePacket;
+  getEvidenceContext(
+    evidenceId: string,
+  ): {
+    evidence: EvidenceObject;
+    packet?: EvidencePacket;
+    voucher?: Voucher;
+  } | undefined;
+  findReviewByVoucher(voucherId: string): ReviewTask | undefined;
+  getReviewFeed(): ReviewTask[];
+  getReports(): ReportBundle;
+  getSnapshot(): WorkspaceSnapshot;
+  getEvents(): LedgerEvent[];
+  suggestVoucher(voucherId: string): AccountingSuggestion | undefined;
+  applyReviewDecision(reviewId: string, action: ReviewAction, input: ReviewDecisionInput): ReviewTask | undefined;
+  answerAssistantQuestion(question: string): AssistantSession;
+  runSimulation(input: SimulationRequest): SimulationRun;
+  getCloseRun(): CloseRun;
+}
 
 const defaultOrganizationId = "org_jpx";
 const defaultWorkspaceId = "workspace_main";
@@ -139,9 +163,7 @@ function buildPostingLines(
   ];
 }
 
-// This store keeps the scaffold usable before Supabase/Blob wiring lands.
-// It already follows append-only event semantics so the later persistence swap stays mechanical.
-export class MemoryLedgerStore {
+export class MemoryLedgerStore implements LedgerStore {
   private readonly evidence = new Map<string, EvidenceObject>();
   private readonly evidencePackets = new Map<string, EvidencePacket>();
   private readonly vouchers = new Map<string, Voucher>();
@@ -204,7 +226,7 @@ export class MemoryLedgerStore {
     return fullEvent;
   }
 
-  createEvidence(input: EvidenceCreateInput) {
+  createEvidence(input: EvidenceCreateInput): EvidenceCreateResult {
     const createdAt = nowIso();
     const evidenceId = createId("evidence");
     const packetId = createId("packet");
@@ -345,7 +367,11 @@ export class MemoryLedgerStore {
     return packet;
   }
 
-  getEvidenceContext(evidenceId: string) {
+  getEvidenceContext(evidenceId: string): {
+    evidence: EvidenceObject;
+    packet?: EvidencePacket;
+    voucher?: Voucher;
+  } | undefined {
     const evidence = this.evidence.get(evidenceId);
     if (!evidence) return undefined;
 
@@ -354,8 +380,8 @@ export class MemoryLedgerStore {
 
     return {
       evidence,
-      packet,
-      voucher,
+      ...(packet ? { packet } : {}),
+      ...(voucher ? { voucher } : {}),
     };
   }
 
@@ -401,7 +427,7 @@ export class MemoryLedgerStore {
     return suggestion;
   }
 
-  applyReviewDecision(reviewId: string, action: "approve" | "reject" | "book-without-vat", input: ReviewDecisionInput) {
+  applyReviewDecision(reviewId: string, action: ReviewAction, input: ReviewDecisionInput) {
     const review = this.reviews.get(reviewId);
     if (!review) return undefined;
 

@@ -2,10 +2,27 @@
 
 import { useEffect } from "react";
 
+import { webRuntimeConfig } from "../../lib/runtime-config";
+
+async function unregisterServiceWorkers() {
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  await Promise.all(registrations.map((registration) => registration.unregister()));
+
+  if (!("caches" in window)) {
+    return;
+  }
+
+  const cacheNames = await caches.keys();
+  await Promise.all(cacheNames.filter((cacheName) => cacheName.startsWith("jpx-accounting-static-")).map((cacheName) => caches.delete(cacheName)));
+}
+
 export function ServiceWorkerRegistrar() {
   useEffect(() => {
-    // E2E runs disable the service worker so assertions are never affected by cached development assets.
-    if (process.env.NEXT_PUBLIC_DISABLE_SW === "true") {
+    // Debug and e2e builds actively unregister prior workers so cache-policy changes are applied immediately.
+    if (webRuntimeConfig.disableServiceWorker) {
+      if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+        void unregisterServiceWorkers();
+      }
       return;
     }
 
@@ -13,7 +30,10 @@ export function ServiceWorkerRegistrar() {
       return;
     }
 
-    void navigator.serviceWorker.register("/sw.js");
+    void navigator.serviceWorker.register("/sw.js", {
+      scope: "/",
+      updateViaCache: "none",
+    });
   }, []);
 
   return null;

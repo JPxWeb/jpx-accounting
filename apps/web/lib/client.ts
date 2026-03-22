@@ -1,3 +1,7 @@
 import { createAccountingApiClient } from "@jpx-accounting/api-client";
+import { webRuntimeConfig } from "./runtime-config";
 
-export const apiClient = createAccountingApiClient(process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api-proxy");
+export const apiClient = createAccountingApiClient({
+  baseUrl: webRuntimeConfig.apiBaseUrl,
+  runtimeMode: webRuntimeConfig.runtimeMode,
+});

@@ -5,7 +5,17 @@ dist
 coverage
 playwright-report
 test-results
+artifacts/
+*.tsbuildinfo
+pw-debug*.log
 .env
 .env.local
 .env.*.local
-pnpm-lock.yaml
+
+# Screenshots / design artifacts
+*.png
+*.jpg
+*.jpeg
+
+# Playwright MCP
+.playwright-mcp/

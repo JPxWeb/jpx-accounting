@@ -1,16 +1,24 @@
 import { serve } from "@hono/node-server";
 
 import { createApp } from "./app";
+import { readApiRuntimeConfig } from "./config";
+import { createApiRuntimeDependencies } from "./runtime";
 
-const port = Number(process.env.PORT ?? 3001);
-const app = createApp();
+const config = readApiRuntimeConfig();
+const { store, aiRuntime, runtimeMode } = createApiRuntimeDependencies(config);
+const app = createApp({
+  store,
+  aiRuntime,
+  runtimeMode,
+  allowTestReset: config.allowTestReset,
+});
 
 serve(
   {
     fetch: app.fetch,
-    port,
+    port: config.port,
   },
   (info) => {
-    console.log(`JPX Accounting API listening on http://localhost:${info.port}`);
+    console.log(`JPX Accounting API (${runtimeMode}) listening on http://localhost:${info.port}`);
   },
 );

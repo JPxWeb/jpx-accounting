@@ -1,5 +1,7 @@
 import type { MetadataRoute } from "next";
 
+import { APP_BACKGROUND_COLOR, APP_THEME_COLOR } from "../lib/presentation";
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "JPX Accounting",
@@ -7,8 +9,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Mobile-first AI accounting portal for Swedish bookkeeping and advisory.",
     start_url: "/",
     display: "standalone",
-    background_color: "#eef4f5",
-    theme_color: "#0f8f7f",
+    background_color: APP_BACKGROUND_COLOR,
+    theme_color: APP_THEME_COLOR,
     orientation: "portrait",
     categories: ["finance", "productivity", "business"],
     share_target: {
@@ -22,4 +24,3 @@ export default function manifest(): MetadataRoute.Manifest {
     },
   };
 }
-

@@ -10,6 +10,7 @@ export const roleSchema = z.enum([
 ]);
 
 export const accountingMethodSchema = z.enum(["invoice", "cash"]);
+export const runtimeModeSchema = z.enum(["normal", "demo"]);
 export const evidenceModalitySchema = z.enum([
   "camera",
   "upload",
@@ -324,6 +325,7 @@ export const workspaceSnapshotSchema = z.object({
 
 export type Role = z.infer<typeof roleSchema>;
 export type AccountingMethod = z.infer<typeof accountingMethodSchema>;
+export type RuntimeMode = z.infer<typeof runtimeModeSchema>;
 export type EvidenceModality = z.infer<typeof evidenceModalitySchema>;
 export type Citation = z.infer<typeof citationSchema>;
 export type RuleHit = z.infer<typeof ruleHitSchema>;

@@ -26,6 +26,7 @@ export default defineConfig({
       url: `${apiBaseUrl}/health`,
       reuseExistingServer: false,
       env: {
+        ACCOUNTING_RUNTIME_MODE: "demo",
         ALLOW_TEST_RESET: "true",
         PORT: "3201",
       },
@@ -36,7 +37,8 @@ export default defineConfig({
       reuseExistingServer: false,
       env: {
         ACCOUNTING_API_BASE_URL: apiBaseUrl,
-        NEXT_PUBLIC_API_BASE_URL: apiBaseUrl,
+        NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE: "demo",
+        NEXT_PUBLIC_API_BASE_URL: "/api-proxy",
         NEXT_PUBLIC_DISABLE_SW: "true",
         NEXT_TELEMETRY_DISABLED: "1",
       },

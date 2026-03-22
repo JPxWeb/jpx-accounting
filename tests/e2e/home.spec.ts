@@ -16,6 +16,7 @@ test("home screen can add a new review item from the browser", async ({ page }) 
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: /Review-ready bookkeeping, shaped for the phone first/i })).toBeVisible();
+  await expect(page.getByTestId("runtime-mode-banner")).toContainText("Demo mode is active");
   await expect(page.getByTestId("review-card")).toHaveCount(1);
   if (test.info().project.name.includes("mobile")) {
     await expect(page.getByTestId("mobile-dock")).toBeVisible();
@@ -40,5 +41,5 @@ test("home screen supports approval and local draft capture", async ({ page }) =
   await captureButton(page).click();
   await expect(page.getByTestId("capture-sheet")).toBeVisible();
   await page.getByTestId("capture-mode-camera").click();
-  await expect(page.getByTestId("draft-notice")).toHaveText("Camera draft saved locally.");
+  await expect(page.getByTestId("draft-notice")).toContainText("Camera draft saved locally");
 });

@@ -1,3 +1,5 @@
+import { getWebServerRuntimeConfig } from "../../../lib/server-runtime-config";
+
 const responseHeaders = new Set([
   "content-type",
   "content-disposition",
@@ -7,17 +9,19 @@ const responseHeaders = new Set([
 const requestHeaders = ["accept", "authorization", "content-type", "x-request-id"] as const;
 
 function getApiBaseUrl() {
-  return process.env.ACCOUNTING_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
+  return getWebServerRuntimeConfig().apiBaseUrl;
 }
 
 async function proxyRequest(request: Request, path: string[]) {
   const baseUrl = getApiBaseUrl();
   if (!baseUrl) {
+    const { runtimeMode } = getWebServerRuntimeConfig();
     return Response.json(
       {
-        error: "Accounting API base URL is not configured.",
+        error: "Accounting API base URL is not configured for the proxy route.",
+        runtimeMode,
       },
-      { status: 500 },
+      { status: 503 },
     );
   }
 

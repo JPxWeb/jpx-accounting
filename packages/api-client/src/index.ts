@@ -5,6 +5,7 @@ import type {
   EvidenceCreateInput,
   ReviewTask,
   ReviewDecisionInput,
+  RuntimeMode,
   SimulationRun,
   SimulationRequest,
   WorkspaceSnapshot,
@@ -12,6 +13,20 @@ import type {
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
 
 type RequestOptions = RequestInit & { json?: unknown };
+type AccountingApiClientOptions = {
+  baseUrl?: string | undefined;
+  runtimeMode: RuntimeMode;
+};
+
+export class AccountingApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly detail: string,
+  ) {
+    super(detail);
+    this.name = "AccountingApiError";
+  }
+}
 
 async function request<T>(baseUrl: string, path: string, options?: RequestOptions): Promise<T> {
   const init: RequestInit = {
@@ -34,44 +49,63 @@ async function request<T>(baseUrl: string, path: string, options?: RequestOption
   const response = await fetch(`${baseUrl}${path}`, init);
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+    const payload = await response
+      .json()
+      .catch(() => undefined as { error?: string; message?: string } | undefined);
+    throw new AccountingApiError(
+      response.status,
+      payload?.error ?? payload?.message ?? `Request failed: ${response.status} ${response.statusText}`,
+    );
   }
 
   return (await response.json()) as T;
 }
 
 export class AccountingApiClient {
-  // Keeping a local fallback store makes the UI previewable even when the Hono API is not running yet.
-  private readonly fallbackStore = new MemoryLedgerStore();
+  private readonly fallbackStore?: MemoryLedgerStore;
 
-  constructor(private readonly baseUrl?: string) {}
+  constructor(private readonly options: AccountingApiClientOptions) {
+    if (options.runtimeMode === "demo" && !options.baseUrl) {
+      // Demo mode keeps the scaffold usable without booting the API so preview flows stay intentional rather than accidental.
+      this.fallbackStore = new MemoryLedgerStore();
+    }
+  }
+
+  private get baseUrl() {
+    return this.options.baseUrl;
+  }
 
   async getSnapshot() {
-    if (!this.baseUrl) return this.fallbackStore.getSnapshot();
+    if (this.fallbackStore) return this.fallbackStore.getSnapshot();
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return request<WorkspaceSnapshot>(this.baseUrl, "/api/workspace");
   }
 
   async createEvidence(input: EvidenceCreateInput) {
-    if (!this.baseUrl) return this.fallbackStore.createEvidence(input);
+    if (this.fallbackStore) return this.fallbackStore.createEvidence(input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return request<EvidenceCreateResult>(this.baseUrl, "/api/evidence", { method: "POST", json: input });
   }
 
   async approveReview(reviewId: string, input: ReviewDecisionInput): Promise<ReviewTask | undefined> {
-    if (!this.baseUrl) return this.fallbackStore.applyReviewDecision(reviewId, "approve", input);
+    if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "approve", input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return request<ReviewTask>(this.baseUrl, `/api/reviews/${reviewId}/approve`, { method: "POST", json: input });
   }
 
   async askAssistant(input: AssistantRequest): Promise<AssistantSession> {
-    if (!this.baseUrl) return this.fallbackStore.answerAssistantQuestion(input.question);
+    if (this.fallbackStore) return this.fallbackStore.answerAssistantQuestion(input.question);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return request<AssistantSession>(this.baseUrl, "/api/assistant/sessions", { method: "POST", json: input });
   }
 
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
-    if (!this.baseUrl) return this.fallbackStore.runSimulation(input);
+    if (this.fallbackStore) return this.fallbackStore.runSimulation(input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return request<SimulationRun>(this.baseUrl, "/api/simulations/run", { method: "POST", json: input });
   }
 }
 
-export function createAccountingApiClient(baseUrl?: string) {
-  return new AccountingApiClient(baseUrl);
+export function createAccountingApiClient(options: AccountingApiClientOptions) {
+  return new AccountingApiClient(options);
 }

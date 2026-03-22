@@ -11,16 +11,29 @@ import {
   reviewDecisionInputSchema,
   simulationRequestSchema,
   suggestionRequestSchema,
+  type RuntimeMode,
   uploadInitSchema,
 } from "@jpx-accounting/contracts";
-import { createAiRuntime } from "@jpx-accounting/ai-core";
+import { AiRuntimeUnavailableError, type AiRuntime } from "@jpx-accounting/ai-core";
+import type { LedgerStore } from "@jpx-accounting/domain";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
 
-let store = new MemoryLedgerStore();
-const ai = createAiRuntime();
+import { LedgerStoreUnavailableError } from "./runtime";
+
+type CreateAppOptions = {
+  store: LedgerStore;
+  aiRuntime: AiRuntime;
+  runtimeMode: RuntimeMode;
+  allowTestReset?: boolean;
+};
 
 async function parseBody<T>(request: Request, schema: ZodType<T>) {
-  const payload = await request.json();
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    throw new HTTPException(400, { message: "Request body must be valid JSON." });
+  }
   const parsed = schema.safeParse(payload);
 
   if (!parsed.success) {
@@ -30,7 +43,7 @@ async function parseBody<T>(request: Request, schema: ZodType<T>) {
   return parsed.data;
 }
 
-function buildSIEExport() {
+function buildSIEExport(store: LedgerStore) {
   // Keep the scaffold export intentionally small but structurally valid so downstream accountant tooling can be exercised early.
   const reports = store.getReports();
   const lines = ["#FLAGGA 0", "#PROGRAM \"JPX Accounting\" \"0.1.0\"", "#FORMAT PC8"];
@@ -43,32 +56,51 @@ function buildSIEExport() {
   return lines.join("\n");
 }
 
-function resetStore() {
-  store = new MemoryLedgerStore();
+function createErrorResponse(message: string, runtimeMode: RuntimeMode, status: number) {
+  return Response.json(
+    {
+      error: message,
+      runtimeMode,
+    },
+    { status },
+  );
 }
 
-export function createApp() {
+export function createApp({ store, aiRuntime, runtimeMode, allowTestReset }: CreateAppOptions) {
   const app = new Hono();
+  let currentStore = store;
 
   app.use("/api/*", cors());
+  app.onError((error) => {
+    if (error instanceof HTTPException) {
+      return createErrorResponse(error.message, runtimeMode, error.status);
+    }
 
-  app.get("/health", (context) => context.json({ ok: true }));
+    if (error instanceof LedgerStoreUnavailableError || error instanceof AiRuntimeUnavailableError) {
+      return createErrorResponse(error.message, runtimeMode, 503);
+    }
 
-  app.get("/api/workspace", (context) => context.json(store.getSnapshot()));
-  app.get("/api/reviews/feed", (context) => context.json(store.getReviewFeed()));
-  app.get("/api/reports/journal", (context) => context.json(store.getReports().journal));
-  app.get("/api/reports/general-ledger", (context) => context.json(store.getReports().balances));
-  app.get("/api/reports/trial-balance", (context) => context.json(store.getReports().balances));
-  app.get("/api/reports/vat-prep", (context) => context.json(store.getReports().vat));
+    console.error(error);
+    return createErrorResponse("Unexpected server error.", runtimeMode, 500);
+  });
+
+  app.get("/health", (context) => context.json({ ok: true, runtimeMode }));
+
+  app.get("/api/workspace", (context) => context.json(currentStore.getSnapshot()));
+  app.get("/api/reviews/feed", (context) => context.json(currentStore.getReviewFeed()));
+  app.get("/api/reports/journal", (context) => context.json(currentStore.getReports().journal));
+  app.get("/api/reports/general-ledger", (context) => context.json(currentStore.getReports().balances));
+  app.get("/api/reports/trial-balance", (context) => context.json(currentStore.getReports().balances));
+  app.get("/api/reports/vat-prep", (context) => context.json(currentStore.getReports().vat));
 
   app.post("/api/evidence", async (context) => {
     const input = await parseBody(context.req.raw, evidenceCreateInputSchema);
-    return context.json(store.createEvidence(input), 201);
+    return context.json(currentStore.createEvidence(input), 201);
   });
 
   app.post("/api/evidence/compose", async (context) => {
     const input = await parseBody(context.req.raw, evidenceComposeInputSchema);
-    return context.json(store.composeEvidence(input), 201);
+    return context.json(currentStore.composeEvidence(input), 201);
   });
 
   app.post("/api/uploads/init", async (context) => {
@@ -82,7 +114,7 @@ export function createApp() {
   });
 
   app.post("/api/evidence/:id/extract", (context) => {
-    const extraction = store.getEvidenceContext(context.req.param("id"));
+    const extraction = currentStore.getEvidenceContext(context.req.param("id"));
     if (!extraction) throw new HTTPException(404, { message: "Evidence not found" });
 
     return context.json({
@@ -93,28 +125,28 @@ export function createApp() {
 
   app.post("/api/vouchers/:id/suggest", async (context) => {
     await parseBody(context.req.raw, suggestionRequestSchema);
-    const suggestion = store.suggestVoucher(context.req.param("id"));
+    const suggestion = currentStore.suggestVoucher(context.req.param("id"));
     if (!suggestion) throw new HTTPException(404, { message: "Voucher not found" });
     return context.json(suggestion);
   });
 
   app.post("/api/reviews/:id/approve", async (context) => {
     const input = await parseBody(context.req.raw, reviewDecisionInputSchema);
-    const review = store.applyReviewDecision(context.req.param("id"), "approve", input);
+    const review = currentStore.applyReviewDecision(context.req.param("id"), "approve", input);
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return context.json(review);
   });
 
   app.post("/api/reviews/:id/reject", async (context) => {
     const input = await parseBody(context.req.raw, reviewDecisionInputSchema);
-    const review = store.applyReviewDecision(context.req.param("id"), "reject", input);
+    const review = currentStore.applyReviewDecision(context.req.param("id"), "reject", input);
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return context.json(review);
   });
 
   app.post("/api/reviews/:id/book-without-vat", async (context) => {
     const input = await parseBody(context.req.raw, reviewDecisionInputSchema);
-    const review = store.applyReviewDecision(context.req.param("id"), "book-without-vat", input);
+    const review = currentStore.applyReviewDecision(context.req.param("id"), "book-without-vat", input);
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return context.json(review);
   });
@@ -129,12 +161,12 @@ export function createApp() {
 
   app.get("/api/exports/sie", (context) => {
     context.header("content-type", "text/plain; charset=utf-8");
-    return context.body(buildSIEExport());
+    return context.body(buildSIEExport(currentStore));
   });
 
   app.post("/api/assistant/sessions", async (context) => {
     const input = await parseBody(context.req.raw, assistantRequestSchema);
-    const snapshot = store.getSnapshot();
+    const snapshot = currentStore.getSnapshot();
     const citations =
       snapshot.reviews[0]?.suggestion?.citations ?? [
         {
@@ -144,7 +176,7 @@ export function createApp() {
           excerpt: "AI suggestions require human review before posting.",
         },
       ];
-    const answer = await ai.answerQuestion(input.question, citations);
+    const answer = await aiRuntime.answerQuestion(input.question, citations);
     return context.json(answer, 201);
   });
 
@@ -152,7 +184,7 @@ export function createApp() {
     const input = await parseBody(context.req.raw, knowledgeQuerySchema);
     return context.json({
       query: input.query,
-      citations: store.getSnapshot().assistantExamples[0]?.citations ?? [],
+      citations: currentStore.getSnapshot().assistantExamples[0]?.citations ?? [],
       answer:
         "Knowledge queries are routed through the same grounded advisory stack; next step is indexing effective-dated internal and official documents into Azure AI Search.",
     });
@@ -160,26 +192,26 @@ export function createApp() {
 
   app.post("/api/simulations/run", async (context) => {
     const input = await parseBody(context.req.raw, simulationRequestSchema);
-    return context.json(store.runSimulation(input), 201);
+    return context.json(currentStore.runSimulation(input), 201);
   });
 
-  app.post("/api/close-runs", (context) => context.json(store.getCloseRun(), 201));
+  app.post("/api/close-runs", (context) => context.json(currentStore.getCloseRun(), 201));
   app.get("/api/close-runs/:id", (context) =>
     context.json({
-      ...store.getCloseRun(),
+      ...currentStore.getCloseRun(),
       id: context.req.param("id"),
     }),
   );
 
-  app.post("/api/compliance-watch/refresh", (context) => context.json(store.getSnapshot().alerts));
+  app.post("/api/compliance-watch/refresh", (context) => context.json(currentStore.getSnapshot().alerts));
 
   app.post("/api/testing/reset", (context) => {
     // This stays opt-in so local e2e coverage can reset the in-memory scaffold without exposing a production reset hook.
-    if (process.env.ALLOW_TEST_RESET !== "true") {
+    if (!allowTestReset || runtimeMode !== "demo" || !(currentStore instanceof MemoryLedgerStore)) {
       throw new HTTPException(404, { message: "Not found" });
     }
 
-    resetStore();
+    currentStore = new MemoryLedgerStore();
     return context.json({ ok: true });
   });
 

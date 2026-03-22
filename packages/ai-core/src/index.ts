@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { z } from "zod";
 
-import type { AccountingSuggestion, AssistantSession, Citation, Voucher } from "@jpx-accounting/contracts";
+import type { AccountingSuggestion, AssistantSession, Citation, RuntimeMode, Voucher } from "@jpx-accounting/contracts";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "@jpx-accounting/domain";
 
 const answerSchema = z.object({
@@ -26,6 +26,26 @@ export type AiRuntime = {
   answerQuestion(question: string, citations: Citation[]): Promise<AssistantSession>;
 };
 
+export type AiRuntimeFactoryOptions = {
+  runtimeMode: RuntimeMode;
+  apiKey?: string | undefined;
+  endpoint?: string | undefined;
+  model?: string | undefined;
+};
+
+export class AiRuntimeUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AiRuntimeUnavailableError";
+  }
+}
+
+type ResponsesAiRuntimeConfig = {
+  apiKey: string;
+  endpoint: string;
+  model?: string | undefined;
+};
+
 class LocalAiRuntime implements AiRuntime {
   // The local runtime keeps the product interactive in development and during offline demos before Azure credentials are present.
   async suggestPosting(voucher: Voucher) {
@@ -44,22 +64,31 @@ class LocalAiRuntime implements AiRuntime {
   }
 }
 
+class UnavailableAiRuntime implements AiRuntime {
+  constructor(private readonly reason: string) {}
+
+  private fail(): never {
+    throw new AiRuntimeUnavailableError(this.reason);
+  }
+
+  async suggestPosting(_voucher: Voucher): Promise<AccountingSuggestion> {
+    return this.fail();
+  }
+
+  async answerQuestion(_question: string, _citations: Citation[]): Promise<AssistantSession> {
+    return this.fail();
+  }
+}
+
 class ResponsesAiRuntime implements AiRuntime {
   private readonly client: OpenAI;
   private readonly model: string;
 
-  constructor() {
-    const apiKey = process.env.AZURE_OPENAI_API_KEY;
-    const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-    this.model = process.env.AZURE_OPENAI_MODEL ?? "gpt-5-mini";
-
-    if (!apiKey || !endpoint) {
-      throw new Error("Azure OpenAI credentials are required for the Responses AI runtime.");
-    }
-
+  constructor(config: ResponsesAiRuntimeConfig) {
+    this.model = config.model ?? "gpt-5-mini";
     this.client = new OpenAI({
-      apiKey,
-      baseURL: `${endpoint.replace(/\/$/, "")}/openai/v1/`,
+      apiKey: config.apiKey,
+      baseURL: `${config.endpoint.replace(/\/$/, "")}/openai/v1/`,
     });
   }
 
@@ -96,11 +125,20 @@ class ResponsesAiRuntime implements AiRuntime {
   }
 }
 
-export function createAiRuntime(): AiRuntime {
-  // Production uses Azure Responses, but the factory intentionally degrades to a deterministic local runtime for development and demos.
-  if (process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT) {
-    return new ResponsesAiRuntime();
+export function createAiRuntime(config: AiRuntimeFactoryOptions): AiRuntime {
+  if (config.runtimeMode === "demo") {
+    return new LocalAiRuntime();
   }
 
-  return new LocalAiRuntime();
+  if (config.apiKey && config.endpoint) {
+    return new ResponsesAiRuntime({
+      apiKey: config.apiKey,
+      endpoint: config.endpoint,
+      model: config.model,
+    });
+  }
+
+  return new UnavailableAiRuntime(
+    "Assistant runtime is unavailable in normal mode because Azure OpenAI endpoint and API key are not configured.",
+  );
 }

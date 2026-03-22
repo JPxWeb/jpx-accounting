@@ -7,14 +7,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "next typegen && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@jpx-accounting/api-client": "workspace:*",
     "@jpx-accounting/contracts": "workspace:*",
     "@jpx-accounting/reporting": "workspace:*",
     "@jpx-accounting/ui-tokens": "workspace:*",
-    "@tanstack/react-form": "1.28.5",
     "@tanstack/react-query": "5.91.0",
     "idb": "8.0.3",
     "motion": "12.38.0",
@@ -31,4 +30,3 @@
     "typescript": "5.9.3"
   }
 }
-
