@@ -96,23 +96,24 @@ export function evaluateVoucherRules(voucher: Voucher) {
 export function buildDeterministicSuggestion(voucher: Voucher, ruleHits: RuleHit[]): AccountingSuggestion {
   const description = voucher.voucherFields.description?.toLowerCase() ?? "";
   const supplier = voucher.voucherFields.supplierName?.toLowerCase() ?? "";
-  let account = basAccounts.find((item) => item.number === "6991")!;
+  const accountByNumber = new Map(basAccounts.map((a) => [a.number, a]));
+  let account = accountByNumber.get("6991")!;
   let confidence = 0.64;
 
   if (supplier.includes("ica") || description.includes("office")) {
-    account = basAccounts.find((item) => item.number === "6110") ?? account;
+    account = accountByNumber.get("6110") ?? account;
     confidence = 0.82;
   } else if (supplier.includes("uber") || supplier.includes("sl")) {
-    account = basAccounts.find((item) => item.number === "5610") ?? account;
+    account = accountByNumber.get("5610") ?? account;
     confidence = 0.77;
   } else if (description.includes("subscription") || supplier.includes("microsoft") || supplier.includes("openai")) {
-    account = basAccounts.find((item) => item.number === "6540") ?? account;
+    account = accountByNumber.get("6540") ?? account;
     confidence = 0.86;
   } else if (description.includes("lunch") || description.includes("representation")) {
-    account = basAccounts.find((item) => item.number === "6071") ?? account;
+    account = accountByNumber.get("6071") ?? account;
     confidence = 0.73;
   } else if (description.includes("material")) {
-    account = basAccounts.find((item) => item.number === "5460") ?? account;
+    account = accountByNumber.get("5460") ?? account;
     confidence = 0.8;
   }
 

@@ -65,7 +65,8 @@ function guessSupplier(input: EvidenceCreateInput) {
 function buildExtractedFields(input: EvidenceCreateInput): ExtractedField[] {
   return [
     { key: "supplierName", label: "Supplier", value: guessSupplier(input), confidence: 0.71, required: true },
-    { key: "receiptDate", label: "Date", value: new Date().toISOString().slice(0, 10), confidence: 0.98, required: true },
+    { key: "receiptDate", label: "Receipt date", value: new Date().toISOString().slice(0, 10), confidence: 0.98, required: true },
+    { key: "transactionDate", label: "Transaction date", value: new Date().toISOString().slice(0, 10), confidence: 0.85, required: false },
     { key: "grossAmount", label: "Gross amount", value: "1249.00", confidence: 0.84, required: true },
     { key: "invoiceNumber", label: "Invoice number", value: input.originalFilename.replace(/\W+/g, "-"), confidence: 0.61, required: false },
     { key: "supplierVatNumber", label: "VAT number", value: "SE556677889901", confidence: 0.51, required: false },
@@ -169,6 +170,9 @@ export class MemoryLedgerStore implements LedgerStore {
   private readonly vouchers = new Map<string, Voucher>();
   private readonly reviews = new Map<string, ReviewTask>();
   private readonly suggestions = new Map<string, AccountingSuggestion>();
+  private readonly evidenceIdToPacketId = new Map<string, string>();
+  private readonly packetIdToVoucherId = new Map<string, string>();
+  private readonly voucherIdToReviewId = new Map<string, string>();
   private readonly events: LedgerEvent[] = [];
   private readonly ledgerLines: LedgerLine[] = initialLedgerLines();
   private readonly assistantExamples: AssistantSession[] = [];
@@ -269,7 +273,7 @@ export class MemoryLedgerStore implements LedgerStore {
         supplierVatNumber: extractedFields.find((field) => field.key === "supplierVatNumber")?.value,
         invoiceNumber: extractedFields.find((field) => field.key === "invoiceNumber")?.value,
         receiptDate: extractedFields.find((field) => field.key === "receiptDate")?.value,
-        transactionDate: extractedFields.find((field) => field.key === "receiptDate")?.value,
+        transactionDate: extractedFields.find((field) => field.key === "transactionDate")?.value,
         description: input.title,
         grossAmount: 1249,
         netAmount: 999.2,
@@ -308,6 +312,9 @@ export class MemoryLedgerStore implements LedgerStore {
     this.vouchers.set(voucherId, voucher);
     this.reviews.set(review.id, review);
     this.suggestions.set(voucherId, suggestion);
+    this.evidenceIdToPacketId.set(evidenceId, packetId);
+    this.packetIdToVoucherId.set(packetId, voucherId);
+    this.voucherIdToReviewId.set(voucherId, review.id);
 
     this.appendEvent({
       organizationId: input.organizationId,
@@ -364,6 +371,9 @@ export class MemoryLedgerStore implements LedgerStore {
       voiceTranscript: input.voiceTranscript,
     };
     this.evidencePackets.set(packet.id, packet);
+    for (const eid of input.evidenceIds) {
+      this.evidenceIdToPacketId.set(eid, packet.id);
+    }
     return packet;
   }
 
@@ -375,8 +385,10 @@ export class MemoryLedgerStore implements LedgerStore {
     const evidence = this.evidence.get(evidenceId);
     if (!evidence) return undefined;
 
-    const packet = [...this.evidencePackets.values()].find((item) => item.evidenceIds.includes(evidenceId));
-    const voucher = packet ? [...this.vouchers.values()].find((item) => item.evidencePacketId === packet.id) : undefined;
+    const packetId = this.evidenceIdToPacketId.get(evidenceId);
+    const packet = packetId ? this.evidencePackets.get(packetId) : undefined;
+    const voucherId = packetId ? this.packetIdToVoucherId.get(packetId) : undefined;
+    const voucher = voucherId ? this.vouchers.get(voucherId) : undefined;
 
     return {
       evidence,
@@ -386,7 +398,8 @@ export class MemoryLedgerStore implements LedgerStore {
   }
 
   findReviewByVoucher(voucherId: string) {
-    return [...this.reviews.values()].find((review) => review.voucherId === voucherId);
+    const reviewId = this.voucherIdToReviewId.get(voucherId);
+    return reviewId ? this.reviews.get(reviewId) : undefined;
   }
 
   getReviewFeed() {

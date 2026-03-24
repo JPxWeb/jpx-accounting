@@ -78,7 +78,17 @@
       "Bash(true:*)",
       "Bash(false:*)",
       "Bash(mktemp:*)",
-      "Bash(python -m json.tool)"
+      "Bash(python -m json.tool)",
+      "Bash(uv:*)",
+      "Bash(uvx:*)",
+      "Bash(pip:*)",
+      "Bash(python:*)",
+      "Bash(claude:*)",
+      "Bash(where:*)",
+      "mcp__serena__check_onboarding_performed",
+      "mcp__serena__onboarding",
+      "mcp__serena__list_dir",
+      "mcp__serena__write_memory"
     ]
   }
 }

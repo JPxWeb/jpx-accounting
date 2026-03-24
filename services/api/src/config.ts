@@ -26,7 +26,7 @@ export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiR
     azureOpenAi: {
       endpoint: normalizeOptionalValue(env.AZURE_OPENAI_ENDPOINT),
       apiKey: normalizeOptionalValue(env.AZURE_OPENAI_API_KEY),
-      model: normalizeOptionalValue(env.AZURE_OPENAI_MODEL) ?? "gpt-5-mini",
+      model: normalizeOptionalValue(env.AZURE_OPENAI_MODEL),
     },
   };
 }

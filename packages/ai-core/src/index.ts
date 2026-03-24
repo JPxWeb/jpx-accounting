@@ -105,14 +105,13 @@ class ResponsesAiRuntime implements AiRuntime {
       "Return concise plain JSON with an 'answer' field.",
     ].join("\n\n");
 
-    const response = await (this.client.responses as any).create({
+    const response = await this.client.responses.create({
       model: this.model,
       input: prompt,
     });
 
     const rawText =
-      response?.output_text ??
-      response?.output?.[0]?.content?.[0]?.text ??
+      response.output_text ||
       "{\"answer\":\"No grounded answer could be produced.\"}";
 
     return {
