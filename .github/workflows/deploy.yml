@@ -61,55 +61,68 @@ jobs:
           cp -r .next/static ../../web-deploy/apps/web/.next/static
           if [ -d public ]; then cp -r public ../../web-deploy/apps/web/public; fi
 
-      - name: Flatten pnpm symlinks for @swc/helpers
+      - name: Fix @swc/helpers for Azure deployment
         run: |
-          echo "=== Before: @swc/helpers locations ==="
-          find web-deploy -path "*/@swc/helpers" -type d 2>/dev/null || echo "None found"
+          # @swc/helpers uses package.json "exports" to map "./_/xxx" -> "./cjs/xxx.cjs"
+          # but there is NO physical "_/" directory. Azure App Service with
+          # WEBSITE_RUN_FROM_PACKAGE=1 does not resolve the exports field correctly.
+          # Fix: copy the package with dereferenced symlinks AND create physical "_/" files.
 
-          # Find the real @swc/helpers in pnpm store within standalone output
+          echo "=== Finding @swc/helpers source ==="
           SWC_SRC=$(find web-deploy -path "*/.pnpm/*/@swc/helpers" -type d 2>/dev/null | head -1)
 
           if [ -z "$SWC_SRC" ]; then
-            echo "ERROR: @swc/helpers not found in standalone output at all"
-            # Fallback: find it in the workspace and copy with dereference
+            echo "Not found in standalone pnpm store, trying workspace..."
             SWC_SRC=$(find node_modules/.pnpm -path "*/@swc/helpers" -type d 2>/dev/null | head -1)
-            if [ -z "$SWC_SRC" ]; then
-              echo "ERROR: @swc/helpers not found anywhere"
-              exit 1
-            fi
+          fi
+
+          if [ -z "$SWC_SRC" ]; then
+            echo "ERROR: @swc/helpers not found anywhere"
+            exit 1
           fi
 
           echo "Source: $SWC_SRC"
-          echo "Source contents:"
           ls -la "$SWC_SRC"
-          echo "Has _/ dir:"
-          ls -la "$SWC_SRC/_/" 2>/dev/null || echo "No _/ directory"
 
-          # Copy to all standard node_modules resolution paths (flat, no symlinks)
+          # Copy to all Node.js resolution paths (flat, no symlinks)
           for DEST in \
             "web-deploy/node_modules/@swc/helpers" \
             "web-deploy/apps/web/node_modules/@swc/helpers" \
             "web-deploy/apps/web/node_modules/next/node_modules/@swc/helpers"; do
 
-            if [ ! -d "$DEST" ] || [ -L "$DEST" ]; then
-              rm -rf "$DEST"
-              mkdir -p "$(dirname "$DEST")"
-              cp -rL "$SWC_SRC" "$DEST"
-              echo "Copied to: $DEST"
-            else
-              echo "Already exists: $DEST"
+            rm -rf "$DEST"
+            mkdir -p "$(dirname "$DEST")"
+            cp -rL "$SWC_SRC" "$DEST"
+            echo "Copied to: $DEST"
+
+            # Create physical _/ directory with actual files
+            # This bypasses the exports field that Azure can't resolve
+            mkdir -p "$DEST/_"
+            if [ -d "$DEST/cjs" ]; then
+              for f in "$DEST/cjs/"*.cjs; do
+                [ -f "$f" ] || continue
+                name=$(basename "$f" .cjs)
+                # Copy as both .cjs and .js so Node resolves regardless of mode
+                cp "$f" "$DEST/_/$name.cjs"
+                cp "$f" "$DEST/_/$name.js"
+              done
+              echo "  Created _/ directory with $(ls "$DEST/_/" | wc -l) files"
             fi
           done
 
-          # Also remove the .pnpm directory to avoid confusion
+          # Remove the .pnpm directory to avoid confusion
           rm -rf web-deploy/node_modules/.pnpm
 
           echo ""
-          echo "=== After: @swc/helpers locations ==="
-          find web-deploy -path "*/@swc/helpers" -type d 2>/dev/null
+          echo "=== Verification ==="
+          echo "--- @swc/helpers locations ---"
+          find web-deploy -path "*/@swc/helpers" -type d -maxdepth 6 2>/dev/null
           echo ""
-          echo "=== Verify _interop_require_default exists ==="
-          find web-deploy -name "_interop_require_default*" 2>/dev/null | head -5
+          echo "--- _/ directory contents (first location) ---"
+          ls web-deploy/node_modules/@swc/helpers/_/ 2>/dev/null | head -10
+          echo ""
+          echo "--- Test: _interop_require_default resolution paths ---"
+          find web-deploy -name "_interop_require_default*" 2>/dev/null | head -10
 
       - name: Upload web artifact
         uses: actions/upload-artifact@v4
