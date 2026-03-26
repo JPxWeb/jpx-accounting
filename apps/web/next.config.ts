@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   reactStrictMode: true,
   transpilePackages: [
     "@jpx-accounting/api-client",
@@ -12,4 +13,3 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
-
