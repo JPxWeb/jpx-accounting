@@ -23,6 +23,31 @@ param appServicePlanResourceGroup string = 'jpx-main-rg'
 @allowed(['demo', 'normal'])
 param runtimeMode string = 'demo'
 
+// Supabase
+@description('Supabase project URL')
+@secure()
+param supabaseUrl string = ''
+
+@description('Supabase anonymous (public) key')
+@secure()
+param supabaseAnonKey string = ''
+
+@description('Supabase service-role key')
+@secure()
+param supabaseServiceRoleKey string = ''
+
+// Azure OpenAI / Foundry (wire later)
+@description('Azure OpenAI endpoint')
+@secure()
+param azureOpenaiEndpoint string = ''
+
+@description('Azure OpenAI API key')
+@secure()
+param azureOpenaiApiKey string = ''
+
+@description('Azure OpenAI model deployment name')
+param azureOpenaiModel string = ''
+
 // ---------------------------------------------------------------------------
 // Existing resources
 // ---------------------------------------------------------------------------
@@ -87,9 +112,12 @@ resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AZURE_STORAGE_ACCOUNT', value: storage.name }
         { name: 'AZURE_STORAGE_CONTAINER', value: 'evidence' }
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'false' }
-        // Secrets – set manually or via Key Vault references:
-        // AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_MODEL
-        // SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+        { name: 'SUPABASE_URL', value: supabaseUrl }
+        { name: 'SUPABASE_ANON_KEY', value: supabaseAnonKey }
+        { name: 'SUPABASE_SERVICE_ROLE_KEY', value: supabaseServiceRoleKey }
+        { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenaiEndpoint }
+        { name: 'AZURE_OPENAI_API_KEY', value: azureOpenaiApiKey }
+        { name: 'AZURE_OPENAI_MODEL', value: azureOpenaiModel }
       ]
     }
   }
