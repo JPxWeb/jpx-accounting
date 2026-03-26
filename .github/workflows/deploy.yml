@@ -1,0 +1,170 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+      runtimeMode:
+        description: "Runtime mode"
+        required: true
+        default: "normal"
+        type: choice
+        options:
+          - normal
+          - demo
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "10.29.2"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all
+        run: pnpm build
+
+      - name: Package web standalone
+        run: |
+          cd apps/web
+          cp -r .next/standalone ../../web-deploy
+          cp -r .next/static ../../web-deploy/apps/web/.next/static
+          if [ -d public ]; then cp -r public ../../web-deploy/apps/web/public; fi
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-deploy
+          path: web-deploy/
+          retention-days: 3
+
+      - name: Bundle API for production
+        run: |
+          mkdir -p api-deploy
+          npx esbuild services/api/src/index.ts \
+            --bundle \
+            --platform=node \
+            --format=esm \
+            --outfile=api-deploy/server.mjs \
+            --banner:js="import { createRequire } from 'module'; const require = createRequire(import.meta.url);"
+          echo '{"type": "module"}' > api-deploy/package.json
+
+      - name: Upload API artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-deploy
+          path: api-deploy/
+          retention-days: 3
+
+  deploy:
+    name: Deploy to Azure
+    runs-on: ubuntu-latest
+    needs: build
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy Bicep infrastructure
+        uses: azure/arm-deploy@v2
+        id: bicep
+        with:
+          subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          resourceGroupName: jpx-main-rg
+          template: infra/azure/main.bicep
+          parameters: >-
+            environmentName=dev
+            runtimeMode=${{ inputs.runtimeMode || 'normal' }}
+            supabaseUrl=${{ secrets.SUPABASE_URL }}
+            supabaseAnonKey=${{ secrets.SUPABASE_ANON_KEY }}
+            supabaseServiceRoleKey=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          failOnStdErr: false
+
+      - name: Download API artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: api-deploy
+          path: api-deploy
+
+      - name: Zip API
+        run: cd api-deploy && zip -r ../api.zip . -x "*.git*"
+
+      - name: Deploy API to App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ steps.bicep.outputs.apiAppName }}
+          package: api.zip
+
+      - name: Download web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-deploy
+          path: web-deploy
+
+      - name: Zip web
+        run: cd web-deploy && zip -r ../web.zip . -x "*.git*"
+
+      - name: Deploy web to App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ steps.bicep.outputs.webAppName }}
+          package: web.zip
+
+      - name: Smoke test API health
+        run: |
+          echo "Waiting for API to start..."
+          sleep 30
+          API_URL="${{ steps.bicep.outputs.apiAppUrl }}/health"
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL" || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "API health check passed"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $STATUS, retrying in 15s..."
+            sleep 15
+          done
+          echo "API health check failed after 5 attempts"
+          exit 1
+
+      - name: Print deployment URLs
+        run: |
+          echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Web:** ${{ steps.bicep.outputs.webAppUrl }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **API:** ${{ steps.bicep.outputs.apiAppUrl }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Storage:** ${{ steps.bicep.outputs.storageAccountName }}" >> $GITHUB_STEP_SUMMARY
