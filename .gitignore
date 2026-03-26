@@ -19,3 +19,6 @@ pw-debug*.log
 
 # Playwright MCP
 .playwright-mcp/
+
+# Claude Code local settings (user-specific paths)
+.claude/settings.local.json

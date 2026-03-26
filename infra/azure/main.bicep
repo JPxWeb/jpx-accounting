@@ -1,24 +1,42 @@
+// ---------------------------------------------------------------------------
+// JPX Accounting – Azure Infrastructure
+// Deploys onto the existing jpx-app-plan App Service plan in jpx-main-rg.
+// Resources: 2 App Services (web + api), 1 Storage Account (evidence blobs).
+// ---------------------------------------------------------------------------
+
 @description('Deployment environment name')
 param environmentName string = 'dev'
 
-@description('Primary Azure region for the accounting platform')
+@description('Primary Azure region')
 param location string = 'swedencentral'
 
-@description('Base name used for globally unique resources')
+@description('Base name prefix for resources')
 param namePrefix string = 'jpxacct'
 
-@description('Container image for the web app')
-param webImage string = 'ghcr.io/example/jpx-accounting-web:latest'
+@description('Name of the existing App Service plan to reuse')
+param appServicePlanName string = 'jpx-app-plan'
 
-@description('Container image for the API')
-param apiImage string = 'ghcr.io/example/jpx-accounting-api:latest'
+@description('Resource group that contains the existing App Service plan')
+param appServicePlanResourceGroup string = 'jpx-main-rg'
 
-var storageName = toLower('${namePrefix}${environmentName}sa')
-var serviceBusName = toLower('${namePrefix}-${environmentName}-sb')
-var keyVaultName = toLower('${namePrefix}-${environmentName}-kv')
-var appConfigName = toLower('${namePrefix}-${environmentName}-appcs')
-var searchName = toLower('${namePrefix}-${environmentName}-srch')
-var containerEnvName = '${namePrefix}-${environmentName}-cae'
+@description('Runtime mode (demo | normal)')
+@allowed(['demo', 'normal'])
+param runtimeMode string = 'demo'
+
+// ---------------------------------------------------------------------------
+// Existing resources
+// ---------------------------------------------------------------------------
+
+resource existingPlan 'Microsoft.Web/serverfarms@2023-12-01' existing = {
+  name: appServicePlanName
+  scope: resourceGroup(appServicePlanResourceGroup)
+}
+
+// ---------------------------------------------------------------------------
+// Storage Account – evidence / receipt uploads
+// ---------------------------------------------------------------------------
+
+var storageName = toLower(replace('${namePrefix}${environmentName}sa', '-', ''))
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageName
@@ -31,128 +49,86 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     allowBlobPublicAccess: false
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
-    immutableStorageWithVersioning: {
-      enabled: true
-    }
   }
 }
 
-resource serviceBus 'Microsoft.ServiceBus/namespaces@2024-01-01' = {
-  name: serviceBusName
-  location: location
-  sku: {
-    name: 'Standard'
-    tier: 'Standard'
-  }
+resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storage
+  name: 'default'
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: keyVaultName
-  location: location
+resource evidenceContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobServices
+  name: 'evidence'
   properties: {
-    tenantId: tenant().tenantId
-    enableRbacAuthorization: true
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
+    publicAccess: 'None'
   }
 }
 
-resource appConfig 'Microsoft.AppConfiguration/configurationStores@2024-05-01' = {
-  name: appConfigName
-  location: location
-  sku: {
-    name: 'standard'
-  }
-}
+// ---------------------------------------------------------------------------
+// App Service – API (Hono / Node.js via tsx)
+// ---------------------------------------------------------------------------
 
-resource search 'Microsoft.Search/searchServices@2023-11-01' = {
-  name: searchName
-  location: location
-  sku: {
-    name: 'standard'
-  }
-  properties: {
-    semanticSearch: 'standard'
-    hostingMode: 'default'
-    publicNetworkAccess: 'enabled'
-  }
-}
-
-resource containerEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
-  name: containerEnvName
-  location: location
-  properties: {
-    appLogsConfiguration: {
-      destination: 'log-analytics'
-    }
-  }
-}
-
-resource webApp 'Microsoft.App/containerApps@2024-03-01' = {
-  name: '${namePrefix}-${environmentName}-web'
-  location: location
-  properties: {
-    managedEnvironmentId: containerEnv.id
-    configuration: {
-      ingress: {
-        external: true
-        targetPort: 3000
-      }
-    }
-    template: {
-      containers: [
-        {
-          name: 'web'
-          image: webImage
-          resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
-          }
-        }
-      ]
-      scale: {
-        minReplicas: 1
-        maxReplicas: 3
-      }
-    }
-  }
-}
-
-resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
+resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
   name: '${namePrefix}-${environmentName}-api'
   location: location
+  kind: 'app,linux'
   properties: {
-    managedEnvironmentId: containerEnv.id
-    configuration: {
-      ingress: {
-        external: true
-        targetPort: 3001
-      }
-    }
-    template: {
-      containers: [
-        {
-          name: 'api'
-          image: apiImage
-          resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
-          }
-        }
+    serverFarmId: existingPlan.id
+    siteConfig: {
+      linuxFxVersion: 'NODE|24-lts'
+      appCommandLine: 'npx tsx services/api/src/index.ts'
+      alwaysOn: false
+      httpLoggingEnabled: true
+      appSettings: [
+        { name: 'PORT', value: '8080' }
+        { name: 'ACCOUNTING_RUNTIME_MODE', value: runtimeMode }
+        { name: 'ALLOW_TEST_RESET', value: 'false' }
+        { name: 'AZURE_STORAGE_ACCOUNT', value: storage.name }
+        { name: 'AZURE_STORAGE_CONTAINER', value: 'evidence' }
+        { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'false' }
+        // Secrets – set manually or via Key Vault references:
+        // AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_MODEL
+        // SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
       ]
-      scale: {
-        minReplicas: 1
-        maxReplicas: 4
-      }
     }
   }
 }
 
-output storageAccountName string = storage.name
-output serviceBusNamespace string = serviceBus.name
-output keyVaultUri string = keyVault.properties.vaultUri
-output appConfigEndpoint string = appConfig.properties.endpoint
-output searchServiceName string = search.name
+// ---------------------------------------------------------------------------
+// App Service – Web (Next.js standalone)
+// ---------------------------------------------------------------------------
 
+resource webApp 'Microsoft.Web/sites@2023-12-01' = {
+  name: '${namePrefix}-${environmentName}-web'
+  location: location
+  kind: 'app,linux'
+  properties: {
+    serverFarmId: existingPlan.id
+    siteConfig: {
+      linuxFxVersion: 'NODE|24-lts'
+      appCommandLine: 'node apps/web/server.js'
+      alwaysOn: false
+      httpLoggingEnabled: true
+      appSettings: [
+        { name: 'PORT', value: '8080' }
+        { name: 'HOSTNAME', value: '0.0.0.0' }
+        { name: 'ACCOUNTING_RUNTIME_MODE', value: runtimeMode }
+        { name: 'NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE', value: runtimeMode }
+        { name: 'ACCOUNTING_API_BASE_URL', value: 'https://${apiApp.properties.defaultHostName}' }
+        { name: 'NEXT_PUBLIC_API_BASE_URL', value: '/api-proxy' }
+        { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'false' }
+      ]
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Outputs
+// ---------------------------------------------------------------------------
+
+output storageAccountName string = storage.name
+output apiAppName string = apiApp.name
+output apiAppUrl string = 'https://${apiApp.properties.defaultHostName}'
+output webAppName string = webApp.name
+output webAppUrl string = 'https://${webApp.properties.defaultHostName}'
