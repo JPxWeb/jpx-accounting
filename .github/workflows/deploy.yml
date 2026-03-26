@@ -12,6 +12,14 @@ on:
         type: choice
         options:
           - dev
+      runtimeMode:
+        description: "Runtime mode"
+        required: true
+        default: "normal"
+        type: choice
+        options:
+          - normal
+          - demo
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -103,7 +111,10 @@ jobs:
           template: infra/azure/main.bicep
           parameters: >-
             environmentName=dev
-            runtimeMode=demo
+            runtimeMode=${{ inputs.runtimeMode || 'normal' }}
+            supabaseUrl=${{ secrets.SUPABASE_URL }}
+            supabaseAnonKey=${{ secrets.SUPABASE_ANON_KEY }}
+            supabaseServiceRoleKey=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           failOnStdErr: false
 
       - name: Download API artifact
