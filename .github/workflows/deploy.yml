@@ -71,7 +71,7 @@ jobs:
       - name: Bundle API for production
         run: |
           mkdir -p api-deploy
-          npx esbuild services/api/src/index.ts \
+          pnpm dlx esbuild services/api/src/index.ts \
             --bundle \
             --platform=node \
             --format=esm \
