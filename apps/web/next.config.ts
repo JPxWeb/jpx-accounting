@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   // Required for pnpm monorepo: trace dependencies from the monorepo root
   // so standalone build includes hoisted packages like @swc/helpers
   outputFileTracingRoot: path.join(__dirname, "../../"),
+  // Force-include @swc/helpers which pnpm symlinks prevent from being traced
+  outputFileTracingIncludes: {
+    "/**": ["node_modules/@swc/helpers/**/*"],
+  },
   transpilePackages: [
     "@jpx-accounting/api-client",
     "@jpx-accounting/contracts",

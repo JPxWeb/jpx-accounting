@@ -71,19 +71,40 @@ jobs:
               try {
                 const pkgJson = require.resolve(pkg + '/package.json');
                 const src = path.dirname(pkgJson);
-                const dest = path.join('web-deploy', 'apps', 'web', 'node_modules', pkg);
-                if (!fs.existsSync(dest)) {
-                  fs.mkdirSync(path.dirname(dest), {recursive: true});
-                  fs.cpSync(src, dest, {recursive: true, dereference: true});
-                  console.log('Patched:', pkg);
-                } else {
-                  console.log('Already present:', pkg);
+                console.log('Source package location:', src);
+                console.log('Source contents:', fs.readdirSync(src).join(', '));
+
+                // Copy to multiple locations to cover all Node.js resolution paths
+                const destinations = [
+                  path.join('web-deploy', 'node_modules', pkg),
+                  path.join('web-deploy', 'apps', 'web', 'node_modules', pkg),
+                  path.join('web-deploy', 'apps', 'web', 'node_modules', 'next', 'node_modules', pkg),
+                ];
+                for (const dest of destinations) {
+                  if (!fs.existsSync(dest)) {
+                    fs.mkdirSync(path.dirname(dest), {recursive: true});
+                    fs.cpSync(src, dest, {recursive: true, dereference: true});
+                    console.log('Patched to:', dest);
+                  } else {
+                    console.log('Already present at:', dest);
+                  }
                 }
               } catch(e) {
                 console.log('WARN:', pkg, 'not found:', e.message);
               }
             }
           "
+
+      - name: Debug standalone structure
+        run: |
+          echo "=== @swc/helpers locations ==="
+          find web-deploy -path "*/@swc/helpers" -type d 2>/dev/null || echo "No @swc/helpers found"
+          echo ""
+          echo "=== @swc/helpers/_/ contents ==="
+          find web-deploy -path "*/@swc/helpers/_" -type d -exec ls {} \; 2>/dev/null || echo "No _/ subdir found"
+          echo ""
+          echo "=== node_modules dirs ==="
+          find web-deploy -name "node_modules" -type d -maxdepth 4 2>/dev/null
 
       - name: Upload web artifact
         uses: actions/upload-artifact@v4
