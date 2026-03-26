@@ -70,7 +70,7 @@ jobs:
 
       - name: Package API workspace
         run: |
-          mkdir api-deploy
+          mkdir -p api-deploy/services
           cp package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json api-deploy/
           cp -r services/api api-deploy/services/api
           cp -r packages api-deploy/packages
