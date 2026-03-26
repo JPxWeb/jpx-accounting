@@ -7,8 +7,11 @@
 @description('Deployment environment name')
 param environmentName string = 'dev'
 
-@description('Primary Azure region – must match the App Service plan region')
+@description('App Service region – must match the App Service plan region')
 param location string = 'westeurope'
+
+@description('Storage account region (may differ from App Service region)')
+param storageLocation string = 'swedencentral'
 
 @description('Base name prefix for resources')
 param namePrefix string = 'jpxacct'
@@ -65,7 +68,7 @@ var storageName = toLower(replace('${namePrefix}${environmentName}sa', '-', ''))
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageName
-  location: location
+  location: storageLocation
   sku: {
     name: 'Standard_LRS'
   }
