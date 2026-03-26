@@ -68,19 +68,16 @@ jobs:
           path: web-deploy/
           retention-days: 3
 
-      - name: Package API workspace
+      - name: Bundle API for production
         run: |
-          mkdir -p api-deploy/services
-          cp package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json api-deploy/
-          cp -r services/api api-deploy/services/api
-          cp -r packages api-deploy/packages
-          cp -r node_modules api-deploy/node_modules
-          for dir in services/api packages/*/; do
-            if [ -d "$dir/node_modules" ]; then
-              mkdir -p "api-deploy/$dir"
-              cp -r "$dir/node_modules" "api-deploy/$dir/node_modules"
-            fi
-          done
+          mkdir -p api-deploy
+          npx esbuild services/api/src/index.ts \
+            --bundle \
+            --platform=node \
+            --format=esm \
+            --outfile=api-deploy/server.mjs \
+            --banner:js="import { createRequire } from 'module'; const require = createRequire(import.meta.url);"
+          echo '{"type": "module"}' > api-deploy/package.json
 
       - name: Upload API artifact
         uses: actions/upload-artifact@v4
