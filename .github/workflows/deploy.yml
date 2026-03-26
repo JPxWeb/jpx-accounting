@@ -57,72 +57,53 @@ jobs:
       - name: Package web standalone
         run: |
           cd apps/web
-          cp -r .next/standalone ../../web-deploy
-          cp -r .next/static ../../web-deploy/apps/web/.next/static
-          if [ -d public ]; then cp -r public ../../web-deploy/apps/web/public; fi
+          # Use cp -rL to dereference ALL pnpm symlinks into real files
+          # This is critical for Azure App Service deployment where symlinks break
+          cp -rL .next/standalone ../../web-deploy
+          cp -rL .next/static ../../web-deploy/apps/web/.next/static
+          if [ -d public ]; then cp -rL public ../../web-deploy/apps/web/public; fi
 
-      - name: Fix @swc/helpers for Azure deployment
+          # Remove .pnpm store since all symlinks are now dereferenced
+          rm -rf ../../web-deploy/node_modules/.pnpm
+
+      - name: Fix @swc/helpers exports for Azure
         run: |
           # @swc/helpers uses package.json "exports" to map "./_/xxx" -> "./cjs/xxx.cjs"
-          # but there is NO physical "_/" directory. Azure App Service with
-          # WEBSITE_RUN_FROM_PACKAGE=1 does not resolve the exports field correctly.
-          # Fix: copy the package with dereferenced symlinks AND create physical "_/" files.
+          # but there is NO physical "_/" directory. Azure App Service runtime
+          # does not resolve the exports field correctly.
+          # Fix: create physical "_/" directory with the actual helper files.
 
-          echo "=== Finding @swc/helpers source ==="
-          SWC_SRC=$(find web-deploy -path "*/.pnpm/*/@swc/helpers" -type d 2>/dev/null | head -1)
+          # Find all @swc/helpers locations in the deploy output
+          HELPERS_DIRS=$(find web-deploy -path "*/@swc/helpers/cjs" -type d 2>/dev/null)
 
-          if [ -z "$SWC_SRC" ]; then
-            echo "Not found in standalone pnpm store, trying workspace..."
-            SWC_SRC=$(find node_modules/.pnpm -path "*/@swc/helpers" -type d 2>/dev/null | head -1)
+          if [ -z "$HELPERS_DIRS" ]; then
+            echo "WARNING: No @swc/helpers/cjs directories found"
+            echo "Listing node_modules structure:"
+            find web-deploy -name "node_modules" -type d -maxdepth 4 2>/dev/null
+            exit 0
           fi
 
-          if [ -z "$SWC_SRC" ]; then
-            echo "ERROR: @swc/helpers not found anywhere"
-            exit 1
-          fi
-
-          echo "Source: $SWC_SRC"
-          ls -la "$SWC_SRC"
-
-          # Copy to all Node.js resolution paths (flat, no symlinks)
-          for DEST in \
-            "web-deploy/node_modules/@swc/helpers" \
-            "web-deploy/apps/web/node_modules/@swc/helpers" \
-            "web-deploy/apps/web/node_modules/next/node_modules/@swc/helpers"; do
-
-            rm -rf "$DEST"
-            mkdir -p "$(dirname "$DEST")"
-            cp -rL "$SWC_SRC" "$DEST"
-            echo "Copied to: $DEST"
-
-            # Create physical _/ directory with actual files
-            # This bypasses the exports field that Azure can't resolve
-            mkdir -p "$DEST/_"
-            if [ -d "$DEST/cjs" ]; then
-              for f in "$DEST/cjs/"*.cjs; do
-                [ -f "$f" ] || continue
-                name=$(basename "$f" .cjs)
-                # Copy as both .cjs and .js so Node resolves regardless of mode
-                cp "$f" "$DEST/_/$name.cjs"
-                cp "$f" "$DEST/_/$name.js"
-              done
-              echo "  Created _/ directory with $(ls "$DEST/_/" | wc -l) files"
-            fi
+          for CJS_DIR in $HELPERS_DIRS; do
+            HELPERS_DIR=$(dirname "$CJS_DIR")
+            echo "Patching: $HELPERS_DIR"
+            mkdir -p "$HELPERS_DIR/_"
+            for f in "$CJS_DIR/"*.cjs; do
+              [ -f "$f" ] || continue
+              name=$(basename "$f" .cjs)
+              cp "$f" "$HELPERS_DIR/_/$name.cjs"
+              cp "$f" "$HELPERS_DIR/_/$name.js"
+            done
+            echo "  Created _/ with $(ls "$HELPERS_DIR/_/" | wc -l) files"
           done
-
-          # Remove the .pnpm directory to avoid confusion
-          rm -rf web-deploy/node_modules/.pnpm
 
           echo ""
           echo "=== Verification ==="
-          echo "--- @swc/helpers locations ---"
-          find web-deploy -path "*/@swc/helpers" -type d -maxdepth 6 2>/dev/null
+          echo "--- node_modules/next exists? ---"
+          ls -la web-deploy/node_modules/next/package.json 2>/dev/null || echo "NOT at root"
+          ls -la web-deploy/apps/web/node_modules/next/package.json 2>/dev/null || echo "NOT at apps/web"
           echo ""
-          echo "--- _/ directory contents (first location) ---"
-          ls web-deploy/node_modules/@swc/helpers/_/ 2>/dev/null | head -10
-          echo ""
-          echo "--- Test: _interop_require_default resolution paths ---"
-          find web-deploy -name "_interop_require_default*" 2>/dev/null | head -10
+          echo "--- @swc/helpers _/ contents ---"
+          find web-deploy -path "*/@swc/helpers/_" -type d -exec sh -c 'echo "$1:"; ls "$1" | head -5' _ {} \; 2>/dev/null
 
       - name: Upload web artifact
         uses: actions/upload-artifact@v4
