@@ -61,50 +61,55 @@ jobs:
           cp -r .next/static ../../web-deploy/apps/web/.next/static
           if [ -d public ]; then cp -r public ../../web-deploy/apps/web/public; fi
 
-      - name: Patch missing modules in standalone
+      - name: Flatten pnpm symlinks for @swc/helpers
         run: |
-          node -e "
-            const fs = require('fs');
-            const path = require('path');
-            const pkgs = ['@swc/helpers'];
-            for (const pkg of pkgs) {
-              try {
-                const pkgJson = require.resolve(pkg + '/package.json');
-                const src = path.dirname(pkgJson);
-                console.log('Source package location:', src);
-                console.log('Source contents:', fs.readdirSync(src).join(', '));
+          echo "=== Before: @swc/helpers locations ==="
+          find web-deploy -path "*/@swc/helpers" -type d 2>/dev/null || echo "None found"
 
-                // Copy to multiple locations to cover all Node.js resolution paths
-                const destinations = [
-                  path.join('web-deploy', 'node_modules', pkg),
-                  path.join('web-deploy', 'apps', 'web', 'node_modules', pkg),
-                  path.join('web-deploy', 'apps', 'web', 'node_modules', 'next', 'node_modules', pkg),
-                ];
-                for (const dest of destinations) {
-                  if (!fs.existsSync(dest)) {
-                    fs.mkdirSync(path.dirname(dest), {recursive: true});
-                    fs.cpSync(src, dest, {recursive: true, dereference: true});
-                    console.log('Patched to:', dest);
-                  } else {
-                    console.log('Already present at:', dest);
-                  }
-                }
-              } catch(e) {
-                console.log('WARN:', pkg, 'not found:', e.message);
-              }
-            }
-          "
+          # Find the real @swc/helpers in pnpm store within standalone output
+          SWC_SRC=$(find web-deploy -path "*/.pnpm/*/@swc/helpers" -type d 2>/dev/null | head -1)
 
-      - name: Debug standalone structure
-        run: |
-          echo "=== @swc/helpers locations ==="
-          find web-deploy -path "*/@swc/helpers" -type d 2>/dev/null || echo "No @swc/helpers found"
+          if [ -z "$SWC_SRC" ]; then
+            echo "ERROR: @swc/helpers not found in standalone output at all"
+            # Fallback: find it in the workspace and copy with dereference
+            SWC_SRC=$(find node_modules/.pnpm -path "*/@swc/helpers" -type d 2>/dev/null | head -1)
+            if [ -z "$SWC_SRC" ]; then
+              echo "ERROR: @swc/helpers not found anywhere"
+              exit 1
+            fi
+          fi
+
+          echo "Source: $SWC_SRC"
+          echo "Source contents:"
+          ls -la "$SWC_SRC"
+          echo "Has _/ dir:"
+          ls -la "$SWC_SRC/_/" 2>/dev/null || echo "No _/ directory"
+
+          # Copy to all standard node_modules resolution paths (flat, no symlinks)
+          for DEST in \
+            "web-deploy/node_modules/@swc/helpers" \
+            "web-deploy/apps/web/node_modules/@swc/helpers" \
+            "web-deploy/apps/web/node_modules/next/node_modules/@swc/helpers"; do
+
+            if [ ! -d "$DEST" ] || [ -L "$DEST" ]; then
+              rm -rf "$DEST"
+              mkdir -p "$(dirname "$DEST")"
+              cp -rL "$SWC_SRC" "$DEST"
+              echo "Copied to: $DEST"
+            else
+              echo "Already exists: $DEST"
+            fi
+          done
+
+          # Also remove the .pnpm directory to avoid confusion
+          rm -rf web-deploy/node_modules/.pnpm
+
           echo ""
-          echo "=== @swc/helpers/_/ contents ==="
-          find web-deploy -path "*/@swc/helpers/_" -type d -exec ls {} \; 2>/dev/null || echo "No _/ subdir found"
+          echo "=== After: @swc/helpers locations ==="
+          find web-deploy -path "*/@swc/helpers" -type d 2>/dev/null
           echo ""
-          echo "=== node_modules dirs ==="
-          find web-deploy -name "node_modules" -type d -maxdepth 4 2>/dev/null
+          echo "=== Verify _interop_require_default exists ==="
+          find web-deploy -name "_interop_require_default*" 2>/dev/null | head -5
 
       - name: Upload web artifact
         uses: actions/upload-artifact@v4
