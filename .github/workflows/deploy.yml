@@ -71,7 +71,7 @@ jobs:
               try {
                 const pkgJson = require.resolve(pkg + '/package.json');
                 const src = path.dirname(pkgJson);
-                const dest = path.join('web-deploy', 'node_modules', pkg);
+                const dest = path.join('web-deploy', 'apps', 'web', 'node_modules', pkg);
                 if (!fs.existsSync(dest)) {
                   fs.mkdirSync(path.dirname(dest), {recursive: true});
                   fs.cpSync(src, dest, {recursive: true, dereference: true});
