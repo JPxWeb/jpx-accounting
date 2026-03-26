@@ -94,7 +94,7 @@ resource evidenceContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
 }
 
 // ---------------------------------------------------------------------------
-// App Service – API (Hono / Node.js via tsx)
+// App Service – API (Hono, bundled with esbuild)
 // ---------------------------------------------------------------------------
 
 resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
@@ -105,7 +105,7 @@ resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
     serverFarmId: existingPlan.id
     siteConfig: {
       linuxFxVersion: 'NODE|24-lts'
-      appCommandLine: 'node --import tsx/esm services/api/src/index.ts'
+      appCommandLine: 'node server.mjs'
       alwaysOn: false
       httpLoggingEnabled: true
       appSettings: [
