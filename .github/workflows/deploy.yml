@@ -60,6 +60,11 @@ jobs:
           cp -r .next/standalone ../../web-deploy
           cp -r .next/static ../../web-deploy/apps/web/.next/static
           if [ -d public ]; then cp -r public ../../web-deploy/apps/web/public; fi
+          # Safety net: ensure @swc/helpers is included (pnpm monorepo)
+          if [ ! -d ../../web-deploy/node_modules/@swc/helpers ]; then
+            mkdir -p ../../web-deploy/node_modules/@swc
+            cp -rL ../../node_modules/@swc/helpers ../../web-deploy/node_modules/@swc/helpers 2>/dev/null || true
+          fi
 
       - name: Upload web artifact
         uses: actions/upload-artifact@v4
