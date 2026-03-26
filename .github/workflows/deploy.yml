@@ -60,11 +60,30 @@ jobs:
           cp -r .next/standalone ../../web-deploy
           cp -r .next/static ../../web-deploy/apps/web/.next/static
           if [ -d public ]; then cp -r public ../../web-deploy/apps/web/public; fi
-          # Safety net: ensure @swc/helpers is included (pnpm monorepo)
-          if [ ! -d ../../web-deploy/node_modules/@swc/helpers ]; then
-            mkdir -p ../../web-deploy/node_modules/@swc
-            cp -rL ../../node_modules/@swc/helpers ../../web-deploy/node_modules/@swc/helpers 2>/dev/null || true
-          fi
+
+      - name: Patch missing modules in standalone
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const pkgs = ['@swc/helpers'];
+            for (const pkg of pkgs) {
+              try {
+                const pkgJson = require.resolve(pkg + '/package.json');
+                const src = path.dirname(pkgJson);
+                const dest = path.join('web-deploy', 'node_modules', pkg);
+                if (!fs.existsSync(dest)) {
+                  fs.mkdirSync(path.dirname(dest), {recursive: true});
+                  fs.cpSync(src, dest, {recursive: true, dereference: true});
+                  console.log('Patched:', pkg);
+                } else {
+                  console.log('Already present:', pkg);
+                }
+              } catch(e) {
+                console.log('WARN:', pkg, 'not found:', e.message);
+              }
+            }
+          "
 
       - name: Upload web artifact
         uses: actions/upload-artifact@v4
