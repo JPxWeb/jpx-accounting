@@ -105,7 +105,7 @@ resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
     serverFarmId: existingPlan.id
     siteConfig: {
       linuxFxVersion: 'NODE|24-lts'
-      appCommandLine: 'npx tsx services/api/src/index.ts'
+      appCommandLine: 'node --import tsx/esm services/api/src/index.ts'
       alwaysOn: false
       httpLoggingEnabled: true
       appSettings: [
@@ -115,6 +115,7 @@ resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AZURE_STORAGE_ACCOUNT', value: storage.name }
         { name: 'AZURE_STORAGE_CONTAINER', value: 'evidence' }
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'false' }
+        { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }
         { name: 'SUPABASE_URL', value: supabaseUrl }
         { name: 'SUPABASE_ANON_KEY', value: supabaseAnonKey }
         { name: 'SUPABASE_SERVICE_ROLE_KEY', value: supabaseServiceRoleKey }
@@ -149,6 +150,7 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'ACCOUNTING_API_BASE_URL', value: 'https://${apiApp.properties.defaultHostName}' }
         { name: 'NEXT_PUBLIC_API_BASE_URL', value: '/api-proxy' }
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'false' }
+        { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }
       ]
     }
   }
