@@ -7,8 +7,8 @@
 @description('Deployment environment name')
 param environmentName string = 'dev'
 
-@description('Primary Azure region')
-param location string = 'swedencentral'
+@description('Primary Azure region – must match the App Service plan region')
+param location string = 'westeurope'
 
 @description('Base name prefix for resources')
 param namePrefix string = 'jpxacct'
