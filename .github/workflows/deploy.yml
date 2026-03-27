@@ -45,17 +45,21 @@ jobs:
           # This avoids all module resolution issues with pnpm standalone output.
           docker build -f apps/web/Dockerfile -t jpx-web-build .
 
-          # Extract standalone output from the Docker image
+          # Extract the pre-dereferenced standalone output from Docker.
+          # The Dockerfile runs cp -rL to resolve all pnpm symlinks into real files,
+          # so the extracted output works on Azure App Service where symlinks break.
           CONTAINER_ID=$(docker create jpx-web-build)
-          docker cp "$CONTAINER_ID:/app/apps/web/.next/standalone" web-deploy
-          docker cp "$CONTAINER_ID:/app/apps/web/.next/static" web-deploy/apps/web/.next/static
-          docker cp "$CONTAINER_ID:/app/apps/web/public" web-deploy/apps/web/public 2>/dev/null || true
+          docker cp "$CONTAINER_ID:/app/web-standalone" web-deploy
           docker rm "$CONTAINER_ID"
 
           echo "=== web-deploy contents ==="
           ls -la web-deploy/
+          echo "=== apps/web contents ==="
+          ls -la web-deploy/apps/web/
           echo "=== node_modules sample ==="
           ls web-deploy/node_modules/ | head -20
+          echo "=== symlink check (should be zero) ==="
+          find web-deploy -type l | wc -l
 
       - name: Upload web artifact
         uses: actions/upload-artifact@v4
