@@ -147,6 +147,25 @@ jobs:
           name: web-deploy
           path: web-deploy
 
+      - name: Pre-deploy web sanity check
+        run: |
+          echo "=== Checking web-deploy structure ==="
+          ls -la web-deploy/
+          echo "=== server.js exists? ==="
+          ls -la web-deploy/apps/web/server.js || echo "MISSING server.js!"
+          echo "=== node_modules check ==="
+          ls web-deploy/node_modules/ | head -20
+          echo "=== Quick Node.js import test ==="
+          cd web-deploy && timeout 10 node -e "
+            try {
+              require('./apps/web/server.js');
+            } catch(e) {
+              console.error('STARTUP ERROR:', e.message);
+              console.error('Stack:', e.stack);
+              process.exit(1);
+            }
+          " 2>&1 || echo "Node test exited with code $? (timeout=expected if server started)"
+
       - name: Zip web
         run: cd web-deploy && zip -r ../web.zip . -x "*.git*"
 
@@ -189,8 +208,16 @@ jobs:
           echo "Web app returned non-200. Fetching response body:"
           curl -s "$WEB_URL" | head -100
           echo ""
-          echo "=== Fetching Azure startup logs ==="
-          az webapp log tail --name ${{ steps.bicep.outputs.webAppName }} --resource-group jpx-main-rg --timeout 15 2>&1 | tail -80 || true
+          echo "=== Downloading Azure application logs ==="
+          az webapp log download \
+            --name ${{ steps.bicep.outputs.webAppName }} \
+            --resource-group jpx-main-rg \
+            --log-file /tmp/webapp-logs.zip 2>&1 || true
+          if [ -f /tmp/webapp-logs.zip ]; then
+            cd /tmp && unzip -o webapp-logs.zip 2>/dev/null || true
+            echo "=== Docker container logs ==="
+            find /tmp/LogFiles -name "*.log" -exec echo "--- {} ---" \; -exec tail -60 {} \; 2>/dev/null || echo "No log files found"
+          fi
           echo "=== Done ==="
           exit 1
 
