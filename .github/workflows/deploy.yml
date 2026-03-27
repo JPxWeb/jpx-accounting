@@ -142,10 +142,10 @@ jobs:
           az webapp config container set \
             --name ${{ steps.bicep.outputs.webAppName }} \
             --resource-group jpx-main-rg \
-            --registry-url https://ghcr.io \
-            --registry-username ${{ github.actor }} \
-            --registry-password ${{ secrets.GITHUB_TOKEN }} \
-            --image "${{ env.WEB_IMAGE }}:${{ github.sha }}"
+            --docker-registry-server-url https://ghcr.io \
+            --docker-registry-server-user ${{ github.actor }} \
+            --docker-registry-server-password ${{ secrets.GITHUB_TOKEN }} \
+            --docker-custom-image-name "${{ env.WEB_IMAGE }}:${{ github.sha }}"
 
       - name: Restart web app to pull new image
         run: |
