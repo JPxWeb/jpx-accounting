@@ -28,6 +28,7 @@ concurrency:
 env:
   NODE_VERSION: "24"
   PNPM_VERSION: "10.29.2"
+
 permissions:
   contents: read
 
@@ -56,7 +57,8 @@ jobs:
       - name: Package web standalone
         run: |
           cd apps/web
-          # Use cp -rL to dereference ALL pnpm symlinks into real files          # This is critical for Azure App Service deployment where symlinks break
+          # Use cp -rL to dereference ALL pnpm symlinks into real files
+          # This is critical for Azure App Service deployment where symlinks break
           cp -rL .next/standalone ../../web-deploy
           cp -rL .next/static ../../web-deploy/apps/web/.next/static
           if [ -d public ]; then cp -rL public ../../web-deploy/apps/web/public; fi
@@ -84,7 +86,8 @@ jobs:
           if [ -z "$HELPERS_PKGS" ]; then
             echo "WARNING: No @swc/helpers package.json found in web-deploy"
             echo "Listing all @swc directories:"
-            find web-deploy -path "*/@swc" -type d 2>/dev/null || echo "No @swc dirs at all"            echo ""
+            find web-deploy -path "*/@swc" -type d 2>/dev/null || echo "No @swc dirs at all"
+            echo ""
             echo "Listing node_modules structure (depth 3):"
             find web-deploy -name "node_modules" -type d -maxdepth 4 2>/dev/null
 
@@ -113,6 +116,7 @@ jobs:
               exit 1
             fi
           fi
+
           # Now find all @swc/helpers directories and create _/ in each
           for PKG_JSON in $(find web-deploy -path "*/@swc/helpers/package.json" 2>/dev/null); do
             HELPERS_DIR=$(dirname "$PKG_JSON")
@@ -140,7 +144,8 @@ jobs:
                 echo "  Found .cjs files in: $CJS_PARENT"
                 mkdir -p "$HELPERS_DIR/_"
                 for f in "$CJS_PARENT/"*.cjs; do
-                  [ -f "$f" ] || continue                  name=$(basename "$f" .cjs)
+                  [ -f "$f" ] || continue
+                  name=$(basename "$f" .cjs)
                   cp "$f" "$HELPERS_DIR/_/$name.cjs"
                   cp "$f" "$HELPERS_DIR/_/$name.js"
                 done
@@ -168,7 +173,8 @@ jobs:
           retention-days: 3
 
       - name: Bundle API for production
-        run: |          mkdir -p api-deploy
+        run: |
+          mkdir -p api-deploy
           pnpm dlx esbuild services/api/src/index.ts \
             --bundle \
             --platform=node \
@@ -196,6 +202,7 @@ jobs:
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
       - name: Deploy Bicep infrastructure
         uses: azure/arm-deploy@v2
         id: bicep
@@ -225,6 +232,7 @@ jobs:
         with:
           app-name: ${{ steps.bicep.outputs.apiAppName }}
           package: api.zip
+
       - name: Download web artifact
         uses: actions/download-artifact@v4
         with:
@@ -253,7 +261,8 @@ jobs:
             fi
             echo "Attempt $i: HTTP $STATUS, retrying in 15s..."
             sleep 15
-          done          echo "API health check failed after 5 attempts"
+          done
+          echo "API health check failed after 5 attempts"
           exit 1
 
       - name: Print deployment URLs
