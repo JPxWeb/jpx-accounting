@@ -66,6 +66,57 @@ jobs:
           # Remove .pnpm store since all symlinks are now dereferenced
           rm -rf ../../web-deploy/node_modules/.pnpm
 
+      - name: Fix missing Next.js internal packages
+        run: |
+          # Next.js standalone output may not include all @next/* internal packages
+          # (e.g. @next/env) when using pnpm monorepo due to symlink resolution issues.
+          # Fix: copy any missing @next/* packages from workspace into the standalone output.
+
+          echo "=== Checking @next/* packages in standalone output ==="
+          find web-deploy -path "*/@next" -type d 2>/dev/null | head -10 || echo "No @next dirs found"
+
+          # List of @next/* packages that next/dist/server requires at runtime
+          NEXT_INTERNAL_PKGS="@next/env"
+
+          for PKG in $NEXT_INTERNAL_PKGS; do
+            PKG_PATH=$(echo "$PKG" | tr '/' '/')
+
+            # Check if already exists in standalone
+            EXISTING=$(find web-deploy -path "*/$PKG_PATH/package.json" 2>/dev/null | head -1)
+            if [ -n "$EXISTING" ]; then
+              echo "$PKG already exists at: $(dirname $EXISTING)"
+              continue
+            fi
+
+            echo "$PKG NOT found in standalone output - copying from workspace"
+
+            # Find in workspace node_modules (try non-.pnpm first, then .pnpm)
+            SRC=$(find node_modules -path "*/$PKG_PATH" -type d ! -path "*/node_modules/.pnpm/*" 2>/dev/null | head -1)
+            if [ -z "$SRC" ]; then
+              SRC=$(find node_modules/.pnpm -path "*/$PKG_PATH/node_modules/$PKG_PATH" -type d 2>/dev/null | head -1)
+            fi
+            if [ -z "$SRC" ]; then
+              SRC=$(find node_modules/.pnpm -path "*/$PKG_PATH" -type d 2>/dev/null | head -1)
+            fi
+
+            if [ -n "$SRC" ]; then
+              echo "  Found at: $SRC"
+              for DEST_BASE in web-deploy/node_modules web-deploy/apps/web/node_modules; do
+                DEST="$DEST_BASE/$PKG_PATH"
+                mkdir -p "$DEST"
+                cp -rL "$SRC/"* "$DEST/" 2>/dev/null || true
+                echo "  Copied to: $DEST"
+              done
+            else
+              echo "  ERROR: $PKG not found in workspace node_modules"
+              exit 1
+            fi
+          done
+
+          echo ""
+          echo "=== Verification ==="
+          find web-deploy -path "*/@next/env/package.json" 2>/dev/null || echo "@next/env NOT FOUND - this will cause runtime failure"
+
       - name: Fix @swc/helpers exports for Azure
         run: |
           # @swc/helpers uses package.json "exports" to map "./_/xxx" -> "./cjs/xxx.cjs"
