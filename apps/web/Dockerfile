@@ -1,26 +1,17 @@
-FROM node:24-alpine AS base
+FROM node:24-alpine
 RUN corepack enable && corepack prepare pnpm@10.29.2 --activate
 
-# ── Build stage ──
-FROM base AS builder
 WORKDIR /app
+
+# Copy entire monorepo
 COPY . .
+
+# Install dependencies
 RUN pnpm install --frozen-lockfile
+
+# Build all workspace packages
 RUN pnpm build
 
-# ── Production stage ──
-FROM base AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-
-# Copy standalone output (includes node_modules with proper symlinks)
-COPY --from=builder /app/apps/web/.next/standalone ./
-# Copy static assets
-COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
-# Copy public dir if it exists (using a wildcard trick)
-COPY --from=builder /app/apps/web/publi[c] ./apps/web/public
-
-EXPOSE 8080
-ENV PORT=8080
-ENV HOSTNAME=0.0.0.0
-CMD ["node", "apps/web/server.js"]
+# The standalone output is now at /app/apps/web/.next/standalone
+# and static assets at /app/apps/web/.next/static
+# CI will extract these via docker cp
