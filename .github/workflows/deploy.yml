@@ -173,6 +173,27 @@ jobs:
           echo "API health check failed after 5 attempts"
           exit 1
 
+      - name: Smoke test web app
+        run: |
+          echo "Checking web app..."
+          WEB_URL="${{ steps.bicep.outputs.webAppUrl }}"
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$WEB_URL" || true)
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Web health check passed"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Web app returned non-200. Fetching response body:"
+          curl -s "$WEB_URL" | head -100
+          echo ""
+          echo "=== Fetching Azure startup logs ==="
+          az webapp log tail --name ${{ steps.bicep.outputs.webAppName }} --resource-group jpx-main-rg --timeout 15 2>&1 | tail -80 || true
+          echo "=== Done ==="
+          exit 1
+
       - name: Print deployment URLs
         run: |
           echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
