@@ -39,6 +39,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Build web via Docker
+        run: |
+          # Build the Next.js app inside Docker where pnpm symlinks work natively.
+          # This avoids all module resolution issues with pnpm standalone output.
+          docker build -f apps/web/Dockerfile -t jpx-web-build .
+
+          # Extract standalone output from the Docker image
+          CONTAINER_ID=$(docker create jpx-web-build)
+          docker cp "$CONTAINER_ID:/app/apps/web/.next/standalone" web-deploy
+          docker cp "$CONTAINER_ID:/app/apps/web/.next/static" web-deploy/apps/web/.next/static
+          docker cp "$CONTAINER_ID:/app/apps/web/public" web-deploy/apps/web/public 2>/dev/null || true
+          docker rm "$CONTAINER_ID"
+
+          echo "=== web-deploy contents ==="
+          ls -la web-deploy/
+          echo "=== node_modules sample ==="
+          ls web-deploy/node_modules/ | head -20
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-deploy
+          path: web-deploy/
+          retention-days: 3
+
       - uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
@@ -50,178 +75,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Build all
-        run: pnpm build
-
-      - name: Package web standalone
-        run: |
-          cd apps/web
-          # Use cp -rL to dereference ALL pnpm symlinks into real files
-          # This is critical for Azure App Service deployment where symlinks break
-          cp -rL .next/standalone ../../web-deploy
-          cp -rL .next/static ../../web-deploy/apps/web/.next/static
-          if [ -d public ]; then cp -rL public ../../web-deploy/apps/web/public; fi
-
-          # Remove .pnpm store since all symlinks are now dereferenced
-          rm -rf ../../web-deploy/node_modules/.pnpm
-
-      - name: Fix missing Next.js internal packages
-        run: |
-          # Next.js standalone output may not include all @next/* internal packages
-          # (e.g. @next/env) when using pnpm monorepo due to symlink resolution issues.
-          # Fix: copy any missing @next/* packages from workspace into the standalone output.
-
-          echo "=== Checking @next/* packages in standalone output ==="
-          find web-deploy -path "*/@next" -type d 2>/dev/null | head -10 || echo "No @next dirs found"
-
-          # List of @next/* packages that next/dist/server requires at runtime
-          NEXT_INTERNAL_PKGS="@next/env"
-
-          for PKG in $NEXT_INTERNAL_PKGS; do
-            PKG_PATH=$(echo "$PKG" | tr '/' '/')
-
-            # Check if already exists in standalone
-            EXISTING=$(find web-deploy -path "*/$PKG_PATH/package.json" 2>/dev/null | head -1)
-            if [ -n "$EXISTING" ]; then
-              echo "$PKG already exists at: $(dirname $EXISTING)"
-              continue
-            fi
-
-            echo "$PKG NOT found in standalone output - copying from workspace"
-
-            # Find in workspace node_modules (try non-.pnpm first, then .pnpm)
-            SRC=$(find node_modules -path "*/$PKG_PATH" -type d ! -path "*/node_modules/.pnpm/*" 2>/dev/null | head -1)
-            if [ -z "$SRC" ]; then
-              SRC=$(find node_modules/.pnpm -path "*/$PKG_PATH/node_modules/$PKG_PATH" -type d 2>/dev/null | head -1)
-            fi
-            if [ -z "$SRC" ]; then
-              SRC=$(find node_modules/.pnpm -path "*/$PKG_PATH" -type d 2>/dev/null | head -1)
-            fi
-
-            if [ -n "$SRC" ]; then
-              echo "  Found at: $SRC"
-              for DEST_BASE in web-deploy/node_modules web-deploy/apps/web/node_modules; do
-                DEST="$DEST_BASE/$PKG_PATH"
-                mkdir -p "$DEST"
-                cp -rL "$SRC/"* "$DEST/" 2>/dev/null || true
-                echo "  Copied to: $DEST"
-              done
-            else
-              echo "  ERROR: $PKG not found in workspace node_modules"
-              exit 1
-            fi
-          done
-
-          echo ""
-          echo "=== Verification ==="
-          find web-deploy -path "*/@next/env/package.json" 2>/dev/null || echo "@next/env NOT FOUND - this will cause runtime failure"
-
-      - name: Fix @swc/helpers exports for Azure
-        run: |
-          # @swc/helpers uses package.json "exports" to map "./_/xxx" -> "./cjs/xxx.cjs"
-          # but there is NO physical "_/" directory. Azure App Service runtime
-          # does not resolve the exports field correctly.
-          # Fix: create physical "_/" directory with the actual helper files.
-
-          echo "=== Debug: searching for @swc/helpers ==="
-          find web-deploy -path "*/@swc/helpers" -type d 2>/dev/null || echo "No @swc/helpers dirs found"
-          echo ""
-          echo "=== Debug: searching for any _interop_require_default files ==="
-          find web-deploy -name "_interop_require_default*" 2>/dev/null | head -5 || echo "None found"
-          echo ""
-
-          # Find @swc/helpers package directories (look for package.json)
-          HELPERS_PKGS=$(find web-deploy -path "*/@swc/helpers/package.json" 2>/dev/null)
-
-          if [ -z "$HELPERS_PKGS" ]; then
-            echo "WARNING: No @swc/helpers package.json found in web-deploy"
-            echo "Listing all @swc directories:"
-            find web-deploy -path "*/@swc" -type d 2>/dev/null || echo "No @swc dirs at all"
-            echo ""
-            echo "Listing node_modules structure (depth 3):"
-            find web-deploy -name "node_modules" -type d -maxdepth 4 2>/dev/null
-
-            # Fallback: copy from workspace node_modules
-            echo ""
-            echo "=== Fallback: copying @swc/helpers from workspace ==="
-            SWC_SRC=$(find node_modules -path "*/@swc/helpers" -type d ! -path "*/node_modules/.pnpm/*" 2>/dev/null | head -1)
-            if [ -z "$SWC_SRC" ]; then
-              SWC_SRC=$(find node_modules/.pnpm -path "*/@swc/helpers" -type d 2>/dev/null | head -1)
-            fi
-
-            if [ -n "$SWC_SRC" ]; then
-              echo "Found workspace @swc/helpers at: $SWC_SRC"
-              echo "Contents:"
-              ls -la "$SWC_SRC"
-
-              for DEST_BASE in web-deploy/node_modules web-deploy/apps/web/node_modules; do
-                DEST="$DEST_BASE/@swc/helpers"
-                mkdir -p "$DEST"
-                cp -rL "$SWC_SRC/"* "$DEST/" 2>/dev/null || true
-                echo "Copied to: $DEST"
-                ls "$DEST" | head -5
-              done
-            else
-              echo "ERROR: @swc/helpers not found anywhere"
-              exit 1
-            fi
-          fi
-
-          # Now find all @swc/helpers directories and create _/ in each
-          for PKG_JSON in $(find web-deploy -path "*/@swc/helpers/package.json" 2>/dev/null); do
-            HELPERS_DIR=$(dirname "$PKG_JSON")
-            echo "Processing: $HELPERS_DIR"
-            echo "  Contents: $(ls "$HELPERS_DIR" | tr '\n' ' ')"
-
-            # Look for cjs directory with .cjs files
-            CJS_DIR="$HELPERS_DIR/cjs"
-            if [ -d "$CJS_DIR" ]; then
-              echo "  Found cjs/ directory"
-              mkdir -p "$HELPERS_DIR/_"
-              for f in "$CJS_DIR/"*.cjs; do
-                [ -f "$f" ] || continue
-                name=$(basename "$f" .cjs)
-                cp "$f" "$HELPERS_DIR/_/$name.cjs"
-                cp "$f" "$HELPERS_DIR/_/$name.js"
-              done
-              echo "  Created _/ with $(ls "$HELPERS_DIR/_/" | wc -l) files"
-            else
-              echo "  No cjs/ directory found, looking for .cjs files recursively"
-              # Maybe files are at a different location
-              CJS_FILES=$(find "$HELPERS_DIR" -name "*.cjs" 2>/dev/null | head -1)
-              if [ -n "$CJS_FILES" ]; then
-                CJS_PARENT=$(dirname "$CJS_FILES")
-                echo "  Found .cjs files in: $CJS_PARENT"
-                mkdir -p "$HELPERS_DIR/_"
-                for f in "$CJS_PARENT/"*.cjs; do
-                  [ -f "$f" ] || continue
-                  name=$(basename "$f" .cjs)
-                  cp "$f" "$HELPERS_DIR/_/$name.cjs"
-                  cp "$f" "$HELPERS_DIR/_/$name.js"
-                done
-                echo "  Created _/ with $(ls "$HELPERS_DIR/_/" | wc -l) files"
-              else
-                echo "  WARNING: No .cjs files found at all in $HELPERS_DIR"
-                echo "  Full tree:"
-                find "$HELPERS_DIR" -type f | head -20
-              fi
-            fi
-          done
-
-          echo ""
-          echo "=== Final Verification ==="
-          echo "--- @swc/helpers _/ directories ---"
-          find web-deploy -path "*/@swc/helpers/_" -type d 2>/dev/null
-          echo "--- Sample _/ contents ---"
-          find web-deploy -path "*/@swc/helpers/_/_interop_require_default*" 2>/dev/null || echo "NOT FOUND"
-
-      - name: Upload web artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-deploy
-          path: web-deploy/
-          retention-days: 3
 
       - name: Bundle API for production
         run: |
