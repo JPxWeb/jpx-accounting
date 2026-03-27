@@ -28,9 +28,12 @@ concurrency:
 env:
   NODE_VERSION: "24"
   PNPM_VERSION: "10.29.2"
+  REGISTRY: ghcr.io
+  WEB_IMAGE: ghcr.io/jpxweb/jpx-accounting-web
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   build:
@@ -39,35 +42,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build web via Docker
-        run: |
-          # Build the Next.js app inside Docker where pnpm symlinks work natively.
-          # This avoids all module resolution issues with pnpm standalone output.
-          docker build -f apps/web/Dockerfile -t jpx-web-build .
-
-          # Extract the pre-dereferenced standalone output from Docker.
-          # The Dockerfile runs cp -rL to resolve all pnpm symlinks into real files,
-          # so the extracted output works on Azure App Service where symlinks break.
-          CONTAINER_ID=$(docker create jpx-web-build)
-          docker cp "$CONTAINER_ID:/app/web-standalone" web-deploy
-          docker rm "$CONTAINER_ID"
-
-          echo "=== web-deploy contents ==="
-          ls -la web-deploy/
-          echo "=== apps/web contents ==="
-          ls -la web-deploy/apps/web/
-          echo "=== node_modules sample ==="
-          ls web-deploy/node_modules/ | head -20
-          echo "=== symlink check (should be zero) ==="
-          find web-deploy -type l | wc -l
-
-      - name: Upload web artifact
-        uses: actions/upload-artifact@v4
+      # ---- Web: Build & push Docker image to GHCR ----
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          name: web-deploy
-          path: web-deploy/
-          retention-days: 3
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build and push web Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: |
+            ${{ env.WEB_IMAGE }}:${{ github.sha }}
+            ${{ env.WEB_IMAGE }}:latest
+
+      # ---- API: Bundle with esbuild ----
       - uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
@@ -121,11 +114,13 @@ jobs:
           parameters: >-
             environmentName=dev
             runtimeMode=${{ inputs.runtimeMode || 'normal' }}
+            webDockerImage=${{ env.WEB_IMAGE }}:${{ github.sha }}
             supabaseUrl=${{ secrets.SUPABASE_URL }}
             supabaseAnonKey=${{ secrets.SUPABASE_ANON_KEY }}
             supabaseServiceRoleKey=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           failOnStdErr: false
 
+      # ---- Deploy API (zip deploy, unchanged) ----
       - name: Download API artifact
         uses: actions/download-artifact@v4
         with:
@@ -141,40 +136,24 @@ jobs:
           app-name: ${{ steps.bicep.outputs.apiAppName }}
           package: api.zip
 
-      - name: Download web artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: web-deploy
-          path: web-deploy
-
-      - name: Pre-deploy web sanity check
+      # ---- Configure web container to pull from GHCR ----
+      - name: Configure web app container
         run: |
-          echo "=== Checking web-deploy structure ==="
-          ls -la web-deploy/
-          echo "=== server.js exists? ==="
-          ls -la web-deploy/apps/web/server.js || echo "MISSING server.js!"
-          echo "=== node_modules check ==="
-          ls web-deploy/node_modules/ | head -20
-          echo "=== Quick Node.js import test ==="
-          cd web-deploy && timeout 10 node -e "
-            try {
-              require('./apps/web/server.js');
-            } catch(e) {
-              console.error('STARTUP ERROR:', e.message);
-              console.error('Stack:', e.stack);
-              process.exit(1);
-            }
-          " 2>&1 || echo "Node test exited with code $? (timeout=expected if server started)"
+          az webapp config container set \
+            --name ${{ steps.bicep.outputs.webAppName }} \
+            --resource-group jpx-main-rg \
+            --registry-url https://ghcr.io \
+            --registry-username ${{ github.actor }} \
+            --registry-password ${{ secrets.GITHUB_TOKEN }} \
+            --image "${{ env.WEB_IMAGE }}:${{ github.sha }}"
 
-      - name: Zip web
-        run: cd web-deploy && zip -r ../web.zip . -x "*.git*"
+      - name: Restart web app to pull new image
+        run: |
+          az webapp restart \
+            --name ${{ steps.bicep.outputs.webAppName }} \
+            --resource-group jpx-main-rg
 
-      - name: Deploy web to App Service
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ steps.bicep.outputs.webAppName }}
-          package: web.zip
-
+      # ---- Smoke tests ----
       - name: Smoke test API health
         run: |
           echo "Waiting for API to start..."
@@ -194,16 +173,17 @@ jobs:
 
       - name: Smoke test web app
         run: |
-          echo "Checking web app..."
+          echo "Waiting for container to pull and start..."
+          sleep 60
           WEB_URL="${{ steps.bicep.outputs.webAppUrl }}"
-          for i in 1 2 3 4 5; do
+          for i in 1 2 3 4 5 6 7 8; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$WEB_URL" || true)
             echo "Attempt $i: HTTP $STATUS"
             if [ "$STATUS" = "200" ]; then
               echo "Web health check passed"
               exit 0
             fi
-            sleep 10
+            sleep 15
           done
           echo "Web app returned non-200. Fetching response body:"
           curl -s "$WEB_URL" | head -100

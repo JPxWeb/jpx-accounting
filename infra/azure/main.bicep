@@ -128,29 +128,31 @@ resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
 }
 
 // ---------------------------------------------------------------------------
-// App Service – Web (Next.js standalone)
+// App Service – Web (Next.js standalone, deployed as Docker container)
 // ---------------------------------------------------------------------------
+
+@description('Docker image tag for the web app')
+param webDockerImage string = 'ghcr.io/jpxweb/jpx-accounting-web:latest'
 
 resource webApp 'Microsoft.Web/sites@2023-12-01' = {
   name: '${namePrefix}-${environmentName}-web'
   location: location
-  kind: 'app,linux'
+  kind: 'app,linux,container'
   properties: {
     serverFarmId: existingPlan.id
     siteConfig: {
-      linuxFxVersion: 'NODE|24-lts'
-      appCommandLine: 'node apps/web/server.js'
+      linuxFxVersion: 'DOCKER|${webDockerImage}'
       alwaysOn: false
       httpLoggingEnabled: true
       appSettings: [
-        { name: 'PORT', value: '8080' }
+        { name: 'WEBSITES_PORT', value: '8080' }
         { name: 'HOSTNAME', value: '0.0.0.0' }
         { name: 'ACCOUNTING_RUNTIME_MODE', value: runtimeMode }
         { name: 'NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE', value: runtimeMode }
         { name: 'ACCOUNTING_API_BASE_URL', value: 'https://${apiApp.properties.defaultHostName}' }
         { name: 'NEXT_PUBLIC_API_BASE_URL', value: '/api-proxy' }
-        { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'false' }
-        { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }
+        { name: 'DOCKER_REGISTRY_SERVER_URL', value: 'https://ghcr.io' }
+        { name: 'WEBSITES_ENABLE_APP_SERVICE_STORAGE', value: 'false' }
       ]
     }
   }
