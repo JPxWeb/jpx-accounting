@@ -1,0 +1,15 @@
+---
+description: "Event sourcing and accounting domain logic rules"
+globs: "packages/domain/**"
+---
+
+# Domain Package Rules
+
+- LedgerStore interface is the contract — MemoryLedgerStore (demo) and SupabaseLedgerStore (normal) implement it
+- Events are NEVER mutated after creation — append-only with hash chain integrity
+- Projections (journal, balances, VAT) are derived from ledger lines — never treat them as source of truth
+- BAS accounts defined in `bas.ts` — Swedish chart of accounts (Balansräkning och Resultaträkning Schema)
+- Rules in `rules.ts` evaluate vouchers against Swedish compliance (Bokföringslagen, Skatteverket SKV 552B)
+- Suggestions are deterministic (rule-based), not AI-generated — `buildDeterministicSuggestion()` maps keywords to BAS accounts
+- Review decisions are single-use (idempotent) — replayed requests must not post duplicate ledger lines
+- Hash chain uses DJB2 (non-cryptographic) — adequate for demo, upgrade to SHA-256 for production

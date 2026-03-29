@@ -1,0 +1,15 @@
+---
+description: "Next.js App Router patterns for the web app"
+globs: "apps/web/**"
+---
+
+# Next.js Conventions
+
+- App Router with (shell) route group for main tab layout
+- Server Components by default — add "use client" only for interactivity (useState, useEffect, event handlers)
+- API calls go through the proxy at `app/api-proxy/[...path]/route.ts` — never call the Hono API directly from client code
+- Use React Query (TanStack Query v5) for server state
+- Tailwind CSS v4 for styling — use design tokens from `@jpx-accounting/ui-tokens`
+- Glass morphism: use `.glass-chrome`, `.glass-panel`, `.glass-panel-soft` utilities from globals.css
+- Mobile-first: design for bottom dock nav, then enhance for desktop sidebar
+- Motion 12 for animations — spring physics, keep under 300ms, respect prefers-reduced-motion

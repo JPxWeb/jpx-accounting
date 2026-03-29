@@ -1,0 +1,15 @@
+---
+description: "Project-wide conventions for JPX Accounting monorepo"
+alwaysApply: true
+---
+
+# JPX Accounting Conventions
+
+- Swedish locale throughout (sv-SE formatting, Swedish UI labels)
+- Append-only events are the source of truth — never overwrite evidence or ledger history
+- AI suggests, never mutates — AI outputs require human review before affecting ledger state
+- Runtime mode is explicit: `demo` uses in-memory scaffolds, `normal` fails closed if config missing
+- All types live in `@jpx-accounting/contracts` (Zod v4 schemas) — import types from there, not local definitions
+- Use `createId(prefix)` and `nowIso()` from `@jpx-accounting/domain` for IDs and timestamps
+- Financial amounts: always use tabular figures, IBM Plex Mono for display, `numeric(18,2)` in database
+- No decorative UI — Nordic restraint, functional minimalism, data density over decoration

@@ -1,0 +1,14 @@
+---
+description: "Zod v4 schema conventions for the contracts package"
+globs: "packages/contracts/**"
+---
+
+# Contracts Package Rules
+
+- This package is the SINGLE source of truth for all API shapes and domain types
+- Every schema exports both the Zod schema AND the inferred TypeScript type: `export type Foo = z.infer<typeof fooSchema>`
+- Use Zod v4 syntax (z.object, z.enum, z.string, etc.)
+- Schema names: camelCase ending in "Schema" (e.g., `voucherSchema`, `reviewTaskSchema`)
+- Type names: PascalCase matching the schema without "Schema" suffix (e.g., `Voucher`, `ReviewTask`)
+- Enum schemas for constrained values — never use string unions in other packages, import the enum schema
+- All monetary amounts are numbers (not strings) — validation happens at API boundary

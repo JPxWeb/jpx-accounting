@@ -1,0 +1,15 @@
+---
+description: "Test patterns for unit and E2E tests"
+globs: "tests/**"
+---
+
+# Testing Conventions
+
+- Unit tests: Node.js native `test()` from `node:test` + `assert` from `node:assert/strict`
+- Run single unit test: `tsx --test tests/unit/some-file.test.ts`
+- E2E tests: Playwright with `@playwright/test` — `expect()` assertions
+- E2E runs against dedicated test servers: API on port 3201 (demo mode, ALLOW_TEST_RESET=true), web on port 3200
+- E2E tests MUST call `resetApiState(request)` in `beforeEach` to start clean
+- E2E requires build first: `pnpm build && npx playwright test`
+- Both desktop and mobile (Pixel 7) projects run sequentially (1 worker)
+- Test file naming: `*.test.ts` for unit, `*.spec.ts` for E2E

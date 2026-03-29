@@ -1,0 +1,14 @@
+---
+description: "Hono API server patterns and route conventions"
+globs: "services/api/**"
+---
+
+# Hono API Conventions
+
+- Routes defined in `src/app.ts`, runtime wiring in `src/runtime.ts`
+- Store accessed via `currentStore` closure variable — all methods may be async (return `T | Promise<T>`)
+- Body parsing: use `parseBody(request, zodSchema)` helper for validation
+- Error handling: throw `HTTPException` for 400/404/503. Global `onError` catches and returns `{ error, runtimeMode }`
+- Review actions are separate endpoints: POST `/api/reviews/:id/approve`, `/reject`, `/book-without-vat`
+- `POST /api/testing/reset` is demo-only, gated by `allowTestReset` config
+- Auth middleware applies to `/api/*` routes — extracts userId, organizationId from JWT in normal mode, uses defaults in demo mode
