@@ -37,13 +37,13 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -62,7 +62,7 @@ jobs:
           if [ -d public ]; then cp -r public ../../web-deploy/apps/web/public; fi
 
       - name: Upload web artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: web-deploy
           path: web-deploy/
@@ -83,7 +83,7 @@ jobs:
           done
 
       - name: Upload API artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: api-deploy
           path: api-deploy/
@@ -95,15 +95,15 @@ jobs:
     needs: build
     environment: dev
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Azure Login
-        uses: azure/login@v2
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy Bicep infrastructure
-        uses: azure/arm-deploy@v2
+        uses: azure/arm-deploy@a1361c2c2cd398621955b16ca32e01c65ea340f5 # v2
         id: bicep
         with:
           subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -118,7 +118,7 @@ jobs:
           failOnStdErr: false
 
       - name: Download API artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: api-deploy
           path: api-deploy
@@ -127,13 +127,13 @@ jobs:
         run: cd api-deploy && zip -r ../api.zip . -x "*.git*"
 
       - name: Deploy API to App Service
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@84a80cfe7e9889f35148ed88c307e6e93bf02578 # v3
         with:
           app-name: ${{ steps.bicep.outputs.apiAppName }}
           package: api.zip
 
       - name: Download web artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: web-deploy
           path: web-deploy
@@ -142,7 +142,7 @@ jobs:
         run: cd web-deploy && zip -r ../web.zip . -x "*.git*"
 
       - name: Deploy web to App Service
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@84a80cfe7e9889f35148ed88c307e6e93bf02578 # v3
         with:
           app-name: ${{ steps.bicep.outputs.webAppName }}
           package: web.zip
