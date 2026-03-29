@@ -307,6 +307,16 @@ export const workspaceSnapshotSchema = z.object({
   alerts: z.array(complianceAlertSchema),
 });
 
+export const userProfileSchema = z.object({
+  userId: z.string(),
+  email: z.string().email(),
+  organizationId: z.string(),
+  workspaceId: z.string(),
+  role: roleSchema,
+});
+
+export type UserProfile = z.infer<typeof userProfileSchema>;
+
 export type Role = z.infer<typeof roleSchema>;
 export type AccountingMethod = z.infer<typeof accountingMethodSchema>;
 export type RuntimeMode = z.infer<typeof runtimeModeSchema>;
