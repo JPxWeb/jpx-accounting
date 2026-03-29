@@ -1,0 +1,29 @@
+# Dependencies and build outputs
+node_modules/
+.next/
+dist/
+out/
+
+# Large/binary files
+*.zip
+*.log
+pnpm-lock.yaml
+docker_default.log
+api-logs*.zip
+
+# Secrets
+.env
+.env.*
+
+# Infrastructure (rarely edited, complex Bicep)
+infra/
+
+# Test artifacts
+test-results/
+playwright-report/
+
+# Supabase local temp
+supabase/.temp/
+
+# Serena cache
+.serena/
