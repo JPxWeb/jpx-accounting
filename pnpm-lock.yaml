@@ -117,6 +117,9 @@ importers:
       '@jpx-accounting/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@jpx-accounting/supabase-client':
+        specifier: workspace:*
+        version: link:../supabase-client
 
   packages/reporting:
     dependencies:

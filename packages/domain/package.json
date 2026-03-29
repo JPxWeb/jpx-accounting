@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@jpx-accounting/contracts": "workspace:*"
+    "@jpx-accounting/contracts": "workspace:*",
+    "@jpx-accounting/supabase-client": "workspace:*"
   }
 }
