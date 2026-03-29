@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "anthropic.claude-code",
+    "bradlc.vscode-tailwindcss",
+    "biomejs.biome",
+    "ms-playwright.playwright",
+    "usernamehw.errorlens",
+    "eamodio.gitlens"
+  ]
+}
