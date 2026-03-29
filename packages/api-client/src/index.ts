@@ -1,13 +1,13 @@
 import type {
   AssistantRequest,
   AssistantSession,
-  EvidenceCreateResult,
   EvidenceCreateInput,
-  ReviewTask,
+  EvidenceCreateResult,
   ReviewDecisionInput,
+  ReviewTask,
   RuntimeMode,
-  SimulationRun,
   SimulationRequest,
+  SimulationRun,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
@@ -49,9 +49,7 @@ async function request<T>(baseUrl: string, path: string, options?: RequestOption
   const response = await fetch(`${baseUrl}${path}`, init);
 
   if (!response.ok) {
-    const payload = await response
-      .json()
-      .catch(() => undefined as { error?: string; message?: string } | undefined);
+    const payload = await response.json().catch(() => undefined as { error?: string; message?: string } | undefined);
     throw new AccountingApiError(
       response.status,
       payload?.error ?? payload?.message ?? `Request failed: ${response.status} ${response.statusText}`,

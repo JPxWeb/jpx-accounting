@@ -1,4 +1,4 @@
-import { createAiRuntime, type AiRuntime } from "@jpx-accounting/ai-core";
+import { createAiRuntime } from "@jpx-accounting/ai-core";
 import type { LedgerStore } from "@jpx-accounting/domain";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
 

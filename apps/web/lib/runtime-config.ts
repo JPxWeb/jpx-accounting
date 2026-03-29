@@ -1,4 +1,4 @@
-import { runtimeModeSchema, type RuntimeMode } from "@jpx-accounting/contracts";
+import { type RuntimeMode, runtimeModeSchema } from "@jpx-accounting/contracts";
 
 export type WebRuntimeConfig = {
   runtimeMode: RuntimeMode;
@@ -21,6 +21,6 @@ const configuredApiBaseUrl = normalizeOptionalValue(process.env.NEXT_PUBLIC_API_
 
 export const webRuntimeConfig: WebRuntimeConfig = {
   runtimeMode,
-  apiBaseUrl: runtimeMode === "normal" ? configuredApiBaseUrl ?? "/api-proxy" : configuredApiBaseUrl,
+  apiBaseUrl: runtimeMode === "normal" ? (configuredApiBaseUrl ?? "/api-proxy") : configuredApiBaseUrl,
   disableServiceWorker: process.env.NEXT_PUBLIC_DISABLE_SW === "true",
 };

@@ -176,12 +176,21 @@ a {
 
 /* Skeleton loading shimmer */
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .skeleton {
-  background: linear-gradient(90deg, var(--color-surface-muted) 0%, var(--color-bg-alt) 50%, var(--color-surface-muted) 100%);
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-muted) 0%,
+    var(--color-bg-alt) 50%,
+    var(--color-surface-muted) 100%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.8s ease-in-out infinite;
   border-radius: var(--radius-lg);
@@ -189,7 +198,9 @@ a {
 
 /* Micro-interactions */
 button {
-  transition: transform 100ms ease, box-shadow 150ms ease;
+  transition:
+    transform 100ms ease,
+    box-shadow 150ms ease;
 }
 
 button:active:not(:disabled) {
@@ -198,7 +209,9 @@ button:active:not(:disabled) {
 
 @media (hover: hover) {
   .glass-panel {
-    transition: border-color 200ms ease, box-shadow 200ms ease;
+    transition:
+      border-color 200ms ease,
+      box-shadow 200ms ease;
   }
 
   .glass-panel:hover {

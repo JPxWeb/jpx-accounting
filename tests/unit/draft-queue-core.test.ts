@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createDraftQueue, type CaptureDraft } from "../../apps/web/lib/draft-queue-core";
+import { type CaptureDraft, createDraftQueue } from "../../apps/web/lib/draft-queue-core";
 
 const draft: CaptureDraft = {
   id: "draft_1",

@@ -1,13 +1,6 @@
 import { z } from "zod";
 
-export const roleSchema = z.enum([
-  "Preparer",
-  "Approver",
-  "Accountant",
-  "Admin",
-  "Auditor",
-  "Advisor",
-]);
+export const roleSchema = z.enum(["Preparer", "Approver", "Accountant", "Admin", "Auditor", "Advisor"]);
 
 export const accountingMethodSchema = z.enum(["invoice", "cash"]);
 export const runtimeModeSchema = z.enum(["normal", "demo"]);
@@ -28,17 +21,8 @@ export const reviewDecisionSchema = z.enum([
   "request-more-evidence",
   "split-posting",
 ]);
-export const suggestionKindSchema = z.enum([
-  "explanation",
-  "recommendation",
-  "automation-request",
-]);
-export const reviewStatusSchema = z.enum([
-  "needs-review",
-  "approved",
-  "rejected",
-  "booked-without-vat",
-]);
+export const suggestionKindSchema = z.enum(["explanation", "recommendation", "automation-request"]);
+export const reviewStatusSchema = z.enum(["needs-review", "approved", "rejected", "booked-without-vat"]);
 export const trustLevelSchema = z.enum(["official", "internal", "user-upload"]);
 export const eventTypeSchema = z.enum([
   "EvidenceReceived",

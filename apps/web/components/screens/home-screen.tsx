@@ -1,18 +1,17 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EvidenceCreateInput, ReviewTask, Voucher, WorkspaceSnapshot } from "@jpx-accounting/contracts";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
-
-import { getErrorMessage } from "../../lib/request-errors";
-import { formatMoney, formatPercent, formatShortDate } from "../../lib/presentation";
 import { apiClient } from "../../lib/client";
-import { ScreenHeader } from "../ui/screen-header";
-import { UnavailableState } from "../ui/unavailable-state";
-import { StatusBadge } from "../ui/status-badge";
+import { formatMoney, formatPercent, formatShortDate } from "../../lib/presentation";
+import { getErrorMessage } from "../../lib/request-errors";
 import { MetricCard } from "../ui/metric-card";
+import { ScreenHeader } from "../ui/screen-header";
 import { SectionLabel } from "../ui/section-label";
 import { ScreenSkeleton } from "../ui/skeleton";
+import { StatusBadge } from "../ui/status-badge";
+import { UnavailableState } from "../ui/unavailable-state";
 
 const seedEvidenceInput: EvidenceCreateInput = {
   organizationId: "org_jpx",
@@ -137,7 +136,10 @@ export function HomeScreen() {
           <div className="grid grid-cols-2 gap-3">
             <MetricCard label="Pending reviews" value={pendingReviews.length} />
             <MetricCard label="Blocked VAT" value={blockedReviews.length} />
-            <MetricCard label="Close-ready tasks" value={closeRun?.checklist.filter((item) => item.status === "ready").length ?? 0} />
+            <MetricCard
+              label="Close-ready tasks"
+              value={closeRun?.checklist.filter((item) => item.status === "ready").length ?? 0}
+            />
             <MetricCard label="Policy alerts" value={alerts.length} />
           </div>
         }
@@ -151,7 +153,8 @@ export function HomeScreen() {
                 <SectionLabel>Review queue</SectionLabel>
                 <h2 className="mt-2 text-2xl font-semibold">Keep the next accounting decision obvious.</h2>
                 <p className="mt-2 max-w-2xl text-sm text-[var(--color-text-muted)]">
-                  Cards stay compact on mobile, expand on larger screens, and keep AI reasoning behind secondary disclosure until it is needed.
+                  Cards stay compact on mobile, expand on larger screens, and keep AI reasoning behind secondary
+                  disclosure until it is needed.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -201,8 +204,14 @@ export function HomeScreen() {
                     <div className="review-card-preview glass-panel-soft rounded-2xl p-4">
                       <div className="flex h-full flex-col justify-between gap-4">
                         <div className="flex items-center justify-between gap-3">
-                          <StatusBadge status={review.status} variant={reviewStatusVariant(review.status)} testId="review-status" />
-                          <span className="text-sm font-semibold tabular-nums text-[var(--color-text-muted)]">{confidence}</span>
+                          <StatusBadge
+                            status={review.status}
+                            variant={reviewStatusVariant(review.status)}
+                            testId="review-status"
+                          />
+                          <span className="text-sm font-semibold tabular-nums text-[var(--color-text-muted)]">
+                            {confidence}
+                          </span>
                         </div>
                         <div>
                           <div className="inline-flex rounded-xl bg-[var(--color-accent-soft)] px-4 py-3 text-xl font-semibold tracking-[0.08em] text-[var(--color-text)]">
@@ -219,24 +228,30 @@ export function HomeScreen() {
                     <div className="min-w-0">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="min-w-0">
-                          <SectionLabel>
-                            {voucher?.voucherNumber ?? "Pending voucher"}
-                          </SectionLabel>
+                          <SectionLabel>{voucher?.voucherNumber ?? "Pending voucher"}</SectionLabel>
                           <h3 className="mt-2 text-xl font-semibold text-[var(--color-text)]">{review.title}</h3>
-                          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-muted)]">{review.suggestedAction}</p>
+                          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-muted)]">
+                            {review.suggestedAction}
+                          </p>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-sm lg:w-[17rem]">
                           <div className="glass-panel-inset rounded-xl px-3 py-3">
                             <div className="text-eyebrow">Date</div>
-                            <div className="mt-2 font-semibold">{formatShortDate(voucher?.voucherFields.receiptDate)}</div>
+                            <div className="mt-2 font-semibold">
+                              {formatShortDate(voucher?.voucherFields.receiptDate)}
+                            </div>
                           </div>
                           <div className="glass-panel-inset rounded-xl px-3 py-3">
                             <div className="text-eyebrow">Gross</div>
-                            <div className="mt-2 font-semibold tabular-nums">{formatMoney(voucher?.voucherFields.grossAmount)}</div>
+                            <div className="mt-2 font-semibold tabular-nums">
+                              {formatMoney(voucher?.voucherFields.grossAmount)}
+                            </div>
                           </div>
                           <div className="glass-panel-inset rounded-xl px-3 py-3">
                             <div className="text-eyebrow">VAT</div>
-                            <div className="mt-2 font-semibold tabular-nums">{formatMoney(voucher?.voucherFields.vatAmount)}</div>
+                            <div className="mt-2 font-semibold tabular-nums">
+                              {formatMoney(voucher?.voucherFields.vatAmount)}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -258,13 +273,13 @@ export function HomeScreen() {
                       <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)]">
                         <div className="glass-panel-soft rounded-2xl p-4">
                           <SectionLabel>AI suggestion</SectionLabel>
-                          <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">{review.suggestion?.reasoning}</p>
+                          <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
+                            {review.suggestion?.reasoning}
+                          </p>
                         </div>
 
                         <details className="glass-panel-soft rounded-2xl p-4">
-                          <summary className="text-eyebrow cursor-pointer list-none">
-                            Rule hits and provenance
-                          </summary>
+                          <summary className="text-eyebrow cursor-pointer list-none">Rule hits and provenance</summary>
                           <div className="mt-4 space-y-3">
                             {review.suggestion?.ruleHits.map((rule) => (
                               <div key={rule.id} className="glass-panel-inset rounded-xl px-3 py-3 text-sm">
@@ -274,7 +289,10 @@ export function HomeScreen() {
                             ))}
                             <div className="grid gap-2">
                               {review.provenanceTimeline.map((item) => (
-                                <div key={item.id} className="flex items-center justify-between gap-4 text-sm text-[var(--color-text-muted)]">
+                                <div
+                                  key={item.id}
+                                  className="flex items-center justify-between gap-4 text-sm text-[var(--color-text-muted)]"
+                                >
                                   <span>{item.label}</span>
                                   <span className="text-eyebrow">{item.actor}</span>
                                 </div>
@@ -323,15 +341,17 @@ export function HomeScreen() {
             <div className="mt-4 space-y-3">
               {balances.slice(0, 5).map((balance) => (
                 <div key={balance.accountNumber} className="glass-panel-soft rounded-2xl px-4 py-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-sm font-semibold text-[var(--color-text)]">{balance.accountName}</p>
-                        <p className="mt-1 text-xs text-mono text-[var(--color-text-muted)]">{balance.accountNumber}</p>
-                      </div>
-                      <p className="text-sm font-semibold tabular-nums text-[var(--color-text)]">{formatMoney(balance.balance)}</p>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--color-text)]">{balance.accountName}</p>
+                      <p className="mt-1 text-xs text-mono text-[var(--color-text-muted)]">{balance.accountNumber}</p>
                     </div>
+                    <p className="text-sm font-semibold tabular-nums text-[var(--color-text)]">
+                      {formatMoney(balance.balance)}
+                    </p>
                   </div>
-                ))}
+                </div>
+              ))}
             </div>
           </section>
 

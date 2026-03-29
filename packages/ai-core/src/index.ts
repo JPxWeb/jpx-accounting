@@ -1,8 +1,7 @@
-import OpenAI from "openai";
-import { z } from "zod";
-
 import type { AccountingSuggestion, AssistantSession, Citation, RuntimeMode, Voucher } from "@jpx-accounting/contracts";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "@jpx-accounting/domain";
+import OpenAI from "openai";
+import { z } from "zod";
 
 const answerSchema = z.object({
   answer: z.string(),
@@ -110,9 +109,7 @@ class ResponsesAiRuntime implements AiRuntime {
       input: prompt,
     });
 
-    const rawText =
-      response.output_text ||
-      "{\"answer\":\"No grounded answer could be produced.\"}";
+    const rawText = response.output_text || '{"answer":"No grounded answer could be produced."}';
 
     return {
       id: crypto.randomUUID(),

@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { IBM_Plex_Mono, Manrope } from "next/font/google";
 import type { ReactNode } from "react";
-import { Manrope, IBM_Plex_Mono } from "next/font/google";
 
 import { QueryProvider } from "../components/providers/query-provider";
 import { ServiceWorkerRegistrar } from "../components/pwa/service-worker-registrar";

@@ -1,22 +1,21 @@
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { HTTPException } from "hono/http-exception";
-import type { ZodType } from "zod";
-
+import { type AiRuntime, AiRuntimeUnavailableError } from "@jpx-accounting/ai-core";
 import {
   assistantRequestSchema,
   evidenceComposeInputSchema,
   evidenceCreateInputSchema,
   knowledgeQuerySchema,
+  type RuntimeMode,
   reviewDecisionInputSchema,
   simulationRequestSchema,
   suggestionRequestSchema,
-  type RuntimeMode,
   uploadInitSchema,
 } from "@jpx-accounting/contracts";
-import { AiRuntimeUnavailableError, type AiRuntime } from "@jpx-accounting/ai-core";
 import type { LedgerStore } from "@jpx-accounting/domain";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
+import type { ZodType } from "zod";
 
 import { LedgerStoreUnavailableError } from "./runtime";
 
@@ -46,7 +45,7 @@ async function parseBody<T>(request: Request, schema: ZodType<T>) {
 function buildSIEExport(store: LedgerStore) {
   // Keep the scaffold export intentionally small but structurally valid so downstream accountant tooling can be exercised early.
   const reports = store.getReports();
-  const lines = ["#FLAGGA 0", "#PROGRAM \"JPX Accounting\" \"0.1.0\"", "#FORMAT PC8"];
+  const lines = ["#FLAGGA 0", '#PROGRAM "JPX Accounting" "0.1.0"', "#FORMAT PC8"];
 
   for (const entry of reports.journal) {
     lines.push(`#VER A "${entry.voucherId}" "${entry.bookedAt.slice(0, 10)}" "${entry.description}"`);
@@ -167,15 +166,14 @@ export function createApp({ store, aiRuntime, runtimeMode, allowTestReset }: Cre
   app.post("/api/assistant/sessions", async (context) => {
     const input = await parseBody(context.req.raw, assistantRequestSchema);
     const snapshot = currentStore.getSnapshot();
-    const citations =
-      snapshot.reviews[0]?.suggestion?.citations ?? [
-        {
-          id: "internal_arch",
-          title: "Internal architecture policy",
-          sourceType: "internal",
-          excerpt: "AI suggestions require human review before posting.",
-        },
-      ];
+    const citations = snapshot.reviews[0]?.suggestion?.citations ?? [
+      {
+        id: "internal_arch",
+        title: "Internal architecture policy",
+        sourceType: "internal",
+        excerpt: "AI suggestions require human review before posting.",
+      },
+    ];
     const answer = await aiRuntime.answerQuestion(input.question, citations);
     return context.json(answer, 201);
   });
@@ -219,13 +217,7 @@ export function createApp({ store, aiRuntime, runtimeMode, allowTestReset }: Cre
     const body = await context.req.json().catch(() => ({}));
     return context.json({
       server: "jpx-accounting",
-      tools: [
-        "lookup_policy",
-        "lookup_vat_rule",
-        "lookup_supplier_history",
-        "query_reports",
-        "run_simulation",
-      ],
+      tools: ["lookup_policy", "lookup_vat_rule", "lookup_supplier_history", "query_reports", "run_simulation"],
       request: body,
     });
   });

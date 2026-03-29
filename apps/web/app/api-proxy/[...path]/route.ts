@@ -1,10 +1,6 @@
 import { getWebServerRuntimeConfig } from "../../../lib/server-runtime-config";
 
-const responseHeaders = new Set([
-  "content-type",
-  "content-disposition",
-  "cache-control",
-]);
+const responseHeaders = new Set(["content-type", "content-disposition", "cache-control"]);
 
 const requestHeaders = ["accept", "authorization", "content-type", "x-request-id"] as const;
 

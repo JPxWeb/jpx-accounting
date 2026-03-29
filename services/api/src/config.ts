@@ -1,4 +1,4 @@
-import { runtimeModeSchema, type RuntimeMode } from "@jpx-accounting/contracts";
+import { type RuntimeMode, runtimeModeSchema } from "@jpx-accounting/contracts";
 
 export type ApiRuntimeConfig = {
   port: number;

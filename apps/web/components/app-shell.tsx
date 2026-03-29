@@ -1,10 +1,10 @@
 "use client";
 
-import type { MouseEvent, ReactNode } from "react";
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "motion/react";
+import type { MouseEvent, ReactNode } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { saveCaptureDraft } from "../lib/draft-queue";
 import type { DraftQueueSaveResult } from "../lib/draft-queue-core";
@@ -82,7 +82,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const runtimeModeLabel = formatRuntimeModeLabel(webRuntimeConfig.runtimeMode);
   const activeNavItem = useMemo(
-    () => navigation.find((item) => (item.href === "/" ? pathname === item.href : pathname.startsWith(item.href))) ?? navigation[0]!,
+    () =>
+      navigation.find((item) => (item.href === "/" ? pathname === item.href : pathname.startsWith(item.href))) ??
+      navigation[0]!,
     [pathname],
   );
 
@@ -141,7 +143,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [captureOpen, closeCaptureSheet]);
+  }, [captureOpen]);
 
   async function createDraft(mode: { key: string; label: string }) {
     try {
@@ -180,7 +182,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   variant={webRuntimeConfig.runtimeMode === "demo" ? "warning" : "accent"}
                 />
               </div>
-              <h1 className="mt-3 text-2xl font-semibold leading-tight">Trustworthy AI bookkeeping for Sweden-first teams.</h1>
+              <h1 className="mt-3 text-2xl font-semibold leading-tight">
+                Trustworthy AI bookkeeping for Sweden-first teams.
+              </h1>
               <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
                 Compliance-critical flows stay deterministic. AI guides, cites, and accelerates the review surface.
               </p>
@@ -209,14 +213,18 @@ export function AppShell({ children }: { children: ReactNode }) {
                   >
                     <span
                       className={`mt-0.5 rounded-xl p-2 ${
-                        active ? "bg-white/16 text-white" : "bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]"
+                        active
+                          ? "bg-white/16 text-white"
+                          : "bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]"
                       }`}
                     >
                       <Icon className="size-4" />
                     </span>
                     <span className="min-w-0">
                       <span className="block text-sm font-semibold">{item.label}</span>
-                      <span className={`mt-1 block text-xs ${active ? "text-white/78" : "text-[var(--color-text-muted)]"}`}>
+                      <span
+                        className={`mt-1 block text-xs ${active ? "text-white/78" : "text-[var(--color-text-muted)]"}`}
+                      >
                         {item.summary}
                       </span>
                     </span>
@@ -273,7 +281,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <div className="mt-1 flex min-w-0 items-center gap-2">
                   <p className="truncate text-sm font-semibold text-[var(--color-text)]">{activeNavItem.label}</p>
                   <span className="hidden h-1 w-1 rounded-full bg-[var(--color-text-soft)] sm:block" />
-                  <p className="hidden truncate text-sm text-[var(--color-text-muted)] sm:block">{activeNavItem.summary}</p>
+                  <p className="hidden truncate text-sm text-[var(--color-text-muted)] sm:block">
+                    {activeNavItem.summary}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -340,9 +350,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={`flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-center text-caption font-medium transition ${
-                  active
-                    ? "bg-[var(--color-accent)] text-white"
-                    : "text-[var(--color-text-muted)]"
+                  active ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-muted)]"
                 }`}
               >
                 <Icon className="size-4" />
@@ -396,8 +404,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </button>
               </div>
               <p id="capture-sheet-description" className="mt-2 text-sm text-[var(--color-text-muted)]">
-                Capture starts locally first so the UI stays responsive. The result tells you whether the draft was stored persistently
-                or only for this tab.
+                Capture starts locally first so the UI stays responsive. The result tells you whether the draft was
+                stored persistently or only for this tab.
               </p>
               <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {draftModes.map((mode, index) => (
@@ -410,7 +418,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                     className="glass-panel rounded-xl px-4 py-4 text-left"
                   >
                     <p className="text-sm font-semibold text-[var(--color-text)]">{mode.label}</p>
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">Queue locally, then enrich with AI and rules.</p>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                      Queue locally, then enrich with AI and rules.
+                    </p>
                   </button>
                 ))}
               </div>

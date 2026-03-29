@@ -9,7 +9,9 @@ test.beforeEach(async ({ request }) => {
 test("assistant page returns a grounded advisory answer", async ({ page }) => {
   await page.goto("/assistant");
 
-  await page.getByTestId("assistant-question").fill("What should we confirm before deducting VAT on a supplier invoice?");
+  await page
+    .getByTestId("assistant-question")
+    .fill("What should we confirm before deducting VAT on a supplier invoice?");
   await page.getByTestId("assistant-submit").click();
 
   await expect(page.getByTestId("assistant-response").first()).toContainText(

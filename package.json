@@ -14,9 +14,13 @@
     "check": "pnpm typecheck && pnpm build",
     "test:e2e": "pnpm build && playwright test",
     "test:e2e:headed": "pnpm build && playwright test --headed",
-    "test:e2e:install": "playwright install chromium"
+    "test:e2e:install": "playwright install chromium",
+    "lint": "biome check .",
+    "lint:fix": "biome check --fix .",
+    "format": "biome format --write ."
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.9",
     "@playwright/test": "^1.58.2",
     "@types/node": "25.5.0",
     "tsx": "4.21.0",

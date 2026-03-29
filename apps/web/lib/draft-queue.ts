@@ -2,7 +2,7 @@
 
 import { openDB } from "idb";
 
-import { createDraftQueue, type CaptureDraft, type DraftQueueAdapter } from "./draft-queue-core";
+import { type CaptureDraft, createDraftQueue, type DraftQueueAdapter } from "./draft-queue-core";
 
 const databaseName = "jpx-accounting-drafts";
 const storeName = "capture-drafts";

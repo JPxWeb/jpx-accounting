@@ -2,12 +2,7 @@ const cachePrefix = "jpx-accounting-static-";
 
 export const staticAssetCacheName = `${cachePrefix}v2`;
 
-const exactCacheablePaths = new Set([
-  "/manifest.webmanifest",
-  "/favicon.ico",
-  "/apple-icon.png",
-  "/icon.png",
-]);
+const exactCacheablePaths = new Set(["/manifest.webmanifest", "/favicon.ico", "/apple-icon.png", "/icon.png"]);
 
 type HeaderShape = Headers | Record<string, string | undefined>;
 

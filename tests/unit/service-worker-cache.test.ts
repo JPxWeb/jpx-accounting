@@ -61,5 +61,7 @@ test("service worker respects response cache-control", () => {
 });
 
 test("service worker removes obsolete cache versions", () => {
-  assert.deepEqual(getObsoleteStaticCaches(["jpx-accounting-static-v1", staticAssetCacheName]), ["jpx-accounting-static-v1"]);
+  assert.deepEqual(getObsoleteStaticCaches(["jpx-accounting-static-v1", staticAssetCacheName]), [
+    "jpx-accounting-static-v1",
+  ]);
 });
