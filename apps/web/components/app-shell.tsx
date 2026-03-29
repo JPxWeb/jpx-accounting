@@ -315,7 +315,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           ) : null}
 
-          <main className="workspace-canvas">{children}</main>
+          <main id="main-content" className="workspace-canvas">
+            {children}
+          </main>
         </div>
       </div>
 
