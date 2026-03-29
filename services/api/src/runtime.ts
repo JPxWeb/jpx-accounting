@@ -1,6 +1,7 @@
 import { createAiRuntime } from "@jpx-accounting/ai-core";
 import type { LedgerStore } from "@jpx-accounting/domain";
-import { MemoryLedgerStore } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, SupabaseLedgerStore } from "@jpx-accounting/domain";
+import { createServiceClient } from "@jpx-accounting/supabase-client";
 
 import type { ApiRuntimeConfig } from "./config";
 
@@ -78,6 +79,27 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
       store: new MemoryLedgerStore(),
       aiRuntime: createAiRuntime({
         runtimeMode: config.runtimeMode,
+      }),
+    };
+  }
+
+  if (config.supabase.url && config.supabase.serviceRoleKey) {
+    const serviceClient = createServiceClient({
+      url: config.supabase.url,
+      serviceRoleKey: config.supabase.serviceRoleKey,
+    });
+
+    return {
+      runtimeMode: config.runtimeMode,
+      store: new SupabaseLedgerStore(serviceClient, {
+        organizationId: "org_default",
+        workspaceId: "workspace_main",
+      }),
+      aiRuntime: createAiRuntime({
+        runtimeMode: config.runtimeMode,
+        endpoint: config.azureOpenAi.endpoint,
+        apiKey: config.azureOpenAi.apiKey,
+        model: config.azureOpenAi.model,
       }),
     };
   }

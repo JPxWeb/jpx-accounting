@@ -9,6 +9,10 @@ export type ApiRuntimeConfig = {
     apiKey?: string | undefined;
     model?: string | undefined;
   };
+  supabase: {
+    url?: string | undefined;
+    serviceRoleKey?: string | undefined;
+  };
 };
 
 function normalizeOptionalValue(value?: string) {
@@ -27,6 +31,10 @@ export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiR
       endpoint: normalizeOptionalValue(env.AZURE_OPENAI_ENDPOINT),
       apiKey: normalizeOptionalValue(env.AZURE_OPENAI_API_KEY),
       model: normalizeOptionalValue(env.AZURE_OPENAI_MODEL),
+    },
+    supabase: {
+      url: normalizeOptionalValue(env.SUPABASE_URL),
+      serviceRoleKey: normalizeOptionalValue(env.SUPABASE_SERVICE_ROLE_KEY),
     },
   };
 }

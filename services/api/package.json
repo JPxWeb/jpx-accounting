@@ -13,6 +13,7 @@
     "@jpx-accounting/ai-core": "workspace:*",
     "@jpx-accounting/contracts": "workspace:*",
     "@jpx-accounting/domain": "workspace:*",
+    "@jpx-accounting/supabase-client": "workspace:*",
     "hono": "4.12.8",
     "zod": "4.3.6"
   }

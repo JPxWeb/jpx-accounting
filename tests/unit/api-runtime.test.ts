@@ -10,6 +10,7 @@ test("demo runtime exposes the seeded workspace", async () => {
     runtimeMode: "demo",
     allowTestReset: false,
     azureOpenAi: {},
+    supabase: {},
   });
   const app = createApp({
     ...dependencies,
@@ -29,6 +30,7 @@ test("normal runtime fails closed instead of returning demo data", async () => {
     runtimeMode: "normal",
     allowTestReset: false,
     azureOpenAi: {},
+    supabase: {},
   });
   const app = createApp({
     ...dependencies,
