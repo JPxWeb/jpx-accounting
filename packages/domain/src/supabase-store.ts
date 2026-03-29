@@ -366,53 +366,60 @@ export class SupabaseLedgerStore implements LedgerStore {
     );
   }
 
-  getEvidenceContext(_evidenceId: string) {
-    // Note: This method is synchronous in the interface but needs async DB access.
-    // For the initial implementation, we return undefined and log.
-    // TODO: The LedgerStore interface should be made async in a follow-up.
-    console.warn("SupabaseLedgerStore.getEvidenceContext: sync interface limitation — returning undefined");
+  async getEvidenceContext(
+    _evidenceId: string,
+  ): Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined> {
+    // TODO: Query ledger.evidence_objects when fully implemented
     return undefined;
   }
 
-  findReviewByVoucher(_voucherId: string) {
-    console.warn("SupabaseLedgerStore.findReviewByVoucher: sync interface limitation — returning undefined");
+  async findReviewByVoucher(_voucherId: string): Promise<ReviewTask | undefined> {
+    // TODO: Query ledger.review_tasks when fully implemented
     return undefined;
   }
 
-  getReviewFeed(): ReviewTask[] {
-    console.warn("SupabaseLedgerStore.getReviewFeed: sync interface limitation — returning []");
+  async getReviewFeed(): Promise<ReviewTask[]> {
+    // TODO: Query ledger.review_tasks when fully implemented
     return [];
   }
 
-  getReports(): ReportBundle {
+  async getReports(): Promise<ReportBundle> {
+    // TODO: Build from ledger lines when fully implemented
     return { journal: [], balances: [], vat: [] };
   }
 
-  getSnapshot(): WorkspaceSnapshot {
+  async getSnapshot(): Promise<WorkspaceSnapshot> {
     return {
       evidence: [],
       vouchers: [],
-      reviews: [],
-      reports: this.getReports(),
+      reviews: await this.getReviewFeed(),
+      reports: await this.getReports(),
       assistantExamples: [],
-      closeRun: this.getCloseRun(),
+      closeRun: await this.getCloseRun(),
       alerts: [],
     };
   }
 
-  getEvents(): LedgerEvent[] {
+  async getEvents(): Promise<LedgerEvent[]> {
+    // TODO: Query ledger.events when fully implemented
     return [];
   }
 
-  suggestVoucher(_voucherId: string) {
+  async suggestVoucher(_voucherId: string): Promise<AccountingSuggestion | undefined> {
+    // TODO: Query ledger.suggestions when fully implemented
     return undefined;
   }
 
-  applyReviewDecision(_reviewId: string, _action: ReviewAction, _input: ReviewDecisionInput) {
+  async applyReviewDecision(
+    _reviewId: string,
+    _action: ReviewAction,
+    _input: ReviewDecisionInput,
+  ): Promise<ReviewTask | undefined> {
+    // TODO: Implement review decision persistence
     return undefined;
   }
 
-  answerAssistantQuestion(question: string): AssistantSession {
+  async answerAssistantQuestion(question: string): Promise<AssistantSession> {
     return {
       id: createId("assistant"),
       question,
@@ -422,7 +429,7 @@ export class SupabaseLedgerStore implements LedgerStore {
     };
   }
 
-  runSimulation(input: SimulationRequest): SimulationRun {
+  async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
     return {
       id: createId("sim"),
       title: input.title,
@@ -432,7 +439,7 @@ export class SupabaseLedgerStore implements LedgerStore {
     };
   }
 
-  getCloseRun(): CloseRun {
+  async getCloseRun(): Promise<CloseRun> {
     return {
       id: "close_current",
       period: new Date().toISOString().slice(0, 7),

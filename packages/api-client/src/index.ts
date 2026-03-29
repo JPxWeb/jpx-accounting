@@ -74,31 +74,31 @@ export class AccountingApiClient {
   }
 
   async getSnapshot() {
-    if (this.fallbackStore) return this.fallbackStore.getSnapshot();
+    if (this.fallbackStore) return await this.fallbackStore.getSnapshot();
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return request<WorkspaceSnapshot>(this.baseUrl, "/api/workspace");
   }
 
   async createEvidence(input: EvidenceCreateInput) {
-    if (this.fallbackStore) return this.fallbackStore.createEvidence(input);
+    if (this.fallbackStore) return await this.fallbackStore.createEvidence(input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return request<EvidenceCreateResult>(this.baseUrl, "/api/evidence", { method: "POST", json: input });
   }
 
   async approveReview(reviewId: string, input: ReviewDecisionInput): Promise<ReviewTask | undefined> {
-    if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "approve", input);
+    if (this.fallbackStore) return await this.fallbackStore.applyReviewDecision(reviewId, "approve", input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return request<ReviewTask>(this.baseUrl, `/api/reviews/${reviewId}/approve`, { method: "POST", json: input });
   }
 
   async askAssistant(input: AssistantRequest): Promise<AssistantSession> {
-    if (this.fallbackStore) return this.fallbackStore.answerAssistantQuestion(input.question);
+    if (this.fallbackStore) return await this.fallbackStore.answerAssistantQuestion(input.question);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return request<AssistantSession>(this.baseUrl, "/api/assistant/sessions", { method: "POST", json: input });
   }
 
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
-    if (this.fallbackStore) return this.fallbackStore.runSimulation(input);
+    if (this.fallbackStore) return await this.fallbackStore.runSimulation(input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return request<SimulationRun>(this.baseUrl, "/api/simulations/run", { method: "POST", json: input });
   }

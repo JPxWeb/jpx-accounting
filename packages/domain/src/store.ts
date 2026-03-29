@@ -28,25 +28,28 @@ type LedgerLine = Parameters<typeof buildJournal>[0][number];
 export type ReviewAction = "approve" | "reject" | "book-without-vat";
 
 export interface LedgerStore {
-  createEvidence(input: EvidenceCreateInput): EvidenceCreateResult;
-  composeEvidence(input: EvidenceComposeInput): EvidencePacket;
-  getEvidenceContext(evidenceId: string):
-    | {
-        evidence: EvidenceObject;
-        packet?: EvidencePacket;
-        voucher?: Voucher;
-      }
-    | undefined;
-  findReviewByVoucher(voucherId: string): ReviewTask | undefined;
-  getReviewFeed(): ReviewTask[];
-  getReports(): ReportBundle;
-  getSnapshot(): WorkspaceSnapshot;
-  getEvents(): LedgerEvent[];
-  suggestVoucher(voucherId: string): AccountingSuggestion | undefined;
-  applyReviewDecision(reviewId: string, action: ReviewAction, input: ReviewDecisionInput): ReviewTask | undefined;
-  answerAssistantQuestion(question: string): AssistantSession;
-  runSimulation(input: SimulationRequest): SimulationRun;
-  getCloseRun(): CloseRun;
+  createEvidence(input: EvidenceCreateInput): EvidenceCreateResult | Promise<EvidenceCreateResult>;
+  composeEvidence(input: EvidenceComposeInput): EvidencePacket | Promise<EvidencePacket>;
+  getEvidenceContext(
+    evidenceId: string,
+  ):
+    | { evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher }
+    | undefined
+    | Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined>;
+  findReviewByVoucher(voucherId: string): ReviewTask | undefined | Promise<ReviewTask | undefined>;
+  getReviewFeed(): ReviewTask[] | Promise<ReviewTask[]>;
+  getReports(): ReportBundle | Promise<ReportBundle>;
+  getSnapshot(): WorkspaceSnapshot | Promise<WorkspaceSnapshot>;
+  getEvents(): LedgerEvent[] | Promise<LedgerEvent[]>;
+  suggestVoucher(voucherId: string): AccountingSuggestion | undefined | Promise<AccountingSuggestion | undefined>;
+  applyReviewDecision(
+    reviewId: string,
+    action: ReviewAction,
+    input: ReviewDecisionInput,
+  ): ReviewTask | undefined | Promise<ReviewTask | undefined>;
+  answerAssistantQuestion(question: string): AssistantSession | Promise<AssistantSession>;
+  runSimulation(input: SimulationRequest): SimulationRun | Promise<SimulationRun>;
+  getCloseRun(): CloseRun | Promise<CloseRun>;
 }
 
 const defaultOrganizationId = "org_jpx";
