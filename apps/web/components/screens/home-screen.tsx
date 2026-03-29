@@ -161,10 +161,11 @@ export function HomeScreen() {
                 <button
                   type="button"
                   onClick={() => createEvidence.mutate()}
+                  disabled={createEvidence.isPending}
                   data-testid="simulate-upload"
-                  className="glass-panel-soft rounded-xl px-4 py-2.5 text-sm font-medium text-[var(--color-text)]"
+                  className="glass-panel-soft rounded-xl px-4 py-2.5 text-sm font-medium text-[var(--color-text)] disabled:opacity-60"
                 >
-                  Create sample receipt
+                  {createEvidence.isPending ? "Creating\u2026" : "Create sample receipt"}
                 </button>
                 <button
                   type="button"
@@ -173,7 +174,7 @@ export function HomeScreen() {
                   disabled={!firstPendingReview || approveFirst.isPending}
                   className="rounded-xl bg-[var(--color-accent)] px-4 py-2.5 text-sm font-medium text-white shadow-[var(--shadow-accent)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Approve next review
+                  {approveFirst.isPending ? "Approving\u2026" : "Approve next review"}
                 </button>
               </div>
             </div>
