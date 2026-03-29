@@ -1,0 +1,375 @@
+2026-03-26T15:38:25.0809458Z    _____                               
+2026-03-26T15:38:25.1527076Z   /  _  \ __________ _________   ____  
+2026-03-26T15:38:25.1527325Z  /  /_\  \\___   /  |  \_  __ \_/ __ \ 
+2026-03-26T15:38:25.1527351Z /    |    \/    /|  |  /|  | \/\  ___/ 
+2026-03-26T15:38:25.1527371Z \____|__  /_____ \____/ |__|    \___  >
+2026-03-26T15:38:25.1527415Z         \/      \/                  \/ 
+2026-03-26T15:38:25.1527488Z A P P   S E R V I C E   O N   L I N U X
+2026-03-26T15:38:25.1527506Z 
+2026-03-26T15:38:25.1527530Z Documentation    : http://aka.ms/webapp-linux
+2026-03-26T15:38:25.1527554Z NodeJS quickstart: https://aka.ms/node-qs
+2026-03-26T15:38:25.1527575Z NodeJS Version   : v24.13.0
+2026-03-26T15:38:25.1527594Z Instance Name    : lw1sdlwk000AFS
+2026-03-26T15:38:25.1527642Z Instance Id      : 192ae7e12efabd86b8f1992c5d0955e31956c2538c35216038ae1c4c72bce58c
+2026-03-26T15:38:25.1527661Z 
+2026-03-26T15:38:25.1527681Z Note: Any data outside '/home' is not persisted
+2026-03-26T15:38:35.8015144Z  * Starting OpenBSD Secure Shell server sshd
+2026-03-26T15:38:35.9120034Z    ...done.
+2026-03-26T15:38:35.9903038Z WEBSITES_INCLUDE_CLOUD_CERTS is not set to true.
+2026-03-26T15:38:36.2440726Z Updating certificates in /etc/ssl/certs...
+2026-03-26T15:39:17.6474281Z rehash: warning: skipping duplicate certificate in SSLcom-TLS-Root-2022-ECC.pem
+2026-03-26T15:39:17.6649091Z rehash: warning: skipping duplicate certificate in SSLcom-TLS-Root-2022-RSA.pem
+2026-03-26T15:39:18.0496382Z rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+2026-03-26T15:39:18.1699899Z 4 added, 0 removed; done.
+2026-03-26T15:39:18.1900043Z Running hooks in /etc/ca-certificates/update.d...
+2026-03-26T15:39:18.2092681Z done.
+2026-03-26T15:39:18.3393740Z CA certificates copied and updated successfully.
+2026-03-26T15:39:18.9241432Z  * Starting periodic command scheduler cron
+2026-03-26T15:39:19.0230279Z    ...done.
+2026-03-26T15:39:19.7870023Z Found build manifest file at '/home/site/wwwroot/oryx-manifest.toml'. Deserializing it...
+2026-03-26T15:39:19.8060102Z Could not find operation ID in manifest. Generating an operation id...
+2026-03-26T15:39:19.8065950Z Build Operation ID: 6cc4b0da-e566-48e5-82d4-4415fdc43442
+2026-03-26T15:39:20.8129542Z Environment Variables for Application Insight's IPA Codeless Configuration exists..
+2026-03-26T15:39:20.8616998Z Writing output script to '/opt/startup/startup.sh'
+2026-03-26T15:39:21.2228624Z Running #!/bin/sh
+2026-03-26T15:39:21.2228999Z 
+2026-03-26T15:39:21.2229029Z # Enter the source directory to make sure the script runs where the user expects
+2026-03-26T15:39:21.2229074Z cd "/home/site/wwwroot"
+2026-03-26T15:39:21.2229092Z 
+2026-03-26T15:39:21.2229112Z export NODE_PATH=/usr/local/lib/node_modules:$NODE_PATH
+2026-03-26T15:39:21.2229131Z if [ -z "$PORT" ]; then
+2026-03-26T15:39:21.2229148Z 		export PORT=8080
+2026-03-26T15:39:21.2229181Z fi
+2026-03-26T15:39:21.2229199Z 
+2026-03-26T15:39:21.2229219Z echo Found tar.gz based node_modules.
+2026-03-26T15:39:21.2229241Z extractionCommand="tar -xzf node_modules.tar.gz -C /node_modules"
+2026-03-26T15:39:21.2229262Z echo "Removing existing modules directory from root..."
+2026-03-26T15:39:21.2229280Z rm -fr /node_modules
+2026-03-26T15:39:21.2229298Z mkdir -p /node_modules
+2026-03-26T15:39:21.2229334Z echo Extracting modules...
+2026-03-26T15:39:21.2229352Z $extractionCommand
+2026-03-26T15:39:21.2229396Z export NODE_PATH="/node_modules":$NODE_PATH
+2026-03-26T15:39:21.2229417Z export PATH=/node_modules/.bin:$PATH
+2026-03-26T15:39:21.2229436Z if [ -d node_modules ]; then
+2026-03-26T15:39:21.2229457Z     mv -f node_modules _del_node_modules || true
+2026-03-26T15:39:21.2229488Z fi
+2026-03-26T15:39:21.2229505Z 
+2026-03-26T15:39:21.2229523Z if [ -d /node_modules ]; then
+2026-03-26T15:39:21.2229543Z     ln -sfn /node_modules ./node_modules 
+2026-03-26T15:39:21.2229561Z fi
+2026-03-26T15:39:21.2229577Z 
+2026-03-26T15:39:21.2229594Z echo "Done."
+2026-03-26T15:39:21.2229615Z PATH="$PATH:/home/site/wwwroot" npx tsx services/api/src/index.ts
+2026-03-26T15:39:21.2229649Z Found tar.gz based node_modules.
+2026-03-26T15:39:21.2229669Z Removing existing modules directory from root...
+2026-03-26T15:39:21.2648569Z Extracting modules...
+2026-03-26T15:39:26.2037239Z Done.
+2026-03-26T15:39:37.9792259Z npm info using npm@10.9.2
+2026-03-26T15:39:38.0412957Z npm info using node@v24.13.0
+2026-03-26T15:40:01.5650562Z npm http fetch GET 200 https://registry.npmjs.org/npm 764ms
+2026-03-26T15:40:04.9715757Z sh: 1: tsx: not found
+2026-03-26T15:40:05.0303903Z npm notice
+2026-03-26T15:40:05.0304385Z npm notice New major version of npm available! 10.9.2 -> 11.12.0
+2026-03-26T15:40:05.0304431Z npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.12.0
+2026-03-26T15:40:05.0304455Z npm notice To update run: npm install -g npm@11.12.0
+2026-03-26T15:40:05.0304474Z npm notice
+2026-03-26T15:40:52.2205359Z    _____                               
+2026-03-26T15:40:52.2205844Z   /  _  \ __________ _________   ____  
+2026-03-26T15:40:52.2205867Z  /  /_\  \\___   /  |  \_  __ \_/ __ \ 
+2026-03-26T15:40:52.2205887Z /    |    \/    /|  |  /|  | \/\  ___/ 
+2026-03-26T15:40:52.2205901Z \____|__  /_____ \____/ |__|    \___  >
+2026-03-26T15:40:52.2205915Z         \/      \/                  \/ 
+2026-03-26T15:40:52.2205929Z A P P   S E R V I C E   O N   L I N U X
+2026-03-26T15:40:52.2205942Z 
+2026-03-26T15:40:52.2205959Z Documentation    : http://aka.ms/webapp-linux
+2026-03-26T15:40:52.2206053Z NodeJS quickstart: https://aka.ms/node-qs
+2026-03-26T15:40:52.2206069Z NodeJS Version   : v24.13.0
+2026-03-26T15:40:52.2206084Z Instance Name    : lw1sdlwk000AFS
+2026-03-26T15:40:52.2206102Z Instance Id      : 192ae7e12efabd86b8f1992c5d0955e31956c2538c35216038ae1c4c72bce58c
+2026-03-26T15:40:52.2206115Z 
+2026-03-26T15:40:52.2206131Z Note: Any data outside '/home' is not persisted
+2026-03-26T15:40:59.5543832Z  * Starting OpenBSD Secure Shell server sshd
+2026-03-26T15:40:59.7553254Z    ...done.
+2026-03-26T15:40:59.8343665Z WEBSITES_INCLUDE_CLOUD_CERTS is not set to true.
+2026-03-26T15:41:00.1161044Z Updating certificates in /etc/ssl/certs...
+2026-03-26T15:41:25.9146148Z rehash: warning: skipping duplicate certificate in SSLcom-TLS-Root-2022-ECC.pem
+2026-03-26T15:41:25.9431528Z rehash: warning: skipping duplicate certificate in SSLcom-TLS-Root-2022-RSA.pem
+2026-03-26T15:41:26.4171717Z rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+2026-03-26T15:41:26.4867286Z 4 added, 0 removed; done.
+2026-03-26T15:41:26.4975050Z Running hooks in /etc/ca-certificates/update.d...
+2026-03-26T15:41:26.5059137Z done.
+2026-03-26T15:41:26.5260103Z CA certificates copied and updated successfully.
+2026-03-26T15:41:26.7782735Z  * Starting periodic command scheduler cron
+2026-03-26T15:41:26.7974103Z    ...done.
+2026-03-26T15:41:27.0989486Z Found build manifest file at '/home/site/wwwroot/oryx-manifest.toml'. Deserializing it...
+2026-03-26T15:41:27.1167063Z Could not find operation ID in manifest. Generating an operation id...
+2026-03-26T15:41:27.1178753Z Build Operation ID: c28a7b73-c0a1-4d35-bd42-1d22839618bf
+2026-03-26T15:41:27.8916935Z Environment Variables for Application Insight's IPA Codeless Configuration exists..
+2026-03-26T15:41:27.8930962Z Writing output script to '/opt/startup/startup.sh'
+2026-03-26T15:41:28.0537273Z Running #!/bin/sh
+2026-03-26T15:41:28.0537691Z 
+2026-03-26T15:41:28.0537715Z # Enter the source directory to make sure the script runs where the user expects
+2026-03-26T15:41:28.0537730Z cd "/home/site/wwwroot"
+2026-03-26T15:41:28.0537743Z 
+2026-03-26T15:41:28.0539078Z export NODE_PATH=/usr/local/lib/node_modules:$NODE_PATH
+2026-03-26T15:41:28.0539235Z if [ -z "$PORT" ]; then
+2026-03-26T15:41:28.0539254Z 		export PORT=8080
+2026-03-26T15:41:28.0539267Z fi
+2026-03-26T15:41:28.0539279Z 
+2026-03-26T15:41:28.0539618Z echo Found tar.gz based node_modules.
+2026-03-26T15:41:28.0539644Z extractionCommand="tar -xzf node_modules.tar.gz -C /node_modules"
+2026-03-26T15:41:28.0539908Z echo "Removing existing modules directory from root..."
+2026-03-26T15:41:28.0539927Z rm -fr /node_modules
+2026-03-26T15:41:28.0539942Z mkdir -p /node_modules
+2026-03-26T15:41:28.0539957Z echo Extracting modules...
+2026-03-26T15:41:28.0539970Z $extractionCommand
+2026-03-26T15:41:28.0540232Z export NODE_PATH="/node_modules":$NODE_PATH
+2026-03-26T15:41:28.0540253Z export PATH=/node_modules/.bin:$PATH
+2026-03-26T15:41:28.0540268Z if [ -d node_modules ]; then
+2026-03-26T15:41:28.0540283Z     mv -f node_modules _del_node_modules || true
+2026-03-26T15:41:28.0540297Z fi
+2026-03-26T15:41:28.0540482Z 
+2026-03-26T15:41:28.0540502Z if [ -d /node_modules ]; then
+2026-03-26T15:41:28.0540517Z     ln -sfn /node_modules ./node_modules 
+2026-03-26T15:41:28.0540529Z fi
+2026-03-26T15:41:28.0540541Z 
+2026-03-26T15:41:28.0540554Z echo "Done."
+2026-03-26T15:41:28.0540781Z PATH="$PATH:/home/site/wwwroot" npx tsx services/api/src/index.ts
+2026-03-26T15:41:28.1438350Z Found tar.gz based node_modules.
+2026-03-26T15:41:28.1438544Z Removing existing modules directory from root...
+2026-03-26T15:41:28.2524299Z Extracting modules...
+2026-03-26T15:41:30.0648069Z Done.
+2026-03-26T15:41:33.7618607Z npm info using npm@10.9.2
+2026-03-26T15:41:33.8016467Z npm info using node@v24.13.0
+2026-03-26T15:41:47.4287204Z npm http fetch GET 200 https://registry.npmjs.org/npm 463ms
+2026-03-26T15:41:48.0332683Z sh: 1: tsx: not found
+2026-03-26T15:41:48.0548957Z npm notice
+2026-03-26T15:41:48.0549285Z npm notice New major version of npm available! 10.9.2 -> 11.12.0
+2026-03-26T15:41:48.0549383Z npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.12.0
+2026-03-26T15:41:48.0549412Z npm notice To update run: npm install -g npm@11.12.0
+2026-03-26T15:41:48.0549426Z npm notice
+2026-03-26T15:43:05.9461179Z    _____                               
+2026-03-26T15:43:05.9461629Z   /  _  \ __________ _________   ____  
+2026-03-26T15:43:05.9461648Z  /  /_\  \\___   /  |  \_  __ \_/ __ \ 
+2026-03-26T15:43:05.9461663Z /    |    \/    /|  |  /|  | \/\  ___/ 
+2026-03-26T15:43:05.9461677Z \____|__  /_____ \____/ |__|    \___  >
+2026-03-26T15:43:05.9461691Z         \/      \/                  \/ 
+2026-03-26T15:43:05.9461706Z A P P   S E R V I C E   O N   L I N U X
+2026-03-26T15:43:05.9461718Z 
+2026-03-26T15:43:05.9461734Z Documentation    : http://aka.ms/webapp-linux
+2026-03-26T15:43:05.9461749Z NodeJS quickstart: https://aka.ms/node-qs
+2026-03-26T15:43:05.9461763Z NodeJS Version   : v24.13.0
+2026-03-26T15:43:05.9461798Z Instance Name    : lw1sdlwk000AFS
+2026-03-26T15:43:05.9461818Z Instance Id      : 192ae7e12efabd86b8f1992c5d0955e31956c2538c35216038ae1c4c72bce58c
+2026-03-26T15:43:05.9461830Z 
+2026-03-26T15:43:05.9461846Z Note: Any data outside '/home' is not persisted
+2026-03-26T15:43:12.5862592Z  * Starting OpenBSD Secure Shell server sshd
+2026-03-26T15:43:12.6557247Z    ...done.
+2026-03-26T15:43:12.7258272Z WEBSITES_INCLUDE_CLOUD_CERTS is not set to true.
+2026-03-26T15:43:12.8574877Z Updating certificates in /etc/ssl/certs...
+2026-03-26T15:43:44.7032169Z rehash: warning: skipping duplicate certificate in SSLcom-TLS-Root-2022-ECC.pem
+2026-03-26T15:43:44.7122767Z rehash: warning: skipping duplicate certificate in SSLcom-TLS-Root-2022-RSA.pem
+2026-03-26T15:43:45.7904283Z rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+2026-03-26T15:43:45.8995217Z 4 added, 0 removed; done.
+2026-03-26T15:43:45.9002150Z Running hooks in /etc/ca-certificates/update.d...
+2026-03-26T15:43:45.9300886Z done.
+2026-03-26T15:43:45.9599489Z CA certificates copied and updated successfully.
+2026-03-26T15:43:46.4100816Z  * Starting periodic command scheduler cron
+2026-03-26T15:43:46.4902456Z    ...done.
+2026-03-26T15:43:47.0127160Z Found build manifest file at '/home/site/wwwroot/oryx-manifest.toml'. Deserializing it...
+2026-03-26T15:43:47.0827831Z Could not find operation ID in manifest. Generating an operation id...
+2026-03-26T15:43:47.0828413Z Build Operation ID: 32754e48-1499-4f1b-ae2b-c33c9ce78aa0
+2026-03-26T15:43:48.0334625Z Environment Variables for Application Insight's IPA Codeless Configuration exists..
+2026-03-26T15:43:48.0335042Z Writing output script to '/opt/startup/startup.sh'
+2026-03-26T15:43:48.2255431Z Running #!/bin/sh
+2026-03-26T15:43:48.2255807Z 
+2026-03-26T15:43:48.2255831Z # Enter the source directory to make sure the script runs where the user expects
+2026-03-26T15:43:48.2255847Z cd "/home/site/wwwroot"
+2026-03-26T15:43:48.2255860Z 
+2026-03-26T15:43:48.2255881Z export NODE_PATH=/usr/local/lib/node_modules:$NODE_PATH
+2026-03-26T15:43:48.2255894Z if [ -z "$PORT" ]; then
+2026-03-26T15:43:48.2255908Z 		export PORT=8080
+2026-03-26T15:43:48.2255989Z fi
+2026-03-26T15:43:48.2256002Z 
+2026-03-26T15:43:48.2256018Z echo Found tar.gz based node_modules.
+2026-03-26T15:43:48.2256035Z extractionCommand="tar -xzf node_modules.tar.gz -C /node_modules"
+2026-03-26T15:43:48.2256051Z echo "Removing existing modules directory from root..."
+2026-03-26T15:43:48.2256066Z rm -fr /node_modules
+2026-03-26T15:43:48.2256079Z mkdir -p /node_modules
+2026-03-26T15:43:48.2256093Z echo Extracting modules...
+2026-03-26T15:43:48.2256107Z $extractionCommand
+2026-03-26T15:43:48.2256122Z export NODE_PATH="/node_modules":$NODE_PATH
+2026-03-26T15:43:48.2256137Z export PATH=/node_modules/.bin:$PATH
+2026-03-26T15:43:48.2256152Z if [ -d node_modules ]; then
+2026-03-26T15:43:48.2256191Z     mv -f node_modules _del_node_modules || true
+2026-03-26T15:43:48.2256204Z fi
+2026-03-26T15:43:48.2256216Z 
+2026-03-26T15:43:48.2256231Z if [ -d /node_modules ]; then
+2026-03-26T15:43:48.2256246Z     ln -sfn /node_modules ./node_modules 
+2026-03-26T15:43:48.2256259Z fi
+2026-03-26T15:43:48.2256271Z 
+2026-03-26T15:43:48.2256284Z echo "Done."
+2026-03-26T15:43:48.2256299Z PATH="$PATH:/home/site/wwwroot" npx tsx services/api/src/index.ts
+2026-03-26T15:43:48.2256314Z Found tar.gz based node_modules.
+2026-03-26T15:43:48.2256328Z Removing existing modules directory from root...
+2026-03-26T15:43:48.2863574Z Extracting modules...
+2026-03-26T15:43:52.8381793Z Done.
+2026-03-26T15:43:58.8392095Z npm info using npm@10.9.2
+2026-03-26T15:43:58.8392772Z npm info using node@v24.13.0
+2026-03-26T15:44:20.0736500Z npm http fetch GET 200 https://registry.npmjs.org/npm 741ms
+2026-03-26T15:44:20.5394899Z sh: 1: tsx: not found
+2026-03-26T15:44:20.5571046Z npm notice
+2026-03-26T15:44:20.5571307Z npm notice New major version of npm available! 10.9.2 -> 11.12.0
+2026-03-26T15:44:20.5571331Z npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.12.0
+2026-03-26T15:44:20.5571348Z npm notice To update run: npm install -g npm@11.12.0
+2026-03-26T15:44:20.5571362Z npm notice
+2026-03-26T15:45:28.5785645Z    _____                               
+2026-03-26T15:45:28.5787175Z   /  _  \ __________ _________   ____  
+2026-03-26T15:45:28.5787213Z  /  /_\  \\___   /  |  \_  __ \_/ __ \ 
+2026-03-26T15:45:28.5787244Z /    |    \/    /|  |  /|  | \/\  ___/ 
+2026-03-26T15:45:28.5787264Z \____|__  /_____ \____/ |__|    \___  >
+2026-03-26T15:45:28.5787290Z         \/      \/                  \/ 
+2026-03-26T15:45:28.5957749Z A P P   S E R V I C E   O N   L I N U X
+2026-03-26T15:45:28.5958023Z 
+2026-03-26T15:45:28.5958058Z Documentation    : http://aka.ms/webapp-linux
+2026-03-26T15:45:28.5958097Z NodeJS quickstart: https://aka.ms/node-qs
+2026-03-26T15:45:28.5958121Z NodeJS Version   : v24.13.0
+2026-03-26T15:45:28.5958141Z Instance Name    : lw1sdlwk000AFS
+2026-03-26T15:45:28.5958211Z Instance Id      : 192ae7e12efabd86b8f1992c5d0955e31956c2538c35216038ae1c4c72bce58c
+2026-03-26T15:45:28.5958230Z 
+2026-03-26T15:45:28.5958251Z Note: Any data outside '/home' is not persisted
+2026-03-26T15:45:50.9452812Z  * Starting OpenBSD Secure Shell server sshd
+2026-03-26T15:45:51.0580810Z    ...done.
+2026-03-26T15:45:51.1569573Z WEBSITES_INCLUDE_CLOUD_CERTS is not set to true.
+2026-03-26T15:45:51.3594235Z Updating certificates in /etc/ssl/certs...
+2026-03-26T15:46:26.7552296Z rehash: warning: skipping duplicate certificate in SSLcom-TLS-Root-2022-ECC.pem
+2026-03-26T15:46:26.7552609Z rehash: warning: skipping duplicate certificate in SSLcom-TLS-Root-2022-RSA.pem
+2026-03-26T15:46:28.4828720Z rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+2026-03-26T15:46:28.6648401Z 4 added, 0 removed; done.
+2026-03-26T15:46:28.6843584Z Running hooks in /etc/ca-certificates/update.d...
+2026-03-26T15:46:28.6963450Z done.
+2026-03-26T15:46:28.7437931Z CA certificates copied and updated successfully.
+2026-03-26T15:46:29.3583510Z  * Starting periodic command scheduler cron
+2026-03-26T15:46:29.5165181Z    ...done.
+2026-03-26T15:46:30.7738659Z Found build manifest file at '/home/site/wwwroot/oryx-manifest.toml'. Deserializing it...
+2026-03-26T15:46:30.8729304Z Could not find operation ID in manifest. Generating an operation id...
+2026-03-26T15:46:30.8729723Z Build Operation ID: 723ed3ac-6230-41af-a9d4-ce5e46c40b87
+2026-03-26T15:46:31.7358533Z Environment Variables for Application Insight's IPA Codeless Configuration exists..
+2026-03-26T15:46:31.7736645Z Writing output script to '/opt/startup/startup.sh'
+2026-03-26T15:46:32.1361146Z Running #!/bin/sh
+2026-03-26T15:46:32.1361450Z 
+2026-03-26T15:46:32.1361481Z # Enter the source directory to make sure the script runs where the user expects
+2026-03-26T15:46:32.1361595Z cd "/home/site/wwwroot"
+2026-03-26T15:46:32.1361615Z 
+2026-03-26T15:46:32.1361635Z export NODE_PATH=/usr/local/lib/node_modules:$NODE_PATH
+2026-03-26T15:46:32.1361654Z if [ -z "$PORT" ]; then
+2026-03-26T15:46:32.1361671Z 		export PORT=8080
+2026-03-26T15:46:32.1361687Z fi
+2026-03-26T15:46:32.1361704Z 
+2026-03-26T15:46:32.1361753Z echo Found tar.gz based node_modules.
+2026-03-26T15:46:32.1361776Z extractionCommand="tar -xzf node_modules.tar.gz -C /node_modules"
+2026-03-26T15:46:32.1361798Z echo "Removing existing modules directory from root..."
+2026-03-26T15:46:32.1361816Z rm -fr /node_modules
+2026-03-26T15:46:32.1361834Z mkdir -p /node_modules
+2026-03-26T15:46:32.1361854Z echo Extracting modules...
+2026-03-26T15:46:32.1361872Z $extractionCommand
+2026-03-26T15:46:32.1361948Z export NODE_PATH="/node_modules":$NODE_PATH
+2026-03-26T15:46:32.1361972Z export PATH=/node_modules/.bin:$PATH
+2026-03-26T15:46:32.1361991Z if [ -d node_modules ]; then
+2026-03-26T15:46:32.1362012Z     mv -f node_modules _del_node_modules || true
+2026-03-26T15:46:32.1362029Z fi
+2026-03-26T15:46:32.1362045Z 
+2026-03-26T15:46:32.1362063Z if [ -d /node_modules ]; then
+2026-03-26T15:46:32.1362106Z     ln -sfn /node_modules ./node_modules 
+2026-03-26T15:46:32.1362124Z fi
+2026-03-26T15:46:32.1362140Z 
+2026-03-26T15:46:32.1362157Z echo "Done."
+2026-03-26T15:46:32.1362178Z PATH="$PATH:/home/site/wwwroot" npx tsx services/api/src/index.ts
+2026-03-26T15:46:32.1362197Z Found tar.gz based node_modules.
+2026-03-26T15:46:32.1362343Z Removing existing modules directory from root...
+2026-03-26T15:46:32.9191304Z Extracting modules...
+2026-03-26T15:46:39.5730909Z Done.
+2026-03-26T15:46:45.9013685Z npm info using npm@10.9.2
+2026-03-26T15:46:45.9013968Z npm info using node@v24.13.0
+2026-03-26T15:46:56.9873880Z npm http fetch GET 200 https://registry.npmjs.org/npm 632ms
+2026-03-26T15:46:57.6366900Z sh: 1: tsx: not found
+2026-03-26T15:46:57.6508202Z npm notice
+2026-03-26T15:46:57.6508771Z npm notice New major version of npm available! 10.9.2 -> 11.12.0
+2026-03-26T15:46:57.6508823Z npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.12.0
+2026-03-26T15:46:57.6508846Z npm notice To update run: npm install -g npm@11.12.0
+2026-03-26T15:46:57.6508863Z npm notice
+2026-03-26T15:47:40.4862611Z    _____                               
+2026-03-26T15:47:40.4864084Z   /  _  \ __________ _________   ____  
+2026-03-26T15:47:40.4864128Z  /  /_\  \\___   /  |  \_  __ \_/ __ \ 
+2026-03-26T15:47:40.4864153Z /    |    \/    /|  |  /|  | \/\  ___/ 
+2026-03-26T15:47:40.4864173Z \____|__  /_____ \____/ |__|    \___  >
+2026-03-26T15:47:40.4864253Z         \/      \/                  \/ 
+2026-03-26T15:47:40.4864274Z A P P   S E R V I C E   O N   L I N U X
+2026-03-26T15:47:40.4864291Z 
+2026-03-26T15:47:40.4864314Z Documentation    : http://aka.ms/webapp-linux
+2026-03-26T15:47:40.4864338Z NodeJS quickstart: https://aka.ms/node-qs
+2026-03-26T15:47:40.4864357Z NodeJS Version   : v24.13.0
+2026-03-26T15:47:40.4864377Z Instance Name    : lw1sdlwk000AFS
+2026-03-26T15:47:40.4864419Z Instance Id      : 192ae7e12efabd86b8f1992c5d0955e31956c2538c35216038ae1c4c72bce58c
+2026-03-26T15:47:40.4864440Z 
+2026-03-26T15:47:40.4864460Z Note: Any data outside '/home' is not persisted
+2026-03-26T15:47:53.2869452Z  * Starting OpenBSD Secure Shell server sshd
+2026-03-26T15:47:53.3878116Z    ...done.
+2026-03-26T15:47:53.4684019Z WEBSITES_INCLUDE_CLOUD_CERTS is not set to true.
+2026-03-26T15:47:53.6186462Z Updating certificates in /etc/ssl/certs...
+2026-03-26T15:48:50.4619533Z rehash: warning: skipping duplicate certificate in SSLcom-TLS-Root-2022-ECC.pem
+2026-03-26T15:48:50.4634455Z rehash: warning: skipping duplicate certificate in SSLcom-TLS-Root-2022-RSA.pem
+2026-03-26T15:48:51.3854333Z rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+2026-03-26T15:48:51.5567902Z 4 added, 0 removed; done.
+2026-03-26T15:48:51.5681311Z Running hooks in /etc/ca-certificates/update.d...
+2026-03-26T15:48:51.6059170Z done.
+2026-03-26T15:48:51.6383747Z CA certificates copied and updated successfully.
+2026-03-26T15:48:52.3696509Z  * Starting periodic command scheduler cron
+2026-03-26T15:48:52.4601952Z    ...done.
+2026-03-26T15:48:53.2060177Z Found build manifest file at '/home/site/wwwroot/oryx-manifest.toml'. Deserializing it...
+2026-03-26T15:48:53.2661716Z Could not find operation ID in manifest. Generating an operation id...
+2026-03-26T15:48:53.2668493Z Build Operation ID: 690edfb4-e158-4c0c-aff2-c642e93fedf8
+2026-03-26T15:48:54.5705751Z Environment Variables for Application Insight's IPA Codeless Configuration exists..
+2026-03-26T15:48:54.7414444Z Writing output script to '/opt/startup/startup.sh'
+2026-03-26T15:48:54.8853591Z Running #!/bin/sh
+2026-03-26T15:48:54.8854191Z 
+2026-03-26T15:48:54.8854231Z # Enter the source directory to make sure the script runs where the user expects
+2026-03-26T15:48:54.8854276Z cd "/home/site/wwwroot"
+2026-03-26T15:48:54.8854294Z 
+2026-03-26T15:48:54.8954458Z export NODE_PATH=/usr/local/lib/node_modules:$NODE_PATH
+2026-03-26T15:48:54.8954752Z if [ -z "$PORT" ]; then
+2026-03-26T15:48:54.8954779Z 		export PORT=8080
+2026-03-26T15:48:54.8954883Z fi
+2026-03-26T15:48:54.8954903Z 
+2026-03-26T15:48:54.8954927Z echo Found tar.gz based node_modules.
+2026-03-26T15:48:54.8954949Z extractionCommand="tar -xzf node_modules.tar.gz -C /node_modules"
+2026-03-26T15:48:54.8954970Z echo "Removing existing modules directory from root..."
+2026-03-26T15:48:54.8954989Z rm -fr /node_modules
+2026-03-26T15:48:54.8955008Z mkdir -p /node_modules
+2026-03-26T15:48:54.8955050Z echo Extracting modules...
+2026-03-26T15:48:54.8955069Z $extractionCommand
+2026-03-26T15:48:54.8955110Z export NODE_PATH="/node_modules":$NODE_PATH
+2026-03-26T15:48:54.8955133Z export PATH=/node_modules/.bin:$PATH
+2026-03-26T15:48:54.8955153Z if [ -d node_modules ]; then
+2026-03-26T15:48:54.8955173Z     mv -f node_modules _del_node_modules || true
+2026-03-26T15:48:54.9327473Z fi
+2026-03-26T15:48:54.9327720Z 
+2026-03-26T15:48:54.9327751Z if [ -d /node_modules ]; then
+2026-03-26T15:48:54.9327773Z     ln -sfn /node_modules ./node_modules 
+2026-03-26T15:48:54.9327806Z fi
+2026-03-26T15:48:54.9327823Z 
+2026-03-26T15:48:54.9327841Z echo "Done."
+2026-03-26T15:48:54.9327863Z PATH="$PATH:/home/site/wwwroot" npx tsx services/api/src/index.ts
+2026-03-26T15:48:54.9327920Z Found tar.gz based node_modules.
+2026-03-26T15:48:54.9328198Z Removing existing modules directory from root...
+2026-03-26T15:48:54.9732282Z Extracting modules...
+2026-03-26T15:49:02.0358522Z Done.
+2026-03-26T15:49:15.6470206Z npm info using npm@10.9.2
+2026-03-26T15:49:15.7149845Z npm info using node@v24.13.0
+2026-03-26T15:49:48.1438574Z npm http fetch GET 200 https://registry.npmjs.org/npm 1853ms
+2026-03-26T15:49:50.5862597Z sh: 1: tsx: not found
+2026-03-26T15:49:50.7297778Z npm notice
+2026-03-26T15:49:50.7298099Z npm notice New major version of npm available! 10.9.2 -> 11.12.0
+2026-03-26T15:49:50.7298144Z npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.12.0
+2026-03-26T15:49:50.7298166Z npm notice To update run: npm install -g npm@11.12.0
+2026-03-26T15:49:50.7298189Z npm notice

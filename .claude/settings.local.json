@@ -88,7 +88,26 @@
       "mcp__serena__check_onboarding_performed",
       "mcp__serena__onboarding",
       "mcp__serena__list_dir",
-      "mcp__serena__write_memory"
+      "mcp__serena__write_memory",
+      "Bash(supabase --version)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_fd4c3f7bb56198a254032ccfb9e2948c308e3bec npx supabase link --project-ref oawxsqedihwfairjtket)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_fd4c3f7bb56198a254032ccfb9e2948c308e3bec npx supabase db push)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_fd4c3f7bb56198a254032ccfb9e2948c308e3bec npx supabase migration list)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_fd4c3f7bb56198a254032ccfb9e2948c308e3bec npx supabase db reset --linked)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_fd4c3f7bb56198a254032ccfb9e2948c308e3bec npx supabase migration repair 20260318000000 --status reverted)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_fd4c3f7bb56198a254032ccfb9e2948c308e3bec npx supabase db execute --sql \"drop schema if exists ledger cascade; drop schema if exists projections cascade;\")",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_fd4c3f7bb56198a254032ccfb9e2948c308e3bec npx supabase db query)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_fd4c3f7bb56198a254032ccfb9e2948c308e3bec npx supabase db query --linked)",
+      "Bash(echo \"SELECT tgname, tgrelid::regclass, tgenabled FROM pg_trigger WHERE tgname = ''''events_append_only'''';\")",
+      "Bash(echo \"INSERT INTO ledger.events \\(organization_id, workspace_id, aggregate_type, aggregate_id, event_type, actor_id, payload, previous_hash, event_hash, digest_date\\) VALUES \\(''''test'''',''''test'''',''''test'''',''''test'''',''''test'''',''''test'''',''''{}'''',''''GENESIS'''',''''h_test'''',''''2026-03-24''''\\); UPDATE ledger.events SET event_type = ''''tampered'''' WHERE organization_id = ''''test'''';\")",
+      "Bash(echo \"DELETE FROM ledger.events WHERE organization_id = ''''test'''';\")",
+      "Bash(find /c/git/jpx-accounting/tests -type f \\\\\\(-name *.test.ts -o -name *.spec.ts \\\\\\))",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''''Next.js latest: {d[version]}''''\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''version'''',''''unknown''''\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''''React latest: {d[version]}''''\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''''TailwindCSS latest: {d[version]}''''\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''''TanStack Query latest: {d[version]}''''\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''''Motion latest: {d[version]}''''\\)\")"
     ]
   }
 }
