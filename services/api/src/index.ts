@@ -11,6 +11,8 @@ const app = createApp({
   aiRuntime,
   runtimeMode,
   allowTestReset: config.allowTestReset,
+  supabaseUrl: config.supabase.url,
+  supabaseServiceRoleKey: config.supabase.serviceRoleKey,
 });
 
 serve(

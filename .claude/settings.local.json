@@ -107,7 +107,9 @@
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''''React latest: {d[version]}''''\\)\")",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''''TailwindCSS latest: {d[version]}''''\\)\")",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''''TanStack Query latest: {d[version]}''''\\)\")",
-      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''''Motion latest: {d[version]}''''\\)\")"
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''''Motion latest: {d[version]}''''\\)\")",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"fintech accounting SaaS dashboard swedish professional teal\" --design-system -p \"JPX Accounting\")",
+      "Bash(py --version)"
     ]
   }
 }

@@ -35,9 +35,12 @@ test("normal runtime fails closed instead of returning demo data", async () => {
   const app = createApp({
     ...dependencies,
     allowTestReset: false,
+    skipAuthVerification: true,
   });
 
-  const workspace = await app.request("http://localhost/api/workspace");
+  const workspace = await app.request("http://localhost/api/workspace", {
+    headers: { Authorization: "Bearer test-token" },
+  });
   assert.equal(workspace.status, 503);
   assert.match(await workspace.text(), /unavailable/i);
 

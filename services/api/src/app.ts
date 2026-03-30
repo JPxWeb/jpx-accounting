@@ -17,13 +17,17 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import type { ZodType } from "zod";
 
+import { authMiddleware } from "./middleware/auth";
 import { LedgerStoreUnavailableError } from "./runtime";
 
 type CreateAppOptions = {
   store: LedgerStore;
   aiRuntime: AiRuntime;
   runtimeMode: RuntimeMode;
-  allowTestReset?: boolean;
+  allowTestReset?: boolean | undefined;
+  supabaseUrl?: string | undefined;
+  supabaseServiceRoleKey?: string | undefined;
+  skipAuthVerification?: boolean | undefined;
 };
 
 async function parseBody<T>(request: Request, schema: ZodType<T>) {
@@ -65,11 +69,28 @@ function createErrorResponse(message: string, runtimeMode: RuntimeMode, status: 
   );
 }
 
-export function createApp({ store, aiRuntime, runtimeMode, allowTestReset }: CreateAppOptions) {
+export function createApp({
+  store,
+  aiRuntime,
+  runtimeMode,
+  allowTestReset,
+  supabaseUrl,
+  supabaseServiceRoleKey,
+  skipAuthVerification,
+}: CreateAppOptions) {
   const app = new Hono();
   let currentStore = store;
 
   app.use("/api/*", cors());
+  app.use(
+    "/api/*",
+    authMiddleware({
+      runtimeMode,
+      supabaseUrl,
+      supabaseServiceRoleKey,
+      skipVerification: skipAuthVerification,
+    }),
+  );
   app.onError((error) => {
     if (error instanceof HTTPException) {
       return createErrorResponse(error.message, runtimeMode, error.status);
