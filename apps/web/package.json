@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node -e \"const{execSync:e}=require('child_process');try{const o=e('netstat -ano | findstr :3000 | findstr LISTENING',{encoding:'utf8'});const m=o.match(/LISTENING\\s+(\\d+)/);if(m)e('taskkill /PID '+m[1]+' /F')}catch{}\"",
     "dev": "next dev",
+    "prebuild": "node -e \"const fs=require('fs'),p='public/sw.js',{execSync:e}=require('child_process');const h=e('git rev-parse --short HEAD',{encoding:'utf8'}).trim();fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('static-__BUILD_HASH__','static-'+h))\"",
+    "postbuild": "node -e \"const fs=require('fs'),p='public/sw.js';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace(/static-[a-f0-9]{7,}/,'static-__BUILD_HASH__'))\"",
     "build": "next build",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json"

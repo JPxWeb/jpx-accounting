@@ -22,18 +22,18 @@ async function unregisterServiceWorkers() {
 
 export function ServiceWorkerRegistrar() {
   useEffect(() => {
-    // Debug and e2e builds actively unregister prior workers so cache-policy changes are applied immediately.
-    if (webRuntimeConfig.disableServiceWorker) {
-      if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-        void unregisterServiceWorkers();
-      }
-      return;
-    }
-
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
       return;
     }
 
+    // In development, unregister service workers to prevent stale Turbopack chunks.
+    if (process.env.NODE_ENV === "development" || webRuntimeConfig.disableServiceWorker) {
+      void unregisterServiceWorkers();
+      return;
+    }
+
+    // In production, register the SW. The prebuild script stamps a git SHA into
+    // the SW cache name, so each deploy invalidates the old cache automatically.
     void navigator.serviceWorker.register("/sw.js", {
       scope: "/",
       updateViaCache: "none",

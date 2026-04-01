@@ -1,4 +1,5 @@
-const staticAssetCacheName = "jpx-accounting-static-v2";
+// The cache version below is stamped with a git SHA at build time (see prebuild script).
+const staticAssetCacheName = "jpx-accounting-static-__BUILD_HASH__";
 const exactCacheablePaths = new Set(["/manifest.webmanifest", "/favicon.ico", "/apple-icon.png", "/icon.png"]);
 
 function shouldCacheStaticAsset(request) {
