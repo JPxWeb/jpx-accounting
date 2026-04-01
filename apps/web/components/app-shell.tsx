@@ -174,7 +174,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="shell-layout">
         <aside className="shell-rail" data-testid="desktop-navigation">
           <div className="shell-rail-inner">
-            <section className="glass-chrome rounded-4xl px-5 py-5">
+            <section className="glass-chrome rounded-2xl px-5 py-5">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-eyebrow">JPX Accounting</p>
                 <StatusBadge
@@ -189,13 +189,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                 Compliance-critical flows stay deterministic. AI guides, cites, and accelerates the review surface.
               </p>
               {webRuntimeConfig.runtimeMode === "demo" ? (
-                <p className="mt-4 rounded-2xl bg-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]">
+                <p className="mt-4 rounded-lg bg-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]">
                   Demo mode is intentionally using local scaffold behavior so it is never mistaken for live accounting.
                 </p>
               ) : null}
             </section>
 
-            <nav className="glass-panel rounded-4xl p-3" aria-label="Primary" data-testid="desktop-navigation-links">
+            <nav className="glass-panel rounded-2xl p-3" aria-label="Primary" data-testid="desktop-navigation-links">
               {navigation.map((item) => {
                 const Icon = item.icon;
                 const active = item.href === "/" ? pathname === item.href : pathname.startsWith(item.href);
@@ -205,14 +205,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                     key={item.href}
                     href={item.href}
                     aria-current={active ? "page" : undefined}
-                    className={`flex items-start gap-3 rounded-2xl px-4 py-4 transition ${
+                    className={`flex items-start gap-3 rounded-lg px-4 py-4 transition ${
                       active
                         ? "bg-[var(--color-accent)] text-white shadow-[var(--shadow-sm)]"
                         : "text-[var(--color-text)] hover:bg-[rgba(255,255,255,0.72)]"
                     }`}
                   >
                     <span
-                      className={`mt-0.5 rounded-xl p-2 ${
+                      className={`mt-0.5 rounded-lg p-2 ${
                         active
                           ? "bg-white/16 text-white"
                           : "bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]"
@@ -233,7 +233,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               })}
             </nav>
 
-            <section className="glass-panel rounded-4xl p-4">
+            <section className="glass-panel rounded-2xl p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-eyebrow">Capture lane</p>
@@ -247,14 +247,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                 type="button"
                 onClick={openCaptureSheet}
                 data-testid="capture-open-desktop"
-                className="capture-button-desktop mt-4 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-accent)] px-5 py-4 text-sm font-semibold text-white shadow-[var(--shadow-md)]"
+                className="capture-button-desktop mt-4 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-accent)] px-5 py-4 text-sm font-semibold text-white shadow-[var(--shadow-md)]"
               >
                 <CaptureIcon className="size-4" />
                 Capture Evidence
               </button>
             </section>
 
-            <section className="glass-panel-soft mt-auto rounded-4xl p-4">
+            <section className="glass-panel-soft mt-auto rounded-2xl p-4">
               <div className="flex items-center gap-2 text-[var(--color-text-muted)]">
                 <SparkIcon className="size-4 text-[var(--color-accent)]" />
                 <span className="text-eyebrow">Innovation track</span>
@@ -268,7 +268,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <div className="shell-main">
           <header className="page-shell page-shell-compact shell-topbar" data-testid="app-shell-header">
-            <div className="glass-chrome flex items-center justify-between gap-4 rounded-3xl px-4 py-3 sm:px-5">
+            <div className="glass-chrome flex items-center justify-between gap-4 rounded-2xl px-4 py-3 sm:px-5">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-eyebrow">JPX Accounting</p>
@@ -287,7 +287,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="hidden rounded-xl glass-panel-soft px-3 py-2 text-right text-xs text-[var(--color-text-muted)] sm:block">
+                <div className="hidden rounded-lg glass-panel-soft px-3 py-2 text-right text-xs text-[var(--color-text-muted)] sm:block">
                   <div className="font-medium text-[var(--color-text)]">Sweden Central / Stockholm</div>
                   <div>{timestamp}</div>
                 </div>
@@ -295,7 +295,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   type="button"
                   onClick={openCaptureSheet}
                   data-testid="capture-open-mobile"
-                  className="capture-button-mobile flex items-center gap-2 rounded-xl bg-[var(--color-accent)] px-5 py-4 text-sm font-semibold text-white shadow-[var(--shadow-sm)] lg:hidden"
+                  className="capture-button-mobile flex items-center gap-2 rounded-md bg-[var(--color-accent)] px-5 py-4 text-sm font-semibold text-white shadow-[var(--shadow-sm)] lg:hidden"
                 >
                   <CaptureIcon className="size-4" />
                   Capture
@@ -308,7 +308,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="page-shell page-shell-compact">
               <div
                 data-testid="runtime-mode-banner"
-                className="glass-panel-soft rounded-2xl border border-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]"
+                className="glass-panel-soft rounded-lg border border-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]"
               >
                 Demo mode is active. Local demo data and local AI fallback are enabled intentionally.
               </div>
@@ -325,7 +325,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div
           aria-live="polite"
           data-testid="draft-notice"
-          className={`fixed left-1/2 top-24 z-40 w-[min(92vw,30rem)] -translate-x-1/2 rounded-2xl px-4 py-3 text-center text-sm font-medium ${
+          className={`fixed left-1/2 top-24 z-40 w-[min(92vw,30rem)] -translate-x-1/2 rounded-lg px-4 py-3 text-center text-sm font-medium ${
             captureStatus.tone === "error"
               ? "bg-[var(--color-danger-soft)] text-[var(--color-danger)] shadow-[var(--shadow-md)]"
               : captureStatus.tone === "warning"
@@ -340,7 +340,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <nav
         aria-label="Mobile primary"
         data-testid="mobile-dock"
-        className="mobile-dock glass-chrome rounded-3xl px-2 py-2 lg:hidden"
+        className="mobile-dock glass-chrome rounded-2xl px-2 py-2 lg:hidden"
       >
         <div className="grid grid-cols-4 gap-2">
           {navigation.map((item) => {
@@ -352,7 +352,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 aria-label={`${item.label} — ${item.summary}`}
                 aria-current={active ? "page" : undefined}
-                className={`flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-3 text-center text-caption font-medium transition ${
+                className={`flex flex-col items-center justify-center gap-1 rounded-lg px-2 py-3 text-center text-caption font-medium transition ${
                   active ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-muted)]"
                 }`}
               >
@@ -382,7 +382,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               aria-labelledby="capture-sheet-title"
               aria-describedby="capture-sheet-description"
               data-testid="capture-sheet"
-              className="glass-chrome w-full max-w-xl rounded-4xl p-5"
+              className="glass-chrome w-full max-w-xl rounded-xl p-5"
               onClick={(event) => event.stopPropagation()}
               initial={{ y: 40, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -402,7 +402,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   onClick={() => closeCaptureSheet()}
                   aria-label="Close capture sheet"
                   data-testid="capture-close"
-                  className="rounded-xl bg-white/72 px-3 py-2 text-sm font-medium text-[var(--color-text-muted)]"
+                  className="rounded-md bg-white/72 px-3 py-2 text-sm font-medium text-[var(--color-text-muted)]"
                 >
                   Close
                 </button>
@@ -419,7 +419,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     type="button"
                     data-testid={`capture-mode-${mode.key}`}
                     onClick={() => void createDraft(mode)}
-                    className="glass-panel rounded-xl px-4 py-4 text-left"
+                    className="glass-panel rounded-lg px-4 py-4 text-left"
                   >
                     <p className="text-sm font-semibold text-[var(--color-text)]">{mode.label}</p>
                     <p className="mt-1 text-xs text-[var(--color-text-muted)]">
