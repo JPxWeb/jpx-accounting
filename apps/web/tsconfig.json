@@ -6,6 +6,10 @@
         "name": "next"
       }
     ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    },
     "incremental": true,
     "tsBuildInfoFile": "node_modules/.cache/web.tsbuildinfo"
   },

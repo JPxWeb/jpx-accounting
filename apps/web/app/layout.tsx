@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { QueryProvider } from "../components/providers/query-provider";
 import { ServiceWorkerRegistrar } from "../components/pwa/service-worker-registrar";
 import { APP_THEME_COLOR } from "../lib/presentation";
+import { cn } from "../lib/utils";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -33,7 +34,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="sv" className={`${manrope.variable} ${plexMono.variable}`}>
+    <html lang="sv" className={cn(manrope.variable, plexMono.variable, "font-sans")}>
       <body>
         <a
           href="#main-content"
