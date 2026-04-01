@@ -230,7 +230,6 @@ a {
   );
   background-size: 200% 100%;
   animation: shimmer 1.8s ease-in-out infinite;
-  border-radius: var(--radius-lg);
 }
 
 /* Micro-interactions */
