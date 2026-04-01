@@ -13,7 +13,7 @@ export function SettingsScreen() {
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="glass-panel rounded-3xl p-5" data-testid="runtime-posture">
+        <section className="glass-panel rounded-xl p-5" data-testid="runtime-posture">
           <h2 className="text-lg font-semibold">Runtime posture</h2>
           <ul className="mt-4 list-none space-y-3 text-sm text-[var(--color-text-muted)]">
             <li>{formatRuntimeModeLabel(webRuntimeConfig.runtimeMode)} is active for this web shell.</li>
@@ -31,7 +31,7 @@ export function SettingsScreen() {
           </ul>
         </section>
 
-        <section className="glass-panel rounded-3xl p-5" data-testid="deployment-posture">
+        <section className="glass-panel rounded-xl p-5" data-testid="deployment-posture">
           <h2 className="text-lg font-semibold">Deployment posture</h2>
           <ul className="mt-4 list-none space-y-3 text-sm text-[var(--color-text-muted)]">
             <li>Azure in Sweden Central, Supabase in Stockholm, immutable evidence in Blob storage.</li>
@@ -40,7 +40,7 @@ export function SettingsScreen() {
           </ul>
         </section>
 
-        <section className="glass-panel rounded-3xl p-5" data-testid="audit-spine">
+        <section className="glass-panel rounded-xl p-5" data-testid="audit-spine">
           <h2 className="text-lg font-semibold">Audit spine</h2>
           <ul className="mt-4 list-none space-y-3 text-sm text-[var(--color-text-muted)]">
             <li>Append-only events are the legal source of truth.</li>

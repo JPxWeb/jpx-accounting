@@ -60,7 +60,7 @@ export function ReportsScreen() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           data-testid="journal-summary"
-          className="glass-panel rounded-3xl p-5"
+          className="glass-panel rounded-xl p-5"
         >
           <h2 className="text-lg font-semibold">Journal summary</h2>
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -69,7 +69,7 @@ export function ReportsScreen() {
               { label: "Debit", value: formatMoney(journalSummary.totalDebit) },
               { label: "Credit", value: formatMoney(journalSummary.totalCredit) },
             ].map((item) => (
-              <div key={item.label} className="glass-panel-soft rounded-2xl p-4">
+              <div key={item.label} className="glass-panel-soft rounded-lg p-4">
                 <SectionLabel>{item.label}</SectionLabel>
                 <p className="mt-3 text-xl font-semibold tabular-nums">{item.value}</p>
               </div>
@@ -77,11 +77,11 @@ export function ReportsScreen() {
           </div>
         </motion.section>
 
-        <section className="glass-panel rounded-3xl p-5" data-testid="trial-balance">
+        <section className="glass-panel rounded-xl p-5" data-testid="trial-balance">
           <h2 className="text-lg font-semibold">Trial balance view</h2>
           <div className="mt-4 space-y-3">
             {balanceSummary.map((balance) => (
-              <article key={balance.accountNumber} className="glass-panel-soft rounded-2xl p-4 text-sm">
+              <article key={balance.accountNumber} className="glass-panel-soft rounded-lg p-4 text-sm">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="font-medium text-[var(--color-text)]">{balance.accountName}</p>
@@ -92,13 +92,13 @@ export function ReportsScreen() {
                   </p>
                 </div>
                 <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="glass-panel-inset rounded-xl px-3 py-3">
+                  <div className="glass-panel-inset rounded-lg px-3 py-3">
                     <dt className="text-eyebrow">Debit</dt>
                     <dd className="mt-2 font-semibold tabular-nums text-[var(--color-text)]">
                       {formatMoney(balance.debit)}
                     </dd>
                   </div>
-                  <div className="glass-panel-inset rounded-xl px-3 py-3">
+                  <div className="glass-panel-inset rounded-lg px-3 py-3">
                     <dt className="text-eyebrow">Credit</dt>
                     <dd className="mt-2 font-semibold tabular-nums text-[var(--color-text)]">
                       {formatMoney(balance.credit)}
@@ -111,11 +111,11 @@ export function ReportsScreen() {
         </section>
       </div>
 
-      <section className="glass-panel rounded-3xl p-5" data-testid="vat-preparation">
+      <section className="glass-panel rounded-xl p-5" data-testid="vat-preparation">
         <h2 className="text-lg font-semibold">VAT preparation</h2>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {vatSummary.map((entry) => (
-            <div key={entry.vatCode} className="glass-panel-soft rounded-2xl p-4">
+            <div key={entry.vatCode} className="glass-panel-soft rounded-lg p-4">
               <SectionLabel>{entry.label}</SectionLabel>
               <p className="mt-3 text-2xl font-semibold tabular-nums">{formatMoney(entry.vatAmount)}</p>
               <p className="mt-2 text-sm tabular-nums text-[var(--color-text-muted)]">
