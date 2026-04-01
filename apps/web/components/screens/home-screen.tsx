@@ -147,7 +147,7 @@ export function HomeScreen() {
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.2fr)_23rem]">
         <section className="space-y-4">
-          <div className="glass-chrome rounded-3xl px-4 py-4 sm:px-5">
+          <div className="glass-chrome rounded-xl px-4 py-4 sm:px-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <SectionLabel>Review queue</SectionLabel>
@@ -163,7 +163,7 @@ export function HomeScreen() {
                   onClick={() => createEvidence.mutate()}
                   disabled={createEvidence.isPending}
                   data-testid="simulate-upload"
-                  className="glass-panel-soft rounded-xl px-4 py-2.5 text-sm font-medium text-[var(--color-text)] disabled:opacity-60"
+                  className="glass-panel-soft rounded-md px-4 py-2.5 text-sm font-medium text-[var(--color-text)] disabled:opacity-60"
                 >
                   {createEvidence.isPending ? "Creating\u2026" : "Create sample receipt"}
                 </button>
@@ -172,14 +172,14 @@ export function HomeScreen() {
                   onClick={() => approveFirst.mutate()}
                   data-testid="approve-first"
                   disabled={!firstPendingReview || approveFirst.isPending}
-                  className="rounded-xl bg-[var(--color-accent)] px-4 py-2.5 text-sm font-medium text-white shadow-[var(--shadow-accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-md bg-[var(--color-accent)] px-4 py-2.5 text-sm font-medium text-white shadow-[var(--shadow-accent)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {approveFirst.isPending ? "Approving\u2026" : "Approve next review"}
                 </button>
               </div>
             </div>
             {actionError ? (
-              <p className="mt-4 rounded-2xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
+              <p className="mt-4 rounded-lg bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
                 {actionError}
               </p>
             ) : null}
@@ -199,10 +199,10 @@ export function HomeScreen() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
-                  className="glass-panel rounded-3xl p-4 sm:p-5"
+                  className="glass-panel rounded-xl p-4 sm:p-5"
                 >
                   <div className="review-card-layout">
-                    <div className="review-card-preview glass-panel-soft rounded-2xl p-4">
+                    <div className="review-card-preview glass-panel-soft rounded-lg p-4">
                       <div className="flex h-full flex-col justify-between gap-4">
                         <div className="flex items-center justify-between gap-3">
                           <StatusBadge
@@ -215,7 +215,7 @@ export function HomeScreen() {
                           </span>
                         </div>
                         <div>
-                          <div className="inline-flex rounded-xl bg-[var(--color-accent-soft)] px-4 py-3 text-xl font-semibold tracking-[0.08em] text-[var(--color-text)]">
+                          <div className="inline-flex rounded-lg bg-[var(--color-accent-soft)] px-4 py-3 text-xl font-semibold tracking-[0.08em] text-[var(--color-text)]">
                             {initialsFromTitle(supplier)}
                           </div>
                           <p className="mt-3 text-sm font-semibold text-[var(--color-text)]">{supplier}</p>
@@ -236,19 +236,19 @@ export function HomeScreen() {
                           </p>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-sm lg:w-[17rem]">
-                          <div className="glass-panel-inset rounded-xl px-3 py-3">
+                          <div className="glass-panel-inset rounded-lg px-3 py-3">
                             <div className="text-eyebrow">Date</div>
                             <div className="mt-2 font-semibold">
                               {formatShortDate(voucher?.voucherFields.receiptDate)}
                             </div>
                           </div>
-                          <div className="glass-panel-inset rounded-xl px-3 py-3">
+                          <div className="glass-panel-inset rounded-lg px-3 py-3">
                             <div className="text-eyebrow">Gross</div>
                             <div className="mt-2 font-semibold tabular-nums">
                               {formatMoney(voucher?.voucherFields.grossAmount)}
                             </div>
                           </div>
-                          <div className="glass-panel-inset rounded-xl px-3 py-3">
+                          <div className="glass-panel-inset rounded-lg px-3 py-3">
                             <div className="text-eyebrow">VAT</div>
                             <div className="mt-2 font-semibold tabular-nums">
                               {formatMoney(voucher?.voucherFields.vatAmount)}
@@ -258,32 +258,32 @@ export function HomeScreen() {
                       </div>
 
                       <div className="mt-4 flex flex-wrap gap-2">
-                        <span className="rounded-lg bg-[var(--color-surface-muted)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
+                        <span className="rounded-md bg-[var(--color-surface-muted)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
                           {review.suggestion?.accountNumber} {review.suggestion?.accountName}
                         </span>
-                        <span className="rounded-lg bg-[var(--color-accent-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-accent)]">
+                        <span className="rounded-md bg-[var(--color-accent-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-accent)]">
                           {review.suggestion?.vatCode}
                         </span>
                         {citation ? (
-                          <span className="rounded-lg bg-[var(--color-info-soft)] px-3 py-2 text-sm font-medium text-[var(--color-info)]">
+                          <span className="rounded-md bg-[var(--color-info-soft)] px-3 py-2 text-sm font-medium text-[var(--color-info)]">
                             Cited: {citation.title}
                           </span>
                         ) : null}
                       </div>
 
                       <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)]">
-                        <div className="glass-panel-soft rounded-2xl p-4">
+                        <div className="glass-panel-soft rounded-lg p-4">
                           <SectionLabel>AI suggestion</SectionLabel>
                           <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
                             {review.suggestion?.reasoning}
                           </p>
                         </div>
 
-                        <details className="glass-panel-soft rounded-2xl p-4">
+                        <details className="glass-panel-soft rounded-lg p-4">
                           <summary className="text-eyebrow cursor-pointer list-none">Rule hits and provenance</summary>
                           <div className="mt-4 space-y-3">
                             {review.suggestion?.ruleHits.map((rule) => (
-                              <div key={rule.id} className="glass-panel-inset rounded-xl px-3 py-3 text-sm">
+                              <div key={rule.id} className="glass-panel-inset rounded-lg px-3 py-3 text-sm">
                                 <p className="font-semibold text-[var(--color-text)]">{rule.title}</p>
                                 <p className="mt-1 text-[var(--color-text-muted)]">{rule.message}</p>
                               </div>
@@ -304,7 +304,7 @@ export function HomeScreen() {
                       </div>
 
                       {review.blockedReason ? (
-                        <p className="mt-4 rounded-2xl bg-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]">
+                        <p className="mt-4 rounded-lg bg-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]">
                           {review.blockedReason}
                         </p>
                       ) : null}
@@ -317,7 +317,7 @@ export function HomeScreen() {
         </section>
 
         <aside className="space-y-4">
-          <section className="glass-panel rounded-3xl p-5" data-testid="close-copilot-panel">
+          <section className="glass-panel rounded-xl p-5" data-testid="close-copilot-panel">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <SectionLabel>Close Copilot</SectionLabel>
@@ -327,7 +327,7 @@ export function HomeScreen() {
             </div>
             <div className="mt-4 space-y-3">
               {closeRun?.checklist.map((item) => (
-                <div key={item.id} className="glass-panel-soft rounded-2xl px-4 py-4">
+                <div key={item.id} className="glass-panel-soft rounded-lg px-4 py-4">
                   <div className="flex items-center justify-between gap-4">
                     <p className="text-sm font-medium text-[var(--color-text)]">{item.label}</p>
                     <StatusBadge status={item.status} variant={closeItemVariant(item.status)} />
@@ -337,11 +337,11 @@ export function HomeScreen() {
             </div>
           </section>
 
-          <section className="glass-panel rounded-3xl p-5" data-testid="balances-panel">
+          <section className="glass-panel rounded-xl p-5" data-testid="balances-panel">
             <SectionLabel>Balance pulse</SectionLabel>
             <div className="mt-4 space-y-3">
               {balances.slice(0, 5).map((balance) => (
-                <div key={balance.accountNumber} className="glass-panel-soft rounded-2xl px-4 py-4">
+                <div key={balance.accountNumber} className="glass-panel-soft rounded-lg px-4 py-4">
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="text-sm font-semibold text-[var(--color-text)]">{balance.accountName}</p>
@@ -356,11 +356,11 @@ export function HomeScreen() {
             </div>
           </section>
 
-          <section className="glass-panel rounded-3xl p-5" data-testid="alerts-panel">
+          <section className="glass-panel rounded-xl p-5" data-testid="alerts-panel">
             <SectionLabel>Compliance watch</SectionLabel>
             <div className="mt-4 space-y-3">
               {alerts.map((alert) => (
-                <div key={alert.id} className="glass-panel-soft rounded-2xl px-4 py-4">
+                <div key={alert.id} className="glass-panel-soft rounded-lg px-4 py-4">
                   <div className="flex items-center justify-between gap-4">
                     <p className="text-sm font-semibold text-[var(--color-text)]">{alert.title}</p>
                     <StatusBadge status={alert.source} variant="warning" />
