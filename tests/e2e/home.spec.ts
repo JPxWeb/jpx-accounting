@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
+import { expectAccessible } from "./a11y-helpers";
 import { resetApiState } from "./test-helpers";
 
 test.beforeEach(async ({ request }) => {
@@ -44,4 +45,10 @@ test("home screen supports approval and local draft capture", async ({ page }) =
   await expect(page.getByTestId("capture-sheet")).toBeVisible();
   await page.getByTestId("capture-mode-camera").click();
   await expect(page.getByTestId("draft-notice")).toContainText("Camera draft saved locally");
+});
+
+test("home screen passes WCAG 2.2 AA accessibility checks", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("review-card")).toHaveCount(1);
+  await expectAccessible(page);
 });
