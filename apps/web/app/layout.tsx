@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Manrope } from "next/font/google";
 import type { ReactNode } from "react";
-
+import { Toaster } from "@/components/ui/sonner";
 import { QueryProvider } from "../components/providers/query-provider";
 import { ServiceWorkerRegistrar } from "../components/pwa/service-worker-registrar";
 import { APP_THEME_COLOR } from "../lib/presentation";
@@ -46,6 +46,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <ServiceWorkerRegistrar />
           {children}
         </QueryProvider>
+        <Toaster />
       </body>
     </html>
   );
