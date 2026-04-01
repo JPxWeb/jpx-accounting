@@ -15,7 +15,7 @@ const variantStyles = {
 export function StatusBadge({ status, variant, testId }: StatusBadgeProps) {
   return (
     <span
-      className={`rounded-full px-3 py-1 text-caption font-semibold ${variantStyles[variant]}`}
+      className={`rounded-full px-3 py-1.5 text-caption font-semibold leading-tight ${variantStyles[variant]}`}
       data-testid={testId}
     >
       {status}

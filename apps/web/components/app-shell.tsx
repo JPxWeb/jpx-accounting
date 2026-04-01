@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import type { MouseEvent, ReactNode } from "react";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
+import { useScrollDirection } from "../hooks/use-scroll-direction";
 import { saveCaptureDraft } from "../lib/draft-queue";
 import type { DraftQueueSaveResult } from "../lib/draft-queue-core";
 import { formatRuntimeModeLabel } from "../lib/presentation";
@@ -74,6 +75,7 @@ function getFocusableElements(container: HTMLElement | null) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const barsHidden = useScrollDirection();
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureStatus, setCaptureStatus] = useState<CaptureStatus | null>(null);
   const timestamp = useMemo(() => new Intl.DateTimeFormat("sv-SE").format(new Date()), []);
@@ -267,7 +269,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         </aside>
 
         <div className="shell-main">
-          <header className="page-shell page-shell-compact shell-topbar" data-testid="app-shell-header">
+          <header
+            className="page-shell page-shell-compact shell-topbar"
+            data-testid="app-shell-header"
+            data-hidden={barsHidden}
+          >
             <div className="glass-chrome flex items-center justify-between gap-4 rounded-2xl px-4 py-3 sm:px-5">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -295,10 +301,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                   type="button"
                   onClick={openCaptureSheet}
                   data-testid="capture-open-mobile"
-                  className="capture-button-mobile flex items-center gap-2 rounded-md bg-[var(--color-accent)] px-5 py-4 text-sm font-semibold text-white shadow-[var(--shadow-sm)] lg:hidden"
+                  aria-label="Capture evidence"
+                  className="flex size-10 items-center justify-center rounded-lg bg-[var(--color-accent)] text-white shadow-[var(--shadow-sm)] lg:hidden"
                 >
                   <CaptureIcon className="size-4" />
-                  Capture
                 </button>
               </div>
             </div>
@@ -341,6 +347,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         aria-label="Mobile primary"
         data-testid="mobile-dock"
         className="mobile-dock glass-chrome rounded-2xl px-2 py-2 lg:hidden"
+        data-hidden={barsHidden}
       >
         <div className="grid grid-cols-4 gap-2">
           {navigation.map((item) => {
