@@ -1,10 +1,12 @@
 import { getWebServerRuntimeConfig } from "../../../lib/server-runtime-config";
 
-const responseHeaders = new Set([
-  "content-type",
-  "content-disposition",
-  "cache-control",
-]);
+/**
+ * Reverse proxy to the Accounting API for same-origin browser calls (`/api-proxy/...`).
+ * Target base URL comes from `ACCOUNTING_API_BASE_URL` (see `apps/web/lib/server-runtime-config.ts` and docs/CONTRIBUTING.md).
+ * Strips hop-by-hop headers; forwards a small allowlist only.
+ */
+
+const responseHeaders = new Set(["content-type", "content-disposition", "cache-control"]);
 
 const requestHeaders = ["accept", "authorization", "content-type", "x-request-id"] as const;
 
@@ -59,7 +61,6 @@ async function proxyRequest(request: Request, path: string[]) {
   });
 }
 
-// The browser talks to a same-origin route so API targeting stays runtime-configurable in Azure and during e2e runs.
 export async function GET(request: Request, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params;
   return proxyRequest(request, path);

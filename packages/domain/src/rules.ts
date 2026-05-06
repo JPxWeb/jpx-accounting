@@ -1,10 +1,4 @@
-import type {
-  AccountingSuggestion,
-  Citation,
-  ExtractedField,
-  RuleHit,
-  Voucher,
-} from "@jpx-accounting/contracts";
+import type { AccountingSuggestion, Citation, ExtractedField, RuleHit, Voucher } from "@jpx-accounting/contracts";
 
 import { basAccounts } from "./bas";
 import { createId } from "./ids";
@@ -15,7 +9,7 @@ const bookkeepingCitation: Citation = {
   sourceType: "official",
   url: "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/bokforingslag-19991078_sfs-1999-1078/",
   excerpt: "Verifikation ska innehålla uppgifter som gör sambandet med affärshändelsen tydligt.",
-  effectiveDate: "1999-12-10"
+  effectiveDate: "1999-12-10",
 };
 
 const vatCitation: Citation = {
@@ -23,7 +17,7 @@ const vatCitation: Citation = {
   title: "Skatteverket SKV 552B",
   sourceType: "official",
   url: "https://skatteverket.se/download/18.361dc8c15312eff6fd117b1/1708607408713/the-vat-brochure-skv552b-utgava15.pdf",
-  excerpt: "Avdrag för ingående moms kräver korrekt fakturaunderlag."
+  excerpt: "Avdrag för ingående moms kräver korrekt fakturaunderlag.",
 };
 
 function hasField(fields: ExtractedField[], key: string) {
@@ -42,7 +36,7 @@ export function evaluateVoucherRules(voucher: Voucher) {
       title: "Supplier missing",
       severity: "blocking",
       message: "Supplier name must be confirmed before the voucher can be posted.",
-      sourceIds: [bookkeepingCitation.id]
+      sourceIds: [bookkeepingCitation.id],
     });
   }
 
@@ -53,7 +47,7 @@ export function evaluateVoucherRules(voucher: Voucher) {
       title: "Date missing",
       severity: "blocking",
       message: "Receipt or invoice date must be present for the verification chain.",
-      sourceIds: [bookkeepingCitation.id]
+      sourceIds: [bookkeepingCitation.id],
     });
   }
 
@@ -64,7 +58,7 @@ export function evaluateVoucherRules(voucher: Voucher) {
       title: "Amount missing",
       severity: "blocking",
       message: "Gross amount is required before the voucher can be reviewed.",
-      sourceIds: [bookkeepingCitation.id]
+      sourceIds: [bookkeepingCitation.id],
     });
   }
 
@@ -75,7 +69,7 @@ export function evaluateVoucherRules(voucher: Voucher) {
       title: "VAT invoice data incomplete",
       severity: "blocking",
       message: "Supplier VAT number is missing, so deductible VAT should be blocked pending review.",
-      sourceIds: [vatCitation.id]
+      sourceIds: [vatCitation.id],
     });
   }
 
@@ -86,7 +80,7 @@ export function evaluateVoucherRules(voucher: Voucher) {
       title: "Invoice number missing",
       severity: "warning",
       message: "Invoice number is recommended for stronger traceability and VAT support.",
-      sourceIds: [vatCitation.id, bookkeepingCitation.id]
+      sourceIds: [vatCitation.id, bookkeepingCitation.id],
     });
   }
 
@@ -132,7 +126,6 @@ export function buildDeterministicSuggestion(voucher: Voucher, ruleHits: RuleHit
         : "The suggestion combines extracted merchant context, description cues, and BAS-oriented heuristics for Swedish SME bookkeeping.",
     kind: "recommendation",
     citations: [bookkeepingCitation, vatCitation],
-    ruleHits
+    ruleHits,
   };
 }
-

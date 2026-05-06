@@ -15,10 +15,9 @@ export const basAccounts: BasAccount[] = [
   { number: "6110", name: "Kontorsmateriel", vatCode: "VAT25" },
   { number: "6212", name: "Mobiltelefon", vatCode: "VAT25" },
   { number: "6540", name: "IT-tjänster", vatCode: "VAT25" },
-  { number: "6991", name: "Övriga externa kostnader, avdragsgilla", vatCode: "VAT25" }
+  { number: "6991", name: "Övriga externa kostnader, avdragsgilla", vatCode: "VAT25" },
 ];
 
 export function findBasAccount(number: string) {
   return basAccounts.find((account) => account.number === number);
 }
-

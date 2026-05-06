@@ -1,8 +1,4 @@
-import type {
-  AccountBalanceProjection,
-  JournalEntryProjection,
-  VatProjection,
-} from "@jpx-accounting/contracts";
+import type { AccountBalanceProjection, JournalEntryProjection, VatProjection } from "@jpx-accounting/contracts";
 
 type LedgerLine = {
   voucherId: string;
@@ -70,4 +66,3 @@ export function buildVat(lines: LedgerLine[]): VatProjection[] {
 
   return [...map.values()];
 }
-

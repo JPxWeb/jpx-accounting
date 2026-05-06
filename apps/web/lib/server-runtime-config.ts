@@ -25,6 +25,7 @@ export function getWebServerRuntimeConfig(): WebServerRuntimeConfig {
   return {
     runtimeMode: readRuntimeMode(process.env.NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE),
     apiBaseUrl:
-      normalizeAbsoluteUrl(process.env.ACCOUNTING_API_BASE_URL) ?? normalizeAbsoluteUrl(process.env.NEXT_PUBLIC_API_BASE_URL),
+      normalizeAbsoluteUrl(process.env.ACCOUNTING_API_BASE_URL) ??
+      normalizeAbsoluteUrl(process.env.NEXT_PUBLIC_API_BASE_URL),
   };
 }

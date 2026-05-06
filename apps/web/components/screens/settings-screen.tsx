@@ -23,7 +23,10 @@ export function SettingsScreen() {
                 : "Normal mode expects API-backed behavior and surfaces unavailable state when config is missing."}
             </li>
             <li>
-              Service worker registration is {webRuntimeConfig.disableServiceWorker ? "disabled for this build." : "enabled with static-asset-only caching."}
+              Service worker registration is{" "}
+              {webRuntimeConfig.disableServiceWorker
+                ? "disabled for this build."
+                : "enabled with static-asset-only caching."}
             </li>
           </ul>
         </section>

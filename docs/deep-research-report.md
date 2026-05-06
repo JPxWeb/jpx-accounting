@@ -69,11 +69,12 @@ A deterministic compliance layer that encodes hard rules: required invoice field
 A probabilistic suggestion layer (ML/LLM) that proposes likely accounts/VAT codes based on vendor history, amounts, and extracted text—but cannot override the compliance layer. When low confidence or a high-risk category is detected (representation, mixed VAT, reverse charge signals), the system should ask targeted questions rather than “guess”. This is consistent with Microsoft’s guidance that hallucination mitigation is achieved by retrieval-augmented strategies, prompt constraints, and escalation/fallback behaviours (“say I don’t know” / “insufficient data”). citeturn31view0
 
 An explanation layer that always cites sources. For each suggestion, store:
+
 - what evidence was extracted (fields + confidence),
 - which deterministic rules applied,
 - what the model suggested,
 - and a “why” narrative that quotes and links to the relevant legal/guidance text snippets in your internal knowledge base.  
-This mirrors the “groundedness” and evaluation emphasis in Microsoft’s hallucination guidance (grounding with curated sources, metadata filtering, and evaluation loops). citeturn31view0
+  This mirrors the “groundedness” and evaluation emphasis in Microsoft’s hallucination guidance (grounding with curated sources, metadata filtering, and evaluation loops). citeturn31view0
 
 For “continuous analysis” features (tax optimisation suggestions, missed subscriptions), treat the system as an internal “auditing assistant” that generates review tasks, not automatic postings. That is also a risk-management-aligned approach: the entity["organization","National Institute of Standards and Technology","us standards institute"] AI RMF positions AI risk management as a lifecycle process aimed at trustworthiness, with continuous evaluation and governance rather than one-off deployment. citeturn20search3turn20search7
 

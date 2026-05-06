@@ -1,5 +1,10 @@
+# onlyBuiltDependencies: pnpm v10 blocks dependency postinstall scripts by default unless allowlisted here.
+# Keeps installs safer while still permitting native/binary deps Next needs (verified against pnpm approve-builds policy).
 packages:
   - "apps/*"
   - "services/*"
   - "packages/*"
 
+onlyBuiltDependencies:
+  - esbuild
+  - sharp

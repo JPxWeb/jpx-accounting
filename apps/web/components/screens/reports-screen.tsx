@@ -88,16 +88,22 @@ export function ReportsScreen() {
                     <p className="font-medium text-[var(--color-text)]">{balance.accountName}</p>
                     <p className="text-mono text-xs text-[var(--color-text-muted)]">{balance.accountNumber}</p>
                   </div>
-                  <p className="text-sm font-semibold tabular-nums text-[var(--color-text)]">{formatMoney(balance.balance)}</p>
+                  <p className="text-sm font-semibold tabular-nums text-[var(--color-text)]">
+                    {formatMoney(balance.balance)}
+                  </p>
                 </div>
                 <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="glass-panel-inset rounded-xl px-3 py-3">
                     <dt className="text-eyebrow">Debit</dt>
-                    <dd className="mt-2 font-semibold tabular-nums text-[var(--color-text)]">{formatMoney(balance.debit)}</dd>
+                    <dd className="mt-2 font-semibold tabular-nums text-[var(--color-text)]">
+                      {formatMoney(balance.debit)}
+                    </dd>
                   </div>
                   <div className="glass-panel-inset rounded-xl px-3 py-3">
                     <dt className="text-eyebrow">Credit</dt>
-                    <dd className="mt-2 font-semibold tabular-nums text-[var(--color-text)]">{formatMoney(balance.credit)}</dd>
+                    <dd className="mt-2 font-semibold tabular-nums text-[var(--color-text)]">
+                      {formatMoney(balance.credit)}
+                    </dd>
                   </div>
                 </dl>
               </article>
@@ -113,7 +119,9 @@ export function ReportsScreen() {
             <div key={entry.vatCode} className="glass-panel-soft rounded-2xl p-4">
               <SectionLabel>{entry.label}</SectionLabel>
               <p className="mt-3 text-2xl font-semibold tabular-nums">{formatMoney(entry.vatAmount)}</p>
-              <p className="mt-2 text-sm tabular-nums text-[var(--color-text-muted)]">Base {formatMoney(entry.baseAmount)}</p>
+              <p className="mt-2 text-sm tabular-nums text-[var(--color-text-muted)]">
+                Base {formatMoney(entry.baseAmount)}
+              </p>
             </div>
           ))}
         </div>

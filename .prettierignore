@@ -1,0 +1,8 @@
+pnpm-lock.yaml
+.next
+out
+build
+api-deploy
+playwright-report
+node_modules
+.cursor

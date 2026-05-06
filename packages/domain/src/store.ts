@@ -31,13 +31,13 @@ export type ReviewAction = "approve" | "reject" | "book-without-vat";
 export interface LedgerStore {
   createEvidence(input: EvidenceCreateInput): EvidenceCreateResult;
   composeEvidence(input: EvidenceComposeInput): EvidencePacket;
-  getEvidenceContext(
-    evidenceId: string,
-  ): {
-    evidence: EvidenceObject;
-    packet?: EvidencePacket;
-    voucher?: Voucher;
-  } | undefined;
+  getEvidenceContext(evidenceId: string):
+    | {
+        evidence: EvidenceObject;
+        packet?: EvidencePacket;
+        voucher?: Voucher;
+      }
+    | undefined;
   findReviewByVoucher(voucherId: string): ReviewTask | undefined;
   getReviewFeed(): ReviewTask[];
   getReports(): ReportBundle;
@@ -65,10 +65,28 @@ function guessSupplier(input: EvidenceCreateInput) {
 function buildExtractedFields(input: EvidenceCreateInput): ExtractedField[] {
   return [
     { key: "supplierName", label: "Supplier", value: guessSupplier(input), confidence: 0.71, required: true },
-    { key: "receiptDate", label: "Receipt date", value: new Date().toISOString().slice(0, 10), confidence: 0.98, required: true },
-    { key: "transactionDate", label: "Transaction date", value: new Date().toISOString().slice(0, 10), confidence: 0.85, required: false },
+    {
+      key: "receiptDate",
+      label: "Receipt date",
+      value: new Date().toISOString().slice(0, 10),
+      confidence: 0.98,
+      required: true,
+    },
+    {
+      key: "transactionDate",
+      label: "Transaction date",
+      value: new Date().toISOString().slice(0, 10),
+      confidence: 0.85,
+      required: false,
+    },
     { key: "grossAmount", label: "Gross amount", value: "1249.00", confidence: 0.84, required: true },
-    { key: "invoiceNumber", label: "Invoice number", value: input.originalFilename.replace(/\W+/g, "-"), confidence: 0.61, required: false },
+    {
+      key: "invoiceNumber",
+      label: "Invoice number",
+      value: input.originalFilename.replace(/\W+/g, "-"),
+      confidence: 0.61,
+      required: false,
+    },
     { key: "supplierVatNumber", label: "VAT number", value: "SE556677889901", confidence: 0.51, required: false },
   ];
 }
@@ -124,7 +142,7 @@ function buildPostingLines(
 ): LedgerLine[] {
   const amount = voucher.voucherFields.grossAmount ?? 0;
   const netAmount = voucher.voucherFields.netAmount ?? amount;
-  const vatAmount = action === "book-without-vat" ? 0 : voucher.voucherFields.vatAmount ?? 0;
+  const vatAmount = action === "book-without-vat" ? 0 : (voucher.voucherFields.vatAmount ?? 0);
   const description = voucher.voucherFields.description ?? "Reviewed voucher";
 
   return [
@@ -182,7 +200,8 @@ export class MemoryLedgerStore implements LedgerStore {
       title: "Representation review queue",
       source: "Skatteverket / internal policy",
       detectedAt: nowIso(),
-      impactSummary: "Two receipts look like representation and should be checked against attendee and VAT-limit rules.",
+      impactSummary:
+        "Two receipts look like representation and should be checked against attendee and VAT-limit rules.",
     },
   ];
 
@@ -377,11 +396,13 @@ export class MemoryLedgerStore implements LedgerStore {
     return packet;
   }
 
-  getEvidenceContext(evidenceId: string): {
-    evidence: EvidenceObject;
-    packet?: EvidencePacket;
-    voucher?: Voucher;
-  } | undefined {
+  getEvidenceContext(evidenceId: string):
+    | {
+        evidence: EvidenceObject;
+        packet?: EvidencePacket;
+        voucher?: Voucher;
+      }
+    | undefined {
     const evidence = this.evidence.get(evidenceId);
     if (!evidence) return undefined;
 
@@ -450,12 +471,16 @@ export class MemoryLedgerStore implements LedgerStore {
     if (review.status !== "needs-review") return review;
 
     const occurredAt = nowIso();
-    review.status =
-      action === "approve" ? "approved" : action === "reject" ? "rejected" : "booked-without-vat";
+    review.status = action === "approve" ? "approved" : action === "reject" ? "rejected" : "booked-without-vat";
     voucher.status = review.status;
     review.provenanceTimeline.push({
       id: createId("step"),
-      label: action === "approve" ? "Review approved" : action === "reject" ? "Review rejected" : "Booked without VAT deduction",
+      label:
+        action === "approve"
+          ? "Review approved"
+          : action === "reject"
+            ? "Review rejected"
+            : "Booked without VAT deduction",
       timestamp: occurredAt,
       actor: input.actorId,
     });

@@ -1,0 +1,91 @@
+# Contributing / architecture notes
+
+JPX Accounting is a **pnpm workspace** targeting **Node 24** (`.node-version`; match CI and `engines.node`).
+
+## Repo map
+
+| Path                                                           | Responsibility                                                                                                  |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `apps/web`                                                     | Next.js 16 App Router PWA (`pnpm dev` / `pnpm dev:web`; default dev port **3002** via `apps/web/package.json`). |
+| `services/api`                                                 | Hono HTTP API (default dev port **3001** via `PORT` / `.env`).                                                  |
+| `packages/contracts`                                           | Shared Zod v4 schemas and exported types — **single source** for HTTP bodies and client parsing.                |
+| `packages/domain`                                              | Ledger/event rules, `MemoryLedgerStore`, projections (no Express/Next coupling).                                |
+| `packages/api-client`                                          | Thin `fetch` client; validates JSON **when `baseUrl` is set** with the same schemas as `contracts`.             |
+| `packages/ai-core`, `packages/reporting`, `packages/ui-tokens` | AI boundary, summaries, tokens.                                                                                 |
+
+## Trust boundaries
+
+```text
+Browser  →  Next (same-origin)  →  /api-proxy  →  Hono API  →  Zod parse (body) → LedgerStore
+```
+
+The **web bundle** reads `NEXT_PUBLIC_*` runtime mode; server-side routes use [`apps/web/lib/server-runtime-config.ts`](../apps/web/lib/server-runtime-config.ts) for `ACCOUNTING_API_BASE_URL` and [`apps/web/app/api-proxy/[...path]/route.ts`](../apps/web/app/api-proxy/[...path]/route.ts) for forwarding.
+
+Implementation changes that touch frameworks or toolchain should cross-check against **Current Next.js/pnpm/typescript-eslint docs** (e.g. Context7 `/vercel/next.js` pinned to the repo Next version).
+
+## Runtime modes (`demo` vs `normal`)
+
+- **`demo`**: `MemoryLedgerStore`, local AI fallback permitted, **open API CORS** for convenience.
+- **`normal`**: real storage/AI prerequisites are required; ledger calls fail closed when not configured. **`ACCOUNTING_CORS_ORIGINS`** (comma-separated) controls which browser origins may call `/api/*` directly; same-origin `/api-proxy` traffic from Next does not rely on browser CORS to the API.
+
+## Build trivia
+
+| Command                                        | Meaning                                                           |
+| ---------------------------------------------- | ----------------------------------------------------------------- |
+| `pnpm build` (API package)                     | `tsc --noEmit` for `services/api` — typecheck only.               |
+| Deploy workflow `.github/workflows/deploy.yml` | Bundles API with **esbuild** for Azure zip deploy (`server.mjs`). |
+
+Keeping those aligned avoids drift between “does it typecheck locally?” vs “does the bundle compile?”.
+
+## HTTP API probes and errors
+
+Use these outside the ledger routes when wiring load balancers or deploy smoke tests:
+
+| Route         | Purpose                                                                                                                                                                                            |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health` | **Liveness** — process accepts HTTP; `{ ok: true, runtimeMode }`.                                                                                                                                  |
+| `GET /ready`  | **Readiness** — `{ ready, runtimeMode, checks: { ledger, ai } }`. In **`normal`** without persistence/Azure, expect `ready: false` while `health` still returns 200 (stub store / unavailable AI). |
+
+JSON error bodies (4xx/5xx) include **`error`**, **`runtimeMode`**, and **`requestId`** (also echoed as **`x-request-id`** when the request-scoped middleware runs). Invalid Zod payloads return **`400`** with **`code: "validation_error"`** and an **`issues`** array (`path`, `message`). Oversized bodies on bounded routes return **`413`**.
+
+Baseline **`secureHeaders`** and **`bodyLimit`** are configured in [`services/api/src/app.ts`](../services/api/src/app.ts).
+
+## Production web (`standalone`)
+
+[`apps/web`](../apps/web) builds with **`output: "standalone"`** for Docker/Azure. Prefer running the traced server from `.next/standalone` per Next.js standalone docs (`node server.js`), not **`next start`**, which logs a mismatch with `standalone`.
+
+## Local development: ports and a single dev stack
+
+`pnpm dev` launches **both** the Next app and the API in parallel. Run **only one** such stack at a time. If startup fails with **`EADDRINUSE`** on **3001** (API, via `PORT`) or **3002** (web, from `apps/web/package.json`), terminate the old process or choose different ports.
+
+## API body limits and Bun
+
+[`services/api/src/app.ts`](../services/api/src/app.ts) applies Hono `bodyLimit` (default JSON routes plus a higher cap for `POST /api/imports/sie`). If you host the API on **Bun**, set the runtime’s own maximum request body size (for example Bun’s `maxRequestBodySize`) **at least** as high as those route caps; otherwise the platform may reject large bodies before middleware runs. **`@hono/node-server` on Node** only needs the middleware configuration.
+
+## Tooling & policy
+
+### pnpm dependency builds
+
+pnpm v10 restricts dependency **postinstall/build scripts**. We allow **`esbuild`** and **`sharp`** in [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) (`onlyBuiltDependencies`) so reproducible installs do not silently skip binaries Next relies on — see [pnpm approve-builds](https://pnpm.io/cli/approve-builds).
+
+### ESLint / Prettier
+
+Root [`eslint.config.mjs`](../eslint.config.mjs): Next **flat** presets for `apps/web` only + `typescript-eslint` recommended for `services/`, `packages/`, `tests/`. ESLint merges with Prettier via `eslint-config-prettier`.
+
+### Typed routes (`next-env.d.ts`)
+
+[`apps/web/next-env.d.ts`](../apps/web/next-env.d.ts) references `.next/dev/types/routes.d.ts`. Run **`pnpm dev --filter @jpx-accounting/web`** or **`pnpm --filter @jpx-accounting/web exec next typegen`** when that file should exist locally.
+
+## Quick commands
+
+See root [README.md](../README.md) and [CLAUDE.md](../CLAUDE.md).
+
+```bash
+pnpm lint
+pnpm lint:fix
+pnpm format
+pnpm format:check
+pnpm typecheck
+pnpm test:unit
+pnpm check           # lint + format:check + typecheck + unit tests + build
+```

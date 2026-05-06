@@ -25,3 +25,9 @@
 - Production persistence should implement the same interface using Postgres append-only writes.
 - Later immutable storage migration should occur behind the `LedgerStore` abstraction, not by rewriting product logic.
 - Share-target capture remains scaffold-only until upload wiring lands and is called out explicitly in the UI.
+
+## API and edge behavior
+
+- Browser traffic is usually **same-origin** to Next, then [`apps/web/app/api-proxy/[...path]/route.ts`](../apps/web/app/api-proxy/[...path]/route.ts) forwards to the Hono API (see the trust diagram in [CONTRIBUTING.md](CONTRIBUTING.md)).
+- **`demo`** uses permissive CORS on `/api/*`; **`normal`** restricts direct browser origins via **`ACCOUNTING_CORS_ORIGINS`**.
+- The API sets **`x-request-id`**, structured validation errors, bounded request bodies, and default security headers; the Next app applies baseline **`headers()`** (CSP differs in dev vs prod; `/sw.js` uses `no-store`).

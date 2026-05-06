@@ -1,6 +1,7 @@
 # Updated Future-Proof Stack Plan (March 18, 2026)
 
 ## Summary
+
 - Core inference stack: `Azure OpenAI v1` + `Responses API` + official `openai` JavaScript/TypeScript SDK pointed at Azure’s `/openai/v1/` endpoint.
 - Managed agent stack: `Microsoft Foundry Agent Service`, but only for advisory/research/automation sidecars. Do not put bookkeeping correctness or ledger posting behind managed-agent state.
 - Web stack: `Next.js 16` + `React 19.2` + `Tailwind CSS v4` + `shadcn/ui` + `Motion`.
@@ -8,6 +9,7 @@
 - Native-later path: keep web first today, but reserve a clean `Expo SDK 55` path for iOS/Android later. Do not use React Native Web or Expo UI beta as the V1 foundation.
 
 ## AI Stack Decisions
+
 - Use `Responses API` for all core model calls, structured outputs, tool calls, background work, and chained multi-step tasks.
 - Build an internal `ai-core` package around the official `openai` client so the rest of the app never talks to Azure/OpenAI directly.
 - Keep three adapters:
@@ -23,6 +25,7 @@
 - Do not rely on provider-side conversation memory for financial records. Azure Responses retains stored response data for 30 days by default, so persist required state in our own store and delete provider-side responses when we don’t need them.
 
 ## Architecture Changes
+
 - Split the system into four clear layers:
   - `apps/web`: Next.js app shell, mobile-first UX, PWA installability, streamed assistant UI.
   - `services/api`: Hono app for all product APIs used by web now and native later.
@@ -36,6 +39,7 @@
   - Every MCP-backed tool must also have a normal service/API equivalent so we are not locked into MCP as the only integration contract.
 
 ## Model and Retrieval Policy
+
 - Use pinned named model deployments for compliance-critical flows.
 - Use a faster/cheaper deployment for extraction classification and account suggestions.
 - Use a stronger reasoning deployment for advisory explanations, tax edge-case review, and anomaly analysis.
@@ -49,6 +53,7 @@
   - Secondary evaluation lane: evaluate Azure-hosted document-capable models like Mistral Document AI for messy PDFs and edge-case receipts before productizing them.
 
 ## Framework Choices
+
 - Use `Next.js 16` for the web shell and rendering layer because it is stable now; do not switch the whole product to TanStack Start because it is still RC/community-stage.
 - Use `React 19.2` features where they solve real problems:
   - `useEffectEvent` for event-heavy mobile capture/report flows.
@@ -68,12 +73,14 @@
   - Expo UI beta as the main component system
 
 ## UX and Mobile Implications
+
 - Keep the mobile-first PWA decision from the previous plan.
 - Add one new rule: every AI workflow must be operable through a touch-first review flow, not only through a chat surface.
 - The assistant UI can use AI SDK 6 style streaming patterns, but it should call our own `/api/assistant/*` routes, never Azure directly from the browser.
 - Human-in-the-loop approval remains mandatory for all postings in V1, including any tool execution that changes accounting state.
 
 ## Test Plan
+
 - Provider abstraction tests:
   - swap `responses-adapter` and `mock-adapter` without changing domain code
   - run advisory flows through `foundry-agent-adapter` without changing UI contracts
@@ -92,6 +99,7 @@
   - streamed assistant UI degrades gracefully on low bandwidth
 
 ## Assumptions and Defaults
+
 - Default inference path is official `openai` SDK -> Azure `/openai/v1/` -> `responses`.
 - Foundry Agent Service is used selectively, not as the universal AI runtime.
 - We prefer Azure-managed capabilities where they are stable, but we avoid preview-only features in compliance-critical flows.

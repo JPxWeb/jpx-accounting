@@ -9,7 +9,7 @@ For an AB using the cash method, your system must also handle the statutory “c
 A minimal compliant architecture on Azure (cheap-first) can be implemented as:
 
 - **Evidence store**: Azure Blob Storage in Swedish regions + immutable storage options, with vouchers linked via IDs and metadata.
-- **Append-only ledger + audit trail**: an event-sourced “journal” (append-only postings) with explicit correction postings capturing *who/when*, and period locks.
+- **Append-only ledger + audit trail**: an event-sourced “journal” (append-only postings) with explicit correction postings capturing _who/when_, and period locks.
 - **OCR/extraction**: Azure Document Intelligence (prebuilt receipt/invoice or read) on upload.
 - **AI suggestions with guardrails**: deterministic rule engine for “hard law” checks (invoice requirements, VAT SEK conversion, retention/traceability) + a constrained LLM layer that only proposes (never posts), always outputs structured suggestions with citations back to a curated legal corpus.
 - **Continuous analysis**: scheduled batch jobs that look for anomalies/subscription gaps/VAT inconsistencies and create review tasks, not automatic actions.
@@ -31,20 +31,20 @@ Your company (AB) must fulfil bookkeeping in accordance with good accounting pra
 
 Key design-driving provisions (with exact citations):
 
-| Obligation (what the law requires) | Statutory citation | Practical system implication |
-|---|---|---|
-| Books must be presentable in registration order (journal) and systematic order (general ledger) with controls for completeness and overview | Bokföringslagen 5 kap. 1 § citeturn8view0 | Store postings as immutable events (journal order) plus derived ledgers/views; maintain reconciliation checks and sequence integrity. |
-| Timing: cash in/out by next working day; other transactions as soon as possible; small businesses may book on payment; year-end unpaid receivables/payables must be booked | Bokföringslagen 5 kap. 2 § (incl. third paragraph) citeturn8view0 | Workflow must support cash method and enforce year-end accrual tasks; reminders for unpaid items at year-end. |
-| Corrections must record **when** and **who**; if corrected via separate entry, must be easily discoverable when reviewing original | Bokföringslagen 5 kap. 5 § and 9 § citeturn8view0 | Strong audit trail: corrections as new postings referencing original; require authenticated user identity on every change. |
-| Every business event must have a voucher (verifikation); if received electronically, that info should be used as voucher (with supplements as needed) | Bokföringslagen 5 kap. 6 § citeturn8view0 | Receipt/invoice is preserved as the evidence object; postings reference voucher ID; support “supplement” metadata for missing fields. |
-| Voucher must include compiled date, transaction date, what it concerns, amount, counterparty, plus voucher ID and info linking voucher ↔ event without difficulty | Bokföringslagen 5 kap. 7 § citeturn8view0 | Data model must store these fields; AI ingestion must not “guess” missing mandatory voucher fields—must prompt user. |
-| System documentation + processing history must be created so that the system and processing of entries can be followed and understood without difficulty | Bokföringslagen 5 kap. 11 § citeturn7view1 | Maintain versioned system documentation and per-posting processing logs (including AI outputs and rule hits). |
-| Archival forms: paper or electronic; electronic must be printable immediately | Bokföringslagen 7 kap. 1 § citeturn9view0 | Store all accounting information in a form that can be exported/printed on demand; test “printability” as a compliance check. |
-| Preserve in original condition/format/content (paper “skick”; electronic “format och innehåll”) | Bokföringslagen 7 kap. 1 § citeturn9view0 | Store original files as immutable evidence; keep derived OCR text separately; ensure originals remain unchanged. |
-| Retention and location: durable, easily accessible, retained through the 7th year after year-end; stored in Sweden; systems to print must be available in Sweden | Bokföringslagen 7 kap. 2 § citeturn9view0 | Azure region choice becomes a compliance feature (Sweden region preferred); define retention policies and access controls. |
-| Allowed to store electronic accounting info in another EU country only if you notify Skatteverket (or FI), grant immediate electronic access for control, and can print immediately in Sweden | Bokföringslagen 7 kap. 3 a § citeturn9view0 | If you ever deploy outside Sweden, incorporate a “Skatteverket notification + control access” procedure, and document it. |
-| Transfer/destroy originals is permitted if transfer does not risk alteration or loss | Bokföringslagen 7 kap. 6 § citeturn9view0 | Supports digitisation workflows, but requires technical/organisational controls; keep evidence integrity proofs and logs. |
-| AB must close books with annual report and publish it | Bokföringslagen 6 kap. 1 § citeturn8view0 | Even if you don’t generate the annual report inside the tool, the system must export complete data for annual reporting. |
+| Obligation (what the law requires)                                                                                                                                                            | Statutory citation                                                   | Practical system implication                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Books must be presentable in registration order (journal) and systematic order (general ledger) with controls for completeness and overview                                                   | Bokföringslagen 5 kap. 1 § citeturn8view0                         | Store postings as immutable events (journal order) plus derived ledgers/views; maintain reconciliation checks and sequence integrity. |
+| Timing: cash in/out by next working day; other transactions as soon as possible; small businesses may book on payment; year-end unpaid receivables/payables must be booked                    | Bokföringslagen 5 kap. 2 § (incl. third paragraph) citeturn8view0 | Workflow must support cash method and enforce year-end accrual tasks; reminders for unpaid items at year-end.                         |
+| Corrections must record **when** and **who**; if corrected via separate entry, must be easily discoverable when reviewing original                                                            | Bokföringslagen 5 kap. 5 § and 9 § citeturn8view0                 | Strong audit trail: corrections as new postings referencing original; require authenticated user identity on every change.            |
+| Every business event must have a voucher (verifikation); if received electronically, that info should be used as voucher (with supplements as needed)                                         | Bokföringslagen 5 kap. 6 § citeturn8view0                         | Receipt/invoice is preserved as the evidence object; postings reference voucher ID; support “supplement” metadata for missing fields. |
+| Voucher must include compiled date, transaction date, what it concerns, amount, counterparty, plus voucher ID and info linking voucher ↔ event without difficulty                             | Bokföringslagen 5 kap. 7 § citeturn8view0                         | Data model must store these fields; AI ingestion must not “guess” missing mandatory voucher fields—must prompt user.                  |
+| System documentation + processing history must be created so that the system and processing of entries can be followed and understood without difficulty                                      | Bokföringslagen 5 kap. 11 § citeturn7view1                        | Maintain versioned system documentation and per-posting processing logs (including AI outputs and rule hits).                         |
+| Archival forms: paper or electronic; electronic must be printable immediately                                                                                                                 | Bokföringslagen 7 kap. 1 § citeturn9view0                         | Store all accounting information in a form that can be exported/printed on demand; test “printability” as a compliance check.         |
+| Preserve in original condition/format/content (paper “skick”; electronic “format och innehåll”)                                                                                               | Bokföringslagen 7 kap. 1 § citeturn9view0                         | Store original files as immutable evidence; keep derived OCR text separately; ensure originals remain unchanged.                      |
+| Retention and location: durable, easily accessible, retained through the 7th year after year-end; stored in Sweden; systems to print must be available in Sweden                              | Bokföringslagen 7 kap. 2 § citeturn9view0                         | Azure region choice becomes a compliance feature (Sweden region preferred); define retention policies and access controls.            |
+| Allowed to store electronic accounting info in another EU country only if you notify Skatteverket (or FI), grant immediate electronic access for control, and can print immediately in Sweden | Bokföringslagen 7 kap. 3 a § citeturn9view0                       | If you ever deploy outside Sweden, incorporate a “Skatteverket notification + control access” procedure, and document it.             |
+| Transfer/destroy originals is permitted if transfer does not risk alteration or loss                                                                                                          | Bokföringslagen 7 kap. 6 § citeturn9view0                         | Supports digitisation workflows, but requires technical/organisational controls; keep evidence integrity proofs and logs.             |
+| AB must close books with annual report and publish it                                                                                                                                         | Bokföringslagen 6 kap. 1 § citeturn8view0                         | Even if you don’t generate the annual report inside the tool, the system must export complete data for annual reporting.              |
 
 ### BFN guidance for limited companies
 
@@ -54,11 +54,11 @@ Key design-driving provisions (with exact citations):
 
 entity["organization","Skatteverket","swedish tax agency"] provides the most operationally useful primary guidance for receipt/invoice automation:
 
-- VAT rates: standard 25%, reduced 12% and 6%, plus VAT-exempt supplies. citeturn10search1  
-- Input VAT deduction *must* be verifiable by an invoice; if you have not received an invoice, or if it lacks necessary information, you may not deduct input VAT. citeturn16view0  
-- A purchaser’s invoice must include specific fields (date, unique serial number, vendor VAT number; purchaser VAT number in cases like reverse charge; names/addresses; goods/services description; supply date; taxable base; VAT rate; VAT payable, etc.). citeturn16view0  
-- Multi-currency constraint: regardless of invoice currency, VAT must be shown in SEK; if EUR is the accounting currency, VAT may be shown in EUR; conversion should use specified exchange rate sources such as the Nasdaq OMX Stockholm joint mid-price (as published e.g. via the Riksbank site) or the ECB rate. citeturn15view1  
-- For business entertainment representation meals, Skatteverket guidance caps the VAT deduction base (notably the SEK 300 rule with split across VAT rates such as 12% food vs 25% alcohol). citeturn10search9  
+- VAT rates: standard 25%, reduced 12% and 6%, plus VAT-exempt supplies. citeturn10search1
+- Input VAT deduction _must_ be verifiable by an invoice; if you have not received an invoice, or if it lacks necessary information, you may not deduct input VAT. citeturn16view0
+- A purchaser’s invoice must include specific fields (date, unique serial number, vendor VAT number; purchaser VAT number in cases like reverse charge; names/addresses; goods/services description; supply date; taxable base; VAT rate; VAT payable, etc.). citeturn16view0
+- Multi-currency constraint: regardless of invoice currency, VAT must be shown in SEK; if EUR is the accounting currency, VAT may be shown in EUR; conversion should use specified exchange rate sources such as the Nasdaq OMX Stockholm joint mid-price (as published e.g. via the Riksbank site) or the ECB rate. citeturn15view1
+- For business entertainment representation meals, Skatteverket guidance caps the VAT deduction base (notably the SEK 300 rule with split across VAT rates such as 12% food vs 25% alcohol). citeturn10search9
 
 Implication: your AI must treat VAT as a **rule-driven area**. If invoice fields are missing or ambiguous, the system should mark the voucher “VAT deduction blocked pending review” rather than guess. citeturn16view0
 
@@ -74,9 +74,9 @@ Practical design consequence: implement **archival segregation**: restrict acces
 
 entity["organization","European Union","supranational union"] Regulation (EU) 2024/1689 (AI Act) imposes transparency duties that are directly relevant even for internal systems:
 
-- Providers must ensure that AI systems intended to interact directly with natural persons inform them they are interacting with AI, unless obvious; with limited exceptions. citeturn22view2  
-- Providers of AI systems generating synthetic audio/image/video/text must ensure outputs are marked in a machine-readable format and detectable as AI-generated or manipulated. citeturn22view3  
-- The regulation’s official gateway is on Eur-Lex (note: Eur-Lex page access may be JS-gated in some environments). citeturn18search0turn18search16  
+- Providers must ensure that AI systems intended to interact directly with natural persons inform them they are interacting with AI, unless obvious; with limited exceptions. citeturn22view2
+- Providers of AI systems generating synthetic audio/image/video/text must ensure outputs are marked in a machine-readable format and detectable as AI-generated or manipulated. citeturn22view3
+- The regulation’s official gateway is on Eur-Lex (note: Eur-Lex page access may be JS-gated in some environments). citeturn18search0turn18search16
 
 Practical consequence: label your assistant clearly (“AI suggestion”), keep it in suggestion mode, and store logs of outputs and user actions for traceability and accountability. citeturn22view2turn7view1
 
@@ -85,7 +85,7 @@ Practical consequence: label your assistant clearly (“AI suggestion”), keep 
 If you later add direct bank connectivity (account information services / payment initiation) rather than manual file import, you can cross into regulated “payment services”.
 
 entity["organization","Finansinspektionen","swedish financial supervisory authority"] states that providing payment services requires authorisation from FI; smaller providers can apply to be exempt from the authorisation obligation and register as a “registered payment service provider” depending on turnover thresholds. citeturn23search0  
-FI has also clarified that third-party providers must use designated interfaces and must identify themselves; they may not access payment account information via a bank’s customer interface without identifying themselves. citeturn23search1  
+FI has also clarified that third-party providers must use designated interfaces and must identify themselves; they may not access payment account information via a bank’s customer interface without identifying themselves. citeturn23search1
 
 For an internal-only bookkeeping tool, the cheapest and least risky path is: start with **manual bank statement import** (or no bank integration) and revisit open banking later via licensed aggregators if needed. citeturn23search1turn23search0
 
@@ -131,7 +131,7 @@ This drives an explicit “VAT conversion” step in your ingestion pipeline and
 
 ### BAS mapping and SIE export
 
-The Swedish chart-of-accounts landscape is dominated by BAS. You can start by supporting a subset of BAS accounts you actually use, then expand. BAS publishes chart-of-accounts documents (PDF) that are used widely in practice. citeturn24search4  
+The Swedish chart-of-accounts landscape is dominated by BAS. You can start by supporting a subset of BAS accounts you actually use, then expand. BAS publishes chart-of-accounts documents (PDF) that are used widely in practice. citeturn24search4
 
 You should implement SIE export early. entity["organization","SIE-Gruppen","swedish SIE association"] describes SIE as an open standard for transferring accounting data between systems; it is widely adopted and a de facto standard, and while the format is open to everyone only members can get their software approved. citeturn24search2turn24search5  
 For internal use, “approval” is not essential, but **SIE export is your escape hatch** (auditor/accountant collaboration, migrations, external offering readiness). citeturn24search2
@@ -151,12 +151,12 @@ Your stated requirement—AI that proposes postings, continuously analyses for m
 
 Implement the following as **non-LLM code** (deterministic checks), because they are directly grounded in statute/official guidance and must not be subject to hallucination:
 
-- Voucher minimum fields and voucher ↔ posting traceability. citeturn8view0  
-- Correction rules (“who/when”, linkability). citeturn8view0  
-- Retention and storage rules (7 years; stored in Sweden unless procedures for EU storage). citeturn9view0  
-- VAT deduction gating: no deduction if invoice missing or missing necessary information. citeturn16view0  
-- Invoice field completeness for VAT deduction (the required invoice fields list). citeturn16view0  
-- VAT must be shown in SEK and conversion rate requirements if invoice currency differs. citeturn15view1  
+- Voucher minimum fields and voucher ↔ posting traceability. citeturn8view0
+- Correction rules (“who/when”, linkability). citeturn8view0
+- Retention and storage rules (7 years; stored in Sweden unless procedures for EU storage). citeturn9view0
+- VAT deduction gating: no deduction if invoice missing or missing necessary information. citeturn16view0
+- Invoice field completeness for VAT deduction (the required invoice fields list). citeturn16view0
+- VAT must be shown in SEK and conversion rate requirements if invoice currency differs. citeturn15view1
 - VAT rate sanity checks (25/12/6/exempt) where inferable, but with human review on ambiguity. citeturn10search1turn16view0
 
 Output of this layer should be **machine-readable rule hits** (e.g., `VAT_INVOICE_MISSING_SERIAL_NUMBER`, `VAT_SEK_MISSING`, `VOUCHER_COUNTERPARTY_MISSING`) and each rule hit should store the legal source reference (e.g., “SKV 552B invoice fields”, “BFL 5:7”). citeturn16view0turn8view0
@@ -178,9 +178,9 @@ Because EU AI Act transparency duties require users be informed they interact wi
 
 For “grounded in Swedish law”, treat your sources as a curated, versioned corpus:
 
-- Bokföringslagen extracts: 4 kap., 5 kap., 7 kap. (as these drive system requirements). citeturn8view0turn9view0  
-- Skatteverket VAT brochure (SKV 552B) sections for invoice requirements and currency conversion. citeturn16view0turn15view1  
-- Specific Skatteverket guidance pages you rely on (VAT rates, business entertainment caps). citeturn10search1turn10search9  
+- Bokföringslagen extracts: 4 kap., 5 kap., 7 kap. (as these drive system requirements). citeturn8view0turn9view0
+- Skatteverket VAT brochure (SKV 552B) sections for invoice requirements and currency conversion. citeturn16view0turn15view1
+- Specific Skatteverket guidance pages you rely on (VAT rates, business entertainment caps). citeturn10search1turn10search9
 - Your internal accounting policy (what accounts you use, approval thresholds, allowed expense categories).
 
 Then implement RAG with explicit constraints:
@@ -196,15 +196,18 @@ This approach aligns with the AI Act’s emphasis on transparency and traceabili
 At your scale, “continuous analysis” should be implemented as **scheduled review generation**, not automated postings:
 
 Subscription gap detection:
+
 - build a simple “recurring merchant” model (merchant + typical cadence + amount distribution),
 - flag missing expected transactions (e.g., no charge in a month where past 6 months had charges).
 
 VAT issue detection:
+
 - flag invoices where required fields are missing,
 - flag foreign currency invoices where VAT isn’t clearly in SEK and conversion basis not captured,
-- flag mixed-rate expenses (e.g., restaurant with alcohol) for representation rules. citeturn16view0turn15view1turn10search9  
+- flag mixed-rate expenses (e.g., restaurant with alcohol) for representation rules. citeturn16view0turn15view1turn10search9
 
 For each alert, generate:
+
 - the evidence (why flagged),
 - the rule hits,
 - safe next questions (“Is this business entertainment? Was alcohol included? Who attended?”),
@@ -254,11 +257,11 @@ flowchart TB
 
 The cheapest-first challenge is the **database**: managed relational services can dominate your bill if sized for “enterprise” rather than your tiny workload. The comparison below gives three pragmatic options, all capable of meeting compliance requirements if implemented correctly.
 
-| Option | Intended use | Core Azure components | Pros | Cons | Monthly runtime cost at your scale (5–10 receipts/month)\* | Monthly runtime cost at 5k receipts/month\* |
-|---|---|---|---|---|---|---|
-| Minimal cheap | Internal AB, low volume, compliance-first | Blob Storage + Functions consumption + Document Intelligence + small vector store (in DB or file) + Key Vault | Very low baseline; most services have meaningful free grants | More engineering effort (data modelling, querying); avoid “DIY database pitfalls” | Often near-zero Azure infra cost; OCR likely free (<500 pages) citeturn3view3turn2search1turn2search4turn29search0 | OCR + LLM dominate; still modest unless you add always-on DB/search citeturn2search1turn23search0 |
-| Balanced | Internal now, external later possible | Blob + Container Apps or Functions + Document Intelligence + Azure SQL/PG + optional AI Search | Easier queries/reporting; smoother path to external product | Baseline DB cost can be non-trivial; more ops | If you use always-on Postgres flexible server, expect ≥ low hundreds USD/month citeturn29search2 | Scales operationally; but DB/search costs become meaningful relative to OCR/LLM citeturn29search2turn29search1 |
-| Enterprise-ready | External SaaS ambition, higher assurance | Everything in Balanced + AI Search + private endpoints + redundancy + more monitoring | Stronger security posture, multi-tenant readiness, higher availability | Expensive baseline; overkill for your current volume | Likely not justified for 5–10 receipts/month | Suitable if you truly scale and sell externally |
+| Option           | Intended use                              | Core Azure components                                                                                         | Pros                                                                   | Cons                                                                              | Monthly runtime cost at your scale (5–10 receipts/month)\*                                                               | Monthly runtime cost at 5k receipts/month\*                                                                        |
+| ---------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Minimal cheap    | Internal AB, low volume, compliance-first | Blob Storage + Functions consumption + Document Intelligence + small vector store (in DB or file) + Key Vault | Very low baseline; most services have meaningful free grants           | More engineering effort (data modelling, querying); avoid “DIY database pitfalls” | Often near-zero Azure infra cost; OCR likely free (<500 pages) citeturn3view3turn2search1turn2search4turn29search0 | OCR + LLM dominate; still modest unless you add always-on DB/search citeturn2search1turn23search0              |
+| Balanced         | Internal now, external later possible     | Blob + Container Apps or Functions + Document Intelligence + Azure SQL/PG + optional AI Search                | Easier queries/reporting; smoother path to external product            | Baseline DB cost can be non-trivial; more ops                                     | If you use always-on Postgres flexible server, expect ≥ low hundreds USD/month citeturn29search2                      | Scales operationally; but DB/search costs become meaningful relative to OCR/LLM citeturn29search2turn29search1 |
+| Enterprise-ready | External SaaS ambition, higher assurance  | Everything in Balanced + AI Search + private endpoints + redundancy + more monitoring                         | Stronger security posture, multi-tenant readiness, higher availability | Expensive baseline; overkill for your current volume                              | Likely not justified for 5–10 receipts/month                                                                             | Suitable if you truly scale and sell externally                                                                    |
 
 \*Costs depend heavily on region, pricing model, and whether you choose always-on DB/search. The table emphasises which components typically dominate.
 
@@ -271,13 +274,14 @@ Below are ballpark monthly costs split into (A) your current scale and (B) a sca
 Azure Document Intelligence pricing indicates a free tier of 0–500 pages/month, and then page-based charges; for example, “Batch read” is listed at $1.50 per 1,000 pages and “Batch prebuilt models” at $10 per 1,000 pages. citeturn2search1
 
 Assumptions:
+
 - 1 receipt ≈ 1 page (typical for receipts; invoices may be multi-page).
 - Use **Read** when you can, and **Prebuilt** receipt/invoice when you need structured fields.
 
-| Scenario | Pages/month | Read OCR cost | Prebuilt receipt/invoice cost |
-|---|---:|---:|---:|
-| Your scale | 5–10 | $0 (within 500 free pages) citeturn2search1 | $0 (within 500 free pages) citeturn2search1 |
-| Scaled | 5,000 | ~ $7.50/month (5,000 × $1.50/1,000) citeturn2search1 | ~ $50/month (5,000 × $10/1,000) citeturn2search1 |
+| Scenario   | Pages/month |                                           Read OCR cost |                       Prebuilt receipt/invoice cost |
+| ---------- | ----------: | ------------------------------------------------------: | --------------------------------------------------: |
+| Your scale |        5–10 |          $0 (within 500 free pages) citeturn2search1 |      $0 (within 500 free pages) citeturn2search1 |
+| Scaled     |       5,000 | ~ $7.50/month (5,000 × $1.50/1,000) citeturn2search1 | ~ $50/month (5,000 × $10/1,000) citeturn2search1 |
 
 #### Compute (Functions vs Container Apps)
 
@@ -314,6 +318,7 @@ A practical way to budget is to own your token envelope:
 - **Per “continuous analysis” run**: batch across all data; use small models; avoid re-sending full corpora by using retrieval.
 
 Example formula (replace with your model’s prices):
+
 - Monthly LLM cost = (input_tokens/1,000,000 × input_price) + (output_tokens/1,000,000 × output_price). citeturn2search10
 
 ### Illustrative cost breakdown chart (5k receipts/month)
@@ -340,6 +345,7 @@ Compute free grants are from Azure Functions and Container Apps pricing pages. �
 However, BAS’s page for machine-readable format indicates the previous product is being replaced and pricing may not currently be listed transparently; they request contact via email. citeturn24search0
 
 Practical recommendation:
+
 - For MVP, use downloadable BAS (PDF/Excel) and implement a limited internal mapping.
 - If you move toward external SaaS, treat BAS licensing as an early workstream, because embedding BAS into a product is a licensing issue. citeturn25view0turn24search0
 
@@ -367,27 +373,27 @@ Your strongest mitigation is the “rules-first + cite sources + human approval�
 
 ### Key risks and concrete mitigations
 
-| Risk | Why it matters | Mitigation controls (practical) | Primary sources |
-|---|---|---|---|
-| Compliance drift (law/tax rules change) | Rules and guidance evolve; wrong automation can create systematic errors | Version your legal corpus and rules; add regression tests keyed to statutory requirements; log rule versions per posting | Bokföringslagen system documentation requirement supports traceability citeturn7view1turn8view0 |
-| Audit-trail failure (retroactive edits) | Corrections must record who/when; postings must be traceable | Append-only journal; corrections as new entries referencing originals; mandatory user identity | Bokföringslagen 5 kap. 5 §, 7 § citeturn8view0 |
-| VAT deduction errors | Deduction requires valid invoice; missing fields can invalidate deductions | Hard-rule gating: if required fields missing → block VAT deduction posting; ask targeted questions | SKV 552B invoice requirements + deduction verification citeturn16view0 |
-| Multi-currency conversion mistakes | VAT and accounting currency constraints can be violated | Store conversion basis + exchange rate source; ensure VAT shown in SEK and conversion follows allowed sources | SKV 552B currency in invoices citeturn15view1; Bokföringslagen accounting currency citeturn8view0 |
-| AI hallucinations | Could “invent” legal rules or misclassify VAT | Deterministic rule engine; RAG-only explanations; “insufficient basis” mode; structured outputs; human approval always | AI Act transparency principle reinforces disclosures and governance citeturn22view2turn22view1 |
-| GDPR retention vs deletion requests | Accounting retention can conflict with “delete my data” expectations | Retention schedule explicitly tied to legal obligation; deny deletion where lawful; minimise access, segregate archive | IMY on storage limitation and erasure exceptions citeturn17search0turn17search7; Bokföringslagen retention citeturn9view0 |
-| PSD2 scope creep via bank feeds | Direct bank integrations may trigger FI regulation | Start with manual imports; later use licensed aggregator or pursue authorisation with full compliance | FI on authorisation and TPP obligations citeturn23search0turn23search1 |
+| Risk                                    | Why it matters                                                             | Mitigation controls (practical)                                                                                          | Primary sources                                                                                                                  |
+| --------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Compliance drift (law/tax rules change) | Rules and guidance evolve; wrong automation can create systematic errors   | Version your legal corpus and rules; add regression tests keyed to statutory requirements; log rule versions per posting | Bokföringslagen system documentation requirement supports traceability citeturn7view1turn8view0                              |
+| Audit-trail failure (retroactive edits) | Corrections must record who/when; postings must be traceable               | Append-only journal; corrections as new entries referencing originals; mandatory user identity                           | Bokföringslagen 5 kap. 5 §, 7 § citeturn8view0                                                                                |
+| VAT deduction errors                    | Deduction requires valid invoice; missing fields can invalidate deductions | Hard-rule gating: if required fields missing → block VAT deduction posting; ask targeted questions                       | SKV 552B invoice requirements + deduction verification citeturn16view0                                                        |
+| Multi-currency conversion mistakes      | VAT and accounting currency constraints can be violated                    | Store conversion basis + exchange rate source; ensure VAT shown in SEK and conversion follows allowed sources            | SKV 552B currency in invoices citeturn15view1; Bokföringslagen accounting currency citeturn8view0                          |
+| AI hallucinations                       | Could “invent” legal rules or misclassify VAT                              | Deterministic rule engine; RAG-only explanations; “insufficient basis” mode; structured outputs; human approval always   | AI Act transparency principle reinforces disclosures and governance citeturn22view2turn22view1                               |
+| GDPR retention vs deletion requests     | Accounting retention can conflict with “delete my data” expectations       | Retention schedule explicitly tied to legal obligation; deny deletion where lawful; minimise access, segregate archive   | IMY on storage limitation and erasure exceptions citeturn17search0turn17search7; Bokföringslagen retention citeturn9view0 |
+| PSD2 scope creep via bank feeds         | Direct bank integrations may trigger FI regulation                         | Start with manual imports; later use licensed aggregator or pursue authorisation with full compliance                    | FI on authorisation and TPP obligations citeturn23search0turn23search1                                                       |
 
 ### Build-vs-buy comparison at your scale
 
 At 5–10 receipts/month, the largest “cost” of building is engineering time and compliance ownership. Swedish SaaS offerings are often inexpensive and already handle receipt OCR and suggestions.
 
-| Dimension | Build internal | Buy off-the-shelf (examples) |
-|---|---|---|
-| Monthly cash spend (software fees) | Potentially low Azure bill if serverless; but unknown engineering cost | entity["company","Fortnox","swedish accounting software"] lists Bokföring at 189 SEK/month and invoice interpretation services priced per item (e.g., 4.90 SEK/item for “Fakturatolkning”). citeturn27search0 entity["company","Visma Spcs","swedish accounting software vendor"] lists Bokföring at 199 SEK/month. citeturn28search4turn28search0 entity["company","Bokio","swedish bookkeeping software"] lists plans from 49 SEK/month (with additional usage-based fees depending on services). citeturn27search2turn27search10 |
-| Control and auditability | Maximum (you decide logs, guardrails, evidence model) | Good but vendor-defined; you rely on vendor’s compliance posture |
-| Compliance burden | You own interpretation, updates, tests, documentation | Vendor carries most implementation burden; you still must operate correctly |
-| Time-to-value | Slow (weeks–months) | Fast (hours–days) |
-| Differentiation | High (custom workflows, internal policy integration, “explainable AI with citations”) | Low unless you layer processes/integrations |
+| Dimension                          | Build internal                                                                        | Buy off-the-shelf (examples)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Monthly cash spend (software fees) | Potentially low Azure bill if serverless; but unknown engineering cost                | entity["company","Fortnox","swedish accounting software"] lists Bokföring at 189 SEK/month and invoice interpretation services priced per item (e.g., 4.90 SEK/item for “Fakturatolkning”). citeturn27search0 entity["company","Visma Spcs","swedish accounting software vendor"] lists Bokföring at 199 SEK/month. citeturn28search4turn28search0 entity["company","Bokio","swedish bookkeeping software"] lists plans from 49 SEK/month (with additional usage-based fees depending on services). citeturn27search2turn27search10 |
+| Control and auditability           | Maximum (you decide logs, guardrails, evidence model)                                 | Good but vendor-defined; you rely on vendor’s compliance posture                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Compliance burden                  | You own interpretation, updates, tests, documentation                                 | Vendor carries most implementation burden; you still must operate correctly                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Time-to-value                      | Slow (weeks–months)                                                                   | Fast (hours–days)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Differentiation                    | High (custom workflows, internal policy integration, “explainable AI with citations”) | Low unless you layer processes/integrations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 Given the low transaction volume, “buy” is often rational unless you clearly need custom controls or you are intentionally investing toward a future external product.
 
@@ -396,22 +402,25 @@ Given the low transaction volume, “buy” is often rational unless you clearly
 **MVP (internal AB, cash method, 5–10 receipts/month)**
 
 Must-have:
-- Voucher ingestion (drag/drop/paste), store immutable original evidence; capture voucher core fields and link to postings. citeturn8view0turn9view0  
-- Append-only journal with correction postings recording who/when; period locking, and year-end accrual checklist for unpaid items. citeturn8view0  
-- VAT invoice validation + block VAT deduction if invoice incomplete; VAT shown in SEK with recorded exchange rate source for NOK/EUR. citeturn16view0turn15view1  
-- SIE export to enable accountant/auditor workflows. citeturn24search2turn24search5  
-- System documentation + processing history, including AI logs. citeturn7view1turn8view0  
+
+- Voucher ingestion (drag/drop/paste), store immutable original evidence; capture voucher core fields and link to postings. citeturn8view0turn9view0
+- Append-only journal with correction postings recording who/when; period locking, and year-end accrual checklist for unpaid items. citeturn8view0
+- VAT invoice validation + block VAT deduction if invoice incomplete; VAT shown in SEK with recorded exchange rate source for NOK/EUR. citeturn16view0turn15view1
+- SIE export to enable accountant/auditor workflows. citeturn24search2turn24search5
+- System documentation + processing history, including AI logs. citeturn7view1turn8view0
 
 Nice-to-have:
+
 - Subscription gap detection and anomaly alerts as review tasks.
 - Lightweight RAG citations and “why” explanations that reference your curated corpus.
-- Peppol readiness (data model), though full Peppol integration can wait unless you do public sector work. citeturn26search2turn26search0  
+- Peppol readiness (data model), though full Peppol integration can wait unless you do public sector work. citeturn26search2turn26search0
 
 **Roadmap toward external offering**
-- Formalise BAS licensing strategy (if embedding machine-readable BAS). citeturn25view0turn24search0  
-- Add tenant isolation, stronger security controls, and potentially AI Search for scalable RAG. citeturn29search1  
-- Decide bank integration path (aggregator vs FI-regulated TPP). citeturn23search0turn23search1  
-- Expand compliance coverage (reverse charge, imports, representation, mixed VAT, etc.), backed by test suites and versioned legal corpora. citeturn10search9turn16view0  
+
+- Formalise BAS licensing strategy (if embedding machine-readable BAS). citeturn25view0turn24search0
+- Add tenant isolation, stronger security controls, and potentially AI Search for scalable RAG. citeturn29search1
+- Decide bank integration path (aggregator vs FI-regulated TPP). citeturn23search0turn23search1
+- Expand compliance coverage (reverse charge, imports, representation, mixed VAT, etc.), backed by test suites and versioned legal corpora. citeturn10search9turn16view0
 
 ### Follow-up questions that will materially refine the design
 

@@ -37,7 +37,7 @@
 
   /* Info — WCAG AAA on white (8.72:1) */
   --color-info: #1e40af;
-  --color-info-soft: rgba(30, 64, 175, 0.10);
+  --color-info-soft: rgba(30, 64, 175, 0.1);
   --color-info-bg: #eff6ff;
 
   /* Danger — WCAG AAA on white (8.31:1) */

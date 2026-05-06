@@ -4,12 +4,11 @@ import { createApp } from "./app";
 import { readApiRuntimeConfig } from "./config";
 import { createApiRuntimeDependencies } from "./runtime";
 
+// Loads `ApiRuntimeConfig`, builds Hono app wiring, and starts @hono/node-server. Local dev uses tsx (`pnpm dev:api`).
 const config = readApiRuntimeConfig();
-const { store, aiRuntime, runtimeMode } = createApiRuntimeDependencies(config);
+const runtime = createApiRuntimeDependencies(config);
 const app = createApp({
-  store,
-  aiRuntime,
-  runtimeMode,
+  ...runtime,
   allowTestReset: config.allowTestReset,
 });
 
@@ -19,6 +18,6 @@ serve(
     port: config.port,
   },
   (info) => {
-    console.log(`JPX Accounting API (${runtimeMode}) listening on http://localhost:${info.port}`);
+    console.log(`JPX Accounting API (${config.runtimeMode}) listening on http://localhost:${info.port}`);
   },
 );

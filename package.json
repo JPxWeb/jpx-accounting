@@ -6,12 +6,17 @@
     "node": ">=24.0.0"
   },
   "scripts": {
+    "dev": "pnpm --filter @jpx-accounting/web --filter @jpx-accounting/api --parallel run dev",
     "dev:web": "pnpm --filter @jpx-accounting/web dev",
     "dev:api": "pnpm --filter @jpx-accounting/api dev",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
     "typecheck": "pnpm -r typecheck",
-    "test:unit": "tsx --test tests/unit/*.test.ts",
+    "test:unit": "tsx --test \"tests/unit/**/*.test.ts\"",
     "build": "pnpm --filter @jpx-accounting/web build && pnpm --filter @jpx-accounting/api build",
-    "check": "pnpm typecheck && pnpm build",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test:unit && pnpm build",
     "test:e2e": "pnpm build && playwright test",
     "test:e2e:headed": "pnpm build && playwright test --headed",
     "test:e2e:install": "playwright install chromium"
@@ -19,7 +24,13 @@
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "@types/node": "25.5.0",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "16.2.0",
+    "eslint-config-prettier": "^10.1.8",
+    "next": "16.2.0",
+    "prettier": "^3.8.3",
     "tsx": "4.21.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.59.2"
   }
 }

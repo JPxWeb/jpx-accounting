@@ -1,6 +1,9 @@
+import type { Context } from "hono";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
+import { secureHeaders } from "hono/secure-headers";
 import type { ZodType } from "zod";
 
 import {
@@ -11,23 +14,45 @@ import {
   reviewDecisionInputSchema,
   simulationRequestSchema,
   suggestionRequestSchema,
+  type ApiJsonErrorBody,
+  type ApiValidationIssue,
   type RuntimeMode,
   uploadInitSchema,
 } from "@jpx-accounting/contracts";
-import { AiRuntimeUnavailableError, type AiRuntime } from "@jpx-accounting/ai-core";
-import type { LedgerStore } from "@jpx-accounting/domain";
+import { AiRuntimeUnavailableError, type AiRuntime, isAiRuntimeOperational } from "@jpx-accounting/ai-core";
+import type { LedgerStore, ReviewAction } from "@jpx-accounting/domain";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
 
-import { LedgerStoreUnavailableError } from "./runtime";
+import type { CorsRuntimePolicy } from "./config";
+import { isLedgerStoreOperational, LedgerStoreUnavailableError } from "./runtime";
 
 type CreateAppOptions = {
   store: LedgerStore;
   aiRuntime: AiRuntime;
   runtimeMode: RuntimeMode;
+  corsPolicy: CorsRuntimePolicy;
   allowTestReset?: boolean;
 };
 
-async function parseBody<T>(request: Request, schema: ZodType<T>) {
+type AppVariables = { requestId: string };
+type AppEnv = { Variables: AppVariables };
+
+const DEFAULT_JSON_BODY_BYTES = 512 * 1024;
+const SIE_IMPORT_BODY_BYTES = 32 * 1024 * 1024;
+
+class ApiValidationError extends Error {
+  readonly code = "validation_error" as const;
+
+  constructor(
+    message: string,
+    readonly issues: ApiValidationIssue[],
+  ) {
+    super(message);
+    this.name = "ApiValidationError";
+  }
+}
+
+async function parseBody<T>(request: Request, schema: ZodType<T>): Promise<T> {
   let payload: unknown;
   try {
     payload = await request.json();
@@ -37,16 +62,23 @@ async function parseBody<T>(request: Request, schema: ZodType<T>) {
   const parsed = schema.safeParse(payload);
 
   if (!parsed.success) {
-    throw new HTTPException(400, { message: parsed.error.flatten().formErrors.join(", ") || "Invalid request body" });
+    const issues: ApiValidationIssue[] = parsed.error.issues.map((issue) => ({
+      path: issue.path.map((segment) => String(segment)),
+      message: issue.message,
+    }));
+    const summary =
+      issues.map((i) => (i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message)).join("; ") ||
+      "Invalid request body";
+
+    throw new ApiValidationError(summary, issues);
   }
 
   return parsed.data;
 }
 
 function buildSIEExport(store: LedgerStore) {
-  // Keep the scaffold export intentionally small but structurally valid so downstream accountant tooling can be exercised early.
   const reports = store.getReports();
-  const lines = ["#FLAGGA 0", "#PROGRAM \"JPX Accounting\" \"0.1.0\"", "#FORMAT PC8"];
+  const lines = ["#FLAGGA 0", '#PROGRAM "JPX Accounting" "0.1.0"', "#FORMAT PC8"];
 
   for (const entry of reports.journal) {
     lines.push(`#VER A "${entry.voucherId}" "${entry.bookedAt.slice(0, 10)}" "${entry.description}"`);
@@ -56,41 +88,144 @@ function buildSIEExport(store: LedgerStore) {
   return lines.join("\n");
 }
 
-function createErrorResponse(message: string, runtimeMode: RuntimeMode, status: number) {
+type JsonErrorExtras = Partial<Pick<ApiJsonErrorBody, "code" | "issues">>;
+
+function jsonError(
+  c: Context<AppEnv>,
+  message: string,
+  runtimeMode: RuntimeMode,
+  status: number,
+  extras?: JsonErrorExtras,
+) {
+  const requestId = c.var.requestId;
+  const headers = new Headers();
+  headers.set("x-request-id", requestId);
   return Response.json(
     {
       error: message,
       runtimeMode,
+      requestId,
+      ...extras,
     },
-    { status },
+    { status, headers },
   );
 }
 
-export function createApp({ store, aiRuntime, runtimeMode, allowTestReset }: CreateAppOptions) {
-  const app = new Hono();
+export function createApp({ store, aiRuntime, runtimeMode, corsPolicy, allowTestReset }: CreateAppOptions) {
+  const app = new Hono<AppEnv>();
   let currentStore = store;
 
-  app.use("/api/*", cors());
-  app.onError((error) => {
+  async function postReviewDecision(c: Context<AppEnv>, reviewId: string, outcome: ReviewAction) {
+    const input = await parseBody(c.req.raw, reviewDecisionInputSchema);
+    const review = currentStore.applyReviewDecision(reviewId, outcome, input);
+    if (!review) throw new HTTPException(404, { message: "Review not found" });
+    return c.json(review);
+  }
+
+  app.use("*", async (c, next) => {
+    const requestId = c.req.header("x-request-id")?.trim() || crypto.randomUUID();
+    c.set("requestId", requestId);
+    await next();
+    c.header("x-request-id", requestId);
+  });
+
+  app.use(
+    "/api/*",
+    cors({
+      origin: (origin) => {
+        if (corsPolicy.kind === "wildcard") {
+          return "*";
+        }
+        if (!origin) {
+          return "";
+        }
+        return corsPolicy.origins.includes(origin) ? origin : "";
+      },
+    }),
+  );
+
+  app.use("/api/imports/sie", async (c, next) => {
+    if (!["POST", "PUT", "PATCH"].includes(c.req.method)) {
+      return next();
+    }
+    return bodyLimit({
+      maxSize: SIE_IMPORT_BODY_BYTES,
+      onError: (inner) => jsonError(inner, "Request body too large.", runtimeMode, 413),
+    })(c, next);
+  });
+
+  const defaultJsonBodyLimit = bodyLimit({
+    maxSize: DEFAULT_JSON_BODY_BYTES,
+    onError: (c) => jsonError(c, "Request body too large.", runtimeMode, 413),
+  });
+
+  app.use("/api/*", async (c, next) => {
+    if (!["POST", "PUT", "PATCH"].includes(c.req.method)) {
+      return next();
+    }
+    if (c.req.path === "/api/imports/sie") {
+      return next();
+    }
+    return defaultJsonBodyLimit(c, next);
+  });
+
+  app.use(
+    "*",
+    secureHeaders({
+      contentSecurityPolicy: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'none'"],
+      },
+    }),
+  );
+
+  app.onError((error, c) => {
+    if (error instanceof ApiValidationError) {
+      return jsonError(c, error.message, runtimeMode, 400, { code: error.code, issues: error.issues });
+    }
+
     if (error instanceof HTTPException) {
-      return createErrorResponse(error.message, runtimeMode, error.status);
+      return jsonError(c, error.message, runtimeMode, error.status);
     }
 
     if (error instanceof LedgerStoreUnavailableError || error instanceof AiRuntimeUnavailableError) {
-      return createErrorResponse(error.message, runtimeMode, 503);
+      return jsonError(c, error.message, runtimeMode, 503);
     }
 
-    console.error(error);
-    return createErrorResponse("Unexpected server error.", runtimeMode, 500);
+    const requestId = c.var.requestId;
+    console.error(
+      JSON.stringify({
+        level: "error",
+        component: "api",
+        requestId,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      }),
+    );
+
+    return jsonError(c, "Unexpected server error.", runtimeMode, 500);
   });
 
   app.get("/health", (context) => context.json({ ok: true, runtimeMode }));
 
+  app.get("/ready", (context) => {
+    const ledgerOk = isLedgerStoreOperational(currentStore);
+    const aiOk = isAiRuntimeOperational(aiRuntime);
+    const ready = ledgerOk && aiOk;
+    return context.json({
+      ready,
+      runtimeMode,
+      checks: { ledger: ledgerOk, ai: aiOk },
+    });
+  });
+
   app.get("/api/workspace", (context) => context.json(currentStore.getSnapshot()));
   app.get("/api/reviews/feed", (context) => context.json(currentStore.getReviewFeed()));
   app.get("/api/reports/journal", (context) => context.json(currentStore.getReports().journal));
-  app.get("/api/reports/general-ledger", (context) => context.json(currentStore.getReports().balances));
-  app.get("/api/reports/trial-balance", (context) => context.json(currentStore.getReports().balances));
+  const reportBalances = (context: Context<AppEnv>) => context.json(currentStore.getReports().balances);
+  app.get("/api/reports/general-ledger", reportBalances);
+  app.get("/api/reports/trial-balance", reportBalances);
   app.get("/api/reports/vat-prep", (context) => context.json(currentStore.getReports().vat));
 
   app.post("/api/evidence", async (context) => {
@@ -130,26 +265,11 @@ export function createApp({ store, aiRuntime, runtimeMode, allowTestReset }: Cre
     return context.json(suggestion);
   });
 
-  app.post("/api/reviews/:id/approve", async (context) => {
-    const input = await parseBody(context.req.raw, reviewDecisionInputSchema);
-    const review = currentStore.applyReviewDecision(context.req.param("id"), "approve", input);
-    if (!review) throw new HTTPException(404, { message: "Review not found" });
-    return context.json(review);
-  });
+  app.post("/api/reviews/:id/approve", (c) => postReviewDecision(c, c.req.param("id"), "approve"));
 
-  app.post("/api/reviews/:id/reject", async (context) => {
-    const input = await parseBody(context.req.raw, reviewDecisionInputSchema);
-    const review = currentStore.applyReviewDecision(context.req.param("id"), "reject", input);
-    if (!review) throw new HTTPException(404, { message: "Review not found" });
-    return context.json(review);
-  });
+  app.post("/api/reviews/:id/reject", (c) => postReviewDecision(c, c.req.param("id"), "reject"));
 
-  app.post("/api/reviews/:id/book-without-vat", async (context) => {
-    const input = await parseBody(context.req.raw, reviewDecisionInputSchema);
-    const review = currentStore.applyReviewDecision(context.req.param("id"), "book-without-vat", input);
-    if (!review) throw new HTTPException(404, { message: "Review not found" });
-    return context.json(review);
-  });
+  app.post("/api/reviews/:id/book-without-vat", (c) => postReviewDecision(c, c.req.param("id"), "book-without-vat"));
 
   app.post("/api/imports/sie", async (context) => {
     const body = await context.req.text();
@@ -167,15 +287,14 @@ export function createApp({ store, aiRuntime, runtimeMode, allowTestReset }: Cre
   app.post("/api/assistant/sessions", async (context) => {
     const input = await parseBody(context.req.raw, assistantRequestSchema);
     const snapshot = currentStore.getSnapshot();
-    const citations =
-      snapshot.reviews[0]?.suggestion?.citations ?? [
-        {
-          id: "internal_arch",
-          title: "Internal architecture policy",
-          sourceType: "internal",
-          excerpt: "AI suggestions require human review before posting.",
-        },
-      ];
+    const citations = snapshot.reviews[0]?.suggestion?.citations ?? [
+      {
+        id: "internal_arch",
+        title: "Internal architecture policy",
+        sourceType: "internal",
+        excerpt: "AI suggestions require human review before posting.",
+      },
+    ];
     const answer = await aiRuntime.answerQuestion(input.question, citations);
     return context.json(answer, 201);
   });
@@ -206,7 +325,6 @@ export function createApp({ store, aiRuntime, runtimeMode, allowTestReset }: Cre
   app.post("/api/compliance-watch/refresh", (context) => context.json(currentStore.getSnapshot().alerts));
 
   app.post("/api/testing/reset", (context) => {
-    // This stays opt-in so local e2e coverage can reset the in-memory scaffold without exposing a production reset hook.
     if (!allowTestReset || runtimeMode !== "demo" || !(currentStore instanceof MemoryLedgerStore)) {
       throw new HTTPException(404, { message: "Not found" });
     }
@@ -215,20 +333,23 @@ export function createApp({ store, aiRuntime, runtimeMode, allowTestReset }: Cre
     return context.json({ ok: true });
   });
 
-  app.post("/mcp", async (context) => {
-    const body = await context.req.json().catch(() => ({}));
-    return context.json({
-      server: "jpx-accounting",
-      tools: [
-        "lookup_policy",
-        "lookup_vat_rule",
-        "lookup_supplier_history",
-        "query_reports",
-        "run_simulation",
-      ],
-      request: body,
+  if (runtimeMode === "demo") {
+    app.use("/mcp", async (c, next) => {
+      if (c.req.method !== "POST") {
+        return next();
+      }
+      return defaultJsonBodyLimit(c, next);
     });
-  });
+
+    app.post("/mcp", async (context) => {
+      const body = await context.req.json().catch(() => ({}));
+      return context.json({
+        server: "jpx-accounting",
+        tools: ["lookup_policy", "lookup_vat_rule", "lookup_supplier_history", "query_reports", "run_simulation"],
+        request: body,
+      });
+    });
+  }
 
   return app;
 }

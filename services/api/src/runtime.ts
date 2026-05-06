@@ -1,9 +1,10 @@
-import { createAiRuntime, type AiRuntime } from "@jpx-accounting/ai-core";
+import { createAiRuntime } from "@jpx-accounting/ai-core";
 import type { LedgerStore } from "@jpx-accounting/domain";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
 
 import type { ApiRuntimeConfig } from "./config";
 
+// Wires LedgerStore + AI implementations from `ApiRuntimeConfig`. Demo always uses MemoryLedgerStore; normal mode intentionally uses an unavailable stub until persistence lands.
 export class LedgerStoreUnavailableError extends Error {
   constructor(message: string) {
     super(message);
@@ -11,7 +12,7 @@ export class LedgerStoreUnavailableError extends Error {
   }
 }
 
-class UnavailableLedgerStore implements LedgerStore {
+export class UnavailableLedgerStore implements LedgerStore {
   constructor(private readonly reason: string) {}
 
   private fail(): never {
@@ -71,10 +72,15 @@ class UnavailableLedgerStore implements LedgerStore {
   }
 }
 
+export function isLedgerStoreOperational(store: LedgerStore): boolean {
+  return !(store instanceof UnavailableLedgerStore);
+}
+
 export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
   if (config.runtimeMode === "demo") {
     return {
       runtimeMode: config.runtimeMode,
+      corsPolicy: config.corsPolicy,
       store: new MemoryLedgerStore(),
       aiRuntime: createAiRuntime({
         runtimeMode: config.runtimeMode,
@@ -84,6 +90,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
 
   return {
     runtimeMode: config.runtimeMode,
+    corsPolicy: config.corsPolicy,
     store: new UnavailableLedgerStore(
       "Workspace data is unavailable in normal mode until a non-demo LedgerStore implementation is configured.",
     ),

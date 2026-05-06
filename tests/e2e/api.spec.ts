@@ -19,7 +19,12 @@ test("workspace, reporting, export, compliance, and MCP endpoints respond", asyn
   expect(snapshot.reviews).toHaveLength(1);
   expect(snapshot.closeRun.period).toBe("2026-03");
 
-  for (const path of ["/api/reports/journal", "/api/reports/general-ledger", "/api/reports/trial-balance", "/api/reports/vat-prep"]) {
+  for (const path of [
+    "/api/reports/journal",
+    "/api/reports/general-ledger",
+    "/api/reports/trial-balance",
+    "/api/reports/vat-prep",
+  ]) {
     const response = await request.get(`${apiBaseUrl}${path}`);
     expect(response.ok()).toBeTruthy();
     expect(Array.isArray(await response.json())).toBeTruthy();
@@ -166,7 +171,7 @@ test("assistant, knowledge, simulation, close, and import endpoints round-trip",
     headers: {
       "content-type": "text/plain",
     },
-    data: '#FLAGGA 0\n#TRANS 1930 {} -100\n#TRANS 6540 {} 100',
+    data: "#FLAGGA 0\n#TRANS 1930 {} -100\n#TRANS 6540 {} 100",
   });
   expect(sieImport.ok()).toBeTruthy();
   expect(await sieImport.json()).toMatchObject({

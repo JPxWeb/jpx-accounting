@@ -80,6 +80,11 @@ class UnavailableAiRuntime implements AiRuntime {
   }
 }
 
+/** False when AI was not configured (`UnavailableAiRuntime` in normal mode). */
+export function isAiRuntimeOperational(runtime: AiRuntime): boolean {
+  return !(runtime instanceof UnavailableAiRuntime);
+}
+
 class ResponsesAiRuntime implements AiRuntime {
   private readonly client: OpenAI;
   private readonly model: string;
@@ -110,9 +115,7 @@ class ResponsesAiRuntime implements AiRuntime {
       input: prompt,
     });
 
-    const rawText =
-      response.output_text ||
-      "{\"answer\":\"No grounded answer could be produced.\"}";
+    const rawText = response.output_text || '{"answer":"No grounded answer could be produced."}';
 
     return {
       id: crypto.randomUUID(),

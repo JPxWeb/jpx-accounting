@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@jpx-accounting/contracts": "workspace:*",
-    "@jpx-accounting/domain": "workspace:*"
+    "@jpx-accounting/domain": "workspace:*",
+    "zod": "4.3.6"
   }
 }
-

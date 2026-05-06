@@ -171,6 +171,22 @@ jobs:
           echo "API health check failed after 5 attempts"
           exit 1
 
+      - name: Smoke test API readiness shape
+        run: |
+          API_READY="${{ steps.bicep.outputs.apiAppUrl }}/ready"
+          for i in 1 2 3 4 5; do
+            READY_JSON=$(curl -sf "$API_READY" || true)
+            if echo "$READY_JSON" | jq -e 'has("ready") and has("checks") and has("runtimeMode")' >/dev/null 2>&1; then
+              echo "/ready probe passed"
+              exit 0
+            fi
+            echo "Attempt $i: /ready not valid yet, retrying in 10s..."
+            sleep 10
+          done
+          echo "/ready probe failed; last payload:"
+          echo "$READY_JSON"
+          exit 1
+
       - name: Smoke test web app
         run: |
           echo "Waiting for container to pull and start..."

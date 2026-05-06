@@ -3,11 +3,13 @@
 Mobile-first, AI-native Swedish accounting PWA for a Swedish AB (private limited company).
 
 ## Purpose
+
 - Internal bookkeeping system handling ~5-10 receipts/month
 - AI-assisted receipt processing with human review before ledger mutations
 - Swedish compliance first: BAS chart of accounts, Bokföringslagen, VAT rules
 
 ## Tech Stack
+
 - **Monorepo**: pnpm 10.29.2 workspaces, Node >=24
 - **Frontend**: Next.js 16, React 19, TailwindCSS 4, React Query 5, Motion 12
 - **API**: Hono HTTP server (port 3001)
@@ -17,6 +19,7 @@ Mobile-first, AI-native Swedish accounting PWA for a Swedish AB (private limited
 - **Testing**: Node built-in test runner (unit), Playwright (E2E)
 
 ## Workspace Layout
+
 - `apps/web` — Next.js PWA (Swedish locale)
 - `services/api` — Hono API server
 - `packages/contracts` — Zod schemas, single source of truth for API shapes
@@ -29,6 +32,7 @@ Mobile-first, AI-native Swedish accounting PWA for a Swedish AB (private limited
 - `docs/` — Architecture and compliance docs
 
 ## Key Design Rules
+
 - Append-only events are source of truth (event sourcing)
 - AI suggests, never mutates — human review required
 - Runtime mode is explicit: `demo` vs `normal` (fails closed)

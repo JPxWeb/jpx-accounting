@@ -20,5 +20,8 @@ pw-debug*.log
 # Playwright MCP
 .playwright-mcp/
 
+# Local Lighthouse JSON output (audit tooling)
+lh-*.json
+
 # Claude Code local settings (user-specific paths)
 .claude/settings.local.json

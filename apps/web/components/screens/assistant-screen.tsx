@@ -29,9 +29,7 @@ export function AssistantScreen() {
       }),
   });
 
-  const assistantItems: AssistantSession[] = assistant.data
-    ? [assistant.data]
-    : (data?.assistantExamples ?? []);
+  const assistantItems: AssistantSession[] = assistant.data ? [assistant.data] : (data?.assistantExamples ?? []);
 
   if (workspaceQuery.error && !data) {
     return (
@@ -58,9 +56,7 @@ export function AssistantScreen() {
         description="The advisory plane stays clearly separate from posting authority. It explains, recommends, cites, and creates review tasks, but it does not silently change the ledger."
         aside={
           <div className="glass-panel-soft rounded-2xl p-4">
-            <SectionLabel>
-              {formatRuntimeModeLabel(webRuntimeConfig.runtimeMode)}
-            </SectionLabel>
+            <SectionLabel>{formatRuntimeModeLabel(webRuntimeConfig.runtimeMode)}</SectionLabel>
             <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
               {webRuntimeConfig.runtimeMode === "demo"
                 ? "Demo mode keeps the assistant local and explicit about scaffold behavior."
