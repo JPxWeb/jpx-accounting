@@ -74,6 +74,18 @@ The web app uses Next.js App Router with a `(shell)` route group for the main ta
 
 `apps/web/next.config.ts` sets baseline security **`headers()`** (CSP is stricter in production than in dev because of `unsafe-eval` / websocket needs). **`output: "standalone"`** targets container deploys; prefer the standalone `server.js` entry when running production images, not `next start`.
 
+### Web app UI primitives
+
+Reuse before reinventing — the following modules already exist in `apps/web/`:
+
+- **Focus trap for modals** — `apps/web/lib/focus-trap.ts` exports `useDialogFocusTrap(containerRef, open, onClose, initialFocusRef?)` which handles Escape, Tab/Shift+Tab wrap, and initial focus. Used by the capture sheet (`app-shell.tsx`) and the command palette. New modals should use this hook, not roll their own keyboard logic.
+- **Account & notification menus** — both follow the same controlled-open + invisible-backdrop-button pattern in `app-shell.tsx` (`AccountMenu`, `AccountRailCard`, `NotificationMenu`). Don't use `<details>`/`<summary>` for menu overlays — they don't close on Escape or outside click.
+- **Command palette** — `apps/web/components/command-palette.tsx`. Globally bound to `Cmd+K` / `Ctrl+K` in `AppShell`. Searches vouchers, reviews, and account balances from the workspace snapshot; `buildHits` builds an O(R) `Map` of reviews-by-voucher, **don't** scan `data.reviews` per voucher. Shortcut hint label switches between `⌘K` and `Ctrl K` via `navigator.platform` detection.
+- **Report period helpers** — `apps/web/lib/report-period.ts` (`getPeriodDayRange`, `journalEntryInPeriod`, `ReportPeriodPreset`). Date formatting uses **local calendar parts**, not `toISOString().slice(0, 10)` — that path silently mis-bucketed entries at month edges in non-UTC timezones (the bug is documented in the file).
+- **Assistant thread history** — `apps/web/lib/assistant-thread-storage.ts`. `prependAssistantThread(session)` writes to localStorage and **returns** the merged array; callers should consume that return value instead of calling `loadAssistantThreads()` again. Capped at `MAX_THREADS = 30`.
+- **Mobile dock + capture-pill clearance** — `.workspace-canvas` in `apps/web/app/globals.css` reserves `calc(env(safe-area-inset-bottom) + 144px)` of bottom padding on mobile and resets to `24px` at the `≥1024px` breakpoint. Locked by `tests/e2e/mobile-bottom-clearance.spec.ts`. Do not lower the mobile padding without updating both the CSS and the regression test.
+- **Primary nav labels** are `Inbox / Reports / Advisor / Settings` (`Settings`, not `Control`). The mobile project on Pixel 7 shares the dock semantics with desktop — both surfaces consume the same `navigation` array in `app-shell.tsx`.
+
 ### E2E test setup
 
 Playwright runs sequentially (1 worker) against dedicated test servers: API on port 3201 (demo mode, test reset enabled), web on port 3200. Both desktop and mobile (Pixel 7) projects. Tests must `pnpm build` first since the web server uses `next start`.
