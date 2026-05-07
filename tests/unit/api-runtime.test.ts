@@ -16,6 +16,10 @@ function createTestApiApp(runtimeMode: "demo" | "normal") {
     allowTestReset: false,
     corsPolicy,
     azureOpenAi: {},
+    supabase: { poolerTransactionMode: false },
+    azureStorage: {},
+    azureDocumentIntelligence: {},
+    auth: {},
   });
 
   return createApp({ ...dependencies, allowTestReset: false });

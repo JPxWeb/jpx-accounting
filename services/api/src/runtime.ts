@@ -1,7 +1,10 @@
 import { createAiRuntime } from "@jpx-accounting/ai-core";
+import { createDocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import type { LedgerStore } from "@jpx-accounting/domain";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
+import { createPostgresClient, PostgresLedgerStore } from "@jpx-accounting/persistence-postgres";
 
+import { createBlobUploader } from "./blob";
 import type { ApiRuntimeConfig } from "./config";
 
 // Wires LedgerStore + AI implementations from `ApiRuntimeConfig`. Demo always uses MemoryLedgerStore; normal mode intentionally uses an unavailable stub until persistence lands.
@@ -19,55 +22,55 @@ export class UnavailableLedgerStore implements LedgerStore {
     throw new LedgerStoreUnavailableError(this.reason);
   }
 
-  createEvidence() {
+  async createEvidence() {
     return this.fail();
   }
 
-  composeEvidence() {
+  async composeEvidence() {
     return this.fail();
   }
 
-  getEvidenceContext() {
+  async getEvidenceContext() {
     return this.fail();
   }
 
-  findReviewByVoucher() {
+  async findReviewByVoucher() {
     return this.fail();
   }
 
-  getReviewFeed() {
+  async getReviewFeed() {
     return this.fail();
   }
 
-  getReports() {
+  async getReports() {
     return this.fail();
   }
 
-  getSnapshot() {
+  async getSnapshot() {
     return this.fail();
   }
 
-  getEvents() {
+  async getEvents() {
     return this.fail();
   }
 
-  suggestVoucher() {
+  async suggestVoucher() {
     return this.fail();
   }
 
-  applyReviewDecision() {
+  async applyReviewDecision() {
     return this.fail();
   }
 
-  answerAssistantQuestion() {
+  async answerAssistantQuestion() {
     return this.fail();
   }
 
-  runSimulation() {
+  async runSimulation() {
     return this.fail();
   }
 
-  getCloseRun() {
+  async getCloseRun() {
     return this.fail();
   }
 }
@@ -77,6 +80,15 @@ export function isLedgerStoreOperational(store: LedgerStore): boolean {
 }
 
 export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
+  const blobUploader = createBlobUploader({
+    accountName: config.azureStorage.accountName,
+    containerName: config.azureStorage.containerName,
+  });
+  const documentIntelligence = createDocumentIntelligenceClient({
+    endpoint: config.azureDocumentIntelligence.endpoint,
+    apiKey: config.azureDocumentIntelligence.apiKey,
+  });
+
   if (config.runtimeMode === "demo") {
     return {
       runtimeMode: config.runtimeMode,
@@ -85,20 +97,37 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
       aiRuntime: createAiRuntime({
         runtimeMode: config.runtimeMode,
       }),
+      blobUploader,
+      documentIntelligence,
+      jwksUrl: config.auth.jwksUrl,
     };
   }
+
+  // Normal mode: prefer real Postgres if SUPABASE_DB_URL is configured. Otherwise stay fail-closed
+  // via UnavailableLedgerStore so /ready surfaces the misconfiguration without crashing the boot.
+  const store: LedgerStore = config.supabase.databaseUrl
+    ? new PostgresLedgerStore(
+        createPostgresClient({
+          connectionString: config.supabase.databaseUrl,
+          // Supavisor transaction-mode pooler (port 6543) does not support named prepared statements.
+          prepare: !config.supabase.poolerTransactionMode,
+        }),
+        { organizationId: "org_jpx", workspaceId: "workspace_main" },
+      )
+    : new UnavailableLedgerStore("Workspace data is unavailable in normal mode until SUPABASE_DB_URL is configured.");
 
   return {
     runtimeMode: config.runtimeMode,
     corsPolicy: config.corsPolicy,
-    store: new UnavailableLedgerStore(
-      "Workspace data is unavailable in normal mode until a non-demo LedgerStore implementation is configured.",
-    ),
+    store,
     aiRuntime: createAiRuntime({
       runtimeMode: config.runtimeMode,
       endpoint: config.azureOpenAi.endpoint,
       apiKey: config.azureOpenAi.apiKey,
       model: config.azureOpenAi.model,
     }),
+    blobUploader,
+    documentIntelligence,
+    jwksUrl: config.auth.jwksUrl,
   };
 }

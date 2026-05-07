@@ -1,4 +1,16 @@
 {
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/JohanPalmqvist/.cursor/plans/**)",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\git\\\\jpx-accounting\\\\node_modules\" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq \"postgres\" -or $_.Name -eq \".pnpm\" } | Select-Object Name)",
+      "PowerShell($null = Get-ChildItem \"c:\\\\git\\\\jpx-accounting\\\\node_modules\" -Force; \"Items: \" + \\(Get-ChildItem \"c:\\\\git\\\\jpx-accounting\\\\node_modules\" -Force -ErrorAction SilentlyContinue\\).Count)",
+      "PowerShell(Get-ChildItem \"c:\\\\git\\\\jpx-accounting\\\\node_modules\" -Force | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem \"c:\\\\git\\\\jpx-accounting\\\\packages\\\\persistence-postgres\\\\node_modules\" -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem \"c:\\\\git\\\\jpx-accounting\\\\node_modules\\\\.pnpm\\\\postgres@3.4.5\\\\node_modules\\\\postgres\\\\types\" | ForEach-Object { $_.Name })",
+      "Read(//c/Users/JohanPalmqvist/.claude/**)"
+    ],
+    "additionalDirectories": ["C:\\Users\\JohanPalmqvist\\.cursor\\plans"]
+  },
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true,

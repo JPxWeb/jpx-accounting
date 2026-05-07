@@ -13,7 +13,12 @@
     "@jpx-accounting/ai-core": "workspace:*",
     "@jpx-accounting/contracts": "workspace:*",
     "@jpx-accounting/domain": "workspace:*",
+    "@jpx-accounting/persistence-postgres": "workspace:*",
+    "@jpx-accounting/document-intelligence": "workspace:*",
+    "@azure/identity": "4.5.0",
+    "@azure/storage-blob": "12.27.0",
     "hono": "4.12.8",
+    "hono-rate-limiter": "0.4.2",
     "zod": "4.3.6"
   }
 }

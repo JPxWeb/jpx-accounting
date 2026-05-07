@@ -12,12 +12,15 @@ import type {
   RuntimeMode,
   SimulationRequest,
   SimulationRun,
+  UploadInit,
+  UploadInitResult,
 } from "@jpx-accounting/contracts";
 import {
   assistantSessionSchema,
   evidenceCreateResultSchema,
   reviewTaskSchema,
   simulationRunSchema,
+  uploadInitResultSchema,
   workspaceSnapshotSchema,
 } from "@jpx-accounting/contracts";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
@@ -133,6 +136,49 @@ export class AccountingApiClient {
     if (this.fallbackStore) return this.fallbackStore.runSimulation(input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.baseUrl, "/api/simulations/run", simulationRunSchema, { method: "POST", json: input });
+  }
+
+  /**
+   * Step 1 of evidence upload: ask the API to mint a short-lived upload URL (Azure User-Delegation
+   * SAS in normal+configured mode, stub in demo). Pair with `uploadBlob` to actually transfer bytes.
+   */
+  async initUpload(input: UploadInit): Promise<UploadInitResult> {
+    if (this.fallbackStore) {
+      const uploadId = crypto.randomUUID();
+      return {
+        uploadId,
+        filename: input.filename,
+        uploadUrl: `/api/uploads/${uploadId}`,
+        requiredContentType: input.mimeType,
+        requiredBlobType: "BlockBlob",
+        expiresInSeconds: 600,
+      };
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.baseUrl, "/api/uploads/init", uploadInitResultSchema, { method: "POST", json: input });
+  }
+
+  /**
+   * Step 2 of evidence upload: PUT the file bytes to the signed URL minted by `initUpload`.
+   * Azure Blob requires `x-ms-blob-type: BlockBlob` and the same Content-Type the SAS was issued for.
+   * In demo mode the URL is a same-origin stub; the call is a no-op that resolves to a fake ETag.
+   */
+  async uploadBlob(uploadResult: UploadInitResult, body: Blob | ArrayBuffer | Uint8Array): Promise<void> {
+    if (this.fallbackStore) {
+      // No real network in demo — preserve the no-op shape so callers don't branch on runtime mode.
+      return;
+    }
+    const response = await fetch(uploadResult.uploadUrl, {
+      method: "PUT",
+      headers: {
+        "x-ms-blob-type": uploadResult.requiredBlobType,
+        "content-type": uploadResult.requiredContentType,
+      },
+      body: body as BodyInit,
+    });
+    if (!response.ok) {
+      throw new AccountingApiError(response.status, `Blob upload failed: ${response.status} ${response.statusText}`);
+    }
   }
 }
 

@@ -80,9 +80,27 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
+@description('Comma-separated browser origins permitted to PUT to blob storage during evidence upload.')
+param storageCorsAllowedOrigins string = 'http://localhost:3002,http://localhost:3200'
+
 resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
   parent: storage
   name: 'default'
+  properties: {
+    cors: {
+      corsRules: [
+        {
+          // PUT for the SAS upload itself; OPTIONS for the preflight; GET so the browser can verify
+          // status if the client opts to. Headers cover Content-Type + Azure block-blob metadata.
+          allowedOrigins: split(storageCorsAllowedOrigins, ',')
+          allowedMethods: ['PUT', 'OPTIONS', 'GET']
+          allowedHeaders: ['Content-Type', 'x-ms-blob-type', 'x-ms-version', 'x-ms-date']
+          exposedHeaders: ['x-ms-request-id', 'x-ms-version', 'ETag']
+          maxAgeInSeconds: 3600
+        }
+      ]
+    }
+  }
 }
 
 resource evidenceContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
@@ -97,10 +115,19 @@ resource evidenceContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
 // App Service – API (Hono, bundled with esbuild)
 // ---------------------------------------------------------------------------
 
+@description('Direct Postgres connection string for the API (Supabase / pgvector). Optional — leave blank to keep normal mode fail-closed.')
+@secure()
+param supabaseDbUrl string = ''
+
 resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
   name: '${namePrefix}-${environmentName}-api'
   location: location
   kind: 'app,linux'
+  // System-assigned managed identity is required by the User-Delegation SAS flow:
+  // the API calls getUserDelegationKey() against Storage with this identity (no account keys).
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     serverFarmId: existingPlan.id
     siteConfig: {
@@ -119,11 +146,43 @@ resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'SUPABASE_URL', value: supabaseUrl }
         { name: 'SUPABASE_ANON_KEY', value: supabaseAnonKey }
         { name: 'SUPABASE_SERVICE_ROLE_KEY', value: supabaseServiceRoleKey }
+        { name: 'SUPABASE_DB_URL', value: supabaseDbUrl }
         { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenaiEndpoint }
         { name: 'AZURE_OPENAI_API_KEY', value: azureOpenaiApiKey }
         { name: 'AZURE_OPENAI_MODEL', value: azureOpenaiModel }
       ]
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// RBAC — Managed identity must hold both roles or User-Delegation SAS minting returns 403.
+// Storage Blob Delegator is what authorizes getUserDelegationKey(); Storage Blob Data Contributor
+// scopes the actual blob writes to the evidence container.
+// ---------------------------------------------------------------------------
+
+var storageBlobDelegatorRoleId = 'db58b8e5-c6ad-4a2a-8342-4190687cbf4a'
+var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+
+resource apiBlobDelegatorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  // Scope must be the storage account so the identity can call getUserDelegationKey on it.
+  scope: storage
+  name: guid(storage.id, apiApp.id, storageBlobDelegatorRoleId)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDelegatorRoleId)
+    principalId: apiApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource apiBlobDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  // Container-scoped so the identity can only write to evidence/, not other containers.
+  scope: evidenceContainer
+  name: guid(evidenceContainer.id, apiApp.id, storageBlobDataContributorRoleId)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
+    principalId: apiApp.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 

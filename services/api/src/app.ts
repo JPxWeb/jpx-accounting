@@ -3,7 +3,9 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
+import { jwk } from "hono/jwk";
 import { secureHeaders } from "hono/secure-headers";
+import { rateLimiter } from "hono-rate-limiter";
 import type { ZodType } from "zod";
 
 import {
@@ -20,9 +22,13 @@ import {
   uploadInitSchema,
 } from "@jpx-accounting/contracts";
 import { AiRuntimeUnavailableError, type AiRuntime, isAiRuntimeOperational } from "@jpx-accounting/ai-core";
+import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
+import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import type { LedgerStore, ReviewAction } from "@jpx-accounting/domain";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
 
+import type { BlobUploader } from "./blob";
+import { UploadValidationError } from "./blob";
 import type { CorsRuntimePolicy } from "./config";
 import { isLedgerStoreOperational, LedgerStoreUnavailableError } from "./runtime";
 
@@ -31,6 +37,13 @@ type CreateAppOptions = {
   aiRuntime: AiRuntime;
   runtimeMode: RuntimeMode;
   corsPolicy: CorsRuntimePolicy;
+  blobUploader: BlobUploader;
+  documentIntelligence: DocumentIntelligenceClient;
+  /**
+   * JWKS endpoint (typically `${SUPABASE_URL}/auth/v1/keys`). When provided, mutating routes
+   * require a valid JWT. When absent, mutations stay open — current demo + pilot behavior.
+   */
+  jwksUrl?: string | undefined;
   allowTestReset?: boolean;
 };
 
@@ -76,8 +89,8 @@ async function parseBody<T>(request: Request, schema: ZodType<T>): Promise<T> {
   return parsed.data;
 }
 
-function buildSIEExport(store: LedgerStore) {
-  const reports = store.getReports();
+async function buildSIEExport(store: LedgerStore) {
+  const reports = await store.getReports();
   const lines = ["#FLAGGA 0", '#PROGRAM "JPX Accounting" "0.1.0"', "#FORMAT PC8"];
 
   for (const entry of reports.journal) {
@@ -111,13 +124,22 @@ function jsonError(
   );
 }
 
-export function createApp({ store, aiRuntime, runtimeMode, corsPolicy, allowTestReset }: CreateAppOptions) {
+export function createApp({
+  store,
+  aiRuntime,
+  runtimeMode,
+  corsPolicy,
+  blobUploader,
+  documentIntelligence,
+  jwksUrl,
+  allowTestReset,
+}: CreateAppOptions) {
   const app = new Hono<AppEnv>();
   let currentStore = store;
 
   async function postReviewDecision(c: Context<AppEnv>, reviewId: string, outcome: ReviewAction) {
     const input = await parseBody(c.req.raw, reviewDecisionInputSchema);
-    const review = currentStore.applyReviewDecision(reviewId, outcome, input);
+    const review = await currentStore.applyReviewDecision(reviewId, outcome, input);
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return c.json(review);
   }
@@ -169,6 +191,43 @@ export function createApp({ store, aiRuntime, runtimeMode, corsPolicy, allowTest
     return defaultJsonBodyLimit(c, next);
   });
 
+  // Rate-limit only the mutating surface so health/ready probes and read-only GETs are unaffected.
+  // 60 mutations per minute per IP fits an interactive single-user pilot — bump when scale-out lands
+  // and switch to a Redis-backed store (e.g. @hono-rate-limiter/redis against Azure Cache).
+  const apiMutationLimiter = rateLimiter<AppEnv>({
+    windowMs: 60_000,
+    limit: 60,
+    standardHeaders: "draft-7",
+    keyGenerator: (c) => {
+      const xff = c.req.header("x-forwarded-for");
+      if (xff) return xff.split(",")[0]?.trim() ?? "unknown";
+      return c.req.header("x-real-ip") ?? "unknown";
+    },
+    handler: (c) => jsonError(c, "Too many requests.", runtimeMode, 429),
+  });
+  app.use("/api/*", async (c, next) => {
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
+      return next();
+    }
+    return apiMutationLimiter(c, next);
+  });
+
+  // JWKS-backed JWT auth on mutating routes when configured. The middleware ships with Hono
+  // (`hono/jwk`); against Supabase the JWKS URL is `${SUPABASE_URL}/auth/v1/keys`. Default alg is
+  // RS256 — the most common asymmetric setting; ES256 projects can fork via env if needed.
+  // Skipped when unset so demo / unauthenticated pilots keep working — production sets the env.
+  if (jwksUrl) {
+    const verifyJwt = jwk({ jwks_uri: jwksUrl, alg: ["RS256"] });
+    app.use("/api/*", async (c, next) => {
+      if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
+        return next();
+      }
+      // /api/testing/reset is route-gated on allowTestReset already, but layering JWT defense in
+      // depth costs nothing and matches the plan's hardening intent.
+      return verifyJwt(c, next);
+    });
+  }
+
   app.use(
     "*",
     secureHeaders({
@@ -183,6 +242,10 @@ export function createApp({ store, aiRuntime, runtimeMode, corsPolicy, allowTest
   app.onError((error, c) => {
     if (error instanceof ApiValidationError) {
       return jsonError(c, error.message, runtimeMode, 400, { code: error.code, issues: error.issues });
+    }
+
+    if (error instanceof UploadValidationError) {
+      return jsonError(c, error.message, runtimeMode, 400, { code: error.code });
     }
 
     if (error instanceof HTTPException) {
@@ -220,47 +283,78 @@ export function createApp({ store, aiRuntime, runtimeMode, corsPolicy, allowTest
     });
   });
 
-  app.get("/api/workspace", (context) => context.json(currentStore.getSnapshot()));
-  app.get("/api/reviews/feed", (context) => context.json(currentStore.getReviewFeed()));
-  app.get("/api/reports/journal", (context) => context.json(currentStore.getReports().journal));
-  const reportBalances = (context: Context<AppEnv>) => context.json(currentStore.getReports().balances);
+  app.get("/api/workspace", async (context) => context.json(await currentStore.getSnapshot()));
+  app.get("/api/reviews/feed", async (context) => context.json(await currentStore.getReviewFeed()));
+  app.get("/api/reports/journal", async (context) => context.json((await currentStore.getReports()).journal));
+  const reportBalances = async (context: Context<AppEnv>) => context.json((await currentStore.getReports()).balances);
   app.get("/api/reports/general-ledger", reportBalances);
   app.get("/api/reports/trial-balance", reportBalances);
-  app.get("/api/reports/vat-prep", (context) => context.json(currentStore.getReports().vat));
+  app.get("/api/reports/vat-prep", async (context) => context.json((await currentStore.getReports()).vat));
 
   app.post("/api/evidence", async (context) => {
     const input = await parseBody(context.req.raw, evidenceCreateInputSchema);
-    return context.json(currentStore.createEvidence(input), 201);
+    return context.json(await currentStore.createEvidence(input), 201);
   });
 
   app.post("/api/evidence/compose", async (context) => {
     const input = await parseBody(context.req.raw, evidenceComposeInputSchema);
-    return context.json(currentStore.composeEvidence(input), 201);
+    return context.json(await currentStore.composeEvidence(input), 201);
   });
 
   app.post("/api/uploads/init", async (context) => {
     const input = await parseBody(context.req.raw, uploadInitSchema);
-    return context.json({
-      uploadId: crypto.randomUUID(),
-      filename: input.filename,
-      uploadUrl: `/api/uploads/${crypto.randomUUID()}`,
-      expiresInSeconds: 900,
-    });
+    const result = await blobUploader.initUpload(input);
+    return context.json(result);
   });
 
-  app.post("/api/evidence/:id/extract", (context) => {
-    const extraction = currentStore.getEvidenceContext(context.req.param("id"));
+  app.post("/api/evidence/:id/extract", async (context) => {
+    const extraction = await currentStore.getEvidenceContext(context.req.param("id"));
     if (!extraction) throw new HTTPException(404, { message: "Evidence not found" });
+
+    // Only run Document Intelligence on uploads that actually live in blob storage. Demo/seed
+    // evidence uses a synthetic blobPath that DocIntel cannot reach, so we keep returning the
+    // canned extraction the LedgerStore already holds.
+    const isRealBlob = extraction.evidence.blobPath.startsWith("evidence-uploads/");
+    let liveExtraction: Awaited<ReturnType<typeof documentIntelligence.extract>> | undefined;
+    if (isRealBlob) {
+      try {
+        const modelId = pickModelForDocument({
+          filename: extraction.evidence.originalFilename,
+          mimeType: extraction.evidence.mimeType,
+        });
+        // NOTE: passing the full blob URL requires either a read SAS or that DocIntel runs inside
+        // the storage account's network boundary. The integration is staged: this returns the
+        // adapter's stub (or live response if the URL is reachable) without persisting yet — the
+        // review queue remains the only path to a posted voucher.
+        liveExtraction = await documentIntelligence.extract({
+          modelId,
+          urlSource: `https://placeholder/${extraction.evidence.blobPath}`,
+        });
+      } catch (error) {
+        // Fail-soft: surface the error in logs but keep returning the stored extraction so the
+        // reviewer is never blocked by a transient OCR outage.
+        console.warn(
+          JSON.stringify({
+            level: "warn",
+            component: "api.extract",
+            message: "Document Intelligence extraction failed",
+            evidenceId: extraction.evidence.id,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
+    }
 
     return context.json({
       extracted: Boolean(extraction.voucher),
       ...extraction,
+      ...(liveExtraction ? { liveExtraction } : {}),
     });
   });
 
   app.post("/api/vouchers/:id/suggest", async (context) => {
     await parseBody(context.req.raw, suggestionRequestSchema);
-    const suggestion = currentStore.suggestVoucher(context.req.param("id"));
+    const suggestion = await currentStore.suggestVoucher(context.req.param("id"));
     if (!suggestion) throw new HTTPException(404, { message: "Voucher not found" });
     return context.json(suggestion);
   });
@@ -279,14 +373,14 @@ export function createApp({ store, aiRuntime, runtimeMode, corsPolicy, allowTest
     });
   });
 
-  app.get("/api/exports/sie", (context) => {
+  app.get("/api/exports/sie", async (context) => {
     context.header("content-type", "text/plain; charset=utf-8");
-    return context.body(buildSIEExport(currentStore));
+    return context.body(await buildSIEExport(currentStore));
   });
 
   app.post("/api/assistant/sessions", async (context) => {
     const input = await parseBody(context.req.raw, assistantRequestSchema);
-    const snapshot = currentStore.getSnapshot();
+    const snapshot = await currentStore.getSnapshot();
     const citations = snapshot.reviews[0]?.suggestion?.citations ?? [
       {
         id: "internal_arch",
@@ -301,9 +395,10 @@ export function createApp({ store, aiRuntime, runtimeMode, corsPolicy, allowTest
 
   app.post("/api/knowledge/query", async (context) => {
     const input = await parseBody(context.req.raw, knowledgeQuerySchema);
+    const snapshot = await currentStore.getSnapshot();
     return context.json({
       query: input.query,
-      citations: currentStore.getSnapshot().assistantExamples[0]?.citations ?? [],
+      citations: snapshot.assistantExamples[0]?.citations ?? [],
       answer:
         "Knowledge queries are routed through the same grounded advisory stack; next step is indexing effective-dated internal and official documents into Azure AI Search.",
     });
@@ -311,18 +406,18 @@ export function createApp({ store, aiRuntime, runtimeMode, corsPolicy, allowTest
 
   app.post("/api/simulations/run", async (context) => {
     const input = await parseBody(context.req.raw, simulationRequestSchema);
-    return context.json(currentStore.runSimulation(input), 201);
+    return context.json(await currentStore.runSimulation(input), 201);
   });
 
-  app.post("/api/close-runs", (context) => context.json(currentStore.getCloseRun(), 201));
-  app.get("/api/close-runs/:id", (context) =>
+  app.post("/api/close-runs", async (context) => context.json(await currentStore.getCloseRun(), 201));
+  app.get("/api/close-runs/:id", async (context) =>
     context.json({
-      ...currentStore.getCloseRun(),
+      ...(await currentStore.getCloseRun()),
       id: context.req.param("id"),
     }),
   );
 
-  app.post("/api/compliance-watch/refresh", (context) => context.json(currentStore.getSnapshot().alerts));
+  app.post("/api/compliance-watch/refresh", async (context) => context.json((await currentStore.getSnapshot()).alerts));
 
   app.post("/api/testing/reset", (context) => {
     if (!allowTestReset || runtimeMode !== "demo" || !(currentStore instanceof MemoryLedgerStore)) {

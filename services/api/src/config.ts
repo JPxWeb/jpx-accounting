@@ -12,6 +12,27 @@ export type ApiRuntimeConfig = {
     apiKey?: string | undefined;
     model?: string | undefined;
   };
+  supabase: {
+    /** Direct Postgres connection string (port 5432) or Supavisor session-mode URL. */
+    databaseUrl?: string | undefined;
+    /**
+     * Set to true when the URL points at Supavisor transaction-mode (port 6543);
+     * named prepared statements are not supported there, so postgres-js must run with prepare:false.
+     */
+    poolerTransactionMode: boolean;
+  };
+  azureStorage: {
+    accountName?: string | undefined;
+    containerName?: string | undefined;
+  };
+  azureDocumentIntelligence: {
+    endpoint?: string | undefined;
+    apiKey?: string | undefined;
+  };
+  auth: {
+    /** Full JWKS URL — typically `${SUPABASE_URL}/auth/v1/keys`. When set, /api/* mutations require a valid JWT. */
+    jwksUrl?: string | undefined;
+  };
 };
 
 function normalizeOptionalValue(value?: string) {
@@ -46,6 +67,21 @@ export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiR
       endpoint: normalizeOptionalValue(env.AZURE_OPENAI_ENDPOINT),
       apiKey: normalizeOptionalValue(env.AZURE_OPENAI_API_KEY),
       model: normalizeOptionalValue(env.AZURE_OPENAI_MODEL),
+    },
+    supabase: {
+      databaseUrl: normalizeOptionalValue(env.SUPABASE_DB_URL),
+      poolerTransactionMode: env.SUPABASE_POOLER_TRANSACTION_MODE === "true",
+    },
+    azureStorage: {
+      accountName: normalizeOptionalValue(env.AZURE_STORAGE_ACCOUNT),
+      containerName: normalizeOptionalValue(env.AZURE_STORAGE_CONTAINER),
+    },
+    azureDocumentIntelligence: {
+      endpoint: normalizeOptionalValue(env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT),
+      apiKey: normalizeOptionalValue(env.AZURE_DOCUMENT_INTELLIGENCE_API_KEY),
+    },
+    auth: {
+      jwksUrl: normalizeOptionalValue(env.SUPABASE_JWKS_URL),
     },
   };
 }

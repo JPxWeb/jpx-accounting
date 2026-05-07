@@ -1,0 +1,17 @@
+{
+  "name": "@jpx-accounting/document-intelligence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@jpx-accounting/contracts": "workspace:*",
+    "@azure-rest/ai-document-intelligence": "1.0.0",
+    "@azure/core-auth": "1.9.0"
+  }
+}

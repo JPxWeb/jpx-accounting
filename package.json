@@ -15,6 +15,7 @@
     "format:check": "prettier . --check",
     "typecheck": "pnpm -r typecheck",
     "test:unit": "tsx --test \"tests/unit/**/*.test.ts\"",
+    "test:integration": "tsx --test \"tests/integration/**/*.test.ts\"",
     "build": "pnpm --filter @jpx-accounting/web build && pnpm --filter @jpx-accounting/api build",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test:unit && pnpm build",
     "test:e2e": "pnpm build && playwright test",

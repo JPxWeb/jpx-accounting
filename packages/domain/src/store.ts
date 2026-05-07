@@ -29,25 +29,25 @@ type LedgerLine = Parameters<typeof buildJournal>[0][number];
 export type ReviewAction = "approve" | "reject" | "book-without-vat";
 
 export interface LedgerStore {
-  createEvidence(input: EvidenceCreateInput): EvidenceCreateResult;
-  composeEvidence(input: EvidenceComposeInput): EvidencePacket;
-  getEvidenceContext(evidenceId: string):
-    | {
-        evidence: EvidenceObject;
-        packet?: EvidencePacket;
-        voucher?: Voucher;
-      }
-    | undefined;
-  findReviewByVoucher(voucherId: string): ReviewTask | undefined;
-  getReviewFeed(): ReviewTask[];
-  getReports(): ReportBundle;
-  getSnapshot(): WorkspaceSnapshot;
-  getEvents(): LedgerEvent[];
-  suggestVoucher(voucherId: string): AccountingSuggestion | undefined;
-  applyReviewDecision(reviewId: string, action: ReviewAction, input: ReviewDecisionInput): ReviewTask | undefined;
-  answerAssistantQuestion(question: string): AssistantSession;
-  runSimulation(input: SimulationRequest): SimulationRun;
-  getCloseRun(): CloseRun;
+  createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult>;
+  composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket>;
+  getEvidenceContext(
+    evidenceId: string,
+  ): Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined>;
+  findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined>;
+  getReviewFeed(): Promise<ReviewTask[]>;
+  getReports(): Promise<ReportBundle>;
+  getSnapshot(): Promise<WorkspaceSnapshot>;
+  getEvents(): Promise<LedgerEvent[]>;
+  suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined>;
+  applyReviewDecision(
+    reviewId: string,
+    action: ReviewAction,
+    input: ReviewDecisionInput,
+  ): Promise<ReviewTask | undefined>;
+  answerAssistantQuestion(question: string): Promise<AssistantSession>;
+  runSimulation(input: SimulationRequest): Promise<SimulationRun>;
+  getCloseRun(): Promise<CloseRun>;
 }
 
 const defaultOrganizationId = "org_jpx";
@@ -206,7 +206,7 @@ export class MemoryLedgerStore implements LedgerStore {
   ];
 
   constructor() {
-    const seededEvidence = this.createEvidence({
+    const seededEvidence = this.createEvidenceSync({
       organizationId: defaultOrganizationId,
       workspaceId: defaultWorkspaceId,
       actorId: "user_founder",
@@ -217,7 +217,8 @@ export class MemoryLedgerStore implements LedgerStore {
       extractedText: "OpenAI March 2026 subscription invoice",
     });
 
-    const review = this.findReviewByVoucher(seededEvidence.voucherId);
+    const seededReviewId = this.voucherIdToReviewId.get(seededEvidence.voucherId);
+    const review = seededReviewId ? this.reviews.get(seededReviewId) : undefined;
     if (review) {
       review.title = "Approve AI subscription posting";
     }
@@ -249,7 +250,11 @@ export class MemoryLedgerStore implements LedgerStore {
     return fullEvent;
   }
 
-  createEvidence(input: EvidenceCreateInput): EvidenceCreateResult {
+  async createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult> {
+    return this.createEvidenceSync(input);
+  }
+
+  private createEvidenceSync(input: EvidenceCreateInput): EvidenceCreateResult {
     const createdAt = nowIso();
     const evidenceId = createId("evidence");
     const packetId = createId("packet");
@@ -382,7 +387,7 @@ export class MemoryLedgerStore implements LedgerStore {
     return { evidence, packet, voucher, review, voucherId };
   }
 
-  composeEvidence(input: EvidenceComposeInput) {
+  async composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket> {
     const packet: EvidencePacket = {
       id: createId("packet"),
       evidenceIds: input.evidenceIds,
@@ -396,13 +401,14 @@ export class MemoryLedgerStore implements LedgerStore {
     return packet;
   }
 
-  getEvidenceContext(evidenceId: string):
+  async getEvidenceContext(evidenceId: string): Promise<
     | {
         evidence: EvidenceObject;
         packet?: EvidencePacket;
         voucher?: Voucher;
       }
-    | undefined {
+    | undefined
+  > {
     const evidence = this.evidence.get(evidenceId);
     if (!evidence) return undefined;
 
@@ -418,16 +424,16 @@ export class MemoryLedgerStore implements LedgerStore {
     };
   }
 
-  findReviewByVoucher(voucherId: string) {
+  async findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined> {
     const reviewId = this.voucherIdToReviewId.get(voucherId);
     return reviewId ? this.reviews.get(reviewId) : undefined;
   }
 
-  getReviewFeed() {
+  async getReviewFeed(): Promise<ReviewTask[]> {
     return [...this.reviews.values()].sort((left, right) => right.id.localeCompare(left.id));
   }
 
-  getReports(): ReportBundle {
+  async getReports(): Promise<ReportBundle> {
     return {
       journal: buildJournal(this.ledgerLines),
       balances: buildBalances(this.ledgerLines),
@@ -435,23 +441,23 @@ export class MemoryLedgerStore implements LedgerStore {
     };
   }
 
-  getSnapshot(): WorkspaceSnapshot {
+  async getSnapshot(): Promise<WorkspaceSnapshot> {
     return {
       evidence: [...this.evidence.values()],
       vouchers: [...this.vouchers.values()],
-      reviews: this.getReviewFeed(),
-      reports: this.getReports(),
+      reviews: await this.getReviewFeed(),
+      reports: await this.getReports(),
       assistantExamples: this.assistantExamples,
-      closeRun: this.getCloseRun(),
+      closeRun: await this.getCloseRun(),
       alerts: this.alerts,
     };
   }
 
-  getEvents() {
+  async getEvents(): Promise<LedgerEvent[]> {
     return [...this.events];
   }
 
-  suggestVoucher(voucherId: string) {
+  async suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined> {
     const voucher = this.vouchers.get(voucherId);
     if (!voucher) return undefined;
 
@@ -461,7 +467,11 @@ export class MemoryLedgerStore implements LedgerStore {
     return suggestion;
   }
 
-  applyReviewDecision(reviewId: string, action: ReviewAction, input: ReviewDecisionInput) {
+  async applyReviewDecision(
+    reviewId: string,
+    action: ReviewAction,
+    input: ReviewDecisionInput,
+  ): Promise<ReviewTask | undefined> {
     const review = this.reviews.get(reviewId);
     if (!review) return undefined;
 
@@ -514,7 +524,7 @@ export class MemoryLedgerStore implements LedgerStore {
     return review;
   }
 
-  answerAssistantQuestion(question: string) {
+  async answerAssistantQuestion(question: string): Promise<AssistantSession> {
     const answer: AssistantSession = {
       id: createId("assistant"),
       question,
@@ -534,7 +544,7 @@ export class MemoryLedgerStore implements LedgerStore {
     return answer;
   }
 
-  runSimulation(input: SimulationRequest): SimulationRun {
+  async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
     const result: SimulationRun = {
       id: createId("sim"),
       title: input.title,
@@ -558,7 +568,7 @@ export class MemoryLedgerStore implements LedgerStore {
     return result;
   }
 
-  getCloseRun(): CloseRun {
+  async getCloseRun(): Promise<CloseRun> {
     return {
       id: "close_current",
       period: "2026-03",

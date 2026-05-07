@@ -1,0 +1,17 @@
+{
+  "name": "@jpx-accounting/persistence-postgres",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@jpx-accounting/contracts": "workspace:*",
+    "@jpx-accounting/domain": "workspace:*",
+    "postgres": "3.4.5"
+  }
+}

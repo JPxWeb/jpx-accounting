@@ -297,6 +297,21 @@ export const uploadInitSchema = z.object({
   size: z.number().nonnegative(),
 });
 
+// Response of POST /api/uploads/init. The client receives a short-lived URL it can PUT directly
+// to (Azure Blob with a User-Delegation SAS in normal mode, or a stub URL in demo). After the PUT
+// completes the client calls POST /api/evidence with `uploadId` so the API can register the blob.
+export const uploadInitResultSchema = z.object({
+  uploadId: z.string(),
+  filename: z.string(),
+  /** Absolute URL for the PUT. In normal mode the SAS query string is already appended. */
+  uploadUrl: z.string(),
+  /** PUT request must echo this Content-Type to match what the SAS was minted for. */
+  requiredContentType: z.string(),
+  /** Required Azure Blob header for new uploads ("BlockBlob") — clients should pass it through verbatim. */
+  requiredBlobType: z.literal("BlockBlob"),
+  expiresInSeconds: z.number().int().positive(),
+});
+
 export const workspaceSnapshotSchema = z.object({
   evidence: z.array(evidenceObjectSchema),
   vouchers: z.array(voucherSchema),
@@ -338,5 +353,7 @@ export type AssistantRequest = z.infer<typeof assistantRequestSchema>;
 export type KnowledgeQuery = z.infer<typeof knowledgeQuerySchema>;
 export type SimulationRequest = z.infer<typeof simulationRequestSchema>;
 export type SuggestionRequest = z.infer<typeof suggestionRequestSchema>;
+export type UploadInit = z.infer<typeof uploadInitSchema>;
+export type UploadInitResult = z.infer<typeof uploadInitResultSchema>;
 
 export type { ApiJsonErrorBody, ApiJsonErrorRuntimeMode, ApiValidationIssue } from "./api-errors";
