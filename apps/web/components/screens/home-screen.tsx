@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 
 import { getErrorMessage } from "../../lib/request-errors";
 import { formatMoney, formatPercent, formatShortDate } from "../../lib/presentation";
+import { webRuntimeConfig } from "../../lib/runtime-config";
 import { apiClient } from "../../lib/client";
 import { ScreenHeader } from "../ui/screen-header";
 import { UnavailableState } from "../ui/unavailable-state";
@@ -75,12 +76,8 @@ export function HomeScreen() {
     },
   });
 
-  const approveFirst = useMutation({
-    mutationFn: async () => {
-      const firstReview = data?.reviews.find((review) => review.status === "needs-review");
-      if (!firstReview) return undefined;
-      return apiClient.approveReview(firstReview.id, { actorId: "user_founder" });
-    },
+  const approveReview = useMutation({
+    mutationFn: (reviewId: string) => apiClient.approveReview(reviewId, { actorId: "user_founder" }),
     onSuccess: (review) => {
       queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (current) => {
         if (!current || !review) return current;
@@ -104,10 +101,15 @@ export function HomeScreen() {
   const closeRun = data?.closeRun;
   const pendingReviews = reviews.filter((review) => review.status === "needs-review");
   const blockedReviews = reviews.filter((review) => review.blockedReason);
-  const firstPendingReview = pendingReviews[0];
+  const sortedReviews = [...reviews].sort((a, b) => {
+    const pri = (r: ReviewTask) => (r.status === "needs-review" ? 0 : 1);
+    const d = pri(a) - pri(b);
+    if (d !== 0) return d;
+    return a.id.localeCompare(b.id);
+  });
   const actionError =
-    createEvidence.error || approveFirst.error
-      ? getErrorMessage(createEvidence.error ?? approveFirst.error, "A workspace action could not be completed.")
+    createEvidence.error || approveReview.error
+      ? getErrorMessage(createEvidence.error ?? approveReview.error, "A workspace action could not be completed.")
       : null;
 
   if (workspaceQuery.error && !data) {
@@ -131,7 +133,8 @@ export function HomeScreen() {
     <div className="page-shell space-y-6">
       <ScreenHeader
         eyebrow="Inbox / Needs Review"
-        title="Review-ready bookkeeping, shaped for the phone first."
+        title="Review queue"
+        lede={`${pendingReviews.length} voucher${pendingReviews.length === 1 ? "" : "s"} awaiting review.`}
         description="Evidence arrives once, suggestions stay explainable, and the queue keeps the real accounting work above the fold instead of hiding it under dashboard chrome."
         aside={
           <div className="grid grid-cols-2 gap-3">
@@ -148,35 +151,33 @@ export function HomeScreen() {
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.2fr)_23rem]">
         <section className="space-y-4">
-          <div className="glass-chrome rounded-3xl px-4 py-4 sm:px-5">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
+          <div className="glass-chrome rounded-3xl px-4 py-3 sm:px-5 sm:py-4">
+            <div className="flex flex-row items-start justify-between gap-3">
+              <div className="min-w-0">
                 <SectionLabel>Review queue</SectionLabel>
-                <h2 className="mt-2 text-2xl font-semibold">Keep the next accounting decision obvious.</h2>
+                <h2 className="mt-2 text-lg font-semibold sm:text-2xl">Keep the next decision obvious.</h2>
                 <p className="mt-2 max-w-2xl text-sm text-[var(--color-text-muted)]">
-                  Cards stay compact on mobile, expand on larger screens, and keep AI reasoning behind secondary
-                  disclosure until it is needed.
+                  Approve from each card. Demo-only actions live under the overflow menu.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => createEvidence.mutate()}
-                  data-testid="simulate-upload"
-                  className="glass-panel-soft rounded-xl px-4 py-2.5 text-sm font-medium text-[var(--color-text)]"
-                >
-                  Create sample receipt
-                </button>
-                <button
-                  type="button"
-                  onClick={() => approveFirst.mutate()}
-                  data-testid="approve-first"
-                  disabled={!firstPendingReview || approveFirst.isPending}
-                  className="rounded-xl bg-[var(--color-accent)] px-4 py-2.5 text-sm font-medium text-white shadow-[var(--shadow-accent)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Approve next review
-                </button>
-              </div>
+              {webRuntimeConfig.runtimeMode === "demo" ? (
+                <details className="group relative shrink-0" data-testid="queue-overflow-menu">
+                  <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-xl bg-[var(--color-surface-muted)] text-lg font-semibold text-[var(--color-text-muted)] marker:content-none">
+                    <span className="sr-only">Queue actions</span>
+                    <span aria-hidden>⋯</span>
+                  </summary>
+                  <div className="absolute right-0 z-20 mt-2 min-w-[12rem] rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-[var(--shadow-md)]">
+                    <button
+                      type="button"
+                      onClick={() => createEvidence.mutate()}
+                      data-testid="simulate-upload"
+                      className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]"
+                    >
+                      Create sample receipt
+                    </button>
+                  </div>
+                </details>
+              ) : null}
             </div>
             {actionError ? (
               <p className="mt-4 rounded-2xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
@@ -186,16 +187,26 @@ export function HomeScreen() {
           </div>
 
           <div className="space-y-4">
-            {reviews.map((review, index) => {
+            {sortedReviews.length === 0 ? (
+              <p className="glass-panel-soft rounded-3xl px-5 py-8 text-center text-sm text-[var(--color-text-muted)]">
+                Your queue is clear — capture an invoice or wait for share-target uploads.
+              </p>
+            ) : null}
+            {sortedReviews.map((review, index) => {
               const voucher = findVoucher(vouchers, review);
               const confidence = formatPercent(review.suggestion?.confidence ?? 0);
               const citation = review.suggestion?.citations[0];
               const supplier = voucher?.voucherFields.supplierName ?? review.title;
 
+              const canApprove = review.status === "needs-review" && !review.blockedReason;
+              const showApprovePending = approveReview.isPending && approveReview.variables === review.id;
+
               return (
                 <motion.article
                   key={review.id}
+                  id={`review-${review.id}`}
                   data-testid="review-card"
+                  style={{ scrollMarginTop: index === 0 ? "5.5rem" : undefined }}
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
@@ -308,6 +319,16 @@ export function HomeScreen() {
                           {review.blockedReason}
                         </p>
                       ) : null}
+
+                      <button
+                        type="button"
+                        data-testid="approve-review"
+                        disabled={!canApprove || showApprovePending}
+                        onClick={() => approveReview.mutate(review.id)}
+                        className="mt-5 w-full rounded-xl bg-[var(--color-accent)] px-4 py-3.5 text-sm font-semibold text-white shadow-[var(--shadow-accent)] disabled:cursor-not-allowed disabled:opacity-55"
+                      >
+                        {showApprovePending ? "Approving…" : review.status === "approved" ? "Approved" : "Approve"}
+                      </button>
                     </div>
                   </div>
                 </motion.article>
@@ -351,21 +372,6 @@ export function HomeScreen() {
                       {formatMoney(balance.balance)}
                     </p>
                   </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="glass-panel rounded-3xl p-5" data-testid="alerts-panel">
-            <SectionLabel>Compliance watch</SectionLabel>
-            <div className="mt-4 space-y-3">
-              {alerts.map((alert) => (
-                <div key={alert.id} className="glass-panel-soft rounded-2xl px-4 py-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="text-sm font-semibold text-[var(--color-text)]">{alert.title}</p>
-                    <StatusBadge status={alert.source} variant="warning" />
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">{alert.impactSummary}</p>
                 </div>
               ))}
             </div>

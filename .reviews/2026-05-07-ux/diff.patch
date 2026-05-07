@@ -1,0 +1,1201 @@
+diff --git a/apps/web/app/globals.css b/apps/web/app/globals.css
+index 9708a1c..e02b1df 100644
+--- a/apps/web/app/globals.css
++++ b/apps/web/app/globals.css
+@@ -124,7 +124,12 @@ a {
+ }
+ 
+ .workspace-canvas {
+-  padding-bottom: 16px;
++  /*
++   * Mobile reserves space for the fixed dock (~64px) and the floating
++   * Capture pill (~52px) above it, plus safe-area inset and breathing room.
++   * Desktop ≥1024px hides both, so the override below clears the padding.
++   */
++  padding-bottom: calc(env(safe-area-inset-bottom) + 144px);
+ }
+ 
+ .review-card-layout {
+@@ -269,6 +274,10 @@ button:active:not(:disabled) {
+     display: none;
+   }
+ 
++  .workspace-canvas {
++    padding-bottom: 24px;
++  }
++
+   .capture-button-desktop {
+     display: inline-flex;
+   }
+diff --git a/apps/web/components/app-shell.tsx b/apps/web/components/app-shell.tsx
+index ef57e5c..5d972c9 100644
+--- a/apps/web/components/app-shell.tsx
++++ b/apps/web/components/app-shell.tsx
+@@ -1,23 +1,35 @@
+ "use client";
+ 
+-import type { MouseEvent, ReactNode } from "react";
++import type { ChangeEvent, MouseEvent, ReactNode } from "react";
+ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import Link from "next/link";
+ import { usePathname } from "next/navigation";
++import { useQuery } from "@tanstack/react-query";
+ import { motion, AnimatePresence } from "motion/react";
+ 
++import { CommandPalette } from "./command-palette";
++import { apiClient } from "../lib/client";
+ import { saveCaptureDraft } from "../lib/draft-queue";
+ import type { DraftQueueSaveResult } from "../lib/draft-queue-core";
+ import { formatRuntimeModeLabel } from "../lib/presentation";
+ import { webRuntimeConfig } from "../lib/runtime-config";
+-import { AdvisorIcon, CaptureIcon, ControlIcon, InboxIcon, ReportsIcon, SparkIcon } from "./ui/icons";
++import {
++  AdvisorIcon,
++  BellIcon,
++  CaptureIcon,
++  ControlIcon,
++  InboxIcon,
++  ReportsIcon,
++  SearchIcon,
++  UserIcon,
++} from "./ui/icons";
+ import { StatusBadge } from "./ui/status-badge";
+ 
+ const navigation = [
+   { href: "/", label: "Inbox", summary: "Evidence and review queue", icon: InboxIcon },
+   { href: "/reports", label: "Reports", summary: "Journal, balances, and VAT", icon: ReportsIcon },
+   { href: "/assistant", label: "Advisor", summary: "Grounded finance guidance", icon: AdvisorIcon },
+-  { href: "/settings", label: "Control", summary: "Guardrails and deployment posture", icon: ControlIcon },
++  { href: "/settings", label: "Settings", summary: "Status, posture, and account", icon: ControlIcon },
+ ];
+ 
+ const draftModes = [
+@@ -27,6 +39,8 @@ const draftModes = [
+   { key: "share", label: "Share" },
+ ];
+ 
++const draftModesMoreFilter = draftModes.filter((m) => m.key !== "upload");
++
+ type CaptureStatus = {
+   tone: "success" | "warning" | "error";
+   message: string;
+@@ -76,13 +90,75 @@ function getFocusableElements(container: HTMLElement | null) {
+   );
+ }
+ 
++function NotificationMenu() {
++  const [menuOpen, setMenuOpen] = useState(false);
++  const { data } = useQuery({
++    queryKey: ["workspace"],
++    queryFn: () => apiClient.getSnapshot(),
++    staleTime: 60_000,
++  });
++  const alerts = data?.alerts ?? [];
++
++  return (
++    <div className="relative">
++      <button
++        type="button"
++        data-testid="notifications-trigger"
++        aria-label="Notifications"
++        aria-expanded={menuOpen}
++        onClick={() => setMenuOpen((v) => !v)}
++        className="relative rounded-xl p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]"
++      >
++        <BellIcon className="size-5" />
++        {alerts.length > 0 ? (
++          <span className="absolute right-1 top-1 block h-2 w-2 rounded-full bg-[var(--color-danger)] ring-2 ring-white" />
++        ) : null}
++      </button>
++      {menuOpen ? (
++        <>
++          <button
++            type="button"
++            aria-label="Close notifications"
++            className="fixed inset-0 z-30 cursor-default bg-transparent"
++            onClick={() => setMenuOpen(false)}
++          />
++          <div className="absolute right-0 top-full z-40 mt-2 w-[min(92vw,18rem)] rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-[var(--shadow-lg)]">
++            {alerts.length === 0 ? (
++              <p className="px-2 py-4 text-center text-sm text-[var(--color-text-muted)]">No alerts right now.</p>
++            ) : (
++              <ul className="max-h-72 space-y-1 overflow-y-auto">
++                {alerts.map((alertItem) => (
++                  <li key={alertItem.id}>
++                    <Link
++                      href="/reports#compliance-watch"
++                      className="block rounded-xl px-3 py-2 text-left hover:bg-[var(--color-surface-muted)]"
++                      onClick={() => setMenuOpen(false)}
++                    >
++                      <p className="text-sm font-medium text-[var(--color-text)]">{alertItem.title}</p>
++                      <p className="mt-1 line-clamp-2 text-xs text-[var(--color-text-muted)]">
++                        {alertItem.impactSummary}
++                      </p>
++                    </Link>
++                  </li>
++                ))}
++              </ul>
++            )}
++          </div>
++        </>
++      ) : null}
++    </div>
++  );
++}
++
+ export function AppShell({ children }: { children: ReactNode }) {
+   const pathname = usePathname();
+   const [captureOpen, setCaptureOpen] = useState(false);
+   const [captureStatus, setCaptureStatus] = useState<CaptureStatus | null>(null);
+-  const timestamp = useMemo(() => new Intl.DateTimeFormat("sv-SE").format(new Date()), []);
++  const [commandOpen, setCommandOpen] = useState(false);
++  const [commandMountKey, setCommandMountKey] = useState(0);
+   const dialogRef = useRef<HTMLDivElement | null>(null);
+   const firstDraftActionRef = useRef<HTMLButtonElement | null>(null);
++  const fileInputRef = useRef<HTMLInputElement | null>(null);
+   const returnFocusRef = useRef<HTMLElement | null>(null);
+   const runtimeModeLabel = formatRuntimeModeLabel(webRuntimeConfig.runtimeMode);
+   const activeNavItem = useMemo(
+@@ -95,6 +171,20 @@ export function AppShell({ children }: { children: ReactNode }) {
+     window.requestAnimationFrame(() => returnFocusRef.current?.focus());
+   }, []);
+ 
++  useEffect(() => {
++    function onKey(event: KeyboardEvent) {
++      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
++        event.preventDefault();
++        if (!commandOpen) {
++          setCommandMountKey((k) => k + 1);
++        }
++        setCommandOpen(true);
++      }
++    }
++    window.addEventListener("keydown", onKey);
++    return () => window.removeEventListener("keydown", onKey);
++  }, [commandOpen]);
++
+   useEffect(() => {
+     if (!captureStatus) {
+       return undefined;
+@@ -165,6 +255,29 @@ export function AppShell({ children }: { children: ReactNode }) {
+     }
+   }
+ 
++  async function createDraftFromFileSelection(event: ChangeEvent<HTMLInputElement>) {
++    const file = event.target.files?.[0];
++    event.target.value = "";
++    if (!file) {
++      return;
++    }
++    try {
++      const result = await saveCaptureDraft({
++        id: crypto.randomUUID(),
++        mode: "upload",
++        title: file.name,
++        createdAt: new Date().toISOString(),
++      });
++      setCaptureStatus(buildCaptureStatusMessage("Upload", result));
++      closeCaptureSheet();
++    } catch {
++      setCaptureStatus({
++        tone: "error",
++        message: "Upload draft could not be saved locally. Check browser storage permissions and try again.",
++      });
++    }
++  }
++
+   function openCaptureSheet(event: MouseEvent<HTMLButtonElement>) {
+     returnFocusRef.current = event.currentTarget;
+     setCaptureOpen(true);
+@@ -252,18 +365,41 @@ export function AppShell({ children }: { children: ReactNode }) {
+                 className="capture-button-desktop mt-4 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-accent)] px-5 py-4 text-sm font-semibold text-white shadow-[var(--shadow-md)]"
+               >
+                 <CaptureIcon className="size-4" />
+-                Capture Evidence
++                Capture
+               </button>
+             </section>
+ 
+-            <section className="glass-panel-soft mt-auto rounded-4xl p-4">
+-              <div className="flex items-center gap-2 text-[var(--color-text-muted)]">
+-                <SparkIcon className="size-4 text-[var(--color-accent)]" />
+-                <span className="text-eyebrow">Innovation track</span>
++            <section className="glass-panel-soft mt-auto rounded-4xl p-4" data-testid="account-menu-rail">
++              <div className="flex items-center gap-3">
++                <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-sm font-semibold text-[var(--color-accent)]">
++                  <UserIcon className="size-5" />
++                </div>
++                <div className="min-w-0 flex-1">
++                  <p className="truncate text-sm font-semibold text-[var(--color-text)]">Demo user</p>
++                  <p className="truncate text-xs text-[var(--color-text-muted)]">workspace_main</p>
++                </div>
+               </div>
+-              <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
+-                Voice capture, simulations, and close copilot are isolated from posting authority until they earn trust.
+-              </p>
++              <details className="mt-3">
++                <summary className="cursor-pointer text-eyebrow marker:content-none">Account & workspace</summary>
++                <div className="mt-3 space-y-2 text-sm text-[var(--color-text-muted)]">
++                  <p>Workspace switcher will land here for multi-entity teams.</p>
++                  <a
++                    href="https://github.com"
++                    target="_blank"
++                    rel="noreferrer"
++                    className="inline-flex font-medium text-[var(--color-accent)]"
++                  >
++                    Documentation
++                  </a>
++                  <button
++                    type="button"
++                    disabled
++                    className="block w-full rounded-xl px-0 py-1 text-left text-[var(--color-text-soft)]"
++                  >
++                    Sign out (soon)
++                  </button>
++                </div>
++              </details>
+             </section>
+           </div>
+         </aside>
+@@ -288,11 +424,41 @@ export function AppShell({ children }: { children: ReactNode }) {
+                   </p>
+                 </div>
+               </div>
+-              <div className="flex items-center gap-2">
+-                <div className="hidden rounded-xl glass-panel-soft px-3 py-2 text-right text-xs text-[var(--color-text-muted)] sm:block">
+-                  <div className="font-medium text-[var(--color-text)]">Sweden Central / Stockholm</div>
+-                  <div>{timestamp}</div>
+-                </div>
++              <div className="flex items-center gap-1 sm:gap-2">
++                <button
++                  type="button"
++                  onClick={() => {
++                    if (!commandOpen) {
++                      setCommandMountKey((k) => k + 1);
++                    }
++                    setCommandOpen(true);
++                  }}
++                  data-testid="command-palette-open"
++                  aria-label="Open search"
++                  className="rounded-xl p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]"
++                >
++                  <SearchIcon className="size-5" />
++                </button>
++                <NotificationMenu />
++                <details className="relative lg:hidden">
++                  <summary className="flex cursor-pointer list-none items-center justify-center rounded-xl p-2 marker:content-none hover:bg-[var(--color-surface-muted)]">
++                    <UserIcon className="size-5 text-[var(--color-text-muted)]" />
++                    <span className="sr-only">Account menu</span>
++                  </summary>
++                  <div className="absolute right-0 top-full z-40 mt-2 w-64 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-lg)]">
++                    <p className="text-sm font-semibold text-[var(--color-text)]">Demo user</p>
++                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">workspace_main</p>
++                    <a
++                      href="https://github.com"
++                      target="_blank"
++                      rel="noreferrer"
++                      className="mt-3 inline-block text-sm font-medium text-[var(--color-accent)]"
++                    >
++                      Documentation
++                    </a>
++                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">Workspace switcher coming soon.</p>
++                  </div>
++                </details>
+                 <button
+                   type="button"
+                   onClick={openCaptureSheet}
+@@ -306,17 +472,6 @@ export function AppShell({ children }: { children: ReactNode }) {
+             </div>
+           </header>
+ 
+-          {webRuntimeConfig.runtimeMode === "demo" ? (
+-            <div className="page-shell page-shell-compact">
+-              <div
+-                data-testid="runtime-mode-banner"
+-                className="glass-panel-soft rounded-2xl border border-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]"
+-              >
+-                Demo mode is active. Local demo data and local AI fallback are enabled intentionally.
+-              </div>
+-            </div>
+-          ) : null}
+-
+           <main className="workspace-canvas">{children}</main>
+         </div>
+       </div>
+@@ -391,9 +546,9 @@ export function AppShell({ children }: { children: ReactNode }) {
+               <div className="flex items-start justify-between gap-4">
+                 <div>
+                   <div className="mb-5 h-1.5 w-16 rounded-full bg-[rgba(15,26,34,0.12)]" />
+-                  <p className="text-eyebrow">Quick Intake</p>
++                  <p className="text-eyebrow">Capture</p>
+                   <h2 id="capture-sheet-title" className="mt-2 text-2xl font-semibold">
+-                    Add business evidence
++                    Capture evidence
+                   </h2>
+                 </div>
+                 <button
+@@ -409,27 +564,46 @@ export function AppShell({ children }: { children: ReactNode }) {
+                 Capture starts locally first so the UI stays responsive. The result tells you whether the draft was
+                 stored persistently or only for this tab.
+               </p>
+-              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+-                {draftModes.map((mode, index) => (
+-                  <button
+-                    key={mode.key}
+-                    ref={index === 0 ? firstDraftActionRef : undefined}
+-                    type="button"
+-                    data-testid={`capture-mode-${mode.key}`}
+-                    onClick={() => void createDraft(mode)}
+-                    className="glass-panel rounded-xl px-4 py-4 text-left"
+-                  >
+-                    <p className="text-sm font-semibold text-[var(--color-text)]">{mode.label}</p>
+-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+-                      Queue locally, then enrich with AI and rules.
+-                    </p>
+-                  </button>
+-                ))}
+-              </div>
++              <input
++                ref={fileInputRef}
++                type="file"
++                className="sr-only"
++                accept="image/*,application/pdf"
++                tabIndex={-1}
++                aria-hidden
++                onChange={(event) => void createDraftFromFileSelection(event)}
++              />
++              <button
++                ref={firstDraftActionRef}
++                type="button"
++                data-testid="capture-evidence-primary"
++                onClick={() => fileInputRef.current?.click()}
++                className="mt-5 w-full rounded-xl bg-[var(--color-accent)] px-5 py-4 text-sm font-semibold text-white shadow-[var(--shadow-md)]"
++              >
++                Capture evidence
++              </button>
++              <details className="mt-4 rounded-2xl bg-[var(--color-surface-muted)] px-4 py-3">
++                <summary className="cursor-pointer text-eyebrow marker:content-none">More capture options</summary>
++                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
++                  {draftModesMoreFilter.map((mode) => (
++                    <button
++                      key={mode.key}
++                      type="button"
++                      data-testid={`capture-mode-${mode.key}`}
++                      onClick={() => void createDraft(mode)}
++                      className="glass-panel rounded-xl px-4 py-4 text-left"
++                    >
++                      <p className="text-sm font-semibold text-[var(--color-text)]">{mode.label}</p>
++                      <p className="mt-1 text-xs text-[var(--color-text-muted)]">Save a local draft to the queue.</p>
++                    </button>
++                  ))}
++                </div>
++              </details>
+             </motion.div>
+           </motion.div>
+         ) : null}
+       </AnimatePresence>
++      <CommandPalette key={commandMountKey} open={commandOpen} onClose={() => setCommandOpen(false)} />
+     </div>
+   );
+ }
+diff --git a/apps/web/components/screens/assistant-screen.tsx b/apps/web/components/screens/assistant-screen.tsx
+index 8c54f81..35017e6 100644
+--- a/apps/web/components/screens/assistant-screen.tsx
++++ b/apps/web/components/screens/assistant-screen.tsx
+@@ -4,6 +4,11 @@ import { useMutation, useQuery } from "@tanstack/react-query";
+ import { useState } from "react";
+ import type { AssistantSession } from "@jpx-accounting/contracts";
+ 
++import {
++  loadAssistantThreads,
++  prependAssistantThread,
++  type StoredAssistantThread,
++} from "../../lib/assistant-thread-storage";
+ import { apiClient } from "../../lib/client";
+ import { getErrorMessage } from "../../lib/request-errors";
+ import { formatRuntimeModeLabel } from "../../lib/presentation";
+@@ -13,8 +18,32 @@ import { UnavailableState } from "../ui/unavailable-state";
+ import { SectionLabel } from "../ui/section-label";
+ import { ScreenSkeleton } from "../ui/skeleton";
+ 
++function ThreadList({ threads }: { threads: StoredAssistantThread[] }) {
++  if (threads.length === 0) {
++    return (
++      <p className="text-sm text-[var(--color-text-muted)]">Run an advisory pass to build history on this device.</p>
++    );
++  }
++
++  return (
++    <ul className="space-y-3">
++      {threads.map((thread) => (
++        <li key={thread.id} className="glass-panel-soft rounded-2xl px-3 py-3">
++          <p className="text-xs font-semibold text-[var(--color-text)] line-clamp-2">{thread.question}</p>
++          <p className="mt-2 text-xs leading-5 text-[var(--color-text-muted)] line-clamp-3">{thread.answer}</p>
++          <p className="text-eyebrow mt-2">{thread.status}</p>
++        </li>
++      ))}
++    </ul>
++  );
++}
++
+ export function AssistantScreen() {
+   const [question, setQuestion] = useState("What should we double-check before deducting VAT on mixed receipts?");
++  const [threads, setThreads] = useState<StoredAssistantThread[]>(() =>
++    typeof window !== "undefined" ? loadAssistantThreads() : [],
++  );
++
+   const workspaceQuery = useQuery({
+     queryKey: ["workspace"],
+     queryFn: () => apiClient.getSnapshot(),
+@@ -27,6 +56,10 @@ export function AssistantScreen() {
+         actorId: "user_founder",
+         question: nextQuestion,
+       }),
++    onSuccess: (session) => {
++      prependAssistantThread(session);
++      setThreads(loadAssistantThreads());
++    },
+   });
+ 
+   const assistantItems: AssistantSession[] = assistant.data ? [assistant.data] : (data?.assistantExamples ?? []);
+@@ -52,7 +85,7 @@ export function AssistantScreen() {
+     <div className="page-shell space-y-6">
+       <ScreenHeader
+         eyebrow="Advisor"
+-        title="Source-grounded finance guidance with room for human judgment."
++        title="Ask AI"
+         description="The advisory plane stays clearly separate from posting authority. It explains, recommends, cites, and creates review tasks, but it does not silently change the ledger."
+         aside={
+           <div className="glass-panel-soft rounded-2xl p-4">
+@@ -66,7 +99,22 @@ export function AssistantScreen() {
+         }
+       />
+ 
+-      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
++      <details className="glass-panel rounded-3xl p-4 lg:hidden">
++        <summary className="cursor-pointer text-sm font-semibold text-[var(--color-text)]">Thread history</summary>
++        <div className="mt-4 max-h-60 overflow-y-auto">
++          <ThreadList threads={threads} />
++        </div>
++      </details>
++
++      <div className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1.15fr)_minmax(0,0.85fr)]">
++        <section className="glass-panel hidden rounded-3xl p-4 lg:block" data-testid="assistant-thread-list">
++          <h2 className="text-sm font-semibold text-[var(--color-text)]">Thread history</h2>
++          <p className="mt-1 text-xs text-[var(--color-text-muted)]">Stored locally in this browser.</p>
++          <div className="mt-4 max-h-[min(28rem,60vh)] overflow-y-auto">
++            <ThreadList threads={threads} />
++          </div>
++        </section>
++
+         <section className="glass-panel rounded-3xl p-5" data-testid="assistant-panel">
+           <SectionLabel as="label" htmlFor="assistant-question">
+             Ask a grounded question
+@@ -82,7 +130,7 @@ export function AssistantScreen() {
+             type="button"
+             onClick={() => assistant.mutate(question)}
+             data-testid="assistant-submit"
+-            className="mt-4 rounded-xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white"
++            className="mt-4 w-full rounded-xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white sm:w-auto"
+           >
+             Run advisory pass
+           </button>
+@@ -112,7 +160,7 @@ export function AssistantScreen() {
+           </div>
+         </section>
+ 
+-        <section className="glass-panel rounded-3xl p-5">
++        <section className="glass-panel rounded-3xl p-5" data-testid="policy-rules-studio">
+           <h2 className="text-lg font-semibold">Policy and rules studio</h2>
+           <div className="mt-4 space-y-3">
+             {[
+diff --git a/apps/web/components/screens/home-screen.tsx b/apps/web/components/screens/home-screen.tsx
+index 89814ee..bd01618 100644
+--- a/apps/web/components/screens/home-screen.tsx
++++ b/apps/web/components/screens/home-screen.tsx
+@@ -6,6 +6,7 @@ import { motion } from "motion/react";
+ 
+ import { getErrorMessage } from "../../lib/request-errors";
+ import { formatMoney, formatPercent, formatShortDate } from "../../lib/presentation";
++import { webRuntimeConfig } from "../../lib/runtime-config";
+ import { apiClient } from "../../lib/client";
+ import { ScreenHeader } from "../ui/screen-header";
+ import { UnavailableState } from "../ui/unavailable-state";
+@@ -75,12 +76,8 @@ export function HomeScreen() {
+     },
+   });
+ 
+-  const approveFirst = useMutation({
+-    mutationFn: async () => {
+-      const firstReview = data?.reviews.find((review) => review.status === "needs-review");
+-      if (!firstReview) return undefined;
+-      return apiClient.approveReview(firstReview.id, { actorId: "user_founder" });
+-    },
++  const approveReview = useMutation({
++    mutationFn: (reviewId: string) => apiClient.approveReview(reviewId, { actorId: "user_founder" }),
+     onSuccess: (review) => {
+       queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (current) => {
+         if (!current || !review) return current;
+@@ -104,10 +101,15 @@ export function HomeScreen() {
+   const closeRun = data?.closeRun;
+   const pendingReviews = reviews.filter((review) => review.status === "needs-review");
+   const blockedReviews = reviews.filter((review) => review.blockedReason);
+-  const firstPendingReview = pendingReviews[0];
++  const sortedReviews = [...reviews].sort((a, b) => {
++    const pri = (r: ReviewTask) => (r.status === "needs-review" ? 0 : 1);
++    const d = pri(a) - pri(b);
++    if (d !== 0) return d;
++    return a.id.localeCompare(b.id);
++  });
+   const actionError =
+-    createEvidence.error || approveFirst.error
+-      ? getErrorMessage(createEvidence.error ?? approveFirst.error, "A workspace action could not be completed.")
++    createEvidence.error || approveReview.error
++      ? getErrorMessage(createEvidence.error ?? approveReview.error, "A workspace action could not be completed.")
+       : null;
+ 
+   if (workspaceQuery.error && !data) {
+@@ -131,7 +133,8 @@ export function HomeScreen() {
+     <div className="page-shell space-y-6">
+       <ScreenHeader
+         eyebrow="Inbox / Needs Review"
+-        title="Review-ready bookkeeping, shaped for the phone first."
++        title="Review queue"
++        lede={`${pendingReviews.length} voucher${pendingReviews.length === 1 ? "" : "s"} awaiting review.`}
+         description="Evidence arrives once, suggestions stay explainable, and the queue keeps the real accounting work above the fold instead of hiding it under dashboard chrome."
+         aside={
+           <div className="grid grid-cols-2 gap-3">
+@@ -148,35 +151,33 @@ export function HomeScreen() {
+ 
+       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.2fr)_23rem]">
+         <section className="space-y-4">
+-          <div className="glass-chrome rounded-3xl px-4 py-4 sm:px-5">
+-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+-              <div>
++          <div className="glass-chrome rounded-3xl px-4 py-3 sm:px-5 sm:py-4">
++            <div className="flex flex-row items-start justify-between gap-3">
++              <div className="min-w-0">
+                 <SectionLabel>Review queue</SectionLabel>
+-                <h2 className="mt-2 text-2xl font-semibold">Keep the next accounting decision obvious.</h2>
++                <h2 className="mt-2 text-lg font-semibold sm:text-2xl">Keep the next decision obvious.</h2>
+                 <p className="mt-2 max-w-2xl text-sm text-[var(--color-text-muted)]">
+-                  Cards stay compact on mobile, expand on larger screens, and keep AI reasoning behind secondary
+-                  disclosure until it is needed.
++                  Approve from each card. Demo-only actions live under the overflow menu.
+                 </p>
+               </div>
+-              <div className="flex flex-wrap gap-2">
+-                <button
+-                  type="button"
+-                  onClick={() => createEvidence.mutate()}
+-                  data-testid="simulate-upload"
+-                  className="glass-panel-soft rounded-xl px-4 py-2.5 text-sm font-medium text-[var(--color-text)]"
+-                >
+-                  Create sample receipt
+-                </button>
+-                <button
+-                  type="button"
+-                  onClick={() => approveFirst.mutate()}
+-                  data-testid="approve-first"
+-                  disabled={!firstPendingReview || approveFirst.isPending}
+-                  className="rounded-xl bg-[var(--color-accent)] px-4 py-2.5 text-sm font-medium text-white shadow-[var(--shadow-accent)] disabled:cursor-not-allowed disabled:opacity-60"
+-                >
+-                  Approve next review
+-                </button>
+-              </div>
++              {webRuntimeConfig.runtimeMode === "demo" ? (
++                <details className="group relative shrink-0" data-testid="queue-overflow-menu">
++                  <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-xl bg-[var(--color-surface-muted)] text-lg font-semibold text-[var(--color-text-muted)] marker:content-none">
++                    <span className="sr-only">Queue actions</span>
++                    <span aria-hidden>⋯</span>
++                  </summary>
++                  <div className="absolute right-0 z-20 mt-2 min-w-[12rem] rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-[var(--shadow-md)]">
++                    <button
++                      type="button"
++                      onClick={() => createEvidence.mutate()}
++                      data-testid="simulate-upload"
++                      className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]"
++                    >
++                      Create sample receipt
++                    </button>
++                  </div>
++                </details>
++              ) : null}
+             </div>
+             {actionError ? (
+               <p className="mt-4 rounded-2xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
+@@ -186,16 +187,26 @@ export function HomeScreen() {
+           </div>
+ 
+           <div className="space-y-4">
+-            {reviews.map((review, index) => {
++            {sortedReviews.length === 0 ? (
++              <p className="glass-panel-soft rounded-3xl px-5 py-8 text-center text-sm text-[var(--color-text-muted)]">
++                Your queue is clear — capture an invoice or wait for share-target uploads.
++              </p>
++            ) : null}
++            {sortedReviews.map((review, index) => {
+               const voucher = findVoucher(vouchers, review);
+               const confidence = formatPercent(review.suggestion?.confidence ?? 0);
+               const citation = review.suggestion?.citations[0];
+               const supplier = voucher?.voucherFields.supplierName ?? review.title;
+ 
++              const canApprove = review.status === "needs-review" && !review.blockedReason;
++              const showApprovePending = approveReview.isPending && approveReview.variables === review.id;
++
+               return (
+                 <motion.article
+                   key={review.id}
++                  id={`review-${review.id}`}
+                   data-testid="review-card"
++                  style={{ scrollMarginTop: index === 0 ? "5.5rem" : undefined }}
+                   initial={{ opacity: 0, y: 12 }}
+                   animate={{ opacity: 1, y: 0 }}
+                   transition={{ delay: index * 0.05 }}
+@@ -308,6 +319,16 @@ export function HomeScreen() {
+                           {review.blockedReason}
+                         </p>
+                       ) : null}
++
++                      <button
++                        type="button"
++                        data-testid="approve-review"
++                        disabled={!canApprove || showApprovePending}
++                        onClick={() => approveReview.mutate(review.id)}
++                        className="mt-5 w-full rounded-xl bg-[var(--color-accent)] px-4 py-3.5 text-sm font-semibold text-white shadow-[var(--shadow-accent)] disabled:cursor-not-allowed disabled:opacity-55"
++                      >
++                        {showApprovePending ? "Approving…" : review.status === "approved" ? "Approved" : "Approve"}
++                      </button>
+                     </div>
+                   </div>
+                 </motion.article>
+@@ -355,21 +376,6 @@ export function HomeScreen() {
+               ))}
+             </div>
+           </section>
+-
+-          <section className="glass-panel rounded-3xl p-5" data-testid="alerts-panel">
+-            <SectionLabel>Compliance watch</SectionLabel>
+-            <div className="mt-4 space-y-3">
+-              {alerts.map((alert) => (
+-                <div key={alert.id} className="glass-panel-soft rounded-2xl px-4 py-4">
+-                  <div className="flex items-center justify-between gap-4">
+-                    <p className="text-sm font-semibold text-[var(--color-text)]">{alert.title}</p>
+-                    <StatusBadge status={alert.source} variant="warning" />
+-                  </div>
+-                  <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">{alert.impactSummary}</p>
+-                </div>
+-              ))}
+-            </div>
+-          </section>
+         </aside>
+       </div>
+     </div>
+diff --git a/apps/web/components/screens/reports-screen.tsx b/apps/web/components/screens/reports-screen.tsx
+index 2850536..de400fe 100644
+--- a/apps/web/components/screens/reports-screen.tsx
++++ b/apps/web/components/screens/reports-screen.tsx
+@@ -1,29 +1,72 @@
+ "use client";
+ 
+ import { useQuery } from "@tanstack/react-query";
++import { useMemo, useState } from "react";
+ import { motion } from "motion/react";
+ 
+ import { getErrorMessage } from "../../lib/request-errors";
+ import { formatMoney } from "../../lib/presentation";
+ import { summarizeBalances, summarizeJournal, summarizeVat } from "@jpx-accounting/reporting";
+ import { apiClient } from "../../lib/client";
++import { getPeriodDayRange, journalEntryInPeriod, type ReportPeriodPreset } from "../../lib/report-period";
+ import { ScreenHeader } from "../ui/screen-header";
+ import { UnavailableState } from "../ui/unavailable-state";
+-import { MetricCard } from "../ui/metric-card";
+ import { SectionLabel } from "../ui/section-label";
+ import { ScreenSkeleton } from "../ui/skeleton";
++import { StatusBadge } from "../ui/status-badge";
++
++const periodOptions: { value: ReportPeriodPreset; label: string }[] = [
++  { value: "this-month", label: "This month" },
++  { value: "last-month", label: "Last month" },
++  { value: "q1", label: "Q1" },
++  { value: "q2", label: "Q2" },
++  { value: "q3", label: "Q3" },
++  { value: "q4", label: "Q4" },
++  { value: "ytd", label: "Year to date" },
++  { value: "all", label: "All periods" },
++];
+ 
+ export function ReportsScreen() {
++  const [period, setPeriod] = useState<ReportPeriodPreset>("this-month");
++  const [exporting, setExporting] = useState(false);
++
+   const workspaceQuery = useQuery({
+     queryKey: ["workspace"],
+     queryFn: () => apiClient.getSnapshot(),
+   });
+   const { data } = workspaceQuery;
+ 
+-  const journalSummary = summarizeJournal(data?.reports.journal ?? []);
++  const { startDay, endDay } = useMemo(() => getPeriodDayRange(period), [period]);
++
++  const filteredJournal = useMemo(() => {
++    const journal = data?.reports.journal ?? [];
++    if (period === "all") return journal;
++    return journal.filter((entry) => journalEntryInPeriod(entry.bookedAt, startDay, endDay));
++  }, [data?.reports.journal, period, startDay, endDay]);
++
++  const journalSummary = summarizeJournal(filteredJournal);
+   const balanceSummary = summarizeBalances(data?.reports.balances ?? []);
+   const vatSummary = summarizeVat(data?.reports.vat ?? []);
+ 
++  async function exportSie() {
++    setExporting(true);
++    try {
++      const text = await apiClient.fetchSieExport();
++      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
++      const url = URL.createObjectURL(blob);
++      const anchor = document.createElement("a");
++      const day = new Date().toISOString().slice(0, 10);
++      anchor.href = url;
++      anchor.download = `jpx-export-${day}.si`;
++      anchor.click();
++      URL.revokeObjectURL(url);
++    } catch (error) {
++      console.error(error);
++    } finally {
++      setExporting(false);
++    }
++  }
++
+   if (workspaceQuery.error && !data) {
+     return (
+       <UnavailableState
+@@ -45,17 +88,47 @@ export function ReportsScreen() {
+     <div className="page-shell space-y-6">
+       <ScreenHeader
+         eyebrow="Reports"
+-        title="Fast reporting with the ledger still in plain sight."
++        title="Reports"
+         description="Journal, balances, and VAT views all project from the same append-only event history, so the polished UI never drifts away from the audit spine."
+         aside={
+-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+-            <MetricCard label="Entries" value={journalSummary.count} />
+-            <MetricCard label="Accounts" value={balanceSummary.length} />
+-            <MetricCard label="VAT slices" value={vatSummary.length} />
++          <div className="flex w-full flex-col gap-3 sm:items-end">
++            <button
++              type="button"
++              data-testid="export-sie"
++              disabled={exporting}
++              onClick={() => void exportSie()}
++              className="rounded-xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white shadow-[var(--shadow-md)] disabled:opacity-60"
++            >
++              {exporting ? "Exporting…" : "Export SIE"}
++            </button>
++            <p className="text-xs text-[var(--color-text-muted)]">Downloads the workspace SIE file from the API.</p>
+           </div>
+         }
+       />
+ 
++      <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_92%,transparent)] px-3 py-2 shadow-[var(--shadow-sm)] backdrop-blur-md sm:gap-3">
++        <span className="text-eyebrow">Reporting period</span>
++        <label className="sr-only" htmlFor="report-period">
++          Reporting period
++        </label>
++        <select
++          id="report-period"
++          data-testid="report-period"
++          value={period}
++          onChange={(event) => setPeriod(event.target.value as ReportPeriodPreset)}
++          className="glass-panel-inset max-w-[14rem] rounded-xl px-3 py-2 text-sm outline-none"
++        >
++          {periodOptions.map((opt) => (
++            <option key={opt.value} value={opt.value}>
++              {opt.label}
++            </option>
++          ))}
++        </select>
++        <span className="text-xs text-[var(--color-text-muted)]">
++          Journal metrics respect this range. Balances and VAT remain full snapshot.
++        </span>
++      </div>
++
+       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+         <motion.section
+           initial={{ opacity: 0, y: 16 }}
+@@ -126,6 +199,25 @@ export function ReportsScreen() {
+           ))}
+         </div>
+       </section>
++
++      <section id="compliance-watch" className="glass-panel rounded-3xl p-5" data-testid="alerts-panel">
++        <SectionLabel>Compliance watch</SectionLabel>
++        <h2 className="mt-2 text-lg font-semibold">Deadlines and regulatory signals</h2>
++        <p className="mt-2 text-sm text-[var(--color-text-muted)]">
++          Pulled from the same compliance feed as the inbox notifications surface.
++        </p>
++        <div className="mt-4 space-y-3">
++          {data.alerts.map((alert) => (
++            <div key={alert.id} className="glass-panel-soft rounded-2xl px-4 py-4">
++              <div className="flex items-center justify-between gap-4">
++                <p className="text-sm font-semibold text-[var(--color-text)]">{alert.title}</p>
++                <StatusBadge status={alert.source} variant="warning" />
++              </div>
++              <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">{alert.impactSummary}</p>
++            </div>
++          ))}
++        </div>
++      </section>
+     </div>
+   );
+ }
+diff --git a/apps/web/components/screens/settings-screen.tsx b/apps/web/components/screens/settings-screen.tsx
+index 2a403a9..2092e36 100644
+--- a/apps/web/components/screens/settings-screen.tsx
++++ b/apps/web/components/screens/settings-screen.tsx
+@@ -1,53 +1,108 @@
++"use client";
++
+ import { formatRuntimeModeLabel } from "../../lib/presentation";
+ import { webRuntimeConfig } from "../../lib/runtime-config";
+ import { ScreenHeader } from "../ui/screen-header";
+ 
++function ComingSoon({ title, body }: { title: string; body: string }) {
++  return (
++    <section className="glass-panel rounded-3xl p-5">
++      <h3 className="text-lg font-semibold text-[var(--color-text)]">{title}</h3>
++      <p className="mt-3 text-sm text-[var(--color-text-muted)]">{body}</p>
++      <p className="text-eyebrow mt-4">Coming soon</p>
++    </section>
++  );
++}
++
+ export function SettingsScreen() {
++  const today = new Date();
++
+   return (
+-    <div className="page-shell space-y-6">
++    <div className="page-shell space-y-8">
+       <ScreenHeader
+         eyebrow="Control Plane"
+-        title="Architecture guardrails baked into the product surface."
++        title="Settings"
+         description="This slice makes the platform posture legible: Sweden-hosted deployment, append-only accounting events, and clear separation between advisory intelligence and mutation authority."
+         testId="settings-hero"
+       />
+ 
+-      <div className="grid gap-6 lg:grid-cols-2">
+-        <section className="glass-panel rounded-3xl p-5" data-testid="runtime-posture">
+-          <h2 className="text-lg font-semibold">Runtime posture</h2>
+-          <ul className="mt-4 list-none space-y-3 text-sm text-[var(--color-text-muted)]">
+-            <li>{formatRuntimeModeLabel(webRuntimeConfig.runtimeMode)} is active for this web shell.</li>
+-            <li>
+-              {webRuntimeConfig.runtimeMode === "demo"
+-                ? "Local demo store and local AI fallback are visible on purpose."
+-                : "Normal mode expects API-backed behavior and surfaces unavailable state when config is missing."}
+-            </li>
+-            <li>
+-              Service worker registration is{" "}
+-              {webRuntimeConfig.disableServiceWorker
+-                ? "disabled for this build."
+-                : "enabled with static-asset-only caching."}
+-            </li>
+-          </ul>
+-        </section>
+-
+-        <section className="glass-panel rounded-3xl p-5" data-testid="deployment-posture">
+-          <h2 className="text-lg font-semibold">Deployment posture</h2>
+-          <ul className="mt-4 list-none space-y-3 text-sm text-[var(--color-text-muted)]">
+-            <li>Azure in Sweden Central, Supabase in Stockholm, immutable evidence in Blob storage.</li>
+-            <li>Normal mode uses the real API path and does not substitute synthetic accounting data.</li>
+-            <li>Preview-only automation remains outside the production mutation path.</li>
+-          </ul>
+-        </section>
+-
+-        <section className="glass-panel rounded-3xl p-5" data-testid="audit-spine">
+-          <h2 className="text-lg font-semibold">Audit spine</h2>
+-          <ul className="mt-4 list-none space-y-3 text-sm text-[var(--color-text-muted)]">
+-            <li>Append-only events are the legal source of truth.</li>
+-            <li>Read models power the UI, never the other way around.</li>
+-            <li>Corrections are new events with actor and timestamp provenance.</li>
+-          </ul>
+-        </section>
++      <div className="space-y-4">
++        <h2 className="text-xl font-semibold text-[var(--color-text)]">Status</h2>
++        <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">
++          Read-only picture of how this build is running today. Mutations still flow through the inbox review path.
++        </p>
++        <div className="grid gap-6 lg:grid-cols-2">
++          <section className="glass-panel rounded-3xl p-5" data-testid="runtime-posture">
++            <h3 className="text-lg font-semibold">Runtime posture</h3>
++            <ul className="mt-4 list-none space-y-3 text-sm text-[var(--color-text-muted)]">
++              <li>{formatRuntimeModeLabel(webRuntimeConfig.runtimeMode)} is active for this web shell.</li>
++              <li>
++                {webRuntimeConfig.runtimeMode === "demo"
++                  ? "Local demo store and local AI fallback are visible on purpose."
++                  : "Normal mode expects API-backed behavior and surfaces unavailable state when config is missing."}
++              </li>
++              <li>
++                Service worker registration is{" "}
++                {webRuntimeConfig.disableServiceWorker
++                  ? "disabled for this build."
++                  : "enabled with static-asset-only caching."}
++              </li>
++            </ul>
++          </section>
++
++          <section className="glass-panel rounded-3xl p-5" data-testid="deployment-posture">
++            <h3 className="text-lg font-semibold">Deployment posture</h3>
++            <ul className="mt-4 list-none space-y-3 text-sm text-[var(--color-text-muted)]">
++              <li>Azure in Sweden Central, Supabase in Stockholm, immutable evidence in Blob storage.</li>
++              <li>Normal mode uses the real API path and does not substitute synthetic accounting data.</li>
++              <li>Preview-only automation remains outside the production mutation path.</li>
++            </ul>
++          </section>
++
++          <section data-testid="workspace-info" className="glass-panel rounded-3xl p-5">
++            <p className="text-eyebrow">Workspace</p>
++            <h3 className="mt-2 text-lg font-semibold">Sweden Central · Stockholm</h3>
++            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
++              Today is{" "}
++              <time dateTime={today.toISOString().slice(0, 10)} suppressHydrationWarning>
++                {new Intl.DateTimeFormat("sv-SE").format(today)}
++              </time>
++              .
++            </p>
++          </section>
++
++          <section className="glass-panel rounded-3xl p-5" data-testid="audit-spine">
++            <h3 className="text-lg font-semibold">Audit spine</h3>
++            <ul className="mt-4 list-none space-y-3 text-sm text-[var(--color-text-muted)]">
++              <li>Append-only events are the legal source of truth.</li>
++              <li>Read models power the UI, never the other way around.</li>
++              <li>Corrections are new events with actor and timestamp provenance.</li>
++            </ul>
++          </section>
++        </div>
++      </div>
++
++      <div className="space-y-4">
++        <h2 className="text-xl font-semibold text-[var(--color-text)]">Configuration</h2>
++        <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">
++          These areas map to what operators expect in a production workspace. Wiring arrives feature-by-feature.
++        </p>
++        <div className="grid gap-6 md:grid-cols-2">
++          <ComingSoon
++            title="Profile"
++            body="Signed-in identity, personal preferences, and session visibility across devices."
++          />
++          <ComingSoon title="Workspace" body="Tenant name, fiscal calendar, chart defaults, and environment labels." />
++          <ComingSoon
++            title="Integrations"
++            body="Skatteverket declarations, bank feeds, and payroll hand-offs with explicit trust tiers."
++          />
++          <ComingSoon
++            title="Team"
++            body="Invite colleagues, delegate review lanes, and separate advisory from posting roles."
++          />
++          <ComingSoon title="Billing" body="Subscription, usage, and invoice delivery for the JPX workspace." />
++        </div>
+       </div>
+     </div>
+   );
+diff --git a/apps/web/components/ui/icons.tsx b/apps/web/components/ui/icons.tsx
+index d6e2831..ae747d8 100644
+--- a/apps/web/components/ui/icons.tsx
++++ b/apps/web/components/ui/icons.tsx
+@@ -82,3 +82,30 @@ export function SparkIcon(props: IconProps) {
+     </BaseIcon>
+   );
+ }
++
++export function SearchIcon(props: IconProps) {
++  return (
++    <BaseIcon {...props}>
++      <circle cx="11" cy="11" r="6.5" />
++      <path d="M20 20 15.5 15.5" />
++    </BaseIcon>
++  );
++}
++
++export function BellIcon(props: IconProps) {
++  return (
++    <BaseIcon {...props}>
++      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
++      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
++    </BaseIcon>
++  );
++}
++
++export function UserIcon(props: IconProps) {
++  return (
++    <BaseIcon {...props}>
++      <circle cx="12" cy="8.5" r="3.5" />
++      <path d="M5.5 20.5a6.5 6.5 0 0 1 13 0" />
++    </BaseIcon>
++  );
++}
+diff --git a/apps/web/components/ui/screen-header.tsx b/apps/web/components/ui/screen-header.tsx
+index 82b2851..387ee70 100644
+--- a/apps/web/components/ui/screen-header.tsx
++++ b/apps/web/components/ui/screen-header.tsx
+@@ -3,18 +3,22 @@ import type { ReactNode } from "react";
+ type ScreenHeaderProps = {
+   eyebrow: string;
+   title: string;
++  lede?: ReactNode;
+   description: string;
+   aside?: ReactNode;
+   testId?: string;
+ };
+ 
+-export function ScreenHeader({ eyebrow, title, description, aside, testId }: ScreenHeaderProps) {
++export function ScreenHeader({ eyebrow, title, lede, description, aside, testId }: ScreenHeaderProps) {
+   return (
+     <section className="glass-panel rounded-4xl p-5 md:p-6" data-testid={testId}>
+       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+         <div className="max-w-2xl">
+           <p className="text-eyebrow">{eyebrow}</p>
+           <h1 className="mt-3 text-3xl font-semibold leading-tight md:text-[2.8rem]">{title}</h1>
++          {lede != null ? (
++            <p className="mt-3 max-w-2xl text-base font-medium text-[var(--color-text)]">{lede}</p>
++          ) : null}
+           <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--color-text-muted)]">{description}</p>
+         </div>
+         {aside ? <div className="w-full lg:max-w-md lg:flex-1">{aside}</div> : null}
+diff --git a/packages/api-client/src/index.ts b/packages/api-client/src/index.ts
+index b8477b1..3ba8eff 100644
+--- a/packages/api-client/src/index.ts
++++ b/packages/api-client/src/index.ts
+@@ -180,6 +180,28 @@ export class AccountingApiClient {
+       throw new AccountingApiError(response.status, `Blob upload failed: ${response.status} ${response.statusText}`);
+     }
+   }
++
++  /** Plain-text SIE export of the current workspace (matches `GET /api/exports/sie`). */
++  async fetchSieExport(): Promise<string> {
++    if (this.fallbackStore) {
++      throw new AccountingApiError(
++        503,
++        "SIE export is not available in offline demo client mode. Use the API proxy with a running API.",
++      );
++    }
++    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
++    const response = await fetch(`${this.baseUrl}/api/exports/sie`, {
++      headers: { accept: "text/plain,*/*" },
++    });
++    if (!response.ok) {
++      const payload = await response.json().catch(() => undefined as { message?: string } | undefined);
++      throw new AccountingApiError(
++        response.status,
++        payload?.message ?? `SIE export failed: ${response.status} ${response.statusText}`,
++      );
++    }
++    return response.text();
++  }
+ }
+ 
+ export function createAccountingApiClient(options: AccountingApiClientOptions) {
+diff --git a/packages/domain/src/store.ts b/packages/domain/src/store.ts
+index 6aedfa3..ec874d6 100644
+--- a/packages/domain/src/store.ts
++++ b/packages/domain/src/store.ts
+@@ -395,9 +395,27 @@ export class MemoryLedgerStore implements LedgerStore {
+       voiceTranscript: input.voiceTranscript,
+     };
+     this.evidencePackets.set(packet.id, packet);
++
++    let voucherIdToRelink: string | undefined;
+     for (const eid of input.evidenceIds) {
++      const previousPacketId = this.evidenceIdToPacketId.get(eid);
++      if (previousPacketId) {
++        const linkedVoucherId = this.packetIdToVoucherId.get(previousPacketId);
++        if (linkedVoucherId && !voucherIdToRelink) {
++          voucherIdToRelink = linkedVoucherId;
++        }
++      }
+       this.evidenceIdToPacketId.set(eid, packet.id);
+     }
++
++    if (voucherIdToRelink) {
++      this.packetIdToVoucherId.set(packet.id, voucherIdToRelink);
++      const voucher = this.vouchers.get(voucherIdToRelink);
++      if (voucher && voucher.evidencePacketId !== packet.id) {
++        this.vouchers.set(voucherIdToRelink, { ...voucher, evidencePacketId: packet.id });
++      }
++    }
++
+     return packet;
+   }
+ 
+diff --git a/tests/e2e/home.spec.ts b/tests/e2e/home.spec.ts
+index 70d1499..c941651 100644
+--- a/tests/e2e/home.spec.ts
++++ b/tests/e2e/home.spec.ts
+@@ -15,10 +15,8 @@ function captureButton(page: Page) {
+ test("home screen can add a new review item from the browser", async ({ page }) => {
+   await page.goto("/");
+ 
+-  await expect(
+-    page.getByRole("heading", { name: /Review-ready bookkeeping, shaped for the phone first/i }),
+-  ).toBeVisible();
+-  await expect(page.getByTestId("runtime-mode-banner")).toContainText("Demo mode is active");
++  await expect(page.getByRole("heading", { name: /Review queue/i })).toBeVisible();
++  await expect(page.getByTestId("runtime-mode-pill")).toContainText("Demo");
+   await expect(page.getByTestId("review-card")).toHaveCount(1);
+   if (test.info().project.name.includes("mobile")) {
+     await expect(page.getByTestId("mobile-dock")).toBeVisible();
+@@ -28,6 +26,7 @@ test("home screen can add a new review item from the browser", async ({ page })
+     await expect(page.getByTestId("mobile-dock")).toBeHidden();
+   }
+ 
++  await page.getByTestId("queue-overflow-menu").locator("summary").click();
+   await page.getByTestId("simulate-upload").click();
+   await expect(page.getByTestId("review-card")).toHaveCount(2);
+ });
+@@ -37,11 +36,12 @@ test("home screen supports approval and local draft capture", async ({ page }) =
+ 
+   await expect(page.getByTestId("review-card")).toHaveCount(1);
+ 
+-  await page.getByTestId("approve-first").click();
++  await page.getByTestId("approve-review").first().click();
+   await expect(page.getByTestId("review-status").filter({ hasText: "approved" })).toHaveCount(1);
+ 
+   await captureButton(page).click();
+   await expect(page.getByTestId("capture-sheet")).toBeVisible();
++  await page.getByText("More capture options").click();
+   await page.getByTestId("capture-mode-camera").click();
+   await expect(page.getByTestId("draft-notice")).toContainText("Camera draft saved locally");
+ });
+diff --git a/tests/e2e/navigation-and-share.spec.ts b/tests/e2e/navigation-and-share.spec.ts
+index 63f6516..a2ecd8e 100644
+--- a/tests/e2e/navigation-and-share.spec.ts
++++ b/tests/e2e/navigation-and-share.spec.ts
+@@ -18,7 +18,7 @@ test("navigation and share target flows stay reachable", async ({ page }) => {
+   await page.getByRole("link", { name: "Reports" }).click();
+   await expect(page).toHaveURL(/\/reports$/);
+ 
+-  await page.getByRole("link", { name: "Control" }).click();
++  await page.getByRole("link", { name: "Settings" }).click();
+   await expect(page).toHaveURL(/\/settings$/);
+   await expect(page.getByTestId("settings-hero")).toContainText("Control Plane");
+   await expect(page.getByTestId("deployment-posture")).toContainText("Sweden Central");
+diff --git a/tests/e2e/reports.spec.ts b/tests/e2e/reports.spec.ts
+index fbffca8..93d9110 100644
+--- a/tests/e2e/reports.spec.ts
++++ b/tests/e2e/reports.spec.ts
+@@ -9,10 +9,11 @@ test.beforeEach(async ({ request }) => {
+ test("reports page renders the current reporting slices", async ({ page }) => {
+   await page.goto("/reports");
+ 
+-  await expect(
+-    page.getByRole("heading", { name: "Fast reporting with the ledger still in plain sight." }),
+-  ).toBeVisible();
++  await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+   await expect(page.getByTestId("journal-summary")).toContainText("Journal summary");
+   await expect(page.getByTestId("trial-balance")).toContainText("Trial balance view");
+   await expect(page.getByTestId("vat-preparation")).toContainText("VAT preparation");
++  await expect(page.getByTestId("alerts-panel")).toContainText("Compliance watch");
++  await expect(page.getByTestId("export-sie")).toBeVisible();
++  await expect(page.getByTestId("report-period")).toBeVisible();
+ });

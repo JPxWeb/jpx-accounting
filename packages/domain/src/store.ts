@@ -395,9 +395,27 @@ export class MemoryLedgerStore implements LedgerStore {
       voiceTranscript: input.voiceTranscript,
     };
     this.evidencePackets.set(packet.id, packet);
+
+    let voucherIdToRelink: string | undefined;
     for (const eid of input.evidenceIds) {
+      const previousPacketId = this.evidenceIdToPacketId.get(eid);
+      if (previousPacketId) {
+        const linkedVoucherId = this.packetIdToVoucherId.get(previousPacketId);
+        if (linkedVoucherId && !voucherIdToRelink) {
+          voucherIdToRelink = linkedVoucherId;
+        }
+      }
       this.evidenceIdToPacketId.set(eid, packet.id);
     }
+
+    if (voucherIdToRelink) {
+      this.packetIdToVoucherId.set(packet.id, voucherIdToRelink);
+      const voucher = this.vouchers.get(voucherIdToRelink);
+      if (voucher && voucher.evidencePacketId !== packet.id) {
+        this.vouchers.set(voucherIdToRelink, { ...voucher, evidencePacketId: packet.id });
+      }
+    }
+
     return packet;
   }
 

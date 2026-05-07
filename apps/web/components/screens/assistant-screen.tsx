@@ -4,6 +4,11 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { AssistantSession } from "@jpx-accounting/contracts";
 
+import {
+  loadAssistantThreads,
+  prependAssistantThread,
+  type StoredAssistantThread,
+} from "../../lib/assistant-thread-storage";
 import { apiClient } from "../../lib/client";
 import { getErrorMessage } from "../../lib/request-errors";
 import { formatRuntimeModeLabel } from "../../lib/presentation";
@@ -13,8 +18,32 @@ import { UnavailableState } from "../ui/unavailable-state";
 import { SectionLabel } from "../ui/section-label";
 import { ScreenSkeleton } from "../ui/skeleton";
 
+function ThreadList({ threads }: { threads: StoredAssistantThread[] }) {
+  if (threads.length === 0) {
+    return (
+      <p className="text-sm text-[var(--color-text-muted)]">Run an advisory pass to build history on this device.</p>
+    );
+  }
+
+  return (
+    <ul className="space-y-3">
+      {threads.map((thread) => (
+        <li key={thread.id} className="glass-panel-soft rounded-2xl px-3 py-3">
+          <p className="text-xs font-semibold text-[var(--color-text)] line-clamp-2">{thread.question}</p>
+          <p className="mt-2 text-xs leading-5 text-[var(--color-text-muted)] line-clamp-3">{thread.answer}</p>
+          <p className="text-eyebrow mt-2">{thread.status}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function AssistantScreen() {
   const [question, setQuestion] = useState("What should we double-check before deducting VAT on mixed receipts?");
+  const [threads, setThreads] = useState<StoredAssistantThread[]>(() =>
+    typeof window !== "undefined" ? loadAssistantThreads() : [],
+  );
+
   const workspaceQuery = useQuery({
     queryKey: ["workspace"],
     queryFn: () => apiClient.getSnapshot(),
@@ -27,6 +56,9 @@ export function AssistantScreen() {
         actorId: "user_founder",
         question: nextQuestion,
       }),
+    onSuccess: (session) => {
+      setThreads(prependAssistantThread(session));
+    },
   });
 
   const assistantItems: AssistantSession[] = assistant.data ? [assistant.data] : (data?.assistantExamples ?? []);
@@ -52,7 +84,7 @@ export function AssistantScreen() {
     <div className="page-shell space-y-6">
       <ScreenHeader
         eyebrow="Advisor"
-        title="Source-grounded finance guidance with room for human judgment."
+        title="Ask AI"
         description="The advisory plane stays clearly separate from posting authority. It explains, recommends, cites, and creates review tasks, but it does not silently change the ledger."
         aside={
           <div className="glass-panel-soft rounded-2xl p-4">
@@ -66,7 +98,22 @@ export function AssistantScreen() {
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+      <details className="glass-panel rounded-3xl p-4 lg:hidden">
+        <summary className="cursor-pointer text-sm font-semibold text-[var(--color-text)]">Thread history</summary>
+        <div className="mt-4 max-h-60 overflow-y-auto">
+          <ThreadList threads={threads} />
+        </div>
+      </details>
+
+      <div className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <section className="glass-panel hidden rounded-3xl p-4 lg:block" data-testid="assistant-thread-list">
+          <h2 className="text-sm font-semibold text-[var(--color-text)]">Thread history</h2>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">Stored locally in this browser.</p>
+          <div className="mt-4 max-h-[min(28rem,60vh)] overflow-y-auto">
+            <ThreadList threads={threads} />
+          </div>
+        </section>
+
         <section className="glass-panel rounded-3xl p-5" data-testid="assistant-panel">
           <SectionLabel as="label" htmlFor="assistant-question">
             Ask a grounded question
@@ -82,7 +129,7 @@ export function AssistantScreen() {
             type="button"
             onClick={() => assistant.mutate(question)}
             data-testid="assistant-submit"
-            className="mt-4 rounded-xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white"
+            className="mt-4 w-full rounded-xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white sm:w-auto"
           >
             Run advisory pass
           </button>
@@ -112,7 +159,7 @@ export function AssistantScreen() {
           </div>
         </section>
 
-        <section className="glass-panel rounded-3xl p-5">
+        <section className="glass-panel rounded-3xl p-5" data-testid="policy-rules-studio">
           <h2 className="text-lg font-semibold">Policy and rules studio</h2>
           <div className="mt-4 space-y-3">
             {[

@@ -124,7 +124,12 @@ a {
 }
 
 .workspace-canvas {
-  padding-bottom: 16px;
+  /*
+   * Mobile reserves space for the fixed dock (~64px) and the floating
+   * Capture pill (~52px) above it, plus safe-area inset and breathing room.
+   * Desktop ≥1024px hides both, so the override below clears the padding.
+   */
+  padding-bottom: calc(env(safe-area-inset-bottom) + 144px);
 }
 
 .review-card-layout {
@@ -267,6 +272,10 @@ button:active:not(:disabled) {
   .mobile-dock,
   .capture-button-mobile {
     display: none;
+  }
+
+  .workspace-canvas {
+    padding-bottom: 24px;
   }
 
   .capture-button-desktop {

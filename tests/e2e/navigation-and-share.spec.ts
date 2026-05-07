@@ -18,7 +18,7 @@ test("navigation and share target flows stay reachable", async ({ page }) => {
   await page.getByRole("link", { name: "Reports" }).click();
   await expect(page).toHaveURL(/\/reports$/);
 
-  await page.getByRole("link", { name: "Control" }).click();
+  await page.getByRole("link", { name: "Settings" }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByTestId("settings-hero")).toContainText("Control Plane");
   await expect(page.getByTestId("deployment-posture")).toContainText("Sweden Central");

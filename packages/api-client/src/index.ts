@@ -180,6 +180,28 @@ export class AccountingApiClient {
       throw new AccountingApiError(response.status, `Blob upload failed: ${response.status} ${response.statusText}`);
     }
   }
+
+  /** Plain-text SIE export of the current workspace (matches `GET /api/exports/sie`). */
+  async fetchSieExport(): Promise<string> {
+    if (this.fallbackStore) {
+      throw new AccountingApiError(
+        503,
+        "SIE export is not available in offline demo client mode. Use the API proxy with a running API.",
+      );
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const response = await fetch(`${this.baseUrl}/api/exports/sie`, {
+      headers: { accept: "text/plain,*/*" },
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => undefined as { message?: string } | undefined);
+      throw new AccountingApiError(
+        response.status,
+        payload?.message ?? `SIE export failed: ${response.status} ${response.statusText}`,
+      );
+    }
+    return response.text();
+  }
 }
 
 export function createAccountingApiClient(options: AccountingApiClientOptions) {

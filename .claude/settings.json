@@ -7,7 +7,16 @@
       "PowerShell(Get-ChildItem \"c:\\\\git\\\\jpx-accounting\\\\node_modules\" -Force | ForEach-Object { $_.Name })",
       "PowerShell(Get-ChildItem \"c:\\\\git\\\\jpx-accounting\\\\packages\\\\persistence-postgres\\\\node_modules\" -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })",
       "PowerShell(Get-ChildItem \"c:\\\\git\\\\jpx-accounting\\\\node_modules\\\\.pnpm\\\\postgres@3.4.5\\\\node_modules\\\\postgres\\\\types\" | ForEach-Object { $_.Name })",
-      "Read(//c/Users/JohanPalmqvist/.claude/**)"
+      "Read(//c/Users/JohanPalmqvist/.claude/**)",
+      "Bash(findstr :3002)",
+      "Bash(findstr :3001)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_pages",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__navigate_page",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__resize_page",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_screenshot",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_snapshot",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_console_messages",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__click"
     ],
     "additionalDirectories": ["C:\\Users\\JohanPalmqvist\\.cursor\\plans"]
   },
