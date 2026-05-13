@@ -6,7 +6,7 @@
 
 **Architecture:** Five-tab dock + ambient digest via parallel routes, global Cmd-K Advisor palette via `cmdk`, search-param-driven URL state via `nuqs`, real Settings sub-routes with React Hook Form + Zod, drill-through navigation in Books, statutory exports in Reports.
 
-**Tech Stack:** Next.js 16 App Router, React 19, Tailwind 4, shadcn/ui (Base UI primitives) + cmdk + Sidebar block, TanStack Table 8, Recharts (via shadcn charts), nuqs 3, react-hotkeys-hook 5, react-hook-form 8 + zod 4, `@react-pdf/renderer` (lazy), Motion 12, Playwright + axe-core.
+**Tech Stack:** Next.js 16 App Router, React 19, Tailwind 4, shadcn/ui (Base UI primitives) + cmdk + Sidebar block, TanStack Table 8, Recharts (via shadcn charts), nuqs 2, react-hotkeys-hook 5, react-hook-form 8 + zod 4, `@react-pdf/renderer` (lazy), Motion 12, Playwright + axe-core.
 
 **Spec:** `docs/superpowers/specs/2026-05-13-ia-restructure-design.md`
 
@@ -65,8 +65,10 @@
 Run from repo root:
 
 ```bash
-pnpm --filter @jpx-accounting/web add nuqs@^3 react-hotkeys-hook@^5
+pnpm --filter @jpx-accounting/web add nuqs@^2 react-hotkeys-hook@^5
 ```
+
+Note: `nuqs` latest stable is the `2.x` line (2.8.9 at time of writing). The `parseAsString`, `parseAsStringEnum`, `useQueryState`, and `NuqsAdapter` APIs used in later tasks are all available in 2.x.
 
 - [ ] **Step 2: Verify install**
 
