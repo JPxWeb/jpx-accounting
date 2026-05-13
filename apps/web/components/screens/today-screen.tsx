@@ -49,7 +49,7 @@ function closeItemVariant(status: string) {
   return "info" as const;
 }
 
-export function HomeScreen() {
+export function TodayScreen() {
   const queryClient = useQueryClient();
   const workspaceQuery = useQuery({
     queryKey: ["workspace"],
