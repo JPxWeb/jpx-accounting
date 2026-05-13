@@ -11,14 +11,15 @@ import { saveCaptureDraft } from "../lib/draft-queue";
 import type { DraftQueueSaveResult } from "../lib/draft-queue-core";
 import { formatRuntimeModeLabel } from "../lib/presentation";
 import { webRuntimeConfig } from "../lib/runtime-config";
-import { AdvisorIcon, CaptureIcon, ControlIcon, InboxIcon, ReportsIcon, SparkIcon } from "./ui/icons";
+import { CaptureIcon, ControlIcon, InboxIcon, ReportsIcon, SparkIcon } from "./ui/icons";
 import { StatusBadge } from "./ui/status-badge";
 
 const navigation = [
-  { href: "/", label: "Inbox", summary: "Evidence and review queue", icon: InboxIcon },
-  { href: "/reports", label: "Reports", summary: "Journal, balances, and VAT", icon: ReportsIcon },
-  { href: "/assistant", label: "Advisor", summary: "Grounded finance guidance", icon: AdvisorIcon },
-  { href: "/settings", label: "Control", summary: "Guardrails and deployment posture", icon: ControlIcon },
+  { href: "/today", label: "Today", summary: "Today's review queue", icon: InboxIcon },
+  { href: "/capture", label: "Capture", summary: "Evidence & drafts", icon: CaptureIcon },
+  { href: "/books", label: "Books", summary: "Journal, accounts, close", icon: ReportsIcon },
+  { href: "/reports", label: "Reports", summary: "P&L, BS, VAT, exports", icon: ReportsIcon },
+  { href: "/settings", label: "Settings", summary: "Company & integrations", icon: ControlIcon },
 ];
 
 const draftModes = [
@@ -73,7 +74,7 @@ function getFocusableElements(container: HTMLElement | null) {
   );
 }
 
-export function AppShell({ children, digest: _digest }: { children: ReactNode; digest?: ReactNode }) {
+export function AppShell({ children, digest }: { children: ReactNode; digest?: ReactNode }) {
   const pathname = usePathname();
   const barsHidden = useScrollDirection();
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -84,9 +85,7 @@ export function AppShell({ children, digest: _digest }: { children: ReactNode; d
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const runtimeModeLabel = formatRuntimeModeLabel(webRuntimeConfig.runtimeMode);
   const activeNavItem = useMemo(
-    () =>
-      navigation.find((item) => (item.href === "/" ? pathname === item.href : pathname.startsWith(item.href))) ??
-      navigation[0]!,
+    () => navigation.find((item) => pathname.startsWith(item.href)) ?? navigation[0]!,
     [pathname],
   );
 
@@ -200,7 +199,7 @@ export function AppShell({ children, digest: _digest }: { children: ReactNode; d
             <nav className="glass-panel rounded-2xl p-3" aria-label="Primary" data-testid="desktop-navigation-links">
               {navigation.map((item) => {
                 const Icon = item.icon;
-                const active = item.href === "/" ? pathname === item.href : pathname.startsWith(item.href);
+                const active = pathname.startsWith(item.href);
 
                 return (
                   <Link
@@ -234,6 +233,8 @@ export function AppShell({ children, digest: _digest }: { children: ReactNode; d
                 );
               })}
             </nav>
+
+            {digest ? <div className="hidden lg:block">{digest}</div> : null}
 
             <section className="glass-panel rounded-2xl p-4">
               <div className="flex items-center justify-between gap-3">
@@ -310,6 +311,15 @@ export function AppShell({ children, digest: _digest }: { children: ReactNode; d
             </div>
           </header>
 
+          {digest ? (
+            <details className="page-shell page-shell-compact lg:hidden" data-testid="digest-mobile">
+              <summary className="glass-panel-soft cursor-pointer rounded-md px-4 py-3 text-sm font-medium">
+                Today&apos;s pulse
+              </summary>
+              <div className="mt-2">{digest}</div>
+            </details>
+          ) : null}
+
           {webRuntimeConfig.runtimeMode === "demo" ? (
             <div className="page-shell page-shell-compact">
               <div
@@ -349,10 +359,10 @@ export function AppShell({ children, digest: _digest }: { children: ReactNode; d
         className="mobile-dock glass-chrome rounded-2xl px-2 py-2 lg:hidden"
         data-hidden={barsHidden}
       >
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-5 gap-2">
           {navigation.map((item) => {
             const Icon = item.icon;
-            const active = item.href === "/" ? pathname === item.href : pathname.startsWith(item.href);
+            const active = pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}
@@ -363,7 +373,7 @@ export function AppShell({ children, digest: _digest }: { children: ReactNode; d
                   active ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-muted)]"
                 }`}
               >
-                <Icon className="size-4" aria-hidden="true" />
+                <Icon className="size-3.5" aria-hidden="true" />
                 {item.label}
               </Link>
             );
