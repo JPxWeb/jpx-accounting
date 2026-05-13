@@ -1,26 +1,29 @@
 "use client";
 
-import { summarizeBalances, summarizeJournal, summarizeVat } from "@jpx-accounting/reporting";
+import { summarizeVat } from "@jpx-accounting/reporting";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "motion/react";
+import { parseAsStringEnum, useQueryState } from "nuqs";
 import { apiClient } from "../../lib/client";
 import { formatMoney } from "../../lib/presentation";
 import { getErrorMessage } from "../../lib/request-errors";
-import { MetricCard } from "../ui/metric-card";
 import { ScreenHeader } from "../ui/screen-header";
 import { SectionLabel } from "../ui/section-label";
 import { ScreenSkeleton } from "../ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 import { UnavailableState } from "../ui/unavailable-state";
 
+const views = ["vat", "pl", "bs", "exports"] as const;
+type View = (typeof views)[number];
+
 export function ReportsScreen() {
+  const [view, setView] = useQueryState("view", parseAsStringEnum<View>([...views]).withDefault("vat"));
+
   const workspaceQuery = useQuery({
     queryKey: ["workspace"],
     queryFn: () => apiClient.getSnapshot(),
   });
   const { data } = workspaceQuery;
 
-  const journalSummary = summarizeJournal(data?.reports.journal ?? []);
-  const balanceSummary = summarizeBalances(data?.reports.balances ?? []);
   const vatSummary = summarizeVat(data?.reports.vat ?? []);
 
   if (workspaceQuery.error && !data) {
@@ -44,86 +47,91 @@ export function ReportsScreen() {
     <div className="page-shell space-y-6">
       <ScreenHeader
         eyebrow="Reports"
-        title="Fast reporting with the ledger still in plain sight."
-        description="Journal, balances, and VAT views all project from the same append-only event history, so the polished UI never drifts away from the audit spine."
-        aside={
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <MetricCard label="Entries" value={journalSummary.count} />
-            <MetricCard label="Accounts" value={balanceSummary.length} />
-            <MetricCard label="VAT slices" value={vatSummary.length} />
-          </div>
-        }
+        title="VAT, P&L, balance sheet — all projected from the event history."
+        description="Reports derive from the same append-only ledger events as the journal. Numbers are always consistent with the audit trail."
       />
 
-      <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          data-testid="journal-summary"
-          className="glass-panel rounded-xl p-5"
-        >
-          <h2 className="text-lg font-semibold">Journal summary</h2>
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {[
-              { label: "Entries", value: journalSummary.count },
-              { label: "Debit", value: formatMoney(journalSummary.totalDebit) },
-              { label: "Credit", value: formatMoney(journalSummary.totalCredit) },
-            ].map((item) => (
-              <div key={item.label} className="glass-panel-soft rounded-lg p-4">
-                <SectionLabel>{item.label}</SectionLabel>
-                <p className="mt-3 text-xl font-semibold tabular-nums">{item.value}</p>
-              </div>
-            ))}
-          </div>
-        </motion.section>
+      <Tabs value={view} onValueChange={(v) => setView(v as View)}>
+        <TabsList data-testid="reports-tabs">
+          <TabsTrigger value="vat">VAT</TabsTrigger>
+          <TabsTrigger value="pl">P&L</TabsTrigger>
+          <TabsTrigger value="bs">Balance sheet</TabsTrigger>
+          <TabsTrigger value="exports">Exports</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-        <section className="glass-panel rounded-xl p-5" data-testid="trial-balance">
-          <h2 className="text-lg font-semibold">Trial balance view</h2>
-          <div className="mt-4 space-y-3">
-            {balanceSummary.map((balance) => (
-              <article key={balance.accountNumber} className="glass-panel-soft rounded-lg p-4 text-sm">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="font-medium text-[var(--color-text)]">{balance.accountName}</p>
-                    <p className="text-mono text-xs text-[var(--color-text-muted)]">{balance.accountNumber}</p>
-                  </div>
-                  <p className="text-sm font-semibold tabular-nums text-[var(--color-text)]">
-                    {formatMoney(balance.balance)}
+      <section className="mt-4">
+        {view === "vat" ? (
+          <section className="glass-panel rounded-xl p-5" data-testid="vat-preparation">
+            <h2 className="text-lg font-semibold">VAT preparation</h2>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {vatSummary.map((entry) => (
+                <div key={entry.vatCode} className="glass-panel-soft rounded-lg p-4">
+                  <SectionLabel>{entry.label}</SectionLabel>
+                  <p className="mt-3 text-2xl font-semibold tabular-nums">{formatMoney(entry.vatAmount)}</p>
+                  <p className="mt-2 text-sm tabular-nums text-[var(--color-text-muted)]">
+                    Base {formatMoney(entry.baseAmount)}
                   </p>
                 </div>
-                <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="glass-panel-inset rounded-lg px-3 py-3">
-                    <dt className="text-eyebrow">Debit</dt>
-                    <dd className="mt-2 font-semibold tabular-nums text-[var(--color-text)]">
-                      {formatMoney(balance.debit)}
-                    </dd>
-                  </div>
-                  <div className="glass-panel-inset rounded-lg px-3 py-3">
-                    <dt className="text-eyebrow">Credit</dt>
-                    <dd className="mt-2 font-semibold tabular-nums text-[var(--color-text)]">
-                      {formatMoney(balance.credit)}
-                    </dd>
-                  </div>
-                </dl>
-              </article>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <section className="glass-panel rounded-xl p-5" data-testid="vat-preparation">
-        <h2 className="text-lg font-semibold">VAT preparation</h2>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {vatSummary.map((entry) => (
-            <div key={entry.vatCode} className="glass-panel-soft rounded-lg p-4">
-              <SectionLabel>{entry.label}</SectionLabel>
-              <p className="mt-3 text-2xl font-semibold tabular-nums">{formatMoney(entry.vatAmount)}</p>
-              <p className="mt-2 text-sm tabular-nums text-[var(--color-text-muted)]">
-                Base {formatMoney(entry.baseAmount)}
-              </p>
+              ))}
             </div>
-          ))}
-        </div>
+          </section>
+        ) : null}
+
+        {view === "pl" ? (
+          <div className="glass-panel rounded-xl p-8 text-center" data-testid="pl-placeholder">
+            <p className="text-lg font-semibold text-[var(--color-text)]">Profit & Loss</p>
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">Coming in Phase 7</p>
+          </div>
+        ) : null}
+
+        {view === "bs" ? (
+          <div className="glass-panel rounded-xl p-8 text-center" data-testid="bs-placeholder">
+            <p className="text-lg font-semibold text-[var(--color-text)]">Balance Sheet</p>
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">Coming in Phase 7</p>
+          </div>
+        ) : null}
+
+        {view === "exports" ? (
+          <div className="glass-panel rounded-xl p-5" data-testid="exports-view">
+            <h2 className="text-lg font-semibold">Exports</h2>
+            <div className="mt-4 space-y-3">
+              <div className="glass-panel-soft rounded-lg px-4 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--color-text)]">SIE 4 export</p>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                      Swedish standard accounting file format
+                    </p>
+                  </div>
+                  <a
+                    href="/api-proxy/api/exports/sie"
+                    download="ledger.sie"
+                    className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white shadow-[var(--shadow-accent)]"
+                  >
+                    Download SIE 4
+                  </a>
+                </div>
+              </div>
+              <div className="glass-panel-soft rounded-lg px-4 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--color-text)]">CSV export</p>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">Coming in Phase 7</p>
+                  </div>
+                </div>
+              </div>
+              <div className="glass-panel-soft rounded-lg px-4 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--color-text)]">PDF report</p>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">Coming in Phase 7</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
     </div>
   );
