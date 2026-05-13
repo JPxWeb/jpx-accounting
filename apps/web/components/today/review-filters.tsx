@@ -3,23 +3,22 @@
 import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
 
 import { Input } from "../ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
-
-const statuses = ["all", "needs-review", "blocked", "approved"] as const;
-type Status = (typeof statuses)[number];
-
-const confidences = ["all", "high", "medium", "low"] as const;
-type Confidence = (typeof confidences)[number];
+import { type ConfidenceFilter, confidenceFilters, type StatusFilter, statusFilters } from "./filter-types";
 
 export function ReviewFilters() {
-  const [status, setStatus] = useQueryState("status", parseAsStringEnum<Status>([...statuses]).withDefault("all"));
+  const [status, setStatus] = useQueryState(
+    "status",
+    parseAsStringEnum<StatusFilter>([...statusFilters]).withDefault("all"),
+  );
   const [supplier, setSupplier] = useQueryState("supplier", parseAsString.withDefault(""));
   const [confidence, setConfidence] = useQueryState(
     "confidence",
-    parseAsStringEnum<Confidence>([...confidences]).withDefault("all"),
+    parseAsStringEnum<ConfidenceFilter>([...confidenceFilters]).withDefault("all"),
   );
 
-  // base-ui ToggleGroup uses array value; we simulate single-select
+  // Base UI ToggleGroup binds value as an array even in single-select mode; coerce both directions.
   const toggleValue = status === "all" ? [] : [status];
 
   function handleStatusChange(groupValue: string[]) {
@@ -27,8 +26,7 @@ export function ReviewFilters() {
       void setStatus("all");
       return;
     }
-    // Last selected value wins
-    const last = groupValue[groupValue.length - 1] as Status;
+    const last = groupValue[groupValue.length - 1] as StatusFilter;
     void setStatus(last);
   }
 
@@ -61,18 +59,17 @@ export function ReviewFilters() {
         className="w-56"
         data-testid="supplier-filter"
       />
-      <select
-        value={confidence}
-        onChange={(e) => void setConfidence(e.target.value as Confidence)}
-        className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-2 py-1.5 text-sm"
-        data-testid="confidence-filter"
-        aria-label="Filter by confidence"
-      >
-        <option value="all">All confidence</option>
-        <option value="high">≥95%</option>
-        <option value="medium">80–94%</option>
-        <option value="low">&lt;80%</option>
-      </select>
+      <Select value={confidence} onValueChange={(value) => void setConfidence(value as ConfidenceFilter)}>
+        <SelectTrigger className="w-44" data-testid="confidence-filter" aria-label="Filter by confidence">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All confidence</SelectItem>
+          <SelectItem value="high">≥95%</SelectItem>
+          <SelectItem value="medium">80–94%</SelectItem>
+          <SelectItem value="low">&lt;80%</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   );
 }

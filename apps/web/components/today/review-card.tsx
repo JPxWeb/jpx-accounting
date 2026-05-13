@@ -5,7 +5,10 @@ import { motion } from "motion/react";
 import { formatMoney, formatPercent, formatShortDate } from "../../lib/presentation";
 import { SectionLabel } from "../ui/section-label";
 import { StatusBadge } from "../ui/status-badge";
+import type { ReviewAction } from "./filter-types";
 import { ReviewCardActions } from "./review-card-actions";
+
+const MAX_STAGGER_DELAY_S = 0.4;
 
 function initialsFromTitle(value: string) {
   return value
@@ -28,23 +31,10 @@ type ReviewCardProps = {
   index: number;
   focused: boolean;
   onFocus: () => void;
-  onAccept: () => void;
-  onReject: () => void;
-  onEdit: () => void;
-  onBookWithoutVat: () => void;
+  onAction: (action: ReviewAction) => void;
 };
 
-export function ReviewCard({
-  review,
-  voucher,
-  index,
-  focused,
-  onFocus,
-  onAccept,
-  onReject,
-  onEdit,
-  onBookWithoutVat,
-}: ReviewCardProps) {
+export function ReviewCard({ review, voucher, index, focused, onFocus, onAction }: ReviewCardProps) {
   const confidence = formatPercent(review.suggestion?.confidence ?? 0);
   const citation = review.suggestion?.citations[0];
   const supplier = voucher?.voucherFields.supplierName ?? review.title;
@@ -52,11 +42,10 @@ export function ReviewCard({
 
   return (
     <motion.article
-      key={review.id}
       data-testid="review-card"
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05 }}
+      transition={{ delay: Math.min(index * 0.05, MAX_STAGGER_DELAY_S) }}
       tabIndex={0}
       onClick={onFocus}
       onFocus={onFocus}
@@ -161,13 +150,7 @@ export function ReviewCard({
             </p>
           ) : null}
 
-          <ReviewCardActions
-            onAccept={onAccept}
-            onReject={onReject}
-            onEdit={onEdit}
-            onBookWithoutVat={onBookWithoutVat}
-            disabled={!isActionable}
-          />
+          <ReviewCardActions onAction={onAction} disabled={!isActionable} />
         </div>
       </div>
     </motion.article>

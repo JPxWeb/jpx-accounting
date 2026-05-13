@@ -2,12 +2,20 @@
 
 import type { ReviewTask, Voucher, WorkspaceSnapshot } from "@jpx-accounting/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { parseAsStringEnum, useQueryState } from "nuqs";
-import { useState } from "react";
+import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useReviewKeyboard } from "../../hooks/use-review-keyboard";
 import { apiClient } from "../../lib/client";
 import { getErrorMessage } from "../../lib/request-errors";
+import {
+  type ConfidenceFilter,
+  confidenceFilters,
+  matchesConfidence,
+  type ReviewAction,
+  type StatusFilter,
+  statusFilters,
+} from "../today/filter-types";
 import { ReviewCard } from "../today/review-card";
 import { ReviewFilters } from "../today/review-filters";
 import { MetricCard } from "../ui/metric-card";
@@ -17,24 +25,6 @@ import { ScreenSkeleton } from "../ui/skeleton";
 import { UnavailableState } from "../ui/unavailable-state";
 
 const ACTOR_ID = "user_founder";
-
-const statuses = ["all", "needs-review", "blocked", "approved"] as const;
-type Status = (typeof statuses)[number];
-
-const confidences = ["all", "high", "medium", "low"] as const;
-type Confidence = (typeof confidences)[number];
-
-function findVoucher(vouchers: Voucher[], review: ReviewTask) {
-  return vouchers.find((voucher) => voucher.id === review.voucherId);
-}
-
-function matchesConfidence(review: ReviewTask, confidence: Confidence): boolean {
-  if (confidence === "all") return true;
-  const pct = (review.suggestion?.confidence ?? 0) * 100;
-  if (confidence === "high") return pct >= 95;
-  if (confidence === "medium") return pct >= 80 && pct < 95;
-  return pct < 80;
-}
 
 function applyOptimisticUpdate(current: WorkspaceSnapshot | undefined, review: ReviewTask | undefined) {
   if (!current || !review) return current;
@@ -47,6 +37,12 @@ function applyOptimisticUpdate(current: WorkspaceSnapshot | undefined, review: R
   };
 }
 
+function reviewMatchesStatus(review: ReviewTask, statusFilter: StatusFilter): boolean {
+  if (statusFilter === "all") return true;
+  if (statusFilter === "blocked") return Boolean(review.blockedReason);
+  return review.status === statusFilter;
+}
+
 export function TodayScreen() {
   const queryClient = useQueryClient();
   const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -57,65 +53,70 @@ export function TodayScreen() {
   });
   const { data } = workspaceQuery;
 
-  // Filter URL state (read here so we can filter reviews)
-  const [statusFilter] = useQueryState("status", parseAsStringEnum<Status>([...statuses]).withDefault("all"));
-  const [supplierFilter] = useQueryState("supplier", { defaultValue: "" });
-  const [confidenceFilter] = useQueryState(
+  const [statusFilter, setStatus] = useQueryState(
+    "status",
+    parseAsStringEnum<StatusFilter>([...statusFilters]).withDefault("all"),
+  );
+  const [supplierFilter, setSupplier] = useQueryState("supplier", parseAsString.withDefault(""));
+  const [confidenceFilter, setConfidence] = useQueryState(
     "confidence",
-    parseAsStringEnum<Confidence>([...confidences]).withDefault("all"),
+    parseAsStringEnum<ConfidenceFilter>([...confidenceFilters]).withDefault("all"),
   );
 
-  // Mutations
+  const onMutationSuccess = useCallback(
+    (review: ReviewTask | undefined) => {
+      queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (current) => applyOptimisticUpdate(current, review));
+    },
+    [queryClient],
+  );
+
   const approveReview = useMutation({
     mutationFn: (id: string) => apiClient.approveReview(id, { actorId: ACTOR_ID }),
-    onSuccess: (review) => {
-      queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (current) => applyOptimisticUpdate(current, review));
-      void queryClient.invalidateQueries({ queryKey: ["workspace"] });
-    },
+    onSuccess: onMutationSuccess,
   });
-
   const rejectReview = useMutation({
     mutationFn: (id: string) => apiClient.rejectReview(id, { actorId: ACTOR_ID }),
-    onSuccess: (review) => {
-      queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (current) => applyOptimisticUpdate(current, review));
-      void queryClient.invalidateQueries({ queryKey: ["workspace"] });
-    },
+    onSuccess: onMutationSuccess,
   });
-
   const bookWithoutVatReview = useMutation({
     mutationFn: (id: string) => apiClient.bookWithoutVatReview(id, { actorId: ACTOR_ID }),
-    onSuccess: (review) => {
-      queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (current) => applyOptimisticUpdate(current, review));
-      void queryClient.invalidateQueries({ queryKey: ["workspace"] });
-    },
+    onSuccess: onMutationSuccess,
   });
 
-  const reviews = data?.reviews ?? [];
-  const vouchers = data?.vouchers ?? [];
-  const pendingReviews = reviews.filter((review) => review.status === "needs-review");
-  const blockedReviews = reviews.filter((review) => review.blockedReason);
+  const reviews = useMemo(() => data?.reviews ?? [], [data?.reviews]);
+  const vouchers = useMemo(() => data?.vouchers ?? [], [data?.vouchers]);
 
-  // Client-side filtering
-  const filteredReviews = reviews.filter((review) => {
-    const voucher = findVoucher(vouchers, review);
-    const supplier = voucher?.voucherFields.supplierName ?? review.title ?? "";
+  const voucherById = useMemo(() => {
+    const map = new Map<string, Voucher>();
+    for (const voucher of vouchers) map.set(voucher.id, voucher);
+    return map;
+  }, [vouchers]);
 
-    if (statusFilter === "blocked") {
-      if (!review.blockedReason) return false;
-    } else if (statusFilter !== "all") {
-      if (review.status !== statusFilter) return false;
-    }
+  const pendingReviews = useMemo(() => reviews.filter((r) => r.status === "needs-review"), [reviews]);
+  const blockedReviews = useMemo(() => reviews.filter((r) => r.blockedReason), [reviews]);
 
-    if (supplierFilter && !supplier.toLowerCase().includes(supplierFilter.toLowerCase())) {
-      return false;
-    }
+  const filteredReviews = useMemo(() => {
+    const supplierNeedle = supplierFilter.toLowerCase();
+    return reviews.filter((review) => {
+      if (!reviewMatchesStatus(review, statusFilter)) return false;
 
-    if (!matchesConfidence(review, confidenceFilter)) return false;
+      if (supplierNeedle) {
+        const voucher = voucherById.get(review.voucherId);
+        const supplier = (voucher?.voucherFields.supplierName ?? review.title ?? "").toLowerCase();
+        if (!supplier.includes(supplierNeedle)) return false;
+      }
 
-    return true;
-  });
+      return matchesConfidence(review, confidenceFilter);
+    });
+  }, [reviews, voucherById, statusFilter, supplierFilter, confidenceFilter]);
 
   const hasActiveFilters = statusFilter !== "all" || supplierFilter !== "" || confidenceFilter !== "all";
+
+  const clearFilters = useCallback(() => {
+    void setStatus("all");
+    void setSupplier(null);
+    void setConfidence("all");
+  }, [setStatus, setSupplier, setConfidence]);
 
   const actionError =
     approveReview.error || rejectReview.error || bookWithoutVatReview.error
@@ -125,17 +126,29 @@ export function TodayScreen() {
         )
       : null;
 
-  // Keyboard navigation
+  const handleAction = useCallback(
+    (id: string, action: ReviewAction) => {
+      if (action === "accept") approveReview.mutate(id);
+      else if (action === "reject") rejectReview.mutate(id);
+      else if (action === "book-without-vat") bookWithoutVatReview.mutate(id);
+      else toast.info("Edit will be available in a future release.");
+    },
+    [approveReview, rejectReview, bookWithoutVatReview],
+  );
+
+  const onAccept = useCallback((id: string) => handleAction(id, "accept"), [handleAction]);
+  const onReject = useCallback((id: string) => handleAction(id, "reject"), [handleAction]);
+  const onEdit = useCallback((id: string) => handleAction(id, "edit"), [handleAction]);
+  const onBookWithoutVat = useCallback((id: string) => handleAction(id, "book-without-vat"), [handleAction]);
+
   useReviewKeyboard({
     reviews: filteredReviews,
     focusedId,
     setFocusedId,
-    onAccept: (id) => approveReview.mutate(id),
-    onReject: (id) => rejectReview.mutate(id),
-    onEdit: (_id) => {
-      toast.info("Edit will be available in a future release.");
-    },
-    onBookWithoutVat: (id) => bookWithoutVatReview.mutate(id),
+    onAccept,
+    onReject,
+    onEdit,
+    onBookWithoutVat,
   });
 
   if (workspaceQuery.error && !data) {
@@ -196,32 +209,27 @@ export function TodayScreen() {
                 {hasActiveFilters ? "No reviews match these filters." : "No reviews in the queue."}
               </p>
               {hasActiveFilters ? (
-                <a
-                  href="/today"
-                  className="mt-3 inline-block text-sm font-medium text-[var(--color-accent)] hover:underline"
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="mt-3 text-sm font-medium text-[var(--color-accent)] hover:underline"
                 >
                   Clear filters
-                </a>
+                </button>
               ) : null}
             </div>
           ) : (
-            filteredReviews.map((review, index) => {
-              const voucher = findVoucher(vouchers, review);
-              return (
-                <ReviewCard
-                  key={review.id}
-                  review={review}
-                  voucher={voucher}
-                  index={index}
-                  focused={focusedId === review.id}
-                  onFocus={() => setFocusedId(review.id)}
-                  onAccept={() => approveReview.mutate(review.id)}
-                  onReject={() => rejectReview.mutate(review.id)}
-                  onEdit={() => toast.info("Edit will be available in a future release.")}
-                  onBookWithoutVat={() => bookWithoutVatReview.mutate(review.id)}
-                />
-              );
-            })
+            filteredReviews.map((review, index) => (
+              <ReviewCard
+                key={review.id}
+                review={review}
+                voucher={voucherById.get(review.voucherId)}
+                index={index}
+                focused={focusedId === review.id}
+                onFocus={() => setFocusedId(review.id)}
+                onAction={(action) => handleAction(review.id, action)}
+              />
+            ))
           )}
         </div>
       </section>

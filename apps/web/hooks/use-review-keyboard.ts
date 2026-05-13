@@ -20,8 +20,7 @@ export function useReviewKeyboard({
   onEdit,
   onBookWithoutVat,
 }: UseReviewKeyboardArgs): void {
-  // Navigate down
-  useHotkeys("j", () => {
+  function navigate(delta: 1 | -1) {
     if (reviews.length === 0) return;
     if (focusedId === null) {
       const first = reviews[0];
@@ -29,50 +28,19 @@ export function useReviewKeyboard({
       return;
     }
     const currentIndex = reviews.findIndex((r) => r.id === focusedId);
-    const nextIndex = currentIndex + 1;
-    const next = reviews[nextIndex];
-    if (next) {
-      setFocusedId(next.id);
-    }
-  });
+    const next = reviews[currentIndex + delta];
+    if (next) setFocusedId(next.id);
+  }
 
-  // Navigate up
-  useHotkeys("k", () => {
-    if (reviews.length === 0) return;
-    if (focusedId === null) {
-      const first = reviews[0];
-      if (first) setFocusedId(first.id);
-      return;
-    }
-    const currentIndex = reviews.findIndex((r) => r.id === focusedId);
-    const prevIndex = currentIndex - 1;
-    const prev = reviews[prevIndex];
-    if (prev) {
-      setFocusedId(prev.id);
-    }
-  });
-
-  // Accept (y or enter)
-  useHotkeys("y,enter", () => {
+  function runOnFocused(action: (id: string) => void) {
     if (focusedId === null || reviews.length === 0) return;
-    onAccept(focusedId);
-  });
+    action(focusedId);
+  }
 
-  // Reject
-  useHotkeys("n", () => {
-    if (focusedId === null || reviews.length === 0) return;
-    onReject(focusedId);
-  });
-
-  // Edit
-  useHotkeys("e", () => {
-    if (focusedId === null || reviews.length === 0) return;
-    onEdit(focusedId);
-  });
-
-  // Book without VAT
-  useHotkeys("b", () => {
-    if (focusedId === null || reviews.length === 0) return;
-    onBookWithoutVat(focusedId);
-  });
+  useHotkeys("j", () => navigate(1));
+  useHotkeys("k", () => navigate(-1));
+  useHotkeys("y,enter", () => runOnFocused(onAccept));
+  useHotkeys("n", () => runOnFocused(onReject));
+  useHotkeys("e", () => runOnFocused(onEdit));
+  useHotkeys("b", () => runOnFocused(onBookWithoutVat));
 }
