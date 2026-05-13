@@ -53,8 +53,3 @@ test("legacy / redirects to /today", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   expect(page.url()).toMatch(/\/today$/);
 });
-
-test("legacy /assistant redirects to /today with advisor query", async ({ page }) => {
-  await page.goto("/assistant");
-  expect(page.url()).toMatch(/\/today\?advisor=open$/);
-});

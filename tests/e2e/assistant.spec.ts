@@ -6,18 +6,17 @@ test.beforeEach(async ({ request }) => {
   await resetApiState(request);
 });
 
-test("assistant page returns a grounded advisory answer", async ({ page }) => {
+test("assistant page shows Open Advisor button", async ({ page }) => {
   await page.goto("/assistant");
 
-  await page
-    .getByTestId("assistant-question")
-    .fill("What should we confirm before deducting VAT on a supplier invoice?");
-  await page.getByTestId("assistant-submit").click();
+  await expect(page.getByTestId("open-advisor-button")).toBeVisible();
+  await expect(page.getByTestId("open-advisor-button")).toContainText("Open Advisor");
+});
 
-  await expect(page.getByTestId("assistant-response").first()).toContainText(
-    "What should we confirm before deducting VAT on a supplier invoice?",
-  );
-  await expect(page.getByTestId("assistant-response").first()).toContainText(
-    /Internal architecture policy|Bokf[öÃ¶]ringslagen|Skatteverket/i,
-  );
+test("clicking Open Advisor navigates to /today?advisor=open", async ({ page }) => {
+  await page.goto("/assistant");
+
+  await page.getByTestId("open-advisor-button").click();
+
+  await expect(page).toHaveURL(/\/today\?advisor=open/);
 });

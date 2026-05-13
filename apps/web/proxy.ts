@@ -2,7 +2,6 @@ import { type NextRequest, NextResponse } from "next/server";
 
 const REDIRECTS: Record<string, string> = {
   "/": "/today",
-  "/assistant": "/today?advisor=open",
   "/settings": "/settings/company",
 };
 
@@ -17,5 +16,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/assistant", "/settings"],
+  matcher: ["/", "/settings"],
 };
