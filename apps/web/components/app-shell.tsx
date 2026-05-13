@@ -73,7 +73,7 @@ function getFocusableElements(container: HTMLElement | null) {
   );
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, digest: _digest }: { children: ReactNode; digest?: ReactNode }) {
   const pathname = usePathname();
   const barsHidden = useScrollDirection();
   const [captureOpen, setCaptureOpen] = useState(false);
