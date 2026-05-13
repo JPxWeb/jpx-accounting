@@ -2,13 +2,13 @@ import { formatRuntimeModeLabel } from "../../lib/presentation";
 import { webRuntimeConfig } from "../../lib/runtime-config";
 import { ScreenHeader } from "../ui/screen-header";
 
-export function SettingsScreen() {
+export function SettingsAboutScreen() {
   return (
     <div className="page-shell space-y-6">
       <ScreenHeader
-        eyebrow="Control Plane"
-        title="Architecture guardrails baked into the product surface."
-        description="This slice makes the platform posture legible: Sweden-hosted deployment, append-only accounting events, and clear separation between advisory intelligence and mutation authority."
+        eyebrow="Settings / About"
+        title="About this build"
+        description="Architecture guardrails baked into the product surface: Sweden-hosted deployment, append-only accounting events, and clear separation between advisory intelligence and mutation authority."
         testId="settings-hero"
       />
 
