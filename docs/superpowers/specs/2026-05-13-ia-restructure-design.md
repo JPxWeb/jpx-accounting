@@ -371,7 +371,7 @@ All page copy stays English in this restructure. Swedish translation is a separa
 | `@tanstack/react-table` | Data tables (drafts, evidence, journal, GL, suppliers) | ~14KB | shadcn `data-table` pairs with it; we'll use it in 5+ places |
 | `recharts` | Charting primitives | ~95KB | Powers shadcn `chart`; mature, accessible, SVG-based |
 | `@react-pdf/renderer` | PDF report exports | ~250KB | Lazy-loaded only on Reports → Exports |
-| `react-hook-form` + `@hookform/resolvers` | Form state and Zod validation | ~25KB combined | Industry standard, pairs natively with Zod |
+| `react-hook-form@^7` + `@hookform/resolvers@^5` | Form state and Zod validation | ~25KB combined | Industry standard, pairs natively with Zod |
 
 Total added bundle (excluding lazy PDF): ~154 KB gzipped. The PDF renderer is dynamically imported only when the user clicks "Export PDF."
 

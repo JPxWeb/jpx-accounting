@@ -567,8 +567,10 @@ git commit -m "refactor(web): demote assistant page to history; palette lands in
 - [ ] **Step 1: Add react-hook-form**
 
 ```bash
-pnpm --filter @jpx-accounting/web add react-hook-form@^8 @hookform/resolvers@^4
+pnpm --filter @jpx-accounting/web add react-hook-form@^7 @hookform/resolvers@^5
 ```
+
+Note: `react-hook-form` latest stable is the `7.x` line (no `^8` exists yet). `@hookform/resolvers` latest is `5.x`. The Zod resolver and `Controller` APIs we use are stable across these majors.
 
 - [ ] **Step 2: Add shadcn form primitive**
 
