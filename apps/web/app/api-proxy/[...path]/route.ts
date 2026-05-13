@@ -65,3 +65,8 @@ export async function POST(request: Request, context: { params: Promise<{ path: 
   const { path } = await context.params;
   return proxyRequest(request, path);
 }
+
+export async function PUT(request: Request, context: { params: Promise<{ path: string[] }> }) {
+  const { path } = await context.params;
+  return proxyRequest(request, path);
+}

@@ -29,24 +29,20 @@ test("navigation and share target flows stay reachable", async ({ page }) => {
 });
 
 test("primary dock navigates between all five tabs", async ({ page }) => {
-  // Verify the first four shell tabs navigate correctly from within the shell
+  // Verify all five shell tabs navigate correctly from within the shell
   await page.goto("/today");
-  for (const route of ["/capture", "/books", "/reports"]) {
-    await page
-      .getByRole("link", { name: new RegExp(route.split("/")[1]!, "i") })
-      .first()
-      .click();
-    await expect(page).toHaveURL(new RegExp(route));
+  for (const [linkName, expectedUrl] of [
+    [/capture/i, /\/capture/],
+    [/books/i, /\/books/],
+    [/reports/i, /\/reports/],
+    [/settings/i, /\/settings\/company$/],
+  ] as [RegExp, RegExp][]) {
+    await page.getByRole("link", { name: linkName }).first().click();
+    await expect(page).toHaveURL(expectedUrl);
   }
   // Navigate back to /today via the Today tab (completes the circuit)
   await page.getByRole("link", { name: /today/i }).first().click();
   await expect(page).toHaveURL(/\/today$/);
-  // Verify the Settings tab is reachable (redirects to /settings/company via proxy)
-  await page
-    .getByRole("link", { name: /settings/i })
-    .first()
-    .click();
-  await expect(page).toHaveURL(/settings/);
 });
 
 test("legacy / redirects to /today", async ({ page }) => {
