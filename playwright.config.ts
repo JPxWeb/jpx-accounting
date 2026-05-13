@@ -33,7 +33,7 @@ export default defineConfig({
     },
     {
       command: "pnpm --filter @jpx-accounting/web exec next start --hostname 127.0.0.1 --port 3200",
-      url: baseURL,
+      url: `${baseURL}/reports`,
       reuseExistingServer: false,
       env: {
         ACCOUNTING_API_BASE_URL: apiBaseUrl,
