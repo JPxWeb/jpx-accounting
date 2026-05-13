@@ -21,7 +21,11 @@ export function DigestPanel() {
   const topAlert = data.alerts[0];
 
   return (
-    <aside data-testid="ambient-digest" className="glass-panel-soft rounded-xl p-4 space-y-4">
+    <aside
+      aria-label="Today's pulse and compliance alerts"
+      data-testid="ambient-digest"
+      className="glass-panel-soft rounded-xl p-4 space-y-4"
+    >
       <div>
         <SectionLabel>Today&apos;s pulse</SectionLabel>
         <div className="mt-3 flex flex-wrap gap-2 text-sm">
