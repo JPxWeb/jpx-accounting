@@ -1047,6 +1047,12 @@ test("settings redirect lands on company sub-page", async ({ page }) => {
   await expect(page.getByTestId("company-form")).toBeVisible();
 });
 
+// Also tighten the five-tabs test in navigation-and-share.spec.ts now that
+// /settings/company exists — change the loose `/settings/` URL assertion
+// (introduced in Task 1.6 as a workaround) to the canonical `/settings/company`
+// match. Per the no-legacy-code rule, fix the workaround when its underlying
+// blocker is resolved.
+
 test("company form persists name change", async ({ page }) => {
   await page.goto("/settings/company");
   const input = page.getByLabel("Organization name");
