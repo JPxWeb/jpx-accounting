@@ -782,12 +782,12 @@ git commit -m "feat(contracts): add company settings schema"
 
 **Files:**
 - Modify: `services/api/src/app.ts`
-- Modify: `packages/domain/src/memory-store.ts` (extend with company settings storage)
-- Modify: `packages/domain/src/ledger-store.ts` (extend interface)
+- Modify: `packages/domain/src/store.ts` (extend with company settings storage)
+- Modify: `packages/domain/src/store.ts` (also contains the `LedgerStore` interface) (extend interface)
 
 - [ ] **Step 1: Extend LedgerStore interface**
 
-In `packages/domain/src/ledger-store.ts`, add to the interface:
+In `packages/domain/src/store.ts` (also contains the `LedgerStore` interface), add to the interface:
 
 ```typescript
 getCompanySettings(): Promise<CompanySettings | null>;
@@ -798,7 +798,7 @@ Import `CompanySettings` from `@jpx-accounting/contracts`.
 
 - [ ] **Step 2: Implement in MemoryLedgerStore**
 
-In `packages/domain/src/memory-store.ts`, add a private field and methods:
+In `packages/domain/src/store.ts`, add a private field and methods:
 
 ```typescript
 private companySettings: CompanySettings = {
@@ -844,7 +844,7 @@ Import `companySettingsSchema` from `@jpx-accounting/contracts` at the top of th
 
 - [ ] **Step 5: Add api-client methods**
 
-In `packages/api-client/src/client.ts` (find the existing client class), add:
+In `packages/api-client/src/index.ts` (find the existing client class), add:
 
 ```typescript
 async getCompanySettings(): Promise<CompanySettings> {
