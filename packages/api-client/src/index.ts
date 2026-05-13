@@ -1,6 +1,7 @@
 import type {
   AssistantRequest,
   AssistantSession,
+  CompanySettings,
   EvidenceCreateInput,
   EvidenceCreateResult,
   ReviewDecisionInput,
@@ -101,6 +102,21 @@ export class AccountingApiClient {
     if (this.fallbackStore) return await this.fallbackStore.runSimulation(input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return request<SimulationRun>(this.baseUrl, "/api/simulations/run", { method: "POST", json: input });
+  }
+
+  async getCompanySettings(): Promise<CompanySettings | null> {
+    if (this.fallbackStore) return await this.fallbackStore.getCompanySettings();
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return request<CompanySettings | null>(this.baseUrl, "/api/settings/company", { method: "GET" });
+  }
+
+  async saveCompanySettings(input: CompanySettings): Promise<CompanySettings> {
+    if (this.fallbackStore) return await this.fallbackStore.saveCompanySettings(input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return request<CompanySettings>(this.baseUrl, "/api/settings/company", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
   }
 }
 

@@ -3,6 +3,7 @@ import type {
   AccountingSuggestion,
   AssistantSession,
   CloseRun,
+  CompanySettings,
   ComplianceAlert,
   EvidenceComposeInput,
   EvidenceCreateInput,
@@ -50,6 +51,8 @@ export interface LedgerStore {
   answerAssistantQuestion(question: string): AssistantSession | Promise<AssistantSession>;
   runSimulation(input: SimulationRequest): SimulationRun | Promise<SimulationRun>;
   getCloseRun(): CloseRun | Promise<CloseRun>;
+  getCompanySettings(): Promise<CompanySettings | null>;
+  saveCompanySettings(input: CompanySettings): Promise<CompanySettings>;
 }
 
 const defaultOrganizationId = "org_jpx";
@@ -186,6 +189,15 @@ function buildPostingLines(
 
 export class MemoryLedgerStore implements LedgerStore {
   private readonly evidence = new Map<string, EvidenceObject>();
+  private companySettings: CompanySettings = {
+    organizationId: "org_jpx",
+    organizationName: "JPX Demo AB",
+    organizationNumber: "556677-8899",
+    addressLine1: "Kungsgatan 1",
+    postalCode: "111 22",
+    city: "Stockholm",
+    contactEmail: "hello@example.com",
+  };
   private readonly evidencePackets = new Map<string, EvidencePacket>();
   private readonly vouchers = new Map<string, Voucher>();
   private readonly reviews = new Map<string, ReviewTask>();
@@ -571,5 +583,14 @@ export class MemoryLedgerStore implements LedgerStore {
         { id: "close_3", label: "Export SIE package for accountant review", status: "ready" },
       ],
     };
+  }
+
+  async getCompanySettings(): Promise<CompanySettings | null> {
+    return this.companySettings;
+  }
+
+  async saveCompanySettings(input: CompanySettings): Promise<CompanySettings> {
+    this.companySettings = input;
+    return this.companySettings;
   }
 }

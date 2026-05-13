@@ -70,6 +70,14 @@ class UnavailableLedgerStore implements LedgerStore {
   getCloseRun() {
     return this.fail();
   }
+
+  getCompanySettings() {
+    return this.fail();
+  }
+
+  saveCompanySettings() {
+    return this.fail();
+  }
 }
 
 export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {

@@ -2,6 +2,7 @@ import type {
   AccountingSuggestion,
   AssistantSession,
   CloseRun,
+  CompanySettings,
   EvidenceComposeInput,
   EvidenceCreateInput,
   EvidenceCreateResult,
@@ -450,5 +451,15 @@ export class SupabaseLedgerStore implements LedgerStore {
         { id: "close_3", label: "Export SIE package for accountant review", status: "open" },
       ],
     };
+  }
+
+  async getCompanySettings(): Promise<CompanySettings | null> {
+    // TODO: Query organization settings from Supabase when fully implemented
+    return null;
+  }
+
+  async saveCompanySettings(_input: CompanySettings): Promise<CompanySettings> {
+    // TODO: Persist organization settings to Supabase when fully implemented
+    throw new Error("saveCompanySettings is not yet implemented in SupabaseLedgerStore.");
   }
 }

@@ -1,6 +1,7 @@
 import { type AiRuntime, AiRuntimeUnavailableError } from "@jpx-accounting/ai-core";
 import {
   assistantRequestSchema,
+  companySettingsSchema,
   evidenceComposeInputSchema,
   evidenceCreateInputSchema,
   knowledgeQuerySchema,
@@ -222,6 +223,13 @@ export function createApp({
       id: context.req.param("id"),
     }),
   );
+
+  app.get("/api/settings/company", async (context) => context.json(await currentStore.getCompanySettings()));
+
+  app.put("/api/settings/company", async (context) => {
+    const input = await parseBody(context.req.raw, companySettingsSchema);
+    return context.json(await currentStore.saveCompanySettings(input));
+  });
 
   app.post("/api/compliance-watch/refresh", async (context) => context.json((await currentStore.getSnapshot()).alerts));
 
