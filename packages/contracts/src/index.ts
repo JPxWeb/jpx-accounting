@@ -348,3 +348,5 @@ export type AssistantRequest = z.infer<typeof assistantRequestSchema>;
 export type KnowledgeQuery = z.infer<typeof knowledgeQuerySchema>;
 export type SimulationRequest = z.infer<typeof simulationRequestSchema>;
 export type SuggestionRequest = z.infer<typeof suggestionRequestSchema>;
+
+export * from "./settings.js";
