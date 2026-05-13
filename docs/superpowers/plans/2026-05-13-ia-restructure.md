@@ -16,7 +16,7 @@
 
 | Path | Action | Phase |
 |---|---|---|
-| `apps/web/middleware.ts` | Create | 1 |
+| `apps/web/proxy.ts` | Create | 1 |
 | `apps/web/app/(shell)/layout.tsx` | Modify | 1 |
 | `apps/web/app/(shell)/@digest/` | Create | 1 |
 | `apps/web/app/(shell)/today/` | Create | 1 |
@@ -118,7 +118,7 @@ git commit -m "feat(web): add shadcn sidebar primitive for new IA"
 ### Task 1.3: Create middleware for legacy-route redirects
 
 **Files:**
-- Create: `apps/web/middleware.ts`
+- Create: `apps/web/proxy.ts`
 - Test: `tests/e2e/navigation-and-share.spec.ts` (modify)
 
 - [ ] **Step 1: Add failing E2E test for `/` redirect**
@@ -146,12 +146,12 @@ pnpm test:e2e -- --grep "legacy"
 
 Expected: both tests fail (no redirect yet).
 
-- [ ] **Step 3: Implement middleware**
+- [ ] **Step 3: Implement proxy (Next.js 16 successor to middleware.ts)**
 
-Create `apps/web/middleware.ts`:
+Create `apps/web/proxy.ts`:
 
 ```typescript
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 const REDIRECTS: Record<string, string> = {
   "/": "/today",
@@ -159,7 +159,7 @@ const REDIRECTS: Record<string, string> = {
   "/settings": "/settings/company",
 };
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const target = REDIRECTS[request.nextUrl.pathname];
   if (!target) {
     return NextResponse.next();
@@ -174,6 +174,8 @@ export const config = {
 };
 ```
 
+Note: Next.js 16 renamed `middleware.ts` → `proxy.ts` and the named export `middleware` → `proxy`. The `edge` runtime is not supported in `proxy`; this redirect runs on the node runtime, which is fine here.
+
 - [ ] **Step 4: Run tests — confirm pass**
 
 ```bash
@@ -185,7 +187,7 @@ Expected: both tests pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/web/middleware.ts tests/e2e/navigation-and-share.spec.ts
+git add apps/web/proxy.ts tests/e2e/navigation-and-share.spec.ts
 git commit -m "feat(web): redirect legacy routes to new IA"
 ```
 
@@ -234,6 +236,14 @@ git rm apps/web/app/(shell)/page.tsx
 ```
 
 Middleware will redirect `/` → `/today`.
+
+- [ ] **Step 3.5: Clean up the Task 1.3 Playwright probe workaround**
+
+Task 1.3 temporarily set `playwright.config.ts` `webServer.url` to `${baseURL}/reports` because the readiness probe hit `/` which now 308-redirects. Now that `/today` exists, change the probe back to point at the canonical home:
+
+In `playwright.config.ts`, change the web `webServer.url` from `${baseURL}/reports` to `${baseURL}/today`.
+
+This removes the workaround introduced in commit `3e220e5` so the probe always tracks the actual canonical home. (See the "no legacy code" rule — workaround configs are tracked debt; they don't outlive their phase.)
 
 - [ ] **Step 4: Create skeleton pages for Capture and Books**
 

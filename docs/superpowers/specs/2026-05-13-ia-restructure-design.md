@@ -398,7 +398,7 @@ Old routes redirect (308 permanent in production, 302 in development):
 | `/assistant` | `/today?advisor=open` (opens cmd-K with last session) |
 | `/settings` | `/settings/company` |
 
-Implementation: `apps/web/middleware.ts` (new), 3 lines.
+Implementation: `apps/web/proxy.ts` (new — Next.js 16 renamed `middleware.ts` to `proxy.ts`), ~20 lines.
 
 **E2E impact:** Every test in `tests/e2e/` that visits `/` or `/assistant` must be updated. `tests/e2e/home.spec.ts` → `tests/e2e/today.spec.ts` (rename + assertion updates).
 
