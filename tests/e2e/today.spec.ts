@@ -13,8 +13,8 @@ function captureButton(page: Page) {
     : page.getByTestId("capture-open-desktop");
 }
 
-test("home screen can add a new review item from the browser", async ({ page }) => {
-  await page.goto("/");
+test("today screen can add a new review item from the browser", async ({ page }) => {
+  await page.goto("/today");
 
   await expect(
     page.getByRole("heading", { name: /Review-ready bookkeeping, shaped for the phone first/i }),
@@ -33,8 +33,8 @@ test("home screen can add a new review item from the browser", async ({ page }) 
   await expect(page.getByTestId("review-card")).toHaveCount(2);
 });
 
-test("home screen supports approval and local draft capture", async ({ page }) => {
-  await page.goto("/");
+test("today screen supports approval and local draft capture", async ({ page }) => {
+  await page.goto("/today");
 
   await expect(page.getByTestId("review-card")).toHaveCount(1);
 
@@ -47,8 +47,8 @@ test("home screen supports approval and local draft capture", async ({ page }) =
   await expect(page.getByTestId("draft-notice")).toContainText("Camera draft saved locally");
 });
 
-test("home screen passes WCAG 2.2 AA accessibility checks", async ({ page }) => {
-  await page.goto("/");
+test("today screen passes WCAG 2.2 AA accessibility checks", async ({ page }) => {
+  await page.goto("/today");
   await expect(page.getByTestId("review-card")).toHaveCount(1);
   await expectAccessible(page);
 });

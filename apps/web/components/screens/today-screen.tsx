@@ -129,7 +129,7 @@ export function TodayScreen() {
   return (
     <div className="page-shell space-y-6">
       <ScreenHeader
-        eyebrow="Inbox / Needs Review"
+        eyebrow="Today / Needs Review"
         title="Review-ready bookkeeping, shaped for the phone first."
         description="Evidence arrives once, suggestions stay explainable, and the queue keeps the real accounting work above the fold instead of hiding it under dashboard chrome."
         aside={
