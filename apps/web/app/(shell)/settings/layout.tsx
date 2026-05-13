@@ -7,7 +7,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     <div className="page-shell space-y-6">
       <div className="grid gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
         <SettingsSidebar />
-        <main>{children}</main>
+        <section aria-label="Settings content">{children}</section>
       </div>
     </div>
   );
