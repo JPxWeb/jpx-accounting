@@ -92,6 +92,21 @@ export class AccountingApiClient {
     return request<ReviewTask>(this.baseUrl, `/api/reviews/${reviewId}/approve`, { method: "POST", json: input });
   }
 
+  async rejectReview(reviewId: string, input: ReviewDecisionInput): Promise<ReviewTask | undefined> {
+    if (this.fallbackStore) return await this.fallbackStore.applyReviewDecision(reviewId, "reject", input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return request<ReviewTask>(this.baseUrl, `/api/reviews/${reviewId}/reject`, { method: "POST", json: input });
+  }
+
+  async bookWithoutVatReview(reviewId: string, input: ReviewDecisionInput): Promise<ReviewTask | undefined> {
+    if (this.fallbackStore) return await this.fallbackStore.applyReviewDecision(reviewId, "book-without-vat", input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return request<ReviewTask>(this.baseUrl, `/api/reviews/${reviewId}/book-without-vat`, {
+      method: "POST",
+      json: input,
+    });
+  }
+
   async askAssistant(input: AssistantRequest): Promise<AssistantSession> {
     if (this.fallbackStore) return await this.fallbackStore.answerAssistantQuestion(input.question);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");

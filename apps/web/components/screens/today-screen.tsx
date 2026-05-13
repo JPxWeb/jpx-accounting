@@ -1,91 +1,91 @@
 "use client";
 
-import type { EvidenceCreateInput, ReviewTask, Voucher, WorkspaceSnapshot } from "@jpx-accounting/contracts";
+import type { ReviewTask, Voucher, WorkspaceSnapshot } from "@jpx-accounting/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { motion } from "motion/react";
+import { parseAsStringEnum, useQueryState } from "nuqs";
+import { useState } from "react";
+import { toast } from "sonner";
+import { useReviewKeyboard } from "../../hooks/use-review-keyboard";
 import { apiClient } from "../../lib/client";
-import { formatMoney, formatPercent, formatShortDate } from "../../lib/presentation";
 import { getErrorMessage } from "../../lib/request-errors";
+import { ReviewCard } from "../today/review-card";
+import { ReviewFilters } from "../today/review-filters";
 import { MetricCard } from "../ui/metric-card";
 import { ScreenHeader } from "../ui/screen-header";
 import { SectionLabel } from "../ui/section-label";
 import { ScreenSkeleton } from "../ui/skeleton";
-import { StatusBadge } from "../ui/status-badge";
 import { UnavailableState } from "../ui/unavailable-state";
 
-const seedEvidenceInput: EvidenceCreateInput = {
-  organizationId: "org_jpx",
-  workspaceId: "workspace_main",
-  actorId: "user_founder",
-  title: "Mobile captured taxi receipt",
-  originalFilename: "taxi-receipt.jpg",
-  mimeType: "image/jpeg",
-  modalities: ["camera", "screenshot"],
-  extractedText: "Taxi receipt from airport to client meeting",
-};
+const ACTOR_ID = "user_founder";
 
-function initialsFromTitle(value: string) {
-  return value
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-}
+const statuses = ["all", "needs-review", "blocked", "approved"] as const;
+type Status = (typeof statuses)[number];
+
+const confidences = ["all", "high", "medium", "low"] as const;
+type Confidence = (typeof confidences)[number];
 
 function findVoucher(vouchers: Voucher[], review: ReviewTask) {
   return vouchers.find((voucher) => voucher.id === review.voucherId);
 }
 
-function reviewStatusVariant(status: string) {
-  if (status === "needs-review") return "accent" as const;
-  if (status === "approved") return "success" as const;
-  if (status === "rejected") return "danger" as const;
-  return "warning" as const;
+function matchesConfidence(review: ReviewTask, confidence: Confidence): boolean {
+  if (confidence === "all") return true;
+  const pct = (review.suggestion?.confidence ?? 0) * 100;
+  if (confidence === "high") return pct >= 95;
+  if (confidence === "medium") return pct >= 80 && pct < 95;
+  return pct < 80;
+}
+
+function applyOptimisticUpdate(current: WorkspaceSnapshot | undefined, review: ReviewTask | undefined) {
+  if (!current || !review) return current;
+  return {
+    ...current,
+    reviews: current.reviews.map((item) => (item.id === review.id ? review : item)),
+    vouchers: current.vouchers.map((voucher) =>
+      voucher.id === review.voucherId ? { ...voucher, status: review.status } : voucher,
+    ),
+  };
 }
 
 export function TodayScreen() {
   const queryClient = useQueryClient();
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+
   const workspaceQuery = useQuery({
     queryKey: ["workspace"],
     queryFn: () => apiClient.getSnapshot(),
   });
   const { data } = workspaceQuery;
 
-  const createEvidence = useMutation({
-    mutationFn: () => apiClient.createEvidence(seedEvidenceInput),
-    onSuccess: (result) => {
-      queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (current) => {
-        if (!current) return current;
+  // Filter URL state (read here so we can filter reviews)
+  const [statusFilter] = useQueryState("status", parseAsStringEnum<Status>([...statuses]).withDefault("all"));
+  const [supplierFilter] = useQueryState("supplier", { defaultValue: "" });
+  const [confidenceFilter] = useQueryState(
+    "confidence",
+    parseAsStringEnum<Confidence>([...confidences]).withDefault("all"),
+  );
 
-        return {
-          ...current,
-          evidence: [result.evidence, ...current.evidence],
-          vouchers: [result.voucher, ...current.vouchers],
-          reviews: [result.review, ...current.reviews],
-        };
-      });
+  // Mutations
+  const approveReview = useMutation({
+    mutationFn: (id: string) => apiClient.approveReview(id, { actorId: ACTOR_ID }),
+    onSuccess: (review) => {
+      queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (current) => applyOptimisticUpdate(current, review));
       void queryClient.invalidateQueries({ queryKey: ["workspace"] });
     },
   });
 
-  const approveFirst = useMutation({
-    mutationFn: async () => {
-      const firstReview = data?.reviews.find((review) => review.status === "needs-review");
-      if (!firstReview) return undefined;
-      return apiClient.approveReview(firstReview.id, { actorId: "user_founder" });
-    },
+  const rejectReview = useMutation({
+    mutationFn: (id: string) => apiClient.rejectReview(id, { actorId: ACTOR_ID }),
     onSuccess: (review) => {
-      queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (current) => {
-        if (!current || !review) return current;
+      queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (current) => applyOptimisticUpdate(current, review));
+      void queryClient.invalidateQueries({ queryKey: ["workspace"] });
+    },
+  });
 
-        return {
-          ...current,
-          reviews: current.reviews.map((item) => (item.id === review.id ? review : item)),
-          vouchers: current.vouchers.map((voucher) =>
-            voucher.id === review.voucherId ? { ...voucher, status: review.status } : voucher,
-          ),
-        };
-      });
+  const bookWithoutVatReview = useMutation({
+    mutationFn: (id: string) => apiClient.bookWithoutVatReview(id, { actorId: ACTOR_ID }),
+    onSuccess: (review) => {
+      queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (current) => applyOptimisticUpdate(current, review));
       void queryClient.invalidateQueries({ queryKey: ["workspace"] });
     },
   });
@@ -94,11 +94,49 @@ export function TodayScreen() {
   const vouchers = data?.vouchers ?? [];
   const pendingReviews = reviews.filter((review) => review.status === "needs-review");
   const blockedReviews = reviews.filter((review) => review.blockedReason);
-  const firstPendingReview = pendingReviews[0];
+
+  // Client-side filtering
+  const filteredReviews = reviews.filter((review) => {
+    const voucher = findVoucher(vouchers, review);
+    const supplier = voucher?.voucherFields.supplierName ?? review.title ?? "";
+
+    if (statusFilter === "blocked") {
+      if (!review.blockedReason) return false;
+    } else if (statusFilter !== "all") {
+      if (review.status !== statusFilter) return false;
+    }
+
+    if (supplierFilter && !supplier.toLowerCase().includes(supplierFilter.toLowerCase())) {
+      return false;
+    }
+
+    if (!matchesConfidence(review, confidenceFilter)) return false;
+
+    return true;
+  });
+
+  const hasActiveFilters = statusFilter !== "all" || supplierFilter !== "" || confidenceFilter !== "all";
+
   const actionError =
-    createEvidence.error || approveFirst.error
-      ? getErrorMessage(createEvidence.error ?? approveFirst.error, "A workspace action could not be completed.")
+    approveReview.error || rejectReview.error || bookWithoutVatReview.error
+      ? getErrorMessage(
+          approveReview.error ?? rejectReview.error ?? bookWithoutVatReview.error,
+          "A review action could not be completed.",
+        )
       : null;
+
+  // Keyboard navigation
+  useReviewKeyboard({
+    reviews: filteredReviews,
+    focusedId,
+    setFocusedId,
+    onAccept: (id) => approveReview.mutate(id),
+    onReject: (id) => rejectReview.mutate(id),
+    onEdit: (_id) => {
+      toast.info("Edit will be available in a future release.");
+    },
+    onBookWithoutVat: (id) => bookWithoutVatReview.mutate(id),
+  });
 
   if (workspaceQuery.error && !data) {
     return (
@@ -133,7 +171,7 @@ export function TodayScreen() {
 
       <section className="space-y-4">
         <div className="glass-chrome rounded-xl px-4 py-4 sm:px-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-4">
             <div>
               <SectionLabel>Review queue</SectionLabel>
               <h2 className="mt-2 text-2xl font-semibold">Keep the next accounting decision obvious.</h2>
@@ -142,26 +180,7 @@ export function TodayScreen() {
                 disclosure until it is needed.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => createEvidence.mutate()}
-                disabled={createEvidence.isPending}
-                data-testid="simulate-upload"
-                className="glass-panel-soft rounded-md px-4 py-2.5 text-sm font-medium text-[var(--color-text)] disabled:opacity-60"
-              >
-                {createEvidence.isPending ? "Creating\u2026" : "Create sample receipt"}
-              </button>
-              <button
-                type="button"
-                onClick={() => approveFirst.mutate()}
-                data-testid="approve-first"
-                disabled={!firstPendingReview || approveFirst.isPending}
-                className="rounded-md bg-[var(--color-accent)] px-4 py-2.5 text-sm font-medium text-white shadow-[var(--shadow-accent)] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {approveFirst.isPending ? "Approving\u2026" : "Approve next review"}
-              </button>
-            </div>
+            <ReviewFilters />
           </div>
           {actionError ? (
             <p className="mt-4 rounded-lg bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
@@ -171,133 +190,39 @@ export function TodayScreen() {
         </div>
 
         <div className="space-y-4">
-          {reviews.map((review, index) => {
-            const voucher = findVoucher(vouchers, review);
-            const confidence = formatPercent(review.suggestion?.confidence ?? 0);
-            const citation = review.suggestion?.citations[0];
-            const supplier = voucher?.voucherFields.supplierName ?? review.title;
-
-            return (
-              <motion.article
-                key={review.id}
-                data-testid="review-card"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className="glass-panel rounded-xl p-4 sm:p-5"
-              >
-                <div className="review-card-layout">
-                  <div className="review-card-preview glass-panel-soft rounded-lg p-4">
-                    <div className="flex h-full flex-col justify-between gap-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <StatusBadge
-                          status={review.status}
-                          variant={reviewStatusVariant(review.status)}
-                          testId="review-status"
-                        />
-                        <span className="text-sm font-semibold tabular-nums text-[var(--color-text-muted)]">
-                          {confidence}
-                        </span>
-                      </div>
-                      <div>
-                        <div className="inline-flex rounded-lg bg-[var(--color-accent-soft)] px-4 py-3 text-xl font-semibold tracking-[0.08em] text-[var(--color-text)]">
-                          {initialsFromTitle(supplier)}
-                        </div>
-                        <p className="mt-3 text-sm font-semibold text-[var(--color-text)]">{supplier}</p>
-                        <p className="text-eyebrow mt-1">
-                          {voucher?.accountingMethod === "invoice" ? "Invoice method" : "Cash method"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="min-w-0">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="min-w-0">
-                        <SectionLabel>{voucher?.voucherNumber ?? "Pending voucher"}</SectionLabel>
-                        <h3 className="mt-2 text-xl font-semibold text-[var(--color-text)]">{review.title}</h3>
-                        <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-muted)]">
-                          {review.suggestedAction}
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 text-sm lg:w-[17rem]">
-                        <div className="glass-panel-inset rounded-lg px-3 py-3">
-                          <div className="text-eyebrow">Date</div>
-                          <div className="mt-2 font-semibold">
-                            {formatShortDate(voucher?.voucherFields.receiptDate)}
-                          </div>
-                        </div>
-                        <div className="glass-panel-inset rounded-lg px-3 py-3">
-                          <div className="text-eyebrow">Gross</div>
-                          <div className="mt-2 font-semibold tabular-nums">
-                            {formatMoney(voucher?.voucherFields.grossAmount)}
-                          </div>
-                        </div>
-                        <div className="glass-panel-inset rounded-lg px-3 py-3">
-                          <div className="text-eyebrow">VAT</div>
-                          <div className="mt-2 font-semibold tabular-nums">
-                            {formatMoney(voucher?.voucherFields.vatAmount)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <span className="rounded-md bg-[var(--color-surface-muted)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
-                        {review.suggestion?.accountNumber} {review.suggestion?.accountName}
-                      </span>
-                      <span className="rounded-md bg-[var(--color-accent-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-accent)]">
-                        {review.suggestion?.vatCode}
-                      </span>
-                      {citation ? (
-                        <span className="rounded-md bg-[var(--color-info-soft)] px-3 py-2 text-sm font-medium text-[var(--color-info)]">
-                          Cited: {citation.title}
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)]">
-                      <div className="glass-panel-soft rounded-lg p-4">
-                        <SectionLabel>AI suggestion</SectionLabel>
-                        <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-                          {review.suggestion?.reasoning}
-                        </p>
-                      </div>
-
-                      <details className="glass-panel-soft rounded-lg p-4">
-                        <summary className="text-eyebrow cursor-pointer list-none">Rule hits and provenance</summary>
-                        <div className="mt-4 space-y-3">
-                          {review.suggestion?.ruleHits.map((rule) => (
-                            <div key={rule.id} className="glass-panel-inset rounded-lg px-3 py-3 text-sm">
-                              <p className="font-semibold text-[var(--color-text)]">{rule.title}</p>
-                              <p className="mt-1 text-[var(--color-text-muted)]">{rule.message}</p>
-                            </div>
-                          ))}
-                          <div className="grid gap-2">
-                            {review.provenanceTimeline.map((item) => (
-                              <div
-                                key={item.id}
-                                className="flex items-center justify-between gap-4 text-sm text-[var(--color-text-muted)]"
-                              >
-                                <span>{item.label}</span>
-                                <span className="text-eyebrow">{item.actor}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </details>
-                    </div>
-
-                    {review.blockedReason ? (
-                      <p className="mt-4 rounded-lg bg-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]">
-                        {review.blockedReason}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-              </motion.article>
-            );
-          })}
+          {filteredReviews.length === 0 ? (
+            <div className="glass-panel rounded-xl p-8 text-center">
+              <p className="text-sm text-[var(--color-text-muted)]">
+                {hasActiveFilters ? "No reviews match these filters." : "No reviews in the queue."}
+              </p>
+              {hasActiveFilters ? (
+                <a
+                  href="/today"
+                  className="mt-3 inline-block text-sm font-medium text-[var(--color-accent)] hover:underline"
+                >
+                  Clear filters
+                </a>
+              ) : null}
+            </div>
+          ) : (
+            filteredReviews.map((review, index) => {
+              const voucher = findVoucher(vouchers, review);
+              return (
+                <ReviewCard
+                  key={review.id}
+                  review={review}
+                  voucher={voucher}
+                  index={index}
+                  focused={focusedId === review.id}
+                  onFocus={() => setFocusedId(review.id)}
+                  onAccept={() => approveReview.mutate(review.id)}
+                  onReject={() => rejectReview.mutate(review.id)}
+                  onEdit={() => toast.info("Edit will be available in a future release.")}
+                  onBookWithoutVat={() => bookWithoutVatReview.mutate(review.id)}
+                />
+              );
+            })
+          )}
         </div>
       </section>
     </div>
