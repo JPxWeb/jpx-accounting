@@ -56,6 +56,11 @@ export function AssistantScreen() {
       <section className="glass-panel rounded-3xl p-5" data-testid="assistant-panel">
         <SectionLabel>Session history</SectionLabel>
         <div className="mt-6 space-y-4">
+          {sessions.length === 0 ? (
+            <p data-testid="assistant-empty" className="text-sm text-[var(--color-text-muted)]">
+              No advisory sessions yet. Open the Advisor (⌘K) to ask your first grounded question.
+            </p>
+          ) : null}
           {sessions.map((item) => (
             <article key={item.id} data-testid="assistant-response" className="glass-panel-soft rounded-2xl p-4">
               <SectionLabel>{item.status}</SectionLabel>
