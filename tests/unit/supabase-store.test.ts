@@ -108,3 +108,19 @@ test("appendEvent retries on hash-chain unique violation", async () => {
     }),
   );
 });
+
+test("suggestVoucher returns undefined for a voucher outside the caller's org", async () => {
+  const client = {
+    schema: () => ({
+      from: (table: string) => {
+        const chain: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "order", "limit"]) chain[m] = () => chain;
+        chain.maybeSingle = async () =>
+          table === "vouchers" ? { data: null, error: null } : { data: { id: "s1", voucher_id: "v1" }, error: null };
+        return chain;
+      },
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, { organizationId: "org_a", workspaceId: "ws_a" });
+  assert.equal(await store.suggestVoucher("v1"), undefined);
+});

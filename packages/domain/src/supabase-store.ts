@@ -561,26 +561,7 @@ export class SupabaseLedgerStore implements LedgerStore {
   }
 
   async suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined> {
-    const { data: suggestionRow, error } = await this.ledger()
-      .from("suggestions")
-      .select("*")
-      .eq("voucher_id", voucherId)
-      .maybeSingle();
-
-    if (error) throw new Error(`Failed to load suggestion: ${error.message}`);
-    if (suggestionRow) {
-      const mapped = mapSuggestionRow(suggestionRow);
-      const { data: voucherRow } = await this.ledger()
-        .from("vouchers")
-        .select("organization_id")
-        .eq("id", voucherId)
-        .eq("organization_id", this.ctx.organizationId)
-        .maybeSingle();
-      if (!voucherRow) return undefined;
-      return mapped;
-    }
-
-    const { data: voucherRow } = await this.ledger()
+    const { data: voucherRow, error: voucherError } = await this.ledger()
       .from("vouchers")
       .select("*")
       .eq("id", voucherId)
@@ -588,7 +569,17 @@ export class SupabaseLedgerStore implements LedgerStore {
       .eq("workspace_id", this.ctx.workspaceId)
       .maybeSingle();
 
+    if (voucherError) throw new Error(`Failed to load voucher: ${voucherError.message}`);
     if (!voucherRow) return undefined;
+
+    const { data: suggestionRow, error } = await this.ledger()
+      .from("suggestions")
+      .select("*")
+      .eq("voucher_id", voucherId)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to load suggestion: ${error.message}`);
+    if (suggestionRow) return mapSuggestionRow(suggestionRow);
 
     const voucher = mapVoucherRow(voucherRow);
     const ruleHits = evaluateVoucherRules(voucher);
