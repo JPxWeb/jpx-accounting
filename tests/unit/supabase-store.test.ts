@@ -258,3 +258,139 @@ test("getReviewFeed fetches suggestions in one batched query", async () => {
   assert.equal(feed.length, 2);
   assert.equal(suggestionReads, 1);
 });
+
+test("getEvidenceContext resolves voucher across multiple packet links without per-packet queries", async () => {
+  let voucherReads = 0;
+
+  // The new implementation issues these queries in order:
+  //   1. evidence_objects  → .maybeSingle()
+  //   2. evidence_packet_items (link discovery) → terminal .eq("evidence_object_id", …)
+  //   3. evidence_packets  (Promise.all[0]) → terminal .in("id", packetIds)
+  //   4. evidence_packet_items (batch items) → terminal .in("evidence_packet_id", packetIds)
+  //   5. vouchers          (Promise.all[2]) → terminal .in("evidence_packet_id", packetIds)
+  //
+  // We make .in() return a Promise so it can be awaited directly, and we make
+  // the link-discovery chain also resolve by returning a Promise from its terminal
+  // .eq() call. No `then` property is assigned to any plain object.
+  function makeChain(table: string): Record<string, unknown> {
+    const resolveIn = (): Promise<{ data: unknown; error: null }> => {
+      if (table === "evidence_packets") {
+        // Return both packets so the find/fallback has multiple candidates
+        return Promise.resolve({
+          data: [
+            {
+              id: "p1",
+              organization_id: "o",
+              workspace_id: "w",
+              created_at: "2026-01-01T00:00:00.000Z",
+              note: null,
+              voice_transcript: null,
+            },
+            {
+              id: "p2",
+              organization_id: "o",
+              workspace_id: "w",
+              created_at: "2026-01-02T00:00:00.000Z",
+              note: null,
+              voice_transcript: null,
+            },
+          ],
+          error: null,
+        });
+      }
+      if (table === "evidence_packet_items") {
+        // Batched items query (Promise.all[1])
+        return Promise.resolve({
+          data: [{ evidence_packet_id: "p1", evidence_object_id: "e1" }],
+          error: null,
+        });
+      }
+      if (table === "vouchers") {
+        voucherReads++;
+        return Promise.resolve({
+          data: [
+            {
+              id: "v1",
+              organization_id: "o",
+              workspace_id: "w",
+              evidence_packet_id: "p2",
+              voucher_number: "V-1",
+              status: "needs-review",
+              accounting_method: "invoice",
+              extracted_fields: [],
+              voucher_fields: {},
+              created_at: "2026-01-01T00:00:00.000Z",
+              created_by: "u",
+            },
+          ],
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: [], error: null });
+    };
+
+    // The link-discovery query ends at .eq("evidence_object_id", …).
+    // To avoid assigning a `then` property we wrap the whole builder in a real
+    // Promise by returning Promise.resolve({data, error}) from the terminal .eq().
+    // Any subsequent chained .eq() calls after the first are for org/workspace
+    // filters — those don't appear on the link-discovery path (it only has one .eq).
+    let eqCallCount = 0;
+
+    const chain: Record<string, unknown> = {};
+    chain.select = (_arg: string) => {
+      return chain;
+    };
+    chain.eq = (_col: string, _val: string) => {
+      eqCallCount++;
+      // The link-discovery query: evidence_packet_items with one .eq() call
+      if (table === "evidence_packet_items" && eqCallCount === 1) {
+        return Promise.resolve({
+          data: [{ evidence_packet_id: "p1" }, { evidence_packet_id: "p2" }],
+          error: null,
+        });
+      }
+      return chain;
+    };
+    chain.order = () => chain;
+    chain.limit = () => chain;
+    chain.in = () => {
+      // All three .in() calls in getEvidenceContext are followed by .order(),
+      // so we return a mini-chain whose .order() resolves with the table data.
+      const resultPromise = resolveIn();
+      return { order: () => resultPromise };
+    };
+    chain.maybeSingle = async () => {
+      if (table === "evidence_objects")
+        return {
+          data: {
+            id: "e1",
+            organization_id: "o",
+            workspace_id: "w",
+            created_at: "2026-01-01T00:00:00.000Z",
+            created_by: "u",
+            title: "t",
+            modalities: ["pdf"],
+            original_filename: "f.pdf",
+            mime_type: "application/pdf",
+            blob_path: "b",
+            hash: "h",
+            trust_level: "user-upload",
+          },
+          error: null,
+        };
+      return { data: null, error: null };
+    };
+    return chain;
+  }
+
+  const client = {
+    schema: () => ({
+      from: (table: string) => makeChain(table),
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, { organizationId: "o", workspaceId: "w", userId: "u" });
+  const ctx = await store.getEvidenceContext("e1");
+  assert.equal(ctx?.voucher?.id, "v1");
+  assert.equal(voucherReads, 1); // ONE .in(...) query, not one per packet
+  assert.equal(ctx?.packet?.id, "p2"); // coherent: packet matches the returned voucher
+});

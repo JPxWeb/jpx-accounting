@@ -368,72 +368,60 @@ export class SupabaseLedgerStore implements LedgerStore {
 
     if (evidenceError) throw new Error(`Failed to load evidence: ${evidenceError.message}`);
     if (!evidenceRow) return undefined;
-
     const evidence = mapEvidenceRow(evidenceRow);
 
-    const { data: linkRow } = await this.ledger()
+    const { data: links } = await this.ledger()
       .from("evidence_packet_items")
       .select("evidence_packet_id")
-      .eq("evidence_object_id", evidenceId)
-      .maybeSingle();
+      .eq("evidence_object_id", evidenceId);
 
-    if (!linkRow?.evidence_packet_id) {
-      return { evidence };
-    }
+    const packetIds = [...new Set((links ?? []).map((r) => r.evidence_packet_id as string))];
+    if (packetIds.length === 0) return { evidence };
 
-    const packetId = linkRow.evidence_packet_id as string;
-    const { data: packetRow } = await this.ledger()
-      .from("evidence_packets")
-      .select("*")
-      .eq("id", packetId)
-      .eq("organization_id", this.ctx.organizationId)
-      .eq("workspace_id", this.ctx.workspaceId)
-      .maybeSingle();
+    const [packetsRes, itemsRes, vouchersRes] = await Promise.all([
+      this.ledger()
+        .from("evidence_packets")
+        .select("*")
+        .eq("organization_id", this.ctx.organizationId)
+        .eq("workspace_id", this.ctx.workspaceId)
+        .in("id", packetIds)
+        .order("created_at", { ascending: true }),
+      this.ledger()
+        .from("evidence_packet_items")
+        .select("evidence_packet_id, evidence_object_id")
+        .in("evidence_packet_id", packetIds)
+        .order("evidence_packet_id", { ascending: true }),
+      this.ledger()
+        .from("vouchers")
+        .select("*")
+        .eq("organization_id", this.ctx.organizationId)
+        .eq("workspace_id", this.ctx.workspaceId)
+        .in("evidence_packet_id", packetIds)
+        .order("created_at", { ascending: true }),
+    ]);
+    if (packetsRes.error) throw new Error(`Failed to load packets: ${packetsRes.error.message}`);
+    if (itemsRes.error) throw new Error(`Failed to load packet items: ${itemsRes.error.message}`);
+    if (vouchersRes.error) throw new Error(`Failed to load vouchers: ${vouchersRes.error.message}`);
 
-    const { data: itemRows } = await this.ledger()
-      .from("evidence_packet_items")
-      .select("evidence_object_id")
-      .eq("evidence_packet_id", packetId);
-
+    // Pick the voucher first (if any), then the packet that owns it. In the
+    // dominant single-packet case both are unique; the find/fallback only matters
+    // for composed evidence linked to multiple packets and keeps the returned
+    // pair coherent (packet.id === voucher.evidence_packet_id whenever a voucher
+    // is returned).
+    const voucherRow = (vouchersRes.data ?? [])[0];
+    const packetRow = voucherRow
+      ? (packetsRes.data ?? []).find((p) => p.id === voucherRow.evidence_packet_id)
+      : (packetsRes.data ?? [])[0];
     const packet: EvidencePacket | undefined = packetRow
       ? {
-          id: packetId,
-          evidenceIds: (itemRows ?? []).map((r) => r.evidence_object_id as string),
+          id: packetRow.id as string,
+          evidenceIds: (itemsRes.data ?? [])
+            .filter((r) => r.evidence_packet_id === packetRow.id)
+            .map((r) => r.evidence_object_id as string),
           note: (packetRow.note as string | null) ?? undefined,
           voiceTranscript: (packetRow.voice_transcript as string | null) ?? undefined,
         }
       : undefined;
-
-    let voucherRow: Record<string, unknown> | null = null;
-    const { data: packetVoucher } = await this.ledger()
-      .from("vouchers")
-      .select("*")
-      .eq("evidence_packet_id", packetId)
-      .eq("organization_id", this.ctx.organizationId)
-      .eq("workspace_id", this.ctx.workspaceId)
-      .maybeSingle();
-    voucherRow = packetVoucher;
-
-    if (!voucherRow) {
-      const { data: packets } = await this.ledger()
-        .from("evidence_packet_items")
-        .select("evidence_packet_id")
-        .eq("evidence_object_id", evidenceId);
-
-      for (const row of packets ?? []) {
-        const { data: candidate } = await this.ledger()
-          .from("vouchers")
-          .select("*")
-          .eq("evidence_packet_id", row.evidence_packet_id as string)
-          .eq("organization_id", this.ctx.organizationId)
-          .eq("workspace_id", this.ctx.workspaceId)
-          .maybeSingle();
-        if (candidate) {
-          voucherRow = candidate;
-          break;
-        }
-      }
-    }
 
     return {
       evidence,
