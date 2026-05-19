@@ -37,6 +37,8 @@ export interface LedgerStore {
   findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined>;
   getReviewFeed(): Promise<ReviewTask[]>;
   getReports(): Promise<ReportBundle>;
+  getBalances(): Promise<ReportBundle["balances"]>;
+  getVat(): Promise<ReportBundle["vat"]>;
   getSnapshot(): Promise<WorkspaceSnapshot>;
   getEvents(): Promise<LedgerEvent[]>;
   suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined>;
@@ -355,6 +357,14 @@ export class MemoryLedgerStore implements LedgerStore {
       balances: buildBalances(this.ledgerLines),
       vat: buildVat(this.ledgerLines),
     };
+  }
+
+  async getBalances() {
+    return buildBalances(this.ledgerLines);
+  }
+
+  async getVat() {
+    return buildVat(this.ledgerLines);
   }
 
   async getSnapshot(): Promise<WorkspaceSnapshot> {

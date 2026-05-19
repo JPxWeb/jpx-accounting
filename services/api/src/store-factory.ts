@@ -36,6 +36,14 @@ class UnavailableLedgerStore implements LedgerStore {
     return this.fail();
   }
 
+  async getBalances() {
+    return this.fail();
+  }
+
+  async getVat() {
+    return this.fail();
+  }
+
   async getSnapshot() {
     return this.fail();
   }

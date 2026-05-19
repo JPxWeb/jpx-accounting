@@ -25,7 +25,7 @@ import { buildExtractedFields, guessAccountingMethod } from "./extraction";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso } from "./ids";
 import { buildPostingLines } from "./posting";
-import { buildBalances, buildJournal, buildVat } from "./projections";
+import { buildJournal } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import type { LedgerStore, ReviewAction } from "./store";
 import {
@@ -491,22 +491,53 @@ export class SupabaseLedgerStore implements LedgerStore {
     );
   }
 
-  async getReports(): Promise<ReportBundle> {
+  async getBalances(): Promise<ReportBundle["balances"]> {
     const { data, error } = await this.projections()
-      .from("journal_entries")
-      .select("*")
+      .from("account_balances")
+      .select("account_number, account_name, debit, credit, balance")
       .eq("organization_id", this.ctx.organizationId)
       .eq("workspace_id", this.ctx.workspaceId)
-      .order("booked_at", { ascending: true });
+      .order("account_number", { ascending: true });
+    if (error) throw new Error(`Failed to load balances: ${error.message}`);
+    return (data ?? []).map((r) => ({
+      accountNumber: r.account_number as string,
+      accountName: r.account_name as string,
+      debit: Number(r.debit),
+      credit: Number(r.credit),
+      balance: Number(r.balance),
+    }));
+  }
 
-    if (error) throw new Error(`Failed to load journal entries: ${error.message}`);
+  async getVat(): Promise<ReportBundle["vat"]> {
+    const { data, error } = await this.projections()
+      .from("vat_summary")
+      .select("vat_code, base_amount, vat_amount, deductible")
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .order("vat_code", { ascending: true });
+    if (error) throw new Error(`Failed to load VAT summary: ${error.message}`);
+    return (data ?? []).map((r) => ({
+      vatCode: r.vat_code as string,
+      baseAmount: Number(r.base_amount),
+      vatAmount: Number(r.vat_amount),
+      deductible: Boolean(r.deductible),
+    }));
+  }
 
-    const lines = (data ?? []).map((row) => mapJournalRowToLedgerLine(row));
-    return {
-      journal: buildJournal(lines),
-      balances: buildBalances(lines),
-      vat: buildVat(lines),
-    };
+  async getReports(): Promise<ReportBundle> {
+    const [journalRes, balances, vat] = await Promise.all([
+      this.projections()
+        .from("journal_entries")
+        .select("voucher_id, account_number, account_name, description, debit, credit, vat_code, deductible, booked_at")
+        .eq("organization_id", this.ctx.organizationId)
+        .eq("workspace_id", this.ctx.workspaceId)
+        .order("booked_at", { ascending: true }),
+      this.getBalances(),
+      this.getVat(),
+    ]);
+    if (journalRes.error) throw new Error(`Failed to load journal entries: ${journalRes.error.message}`);
+    const lines = (journalRes.data ?? []).map((row) => mapJournalRowToLedgerLine(row));
+    return { journal: buildJournal(lines), balances, vat };
   }
 
   async getSnapshot(): Promise<WorkspaceSnapshot> {

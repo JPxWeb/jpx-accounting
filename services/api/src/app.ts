@@ -123,13 +123,9 @@ export function createApp({
   app.get("/api/workspace", async (context) => context.json(await context.get("store").getSnapshot()));
   app.get("/api/reviews/feed", async (context) => context.json(await context.get("store").getReviewFeed()));
   app.get("/api/reports/journal", async (context) => context.json((await context.get("store").getReports()).journal));
-  app.get("/api/reports/general-ledger", async (context) =>
-    context.json((await context.get("store").getReports()).balances),
-  );
-  app.get("/api/reports/trial-balance", async (context) =>
-    context.json((await context.get("store").getReports()).balances),
-  );
-  app.get("/api/reports/vat-prep", async (context) => context.json((await context.get("store").getReports()).vat));
+  app.get("/api/reports/general-ledger", async (context) => context.json(await context.get("store").getBalances()));
+  app.get("/api/reports/trial-balance", async (context) => context.json(await context.get("store").getBalances()));
+  app.get("/api/reports/vat-prep", async (context) => context.json(await context.get("store").getVat()));
 
   app.post("/api/evidence", async (context) => {
     const input = await parseBody(context.req.raw, evidenceCreateInputSchema);

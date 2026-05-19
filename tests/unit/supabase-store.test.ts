@@ -259,6 +259,75 @@ test("getReviewFeed fetches suggestions in one batched query", async () => {
   assert.equal(suggestionReads, 1);
 });
 
+test("getBalances reads the maintained aggregate table, not journal_entries", async () => {
+  let journalReads = 0;
+  const client = {
+    schema: () => ({
+      from: (table: string) => {
+        const chain: Record<string, unknown> = {};
+        for (const m of ["select", "eq"]) chain[m] = () => chain;
+        chain.order = async () => {
+          if (table === "journal_entries") {
+            journalReads++;
+            return { data: [], error: null };
+          }
+          if (table === "account_balances")
+            return {
+              data: [
+                {
+                  account_number: "6540",
+                  account_name: "IT-tjänster",
+                  debit: 1000,
+                  credit: 0,
+                  balance: 1000,
+                },
+              ],
+              error: null,
+            };
+          return { data: [], error: null };
+        };
+        return chain;
+      },
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, { organizationId: "o", workspaceId: "w", userId: "u" });
+  const balances = await store.getBalances();
+  assert.equal(balances[0]?.accountNumber, "6540");
+  assert.equal(journalReads, 0);
+});
+
+test("getVat reads the maintained aggregate table, not journal_entries", async () => {
+  let journalReads = 0;
+  const client = {
+    schema: () => ({
+      from: (table: string) => {
+        const chain: Record<string, unknown> = {};
+        for (const m of ["select", "eq"]) chain[m] = () => chain;
+        chain.order = async () => {
+          if (table === "journal_entries") {
+            journalReads++;
+            return { data: [], error: null };
+          }
+          if (table === "vat_summary")
+            return {
+              data: [{ vat_code: "VAT25", base_amount: 1000, vat_amount: 250, deductible: true }],
+              error: null,
+            };
+          return { data: [], error: null };
+        };
+        return chain;
+      },
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, { organizationId: "o", workspaceId: "w", userId: "u" });
+  const vat = await store.getVat();
+  assert.equal(vat[0]?.vatCode, "VAT25");
+  assert.equal(vat[0]?.baseAmount, 1000);
+  assert.equal(vat[0]?.vatAmount, 250);
+  assert.equal(vat[0]?.deductible, true);
+  assert.equal(journalReads, 0);
+});
+
 test("getEvidenceContext resolves voucher across multiple packet links without per-packet queries", async () => {
   let voucherReads = 0;
 
