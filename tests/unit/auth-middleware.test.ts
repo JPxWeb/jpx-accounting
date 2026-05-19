@@ -66,5 +66,5 @@ test("authMiddleware passes with skipVerification flag", async () => {
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.userId, "user_test");
-  assert.equal(body.organizationId, "org_jpx");
+  assert.equal(body.organizationId, "org_test");
 });

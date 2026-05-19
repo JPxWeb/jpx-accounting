@@ -48,8 +48,8 @@ export function authMiddleware(options: AuthMiddlewareOptions): MiddlewareHandle
     if (options.skipVerification) {
       context.set("userId", "user_test");
       context.set("userEmail", "test@jpx.se");
-      context.set("organizationId", "org_jpx");
-      context.set("workspaceId", "workspace_main");
+      context.set("organizationId", "org_test");
+      context.set("workspaceId", "workspace_test");
       return next();
     }
 
