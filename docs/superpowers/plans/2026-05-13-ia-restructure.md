@@ -1,5 +1,7 @@
 # Information Architecture Restructure Implementation Plan
 
+> **Progress (2026-05-19):** Phases 1–4 largely done; 5–8 not started. See [DEV_STATUS.md](../../DEV_STATUS.md) for the phase table before picking up work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Plan is phased: complete Phase 1 fully before starting Phase 2, etc.
 
 **Goal:** Replace the 4-tab IA (`Inbox / Reports / Advisor / Control`) with a 5-tab job-oriented IA (`Today / Capture / Books / Reports / Settings`), surface API capabilities currently without UI, and ship a real Settings page.

@@ -2,18 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createApp } from "../../services/api/src/app";
+import { readApiRuntimeConfig } from "../../services/api/src/config";
 import { createApiRuntimeDependencies } from "../../services/api/src/runtime";
 
 test("demo runtime exposes the seeded workspace", async () => {
-  const dependencies = createApiRuntimeDependencies({
-    port: 0,
-    runtimeMode: "demo",
-    allowTestReset: false,
-    azureOpenAi: {},
-    supabase: {},
-  });
+  const config = readApiRuntimeConfig({ ACCOUNTING_RUNTIME_MODE: "demo", PORT: "0" });
+  const dependencies = createApiRuntimeDependencies(config);
   const app = createApp({
-    ...dependencies,
+    runtimeMode: dependencies.runtimeMode,
+    aiRuntime: dependencies.aiRuntime,
+    createLedgerStore: dependencies.createLedgerStore,
+    demoStoreRef: dependencies.demoStoreRef,
+    apiConfig: config,
     allowTestReset: false,
   });
 
@@ -25,15 +25,14 @@ test("demo runtime exposes the seeded workspace", async () => {
 });
 
 test("normal runtime fails closed instead of returning demo data", async () => {
-  const dependencies = createApiRuntimeDependencies({
-    port: 0,
-    runtimeMode: "normal",
-    allowTestReset: false,
-    azureOpenAi: {},
-    supabase: {},
-  });
+  const config = readApiRuntimeConfig({ ACCOUNTING_RUNTIME_MODE: "normal", PORT: "0" });
+  const dependencies = createApiRuntimeDependencies(config);
   const app = createApp({
-    ...dependencies,
+    runtimeMode: dependencies.runtimeMode,
+    aiRuntime: dependencies.aiRuntime,
+    createLedgerStore: dependencies.createLedgerStore,
+    demoStoreRef: dependencies.demoStoreRef,
+    apiConfig: config,
     allowTestReset: false,
     skipAuthVerification: true,
   });

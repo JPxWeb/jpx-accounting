@@ -11,6 +11,7 @@ pw-debug*.log
 .env
 .env.local
 .env.*.local
+supabase/signing_keys.json
 
 # Screenshots / design artifacts
 *.png

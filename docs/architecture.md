@@ -21,7 +21,13 @@
 
 ## Migration path
 
-- The current scaffold exposes `MemoryLedgerStore` as the demo implementation of `LedgerStore`.
-- Production persistence should implement the same interface using Postgres append-only writes.
-- Later immutable storage migration should occur behind the `LedgerStore` abstraction, not by rewriting product logic.
+- **Demo:** `MemoryLedgerStore` — full in-memory event sourcing with seeded sample data.
+- **Normal (configured):** `SupabaseLedgerStore` — append-only writes to `ledger.*` tables; read paths and review decisions are still being implemented (see `packages/domain/src/supabase-store.ts` TODOs).
+- **Normal (unconfigured):** `UnavailableLedgerStore` — fails closed; no synthetic data.
+- Org/workspace context is currently fixed in API runtime wiring; JWT-derived tenancy is planned in the auth-and-database track.
+- Later immutable blob storage migration should occur behind the `LedgerStore` abstraction, not by rewriting product logic.
 - Share-target capture remains scaffold-only until upload wiring lands and is called out explicitly in the UI.
+
+## Web information architecture
+
+Five-tab shell: **Today** (review queue), **Capture**, **Books**, **Reports**, **Settings**. Legacy routes redirect via `apps/web/proxy.ts` (`/` → `/today`). Implementation progress is tracked in [DEV_STATUS.md](./DEV_STATUS.md).

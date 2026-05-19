@@ -1,16 +1,6 @@
 import type { AccountBalanceProjection, JournalEntryProjection, VatProjection } from "@jpx-accounting/contracts";
 
-type LedgerLine = {
-  voucherId: string;
-  accountNumber: string;
-  accountName: string;
-  description: string;
-  debit: number;
-  credit: number;
-  vatCode: string;
-  bookedAt: string;
-  deductible: boolean;
-};
+import type { LedgerLine } from "./ledger-line";
 
 export function buildJournal(lines: LedgerLine[]): JournalEntryProjection[] {
   return lines.map((line, index) => ({

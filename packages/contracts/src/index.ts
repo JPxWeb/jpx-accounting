@@ -40,6 +40,7 @@ export const eventTypeSchema = z.enum([
   "SimulationExecuted",
   "CloseRunGenerated",
   "ExportGenerated",
+  "OrganizationSettingsUpdated",
 ]);
 export const ruleSeveritySchema = z.enum(["info", "warning", "blocking"]);
 export const assistantAnswerStatusSchema = z.enum(["grounded", "insufficient-basis"]);

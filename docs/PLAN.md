@@ -1,5 +1,7 @@
 # Pilot-Ready Stabilization Sweep
 
+> **Status (2026-05-19):** Completed. See [DEV_STATUS.md](./DEV_STATUS.md) for current state and the recommended next dev phase. This document remains the original spec for the stabilization work.
+
 ## Summary
 - Target this phase at `pilot-ready` quality, not just internal dev cleanup.
 - Keep the current feature scope and stack, but harden the scaffold so the next phase starts from a clean, trustworthy base.

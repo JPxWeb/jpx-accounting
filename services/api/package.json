@@ -14,6 +14,8 @@
     "@jpx-accounting/contracts": "workspace:*",
     "@jpx-accounting/domain": "workspace:*",
     "@jpx-accounting/supabase-client": "workspace:*",
+    "@azure/identity": "^4.13.0",
+    "@azure/storage-blob": "^12.28.0",
     "@supabase/supabase-js": "^2.100.1",
     "hono": "4.12.8",
     "zod": "4.3.6"

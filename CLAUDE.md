@@ -67,7 +67,8 @@ Each step appends a `LedgerEvent` to the hash chain. Events are never mutated.
 
 `services/api/src/runtime.ts` is the composition root. It produces `{ store, aiRuntime }`:
 - **demo**: `MemoryLedgerStore` (seeded with sample data) + `LocalAiRuntime` (deterministic rules, no network)
-- **normal**: `UnavailableLedgerStore` (throws on every call — placeholder until Supabase store is built) + `ResponsesAiRuntime` (Azure OpenAI via `openai` SDK)
+- **normal** (Supabase configured): per-request `SupabaseLedgerStore` + `ResponsesAiRuntime` — full ledger loop (evidence → review → approve → reports) backed by Postgres; auth via `getClaims()` + `app_metadata` tenant
+- **normal** (no Supabase): `UnavailableLedgerStore` (fails closed) + `ResponsesAiRuntime` when Azure config is present
 
 The web `api-client` has a parallel fallback: in demo mode without a `baseUrl`, it instantiates `MemoryLedgerStore` directly in the browser — no API server needed.
 
@@ -81,7 +82,9 @@ The web `api-client` has a parallel fallback: in demo mode without a `baseUrl`, 
 
 ### Web app routing
 
-The web app uses Next.js App Router with a `(shell)` route group for the main tab-based layout. Pages: home (review feed), assistant, reports, settings. API calls proxy through `app/api-proxy/[...path]/route.ts` to the Hono API. A `/share` page outside the shell handles Web Share Target intake.
+The web app uses Next.js App Router with a `(shell)` route group for the 5-tab layout: **Today** (review feed), **Capture**, **Books**, **Reports**, **Settings** (sub-routes for company, fiscal year, team, etc.). `/` redirects to `/today` via `apps/web/proxy.ts`. `/assistant` remains session history until the Cmd-K advisor palette (IA Phase 6) ships. API calls proxy through `app/api-proxy/[...path]/route.ts` to the Hono API. A `/share` page outside the shell handles Web Share Target intake.
+
+**Development status:** see `docs/DEV_STATUS.md` for phase completion, code TODOs, and next-phase recommendations.
 
 ### Database (Supabase)
 
@@ -89,7 +92,7 @@ The web app uses Next.js App Router with a `(shell)` route group for the main ta
 - **`ledger`** — source-of-truth tables: `events` (append-only, trigger prevents UPDATE/DELETE), `evidence_objects`, `evidence_packets`, `vouchers`, `review_tasks`, `suggestions`, `assistant_sessions`, `compliance_alerts`
 - **`projections`** — read models: `journal_entries`, `account_balances`, `vat_summary`
 
-RLS is enabled on all tables, isolating by `current_setting('app.organization_id')`. No `LedgerStore` implementation reads from these tables yet.
+RLS is enabled on all tables, isolating by `current_setting('app.organization_id')`. `SupabaseLedgerStore` uses `supabase.schema('ledger'|'projections').from(table)` with mandatory org/workspace filters on every query. Local dev: expose schemas in `supabase/config.toml`, run migrations, `supabase gen signing-key` → `signing_keys.json`, `node scripts/create-dev-user.mjs`.
 
 ### E2E test setup
 

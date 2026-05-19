@@ -1,5 +1,7 @@
 # Updated Future-Proof Stack Plan (March 18, 2026)
 
+> **Note:** Strategic reference for AI and framework choices — not an active implementation checklist. For current priorities, see [DEV_STATUS.md](./DEV_STATUS.md).
+
 ## Summary
 - Core inference stack: `Azure OpenAI v1` + `Responses API` + official `openai` JavaScript/TypeScript SDK pointed at Azure’s `/openai/v1/` endpoint.
 - Managed agent stack: `Microsoft Foundry Agent Service`, but only for advisory/research/automation sidecars. Do not put bookkeeping correctness or ledger posting behind managed-agent state.

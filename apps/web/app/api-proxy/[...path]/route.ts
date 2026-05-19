@@ -1,4 +1,5 @@
 import { getWebServerRuntimeConfig } from "../../../lib/server-runtime-config";
+import { createSupabaseServerClient } from "../../../lib/supabase/server";
 
 const responseHeaders = new Set(["content-type", "content-disposition", "cache-control"]);
 
@@ -9,9 +10,9 @@ function getApiBaseUrl() {
 }
 
 async function proxyRequest(request: Request, path: string[]) {
+  const { runtimeMode } = getWebServerRuntimeConfig();
   const baseUrl = getApiBaseUrl();
   if (!baseUrl) {
-    const { runtimeMode } = getWebServerRuntimeConfig();
     return Response.json(
       {
         error: "Accounting API base URL is not configured for the proxy route.",
@@ -24,12 +25,29 @@ async function proxyRequest(request: Request, path: string[]) {
   const incomingUrl = new URL(request.url);
   const targetUrl = new URL(`${baseUrl.replace(/\/$/, "")}/${path.join("/")}${incomingUrl.search}`);
   const headers = new Headers();
+
+  if (runtimeMode === "normal") {
+    try {
+      const supabase = await createSupabaseServerClient();
+      const { data } = await supabase.auth.getSession();
+      const accessToken = data.session?.access_token;
+      if (!accessToken) {
+        return Response.json({ error: "Authentication required" }, { status: 401 });
+      }
+      headers.set("authorization", `Bearer ${accessToken}`);
+    } catch {
+      return Response.json({ error: "Supabase auth is not configured" }, { status: 503 });
+    }
+  }
+
   for (const header of requestHeaders) {
+    if (header === "authorization" && headers.has("authorization")) continue;
     const value = request.headers.get(header);
     if (value) {
       headers.set(header, value);
     }
   }
+
   const init: RequestInit = {
     method: request.method,
     headers,
@@ -55,7 +73,6 @@ async function proxyRequest(request: Request, path: string[]) {
   });
 }
 
-// The browser talks to a same-origin route so API targeting stays runtime-configurable in Azure and during e2e runs.
 export async function GET(request: Request, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params;
   return proxyRequest(request, path);

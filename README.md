@@ -22,11 +22,16 @@ Mobile-first, AI-native Swedish accounting platform scaffold.
 - `pnpm test:unit`
 - `pnpm build`
 
+## Documentation
+
+See **[docs/DEV_STATUS.md](docs/DEV_STATUS.md)** for what is done, open TODOs, IA phase progress, and the recommended next dev phase. The [docs index](docs/README.md) lists all plans and specs.
+
 ## Notes
 
 - Runtime mode is explicit:
   - `demo` keeps the in-memory store and local AI fallback available on purpose.
-  - `normal` uses the real API path and fails closed when non-demo runtime dependencies are missing.
-- The API currently ships a demo in-memory store plus a Supabase migration scaffold; normal mode stays unavailable until a non-demo `LedgerStore` is configured.
+  - `normal` uses the real API path and fails closed when Supabase (or other store config) is missing.
+- **Demo:** `MemoryLedgerStore` end-to-end. **Normal:** `SupabaseLedgerStore` when `SUPABASE_URL` + service role key are set (writes for evidence; reads/reviews still in progress).
 - All ledger mutations are append-only in the domain layer.
 - The web shell uses clear unavailable states instead of silent synthetic fallbacks in normal mode.
+- Primary navigation: Today, Capture, Books, Reports, Settings (`/` redirects to `/today`).

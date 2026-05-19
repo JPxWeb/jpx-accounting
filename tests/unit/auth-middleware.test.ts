@@ -1,7 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Hono } from "hono";
+
 import { authMiddleware } from "../../services/api/src/middleware/auth";
+import { parseTenantFromClaims } from "../../services/api/src/middleware/tenant";
+
+test("parseTenantFromClaims prefers app_metadata over user_metadata", () => {
+  const tenant = parseTenantFromClaims({
+    sub: "user_1",
+    email: "test@jpx.se",
+    user_metadata: { organization_id: "evil_org", workspace_id: "evil_ws" },
+    app_metadata: { organization_id: "org_jpx", workspace_id: "workspace_main" },
+  });
+
+  assert.equal(tenant.organizationId, "org_jpx");
+  assert.equal(tenant.workspaceId, "workspace_main");
+});
 
 test("authMiddleware skips verification in demo mode", async () => {
   const app = new Hono();
@@ -21,7 +35,7 @@ test("authMiddleware returns 401 when no Authorization header in normal mode", a
     authMiddleware({
       runtimeMode: "normal",
       supabaseUrl: "https://example.supabase.co",
-      supabaseServiceRoleKey: "fake-key",
+      supabaseSecretKey: "fake-key",
     }),
   );
   app.get("/test", (c) => c.json({ ok: true }));
@@ -39,7 +53,12 @@ test("authMiddleware passes with skipVerification flag", async () => {
       skipVerification: true,
     }),
   );
-  app.get("/test", (c) => c.json({ userId: c.get("userId") }));
+  app.get("/test", (c) =>
+    c.json({
+      userId: c.get("userId"),
+      organizationId: c.get("organizationId"),
+    }),
+  );
 
   const res = await app.request("/test", {
     headers: { Authorization: "Bearer test-token" },
@@ -47,4 +66,5 @@ test("authMiddleware passes with skipVerification flag", async () => {
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.userId, "user_test");
+  assert.equal(body.organizationId, "org_jpx");
 });

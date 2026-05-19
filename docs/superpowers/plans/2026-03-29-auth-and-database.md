@@ -1,5 +1,9 @@
 # Auth & Database Operations Implementation Plan
 
+> **Superseded (2026-05-19):** Use the active checklist in [`2026-05-19-supabase-backend-track.md`](./2026-05-19-supabase-backend-track.md). This file is kept as historical reference for auth/SSR task snippets.
+
+> **Progress:** Partial — `SupabaseLedgerStore` writes, `authMiddleware`, `packages/supabase-client`. See [DEV_STATUS.md](../../DEV_STATUS.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the in-memory demo scaffold with Supabase Auth (JWT-based) and a `SupabaseLedgerStore` that reads/writes the existing Postgres schema, so normal mode becomes functional end-to-end.

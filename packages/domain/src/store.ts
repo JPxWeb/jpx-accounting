@@ -1,5 +1,4 @@
 import type {
-  AccountingMethod,
   AccountingSuggestion,
   AssistantSession,
   CloseRun,
@@ -10,7 +9,6 @@ import type {
   EvidenceCreateResult,
   EvidenceObject,
   EvidencePacket,
-  ExtractedField,
   LedgerEvent,
   ReportBundle,
   ReviewDecisionInput,
@@ -20,81 +18,42 @@ import type {
   Voucher,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
+import { buildExtractedFields, guessAccountingMethod } from "./extraction";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso } from "./ids";
+import type { LedgerLine } from "./ledger-line";
+import { buildPostingLines } from "./posting";
 import { buildBalances, buildJournal, buildVat } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 
-type LedgerLine = Parameters<typeof buildJournal>[0][number];
 export type ReviewAction = "approve" | "reject" | "book-without-vat";
 
 export interface LedgerStore {
-  createEvidence(input: EvidenceCreateInput): EvidenceCreateResult | Promise<EvidenceCreateResult>;
-  composeEvidence(input: EvidenceComposeInput): EvidencePacket | Promise<EvidencePacket>;
+  createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult>;
+  composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket>;
   getEvidenceContext(
     evidenceId: string,
-  ):
-    | { evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher }
-    | undefined
-    | Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined>;
-  findReviewByVoucher(voucherId: string): ReviewTask | undefined | Promise<ReviewTask | undefined>;
-  getReviewFeed(): ReviewTask[] | Promise<ReviewTask[]>;
-  getReports(): ReportBundle | Promise<ReportBundle>;
-  getSnapshot(): WorkspaceSnapshot | Promise<WorkspaceSnapshot>;
-  getEvents(): LedgerEvent[] | Promise<LedgerEvent[]>;
-  suggestVoucher(voucherId: string): AccountingSuggestion | undefined | Promise<AccountingSuggestion | undefined>;
+  ): Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined>;
+  findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined>;
+  getReviewFeed(): Promise<ReviewTask[]>;
+  getReports(): Promise<ReportBundle>;
+  getSnapshot(): Promise<WorkspaceSnapshot>;
+  getEvents(): Promise<LedgerEvent[]>;
+  suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined>;
   applyReviewDecision(
     reviewId: string,
     action: ReviewAction,
     input: ReviewDecisionInput,
-  ): ReviewTask | undefined | Promise<ReviewTask | undefined>;
-  answerAssistantQuestion(question: string): AssistantSession | Promise<AssistantSession>;
-  runSimulation(input: SimulationRequest): SimulationRun | Promise<SimulationRun>;
-  getCloseRun(): CloseRun | Promise<CloseRun>;
+  ): Promise<ReviewTask | undefined>;
+  answerAssistantQuestion(question: string): Promise<AssistantSession>;
+  runSimulation(input: SimulationRequest): Promise<SimulationRun>;
+  getCloseRun(): Promise<CloseRun>;
   getCompanySettings(): Promise<CompanySettings | null>;
   saveCompanySettings(input: CompanySettings): Promise<CompanySettings>;
 }
 
 const defaultOrganizationId = "org_jpx";
 const defaultWorkspaceId = "workspace_main";
-
-function guessSupplier(input: EvidenceCreateInput) {
-  const value = `${input.title} ${input.originalFilename} ${input.extractedText ?? ""}`.toLowerCase();
-  if (value.includes("microsoft")) return "Microsoft Ireland";
-  if (value.includes("openai")) return "OpenAI Ireland";
-  if (value.includes("ica")) return "ICA Maxi";
-  if (value.includes("sl")) return "Storstockholms Lokaltrafik";
-  return "Unclassified supplier";
-}
-
-function buildExtractedFields(input: EvidenceCreateInput): ExtractedField[] {
-  return [
-    { key: "supplierName", label: "Supplier", value: guessSupplier(input), confidence: 0.71, required: true },
-    {
-      key: "receiptDate",
-      label: "Receipt date",
-      value: new Date().toISOString().slice(0, 10),
-      confidence: 0.98,
-      required: true,
-    },
-    {
-      key: "transactionDate",
-      label: "Transaction date",
-      value: new Date().toISOString().slice(0, 10),
-      confidence: 0.85,
-      required: false,
-    },
-    { key: "grossAmount", label: "Gross amount", value: "1249.00", confidence: 0.84, required: true },
-    {
-      key: "invoiceNumber",
-      label: "Invoice number",
-      value: input.originalFilename.replace(/\W+/g, "-"),
-      confidence: 0.61,
-      required: false,
-    },
-    { key: "supplierVatNumber", label: "VAT number", value: "SE556677889901", confidence: 0.51, required: false },
-  ];
-}
 
 function initialLedgerLines(): LedgerLine[] {
   return [
@@ -134,59 +93,6 @@ function initialLedgerLines(): LedgerLine[] {
   ];
 }
 
-function guessAccountingMethod(input: EvidenceCreateInput): AccountingMethod {
-  const text = `${input.title} ${input.originalFilename}`.toLowerCase();
-  return text.includes("invoice") ? "invoice" : "cash";
-}
-
-function buildPostingLines(
-  voucher: Voucher,
-  suggestion: AccountingSuggestion,
-  action: "approve" | "book-without-vat",
-  occurredAt: string,
-): LedgerLine[] {
-  const amount = voucher.voucherFields.grossAmount ?? 0;
-  const netAmount = voucher.voucherFields.netAmount ?? amount;
-  const vatAmount = action === "book-without-vat" ? 0 : (voucher.voucherFields.vatAmount ?? 0);
-  const description = voucher.voucherFields.description ?? "Reviewed voucher";
-
-  return [
-    {
-      voucherId: voucher.id,
-      accountNumber: suggestion.accountNumber,
-      accountName: suggestion.accountName,
-      description,
-      debit: netAmount,
-      credit: 0,
-      vatCode: suggestion.vatCode,
-      bookedAt: occurredAt,
-      deductible: action !== "book-without-vat",
-    },
-    {
-      voucherId: voucher.id,
-      accountNumber: "2641",
-      accountName: "Debiterad ingående moms",
-      description: `${description} VAT`,
-      debit: vatAmount,
-      credit: 0,
-      vatCode: suggestion.vatCode,
-      bookedAt: occurredAt,
-      deductible: action !== "book-without-vat",
-    },
-    {
-      voucherId: voucher.id,
-      accountNumber: "1930",
-      accountName: "Företagskonto",
-      description,
-      debit: 0,
-      credit: amount,
-      vatCode: "NA",
-      bookedAt: occurredAt,
-      deductible: false,
-    },
-  ];
-}
-
 export class MemoryLedgerStore implements LedgerStore {
   private readonly evidence = new Map<string, EvidenceObject>();
   private companySettings: CompanySettings = {
@@ -220,7 +126,14 @@ export class MemoryLedgerStore implements LedgerStore {
   ];
 
   constructor() {
-    const seededEvidence = this.createEvidence({
+    this.seedDemoData();
+  }
+
+  private seedDemoData() {
+    // createEvidence is async only to satisfy the LedgerStore interface; this in-memory
+    // implementation has no await, so the call runs synchronously and the stores below
+    // are fully populated by the time the constructor returns.
+    void this.createEvidence({
       organizationId: defaultOrganizationId,
       workspaceId: defaultWorkspaceId,
       actorId: "user_founder",
@@ -231,10 +144,9 @@ export class MemoryLedgerStore implements LedgerStore {
       extractedText: "OpenAI March 2026 subscription invoice",
     });
 
-    const review = this.findReviewByVoucher(seededEvidence.voucherId);
-    if (review) {
-      review.title = "Approve AI subscription posting";
-    }
+    const [review] = this.reviews.values();
+    if (!review) return;
+    review.title = "Approve AI subscription posting";
 
     this.assistantExamples.push({
       id: createId("assistant"),
@@ -242,7 +154,7 @@ export class MemoryLedgerStore implements LedgerStore {
       answer:
         "The invoice looks deductible, but the system still requires a human approval because deductible VAT should only be posted after invoice requirements are confirmed.",
       status: "grounded",
-      citations: review?.suggestion?.citations ?? [],
+      citations: review.suggestion?.citations ?? [],
     });
   }
 
@@ -263,7 +175,7 @@ export class MemoryLedgerStore implements LedgerStore {
     return fullEvent;
   }
 
-  createEvidence(input: EvidenceCreateInput): EvidenceCreateResult {
+  async createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult> {
     const createdAt = nowIso();
     const evidenceId = createId("evidence");
     const packetId = createId("packet");
@@ -396,7 +308,7 @@ export class MemoryLedgerStore implements LedgerStore {
     return { evidence, packet, voucher, review, voucherId };
   }
 
-  composeEvidence(input: EvidenceComposeInput) {
+  async composeEvidence(input: EvidenceComposeInput) {
     const packet: EvidencePacket = {
       id: createId("packet"),
       evidenceIds: input.evidenceIds,
@@ -410,13 +322,9 @@ export class MemoryLedgerStore implements LedgerStore {
     return packet;
   }
 
-  getEvidenceContext(evidenceId: string):
-    | {
-        evidence: EvidenceObject;
-        packet?: EvidencePacket;
-        voucher?: Voucher;
-      }
-    | undefined {
+  async getEvidenceContext(
+    evidenceId: string,
+  ): Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined> {
     const evidence = this.evidence.get(evidenceId);
     if (!evidence) return undefined;
 
@@ -432,16 +340,16 @@ export class MemoryLedgerStore implements LedgerStore {
     };
   }
 
-  findReviewByVoucher(voucherId: string) {
+  async findReviewByVoucher(voucherId: string) {
     const reviewId = this.voucherIdToReviewId.get(voucherId);
     return reviewId ? this.reviews.get(reviewId) : undefined;
   }
 
-  getReviewFeed() {
+  async getReviewFeed() {
     return [...this.reviews.values()].sort((left, right) => right.id.localeCompare(left.id));
   }
 
-  getReports(): ReportBundle {
+  async getReports(): Promise<ReportBundle> {
     return {
       journal: buildJournal(this.ledgerLines),
       balances: buildBalances(this.ledgerLines),
@@ -449,23 +357,28 @@ export class MemoryLedgerStore implements LedgerStore {
     };
   }
 
-  getSnapshot(): WorkspaceSnapshot {
+  async getSnapshot(): Promise<WorkspaceSnapshot> {
+    const [reviews, reports, closeRun] = await Promise.all([
+      this.getReviewFeed(),
+      this.getReports(),
+      this.getCloseRun(),
+    ]);
     return {
       evidence: [...this.evidence.values()],
       vouchers: [...this.vouchers.values()],
-      reviews: this.getReviewFeed(),
-      reports: this.getReports(),
+      reviews,
+      reports,
       assistantExamples: this.assistantExamples,
-      closeRun: this.getCloseRun(),
+      closeRun,
       alerts: this.alerts,
     };
   }
 
-  getEvents() {
+  async getEvents() {
     return [...this.events];
   }
 
-  suggestVoucher(voucherId: string) {
+  async suggestVoucher(voucherId: string) {
     const voucher = this.vouchers.get(voucherId);
     if (!voucher) return undefined;
 
@@ -475,7 +388,7 @@ export class MemoryLedgerStore implements LedgerStore {
     return suggestion;
   }
 
-  applyReviewDecision(reviewId: string, action: ReviewAction, input: ReviewDecisionInput) {
+  async applyReviewDecision(reviewId: string, action: ReviewAction, input: ReviewDecisionInput) {
     const review = this.reviews.get(reviewId);
     if (!review) return undefined;
 
@@ -528,7 +441,7 @@ export class MemoryLedgerStore implements LedgerStore {
     return review;
   }
 
-  answerAssistantQuestion(question: string) {
+  async answerAssistantQuestion(question: string) {
     const answer: AssistantSession = {
       id: createId("assistant"),
       question,
@@ -548,7 +461,7 @@ export class MemoryLedgerStore implements LedgerStore {
     return answer;
   }
 
-  runSimulation(input: SimulationRequest): SimulationRun {
+  async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
     const result: SimulationRun = {
       id: createId("sim"),
       title: input.title,
@@ -572,7 +485,7 @@ export class MemoryLedgerStore implements LedgerStore {
     return result;
   }
 
-  getCloseRun(): CloseRun {
+  async getCloseRun(): Promise<CloseRun> {
     return {
       id: "close_current",
       period: "2026-03",

@@ -1,5 +1,7 @@
 # Tech Stack Audit — March 2026
 
+> **Update (2026-05-19):** Biome, Husky, and lint-staged are now in place. See [DEV_STATUS.md](./DEV_STATUS.md) for current tooling status and priorities. Sections below that list "no linter" or "no pre-commit hooks" are outdated.
+
 ## Executive Summary
 
 The JPX Accounting tech stack is **well-aligned with 2026-2027 best practices**. Every major framework choice (Next.js, Hono, Zod, React, Tailwind, Supabase) is current-generation and matches what YC W26 startups are shipping. The architecture (event-sourced append-only ledger, AI-suggests-human-reviews, typed contracts) is exactly what VCs and regulators expect from AI-native fintech.

@@ -5,14 +5,16 @@ import { readApiRuntimeConfig } from "./config";
 import { createApiRuntimeDependencies } from "./runtime";
 
 const config = readApiRuntimeConfig();
-const { store, aiRuntime, runtimeMode } = createApiRuntimeDependencies(config);
+const { createLedgerStore, aiRuntime, runtimeMode, demoStoreRef } = createApiRuntimeDependencies(config);
 const app = createApp({
-  store,
-  aiRuntime,
   runtimeMode,
+  aiRuntime,
+  createLedgerStore,
+  demoStoreRef,
+  apiConfig: config,
   allowTestReset: config.allowTestReset,
   supabaseUrl: config.supabase.url,
-  supabaseServiceRoleKey: config.supabase.serviceRoleKey,
+  supabaseSecretKey: config.supabase.secretKey,
 });
 
 serve(

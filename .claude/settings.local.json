@@ -115,7 +115,22 @@
       "Bash(taskkill //f //im node.exe)",
       "Bash(rm -rf apps/web/.next)",
       "Bash(taskkill //PID 32216 //F)",
-      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"fintech accounting dashboard nordic minimal professional\" --design-system -p \"JPX Accounting\")"
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"fintech accounting dashboard nordic minimal professional\" --design-system -p \"JPX Accounting\")",
+      "PowerShell($s = Get-Content $env:USERPROFILE\\\\.claude\\\\settings.json -Raw | ConvertFrom-Json; \"defaultMode: $\\($s.permissions.defaultMode\\)\"; \"deny count: $\\($s.permissions.deny.Count\\)\"; \"plugins preserved: $\\($null -ne $s.enabledPlugins\\)\"; \"marketplaces preserved: $\\($null -ne $s.extraKnownMarketplaces\\)\"; \"effortLevel preserved: $\\($s.effortLevel\\)\")",
+      "Bash(kill %1)",
+      "Bash(New-Item -ItemType Directory -Force \"C:\\\\git\\\\jpx-accounting\\\\apps\\\\web\\\\app\\\\\\(shell\\)\\\\@digest\")",
+      "Bash(Out-Null)",
+      "Bash(dir \"C:\\\\git\\\\jpx-accounting\\\\apps\\\\web\" /B)",
+      "Bash(pnpm dlx *)",
+      "Bash(ls -la components/ui/form.tsx)",
+      "Bash(dir \"C:\\\\git\\\\jpx-accounting\\\\node_modules\\\\@base-ui\" /b)",
+      "Bash(dir \"C:\\\\git\\\\jpx-accounting\\\\apps\\\\web\\\\node_modules\\\\@base-ui\\\\react\" /b)",
+      "Bash(Get-Content \"C:\\\\Users\\\\hejko\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--git-jpx-accounting\\\\fc4d8081-db6a-4a3e-8e44-e2bfa0819698\\\\tasks\\\\a92321cc26cc59a42.output\" -Tail 50)",
+      "Bash(git diff *)",
+      "Bash(cygpath -w /tmp/tracked.diff)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }

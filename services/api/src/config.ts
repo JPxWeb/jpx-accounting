@@ -11,7 +11,11 @@ export type ApiRuntimeConfig = {
   };
   supabase: {
     url?: string | undefined;
-    serviceRoleKey?: string | undefined;
+    secretKey?: string | undefined;
+  };
+  storage: {
+    account?: string | undefined;
+    container: string;
   };
 };
 
@@ -22,6 +26,8 @@ function normalizeOptionalValue(value?: string) {
 
 export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiRuntimeConfig {
   const runtimeMode = runtimeModeSchema.safeParse(env.ACCOUNTING_RUNTIME_MODE ?? "demo");
+  const secretKey =
+    normalizeOptionalValue(env.SUPABASE_SECRET_KEY) ?? normalizeOptionalValue(env.SUPABASE_SERVICE_ROLE_KEY);
 
   return {
     port: Number(env.PORT ?? 3001),
@@ -34,7 +40,11 @@ export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiR
     },
     supabase: {
       url: normalizeOptionalValue(env.SUPABASE_URL),
-      serviceRoleKey: normalizeOptionalValue(env.SUPABASE_SERVICE_ROLE_KEY),
+      secretKey,
+    },
+    storage: {
+      account: normalizeOptionalValue(env.AZURE_STORAGE_ACCOUNT),
+      container: normalizeOptionalValue(env.AZURE_STORAGE_CONTAINER) ?? "evidence",
     },
   };
 }

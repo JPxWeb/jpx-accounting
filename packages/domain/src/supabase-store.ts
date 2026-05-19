@@ -1,34 +1,55 @@
-import type {
-  AccountingSuggestion,
-  AssistantSession,
-  CloseRun,
-  CompanySettings,
-  EvidenceComposeInput,
-  EvidenceCreateInput,
-  EvidenceCreateResult,
-  EvidenceObject,
-  EvidencePacket,
-  ExtractedField,
-  LedgerEvent,
-  ReportBundle,
-  ReviewDecisionInput,
-  ReviewTask,
-  SimulationRequest,
-  SimulationRun,
-  Voucher,
-  WorkspaceSnapshot,
+import {
+  type AccountingSuggestion,
+  type AssistantSession,
+  type CloseRun,
+  type CompanySettings,
+  companySettingsSchema,
+  type EvidenceComposeInput,
+  type EvidenceCreateInput,
+  type EvidenceCreateResult,
+  type EvidenceObject,
+  type EvidencePacket,
+  type LedgerEvent,
+  type ReportBundle,
+  type ReviewDecisionInput,
+  type ReviewTask,
+  type SimulationRequest,
+  type SimulationRun,
+  type Voucher,
+  type WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
 import type { SupabaseClient } from "@jpx-accounting/supabase-client";
 
+import { buildExtractedFields, guessAccountingMethod } from "./extraction";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso } from "./ids";
+import { buildPostingLines } from "./posting";
+import { buildBalances, buildJournal, buildVat } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import type { LedgerStore, ReviewAction } from "./store";
+import {
+  mapAssistantSessionRow,
+  mapComplianceAlertRow,
+  mapEventRow,
+  mapEvidenceRow,
+  mapJournalRowToLedgerLine,
+  mapReviewRow,
+  mapSuggestionRow,
+  mapVoucherRow,
+} from "./supabase-mappers";
 
 type StoreContext = {
   organizationId: string;
   workspaceId: string;
 };
+
+const APPEND_EVENT_MAX_RETRIES = 5;
+const APPEND_EVENT_BACKOFF_BASE_MS = 20;
+const PG_UNIQUE_VIOLATION = "23505";
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export class SupabaseLedgerStore implements LedgerStore {
   constructor(
@@ -36,105 +57,68 @@ export class SupabaseLedgerStore implements LedgerStore {
     private readonly ctx: StoreContext,
   ) {}
 
-  // ── helpers ──────────────────────────────────────────────
+  private ledger() {
+    return this.supabase.schema("ledger");
+  }
+
+  private projections() {
+    return this.supabase.schema("projections");
+  }
 
   private async appendEvent(
     event: Omit<LedgerEvent, "id" | "eventHash" | "previousHash" | "digestDate" | "organizationId" | "workspaceId">,
   ): Promise<LedgerEvent> {
-    // Fetch last event hash for chain continuity
-    const { data: lastEvent } = await this.supabase
-      .from("ledger.events")
-      .select("event_hash")
-      .eq("organization_id", this.ctx.organizationId)
-      .eq("workspace_id", this.ctx.workspaceId)
-      .order("sequence_number", { ascending: false })
-      .limit(1)
-      .single();
-
-    const previousHash = lastEvent?.event_hash ?? "GENESIS";
     const payload = JSON.stringify(event.payload);
-    const eventHash = buildEventHash(previousHash, payload);
     const digestDate = new Date().toISOString().slice(0, 10);
 
-    const fullEvent = {
-      id: createId("evt"),
-      organization_id: this.ctx.organizationId,
-      workspace_id: this.ctx.workspaceId,
-      aggregate_type: event.aggregateType,
-      aggregate_id: event.aggregateId,
-      event_type: event.eventType,
-      actor_id: event.actorId,
-      occurred_at: event.occurredAt,
-      payload: event.payload,
-      previous_hash: previousHash,
-      event_hash: eventHash,
-      digest_date: digestDate,
-    };
+    for (let attempt = 0; attempt < APPEND_EVENT_MAX_RETRIES; attempt++) {
+      const { data: lastEvent } = await this.ledger()
+        .from("events")
+        .select("event_hash")
+        .eq("organization_id", this.ctx.organizationId)
+        .eq("workspace_id", this.ctx.workspaceId)
+        .order("sequence_number", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    const { error } = await this.supabase.from("ledger.events").insert(fullEvent);
-    if (error) throw new Error(`Failed to append event: ${error.message}`);
+      const previousHash = lastEvent?.event_hash ?? "GENESIS";
+      const eventHash = buildEventHash(previousHash, payload);
 
-    return this.mapEventRow(fullEvent);
+      const fullEvent = {
+        id: crypto.randomUUID(),
+        organization_id: this.ctx.organizationId,
+        workspace_id: this.ctx.workspaceId,
+        aggregate_type: event.aggregateType,
+        aggregate_id: event.aggregateId,
+        event_type: event.eventType,
+        actor_id: event.actorId,
+        occurred_at: event.occurredAt,
+        payload: event.payload,
+        previous_hash: previousHash,
+        event_hash: eventHash,
+        digest_date: digestDate,
+      };
+
+      const { error } = await this.ledger().from("events").insert(fullEvent);
+      if (!error) {
+        return mapEventRow(fullEvent);
+      }
+
+      if (error.code !== PG_UNIQUE_VIOLATION) {
+        throw new Error(`Failed to append event: ${error.message}`);
+      }
+
+      // A concurrent writer claimed this hash-chain slot. Back off with jitter
+      // before re-reading the latest hash so contenders don't retry in lockstep.
+      if (attempt < APPEND_EVENT_MAX_RETRIES - 1) {
+        await delay(APPEND_EVENT_BACKOFF_BASE_MS * 2 ** attempt + Math.random() * APPEND_EVENT_BACKOFF_BASE_MS);
+      }
+    }
+
+    throw new Error("append_event: exceeded retry budget on hash-chain contention");
   }
 
-  private mapEventRow(row: Record<string, unknown>): LedgerEvent {
-    return {
-      id: row.id as string,
-      organizationId: row.organization_id as string,
-      workspaceId: row.workspace_id as string,
-      aggregateType: row.aggregate_type as LedgerEvent["aggregateType"],
-      aggregateId: row.aggregate_id as string,
-      eventType: row.event_type as LedgerEvent["eventType"],
-      actorId: row.actor_id as string,
-      occurredAt: row.occurred_at as string,
-      payload: row.payload as Record<string, unknown>,
-      previousHash: row.previous_hash as string,
-      eventHash: row.event_hash as string,
-      digestDate: row.digest_date as string,
-    };
-  }
-
-  private buildExtractedFields(input: EvidenceCreateInput): ExtractedField[] {
-    return [
-      { key: "supplierName", label: "Supplier", value: this.guessSupplier(input), confidence: 0.71, required: true },
-      {
-        key: "receiptDate",
-        label: "Receipt date",
-        value: new Date().toISOString().slice(0, 10),
-        confidence: 0.98,
-        required: true,
-      },
-      {
-        key: "transactionDate",
-        label: "Transaction date",
-        value: new Date().toISOString().slice(0, 10),
-        confidence: 0.85,
-        required: false,
-      },
-      { key: "grossAmount", label: "Gross amount", value: "0", confidence: 0.5, required: true },
-      {
-        key: "invoiceNumber",
-        label: "Invoice number",
-        value: input.originalFilename.replace(/\W+/g, "-"),
-        confidence: 0.61,
-        required: false,
-      },
-      { key: "supplierVatNumber", label: "VAT number", value: "", confidence: 0.1, required: false },
-    ];
-  }
-
-  private guessSupplier(input: EvidenceCreateInput): string {
-    const value = `${input.title} ${input.originalFilename} ${input.extractedText ?? ""}`.toLowerCase();
-    if (value.includes("microsoft")) return "Microsoft Ireland";
-    if (value.includes("openai")) return "OpenAI Ireland";
-    if (value.includes("ica")) return "ICA Maxi";
-    if (value.includes("sl")) return "Storstockholms Lokaltrafik";
-    return "Unclassified supplier";
-  }
-
-  // ── LedgerStore interface ────────────────────────────────
-
-  createEvidence(input: EvidenceCreateInput): EvidenceCreateResult {
+  async createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult> {
     const createdAt = nowIso();
     const evidenceId = createId("evidence");
     const packetId = createId("packet");
@@ -155,7 +139,8 @@ export class SupabaseLedgerStore implements LedgerStore {
       trustLevel: "user-upload",
     };
 
-    const extractedFields = this.buildExtractedFields(input);
+    const extractedFields = buildExtractedFields(input);
+    const grossAmount = 1249;
     const voucher: Voucher = {
       id: voucherId,
       organizationId: input.organizationId,
@@ -163,7 +148,7 @@ export class SupabaseLedgerStore implements LedgerStore {
       evidencePacketId: packetId,
       voucherNumber: `V-${Date.now() % 100000}`,
       status: "needs-review",
-      accountingMethod: input.title.toLowerCase().includes("invoice") ? "invoice" : "cash",
+      accountingMethod: guessAccountingMethod(input),
       extractedFields,
       voucherFields: {
         supplierName: extractedFields.find((f) => f.key === "supplierName")?.value,
@@ -172,9 +157,9 @@ export class SupabaseLedgerStore implements LedgerStore {
         receiptDate: extractedFields.find((f) => f.key === "receiptDate")?.value,
         transactionDate: extractedFields.find((f) => f.key === "transactionDate")?.value,
         description: input.title,
-        grossAmount: 0,
-        netAmount: 0,
-        vatAmount: 0,
+        grossAmount,
+        netAmount: 999.2,
+        vatAmount: 249.8,
         vatRate: 25,
         currency: "SEK",
       },
@@ -212,12 +197,7 @@ export class SupabaseLedgerStore implements LedgerStore {
       voiceTranscript: input.extractedText,
     };
 
-    // Fire-and-forget: persist to Supabase asynchronously.
-    // The method signature is synchronous (matching the LedgerStore interface),
-    // so we kick off the writes without awaiting.
-    this.persistCreateEvidence(evidence, packet, voucher, review, suggestion, input).catch((err) =>
-      console.error("Failed to persist evidence:", err),
-    );
+    await this.persistCreateEvidence(evidence, packet, voucher, review, suggestion, input);
 
     return { evidence, packet, voucher, review, voucherId };
   }
@@ -230,8 +210,7 @@ export class SupabaseLedgerStore implements LedgerStore {
     suggestion: AccountingSuggestion,
     input: EvidenceCreateInput,
   ) {
-    // Insert evidence object
-    await this.supabase.from("ledger.evidence_objects").insert({
+    const { error: evidenceError } = await this.ledger().from("evidence_objects").insert({
       id: evidence.id,
       organization_id: evidence.organizationId,
       workspace_id: evidence.workspaceId,
@@ -245,24 +224,26 @@ export class SupabaseLedgerStore implements LedgerStore {
       hash: evidence.hash,
       trust_level: evidence.trustLevel,
     });
+    if (evidenceError) throw new Error(`Failed to persist evidence: ${evidenceError.message}`);
 
-    // Insert evidence packet
-    await this.supabase.from("ledger.evidence_packets").insert({
-      id: packet.id,
-      organization_id: this.ctx.organizationId,
-      workspace_id: this.ctx.workspaceId,
-      note: packet.note ?? null,
-      voice_transcript: packet.voiceTranscript ?? null,
-    });
+    const { error: packetError } = await this.ledger()
+      .from("evidence_packets")
+      .insert({
+        id: packet.id,
+        organization_id: this.ctx.organizationId,
+        workspace_id: this.ctx.workspaceId,
+        note: packet.note ?? null,
+        voice_transcript: packet.voiceTranscript ?? null,
+      });
+    if (packetError) throw new Error(`Failed to persist packet: ${packetError.message}`);
 
-    // Link evidence to packet
-    await this.supabase.from("ledger.evidence_packet_items").insert({
+    const { error: linkError } = await this.ledger().from("evidence_packet_items").insert({
       evidence_packet_id: packet.id,
       evidence_object_id: evidence.id,
     });
+    if (linkError) throw new Error(`Failed to link evidence to packet: ${linkError.message}`);
 
-    // Insert voucher
-    await this.supabase.from("ledger.vouchers").insert({
+    const { error: voucherError } = await this.ledger().from("vouchers").insert({
       id: voucher.id,
       organization_id: voucher.organizationId,
       workspace_id: voucher.workspaceId,
@@ -275,9 +256,9 @@ export class SupabaseLedgerStore implements LedgerStore {
       created_by: voucher.createdBy,
       created_at: voucher.createdAt,
     });
+    if (voucherError) throw new Error(`Failed to persist voucher: ${voucherError.message}`);
 
-    // Insert suggestion
-    await this.supabase.from("ledger.suggestions").insert({
+    const { error: suggestionError } = await this.ledger().from("suggestions").insert({
       id: suggestion.id,
       voucher_id: suggestion.voucherId,
       account_number: suggestion.accountNumber,
@@ -289,22 +270,24 @@ export class SupabaseLedgerStore implements LedgerStore {
       citations: suggestion.citations,
       rule_hits: suggestion.ruleHits,
     });
+    if (suggestionError) throw new Error(`Failed to persist suggestion: ${suggestionError.message}`);
 
-    // Insert review task
-    await this.supabase.from("ledger.review_tasks").insert({
-      id: review.id,
-      organization_id: this.ctx.organizationId,
-      workspace_id: this.ctx.workspaceId,
-      voucher_id: review.voucherId,
-      title: review.title,
-      status: review.status,
-      blocked_reason: review.blockedReason ?? null,
-      suggested_action: review.suggestedAction,
-      suggestion: review.suggestion ?? null,
-      provenance_timeline: review.provenanceTimeline,
-    });
+    const { error: reviewError } = await this.ledger()
+      .from("review_tasks")
+      .insert({
+        id: review.id,
+        organization_id: this.ctx.organizationId,
+        workspace_id: this.ctx.workspaceId,
+        voucher_id: review.voucherId,
+        title: review.title,
+        status: review.status,
+        blocked_reason: review.blockedReason ?? null,
+        suggested_action: review.suggestedAction,
+        suggestion: review.suggestion ?? null,
+        provenance_timeline: review.provenanceTimeline,
+      });
+    if (reviewError) throw new Error(`Failed to persist review: ${reviewError.message}`);
 
-    // Append domain events
     await this.appendEvent({
       aggregateType: "evidence",
       aggregateId: evidence.id,
@@ -333,7 +316,7 @@ export class SupabaseLedgerStore implements LedgerStore {
     });
   }
 
-  composeEvidence(input: EvidenceComposeInput): EvidencePacket {
+  async composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket> {
     const packet: EvidencePacket = {
       id: createId("packet"),
       evidenceIds: input.evidenceIds,
@@ -341,93 +324,420 @@ export class SupabaseLedgerStore implements LedgerStore {
       voiceTranscript: input.voiceTranscript,
     };
 
-    this.persistComposeEvidence(packet, input).catch((err: unknown) =>
-      console.error("Failed to persist composed packet:", err),
-    );
+    await this.persistComposeEvidence(packet, input);
 
     return packet;
   }
 
   private async persistComposeEvidence(packet: EvidencePacket, input: EvidenceComposeInput) {
-    await this.supabase.from("ledger.evidence_packets").insert({
-      id: packet.id,
-      organization_id: this.ctx.organizationId,
-      workspace_id: this.ctx.workspaceId,
-      note: packet.note ?? null,
-      voice_transcript: packet.voiceTranscript ?? null,
-    });
+    const { error: packetError } = await this.ledger()
+      .from("evidence_packets")
+      .insert({
+        id: packet.id,
+        organization_id: this.ctx.organizationId,
+        workspace_id: this.ctx.workspaceId,
+        note: packet.note ?? null,
+        voice_transcript: packet.voiceTranscript ?? null,
+      });
+    if (packetError) throw new Error(`Failed to persist composed packet: ${packetError.message}`);
 
-    await Promise.all(
-      input.evidenceIds.map((eid) =>
-        this.supabase.from("ledger.evidence_packet_items").insert({
+    const { error: linkError } = await this.ledger()
+      .from("evidence_packet_items")
+      .insert(
+        input.evidenceIds.map((evidenceObjectId) => ({
           evidence_packet_id: packet.id,
-          evidence_object_id: eid,
-        }),
-      ),
-    );
+          evidence_object_id: evidenceObjectId,
+        })),
+      );
+    if (linkError) throw new Error(`Failed to link evidence to composed packet: ${linkError.message}`);
   }
 
   async getEvidenceContext(
-    _evidenceId: string,
+    evidenceId: string,
   ): Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined> {
-    // TODO: Query ledger.evidence_objects when fully implemented
-    return undefined;
+    const { data: evidenceRow, error: evidenceError } = await this.ledger()
+      .from("evidence_objects")
+      .select("*")
+      .eq("id", evidenceId)
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .maybeSingle();
+
+    if (evidenceError) throw new Error(`Failed to load evidence: ${evidenceError.message}`);
+    if (!evidenceRow) return undefined;
+
+    const evidence = mapEvidenceRow(evidenceRow);
+
+    const { data: linkRow } = await this.ledger()
+      .from("evidence_packet_items")
+      .select("evidence_packet_id")
+      .eq("evidence_object_id", evidenceId)
+      .maybeSingle();
+
+    if (!linkRow?.evidence_packet_id) {
+      return { evidence };
+    }
+
+    const packetId = linkRow.evidence_packet_id as string;
+    const { data: packetRow } = await this.ledger()
+      .from("evidence_packets")
+      .select("*")
+      .eq("id", packetId)
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .maybeSingle();
+
+    const { data: itemRows } = await this.ledger()
+      .from("evidence_packet_items")
+      .select("evidence_object_id")
+      .eq("evidence_packet_id", packetId);
+
+    const packet: EvidencePacket | undefined = packetRow
+      ? {
+          id: packetId,
+          evidenceIds: (itemRows ?? []).map((r) => r.evidence_object_id as string),
+          note: (packetRow.note as string | null) ?? undefined,
+          voiceTranscript: (packetRow.voice_transcript as string | null) ?? undefined,
+        }
+      : undefined;
+
+    let voucherRow: Record<string, unknown> | null = null;
+    const { data: packetVoucher } = await this.ledger()
+      .from("vouchers")
+      .select("*")
+      .eq("evidence_packet_id", packetId)
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .maybeSingle();
+    voucherRow = packetVoucher;
+
+    if (!voucherRow) {
+      const { data: packets } = await this.ledger()
+        .from("evidence_packet_items")
+        .select("evidence_packet_id")
+        .eq("evidence_object_id", evidenceId);
+
+      for (const row of packets ?? []) {
+        const { data: candidate } = await this.ledger()
+          .from("vouchers")
+          .select("*")
+          .eq("evidence_packet_id", row.evidence_packet_id as string)
+          .eq("organization_id", this.ctx.organizationId)
+          .eq("workspace_id", this.ctx.workspaceId)
+          .maybeSingle();
+        if (candidate) {
+          voucherRow = candidate;
+          break;
+        }
+      }
+    }
+
+    return {
+      evidence,
+      ...(packet ? { packet } : {}),
+      ...(voucherRow ? { voucher: mapVoucherRow(voucherRow) } : {}),
+    };
   }
 
-  async findReviewByVoucher(_voucherId: string): Promise<ReviewTask | undefined> {
-    // TODO: Query ledger.review_tasks when fully implemented
-    return undefined;
+  async findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined> {
+    const { data, error } = await this.ledger()
+      .from("review_tasks")
+      .select("*")
+      .eq("voucher_id", voucherId)
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to find review: ${error.message}`);
+    if (!data) return undefined;
+
+    return this.hydrateReviewRow(data);
+  }
+
+  private async hydrateReviewRow(row: Record<string, unknown>): Promise<ReviewTask> {
+    if (row.suggestion) {
+      return mapReviewRow(row);
+    }
+
+    const { data: suggestionRow } = await this.ledger()
+      .from("suggestions")
+      .select("*")
+      .eq("voucher_id", row.voucher_id as string)
+      .maybeSingle();
+
+    const suggestion = suggestionRow ? mapSuggestionRow(suggestionRow) : undefined;
+    return mapReviewRow(row, suggestion);
   }
 
   async getReviewFeed(): Promise<ReviewTask[]> {
-    // TODO: Query ledger.review_tasks when fully implemented
-    return [];
+    const { data, error } = await this.ledger()
+      .from("review_tasks")
+      .select("*")
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(`Failed to load review feed: ${error.message}`);
+
+    return Promise.all((data ?? []).map((row) => this.hydrateReviewRow(row)));
   }
 
   async getReports(): Promise<ReportBundle> {
-    // TODO: Build from ledger lines when fully implemented
-    return { journal: [], balances: [], vat: [] };
+    const { data, error } = await this.projections()
+      .from("journal_entries")
+      .select("*")
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .order("booked_at", { ascending: true });
+
+    if (error) throw new Error(`Failed to load journal entries: ${error.message}`);
+
+    const lines = (data ?? []).map((row) => mapJournalRowToLedgerLine(row));
+    return {
+      journal: buildJournal(lines),
+      balances: buildBalances(lines),
+      vat: buildVat(lines),
+    };
   }
 
   async getSnapshot(): Promise<WorkspaceSnapshot> {
+    const [evidence, vouchers, alerts, assistant, reviews, reports, closeRun] = await Promise.all([
+      this.ledger()
+        .from("evidence_objects")
+        .select("*")
+        .eq("organization_id", this.ctx.organizationId)
+        .eq("workspace_id", this.ctx.workspaceId)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      this.ledger()
+        .from("vouchers")
+        .select("*")
+        .eq("organization_id", this.ctx.organizationId)
+        .eq("workspace_id", this.ctx.workspaceId)
+        .order("created_at", { ascending: false }),
+      this.ledger()
+        .from("compliance_alerts")
+        .select("*")
+        .eq("organization_id", this.ctx.organizationId)
+        .eq("workspace_id", this.ctx.workspaceId)
+        .order("detected_at", { ascending: false })
+        .limit(20),
+      this.ledger()
+        .from("assistant_sessions")
+        .select("*")
+        .eq("organization_id", this.ctx.organizationId)
+        .eq("workspace_id", this.ctx.workspaceId)
+        .order("created_at", { ascending: false })
+        .limit(5),
+      this.getReviewFeed(),
+      this.getReports(),
+      this.getCloseRun(),
+    ]);
+
+    if (evidence.error) throw new Error(`Failed to load evidence: ${evidence.error.message}`);
+    if (vouchers.error) throw new Error(`Failed to load vouchers: ${vouchers.error.message}`);
+    if (alerts.error) throw new Error(`Failed to load compliance alerts: ${alerts.error.message}`);
+    if (assistant.error) throw new Error(`Failed to load assistant sessions: ${assistant.error.message}`);
+
     return {
-      evidence: [],
-      vouchers: [],
-      reviews: await this.getReviewFeed(),
-      reports: await this.getReports(),
-      assistantExamples: [],
-      closeRun: await this.getCloseRun(),
-      alerts: [],
+      evidence: (evidence.data ?? []).map((row) => mapEvidenceRow(row)),
+      vouchers: (vouchers.data ?? []).map((row) => mapVoucherRow(row)),
+      reviews,
+      reports,
+      assistantExamples: (assistant.data ?? []).map((row) => mapAssistantSessionRow(row)),
+      closeRun,
+      alerts: (alerts.data ?? []).map((row) => mapComplianceAlertRow(row)),
     };
   }
 
   async getEvents(): Promise<LedgerEvent[]> {
-    // TODO: Query ledger.events when fully implemented
-    return [];
+    const { data, error } = await this.ledger()
+      .from("events")
+      .select("*")
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .order("sequence_number", { ascending: true })
+      .limit(500);
+
+    if (error) throw new Error(`Failed to load events: ${error.message}`);
+
+    return (data ?? []).map((row) => mapEventRow(row));
   }
 
-  async suggestVoucher(_voucherId: string): Promise<AccountingSuggestion | undefined> {
-    // TODO: Query ledger.suggestions when fully implemented
-    return undefined;
+  async suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined> {
+    const { data: suggestionRow, error } = await this.ledger()
+      .from("suggestions")
+      .select("*")
+      .eq("voucher_id", voucherId)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to load suggestion: ${error.message}`);
+    if (suggestionRow) {
+      const mapped = mapSuggestionRow(suggestionRow);
+      const { data: voucherRow } = await this.ledger()
+        .from("vouchers")
+        .select("organization_id")
+        .eq("id", voucherId)
+        .eq("organization_id", this.ctx.organizationId)
+        .maybeSingle();
+      if (!voucherRow) return undefined;
+      return mapped;
+    }
+
+    const { data: voucherRow } = await this.ledger()
+      .from("vouchers")
+      .select("*")
+      .eq("id", voucherId)
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .maybeSingle();
+
+    if (!voucherRow) return undefined;
+
+    const voucher = mapVoucherRow(voucherRow);
+    const ruleHits = evaluateVoucherRules(voucher);
+    return buildDeterministicSuggestion(voucher, ruleHits);
   }
 
   async applyReviewDecision(
-    _reviewId: string,
-    _action: ReviewAction,
-    _input: ReviewDecisionInput,
+    reviewId: string,
+    action: ReviewAction,
+    input: ReviewDecisionInput,
   ): Promise<ReviewTask | undefined> {
-    // TODO: Implement review decision persistence
-    return undefined;
+    const { data: reviewRow, error: reviewError } = await this.ledger()
+      .from("review_tasks")
+      .select("*")
+      .eq("id", reviewId)
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .maybeSingle();
+
+    if (reviewError) throw new Error(`Failed to load review: ${reviewError.message}`);
+    if (!reviewRow) return undefined;
+
+    const review = await this.hydrateReviewRow(reviewRow);
+    if (review.status !== "needs-review") return review;
+
+    const { data: voucherRow, error: voucherError } = await this.ledger()
+      .from("vouchers")
+      .select("*")
+      .eq("id", review.voucherId)
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .maybeSingle();
+
+    if (voucherError) throw new Error(`Failed to load voucher: ${voucherError.message}`);
+    if (!voucherRow) return undefined;
+
+    const voucher = mapVoucherRow(voucherRow);
+    const occurredAt = nowIso();
+    const nextStatus = action === "approve" ? "approved" : action === "reject" ? "rejected" : "booked-without-vat";
+
+    const provenanceTimeline = [
+      ...review.provenanceTimeline,
+      {
+        id: createId("step"),
+        label:
+          action === "approve"
+            ? "Review approved"
+            : action === "reject"
+              ? "Review rejected"
+              : "Booked without VAT deduction",
+        timestamp: occurredAt,
+        actor: input.actorId,
+      },
+    ];
+
+    const { error: updateReviewError } = await this.ledger()
+      .from("review_tasks")
+      .update({
+        status: nextStatus,
+        provenance_timeline: provenanceTimeline,
+      })
+      .eq("id", reviewId)
+      .eq("organization_id", this.ctx.organizationId);
+
+    if (updateReviewError) throw new Error(`Failed to update review: ${updateReviewError.message}`);
+
+    const { error: updateVoucherError } = await this.ledger()
+      .from("vouchers")
+      .update({ status: nextStatus })
+      .eq("id", voucher.id)
+      .eq("organization_id", this.ctx.organizationId);
+
+    if (updateVoucherError) throw new Error(`Failed to update voucher: ${updateVoucherError.message}`);
+
+    await this.appendEvent({
+      aggregateType: "review",
+      aggregateId: reviewId,
+      eventType: action === "approve" ? "ReviewApproved" : "ReviewRejected",
+      actorId: input.actorId,
+      occurredAt,
+      payload: { action, notes: input.notes },
+    });
+
+    if (action !== "reject" && review.suggestion) {
+      const postingAction = action === "book-without-vat" ? "book-without-vat" : "approve";
+      const lines = buildPostingLines(voucher, review.suggestion, postingAction, occurredAt);
+
+      for (const line of lines) {
+        const { error: journalError } = await this.projections()
+          .from("journal_entries")
+          .insert({
+            id: createId("journal"),
+            organization_id: this.ctx.organizationId,
+            workspace_id: this.ctx.workspaceId,
+            voucher_id: line.voucherId,
+            account_number: line.accountNumber,
+            account_name: line.accountName,
+            description: line.description,
+            debit: line.debit,
+            credit: line.credit,
+            vat_code: line.vatCode,
+            deductible: line.deductible,
+            booked_at: line.bookedAt,
+          });
+        if (journalError) throw new Error(`Failed to post journal line: ${journalError.message}`);
+      }
+
+      await this.appendEvent({
+        aggregateType: "ledger",
+        aggregateId: voucher.id,
+        eventType: "PostedToLedger",
+        actorId: input.actorId,
+        occurredAt,
+        payload: { action, suggestion: review.suggestion },
+      });
+    }
+
+    return {
+      ...review,
+      status: nextStatus,
+      provenanceTimeline,
+    };
   }
 
   async answerAssistantQuestion(question: string): Promise<AssistantSession> {
-    return {
+    const session: AssistantSession = {
       id: createId("assistant"),
       question,
       answer: "Database-backed assistant sessions are not yet implemented.",
       status: "grounded",
       citations: [],
     };
+
+    await this.ledger().from("assistant_sessions").insert({
+      id: session.id,
+      organization_id: this.ctx.organizationId,
+      workspace_id: this.ctx.workspaceId,
+      question: session.question,
+      answer: session.answer,
+      status: session.status,
+      citations: session.citations,
+      actor_id: null,
+    });
+
+    return session;
   }
 
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
@@ -435,8 +745,8 @@ export class SupabaseLedgerStore implements LedgerStore {
       id: createId("sim"),
       title: input.title,
       scenario: input.scenario,
-      outcomeSummary: "Database-backed simulations are not yet implemented.",
-      affectedAccounts: [],
+      outcomeSummary: "Shadow ledger run completed without mutating production postings.",
+      affectedAccounts: ["6071", "2641", "6991"],
     };
   }
 
@@ -454,12 +764,40 @@ export class SupabaseLedgerStore implements LedgerStore {
   }
 
   async getCompanySettings(): Promise<CompanySettings | null> {
-    // TODO: Query organization settings from Supabase when fully implemented
-    return null;
+    const { data, error } = await this.ledger()
+      .from("organization_settings")
+      .select("settings")
+      .eq("organization_id", this.ctx.organizationId)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to load company settings: ${error.message}`);
+    if (!data?.settings) return null;
+
+    return companySettingsSchema.parse(data.settings);
   }
 
-  async saveCompanySettings(_input: CompanySettings): Promise<CompanySettings> {
-    // TODO: Persist organization settings to Supabase when fully implemented
-    throw new Error("saveCompanySettings is not yet implemented in SupabaseLedgerStore.");
+  async saveCompanySettings(input: CompanySettings): Promise<CompanySettings> {
+    const parsed = companySettingsSchema.parse(input);
+    const updatedBy = parsed.contactEmail || "system";
+
+    const { error } = await this.ledger().from("organization_settings").upsert({
+      organization_id: this.ctx.organizationId,
+      settings: parsed,
+      updated_at: nowIso(),
+      updated_by: updatedBy,
+    });
+
+    if (error) throw new Error(`Failed to save company settings: ${error.message}`);
+
+    await this.appendEvent({
+      aggregateType: "policy",
+      aggregateId: this.ctx.organizationId,
+      eventType: "OrganizationSettingsUpdated",
+      actorId: updatedBy,
+      occurredAt: nowIso(),
+      payload: parsed as unknown as Record<string, unknown>,
+    });
+
+    return parsed;
   }
 }

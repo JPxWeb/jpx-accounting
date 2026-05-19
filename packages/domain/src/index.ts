@@ -1,7 +1,11 @@
 export * from "./bas";
+export * from "./extraction";
 export * from "./hash-chain";
 export * from "./ids";
+export * from "./ledger-line";
+export * from "./posting";
 export * from "./projections";
 export * from "./rules";
 export * from "./store";
+export * from "./supabase-mappers";
 export { SupabaseLedgerStore } from "./supabase-store";

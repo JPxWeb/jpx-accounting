@@ -17,17 +17,20 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import type { ZodType } from "zod";
-
+import { createBlobUploadInit } from "./blob-upload";
+import type { ApiRuntimeConfig } from "./config";
 import { authMiddleware } from "./middleware/auth";
 import { LedgerStoreUnavailableError } from "./runtime";
 
 type CreateAppOptions = {
-  store: LedgerStore;
-  aiRuntime: AiRuntime;
   runtimeMode: RuntimeMode;
+  aiRuntime: AiRuntime;
+  createLedgerStore: (scope: { organizationId: string; workspaceId: string }) => LedgerStore;
+  demoStoreRef: { current: MemoryLedgerStore };
+  apiConfig: ApiRuntimeConfig;
   allowTestReset?: boolean | undefined;
   supabaseUrl?: string | undefined;
-  supabaseServiceRoleKey?: string | undefined;
+  supabaseSecretKey?: string | undefined;
   skipAuthVerification?: boolean | undefined;
 };
 
@@ -48,7 +51,6 @@ async function parseBody<T>(request: Request, schema: ZodType<T>) {
 }
 
 async function buildSIEExport(store: LedgerStore) {
-  // Keep the scaffold export intentionally small but structurally valid so downstream accountant tooling can be exercised early.
   const reports = await store.getReports();
   const lines = ["#FLAGGA 0", '#PROGRAM "JPX Accounting" "0.1.0"', "#FORMAT PC8"];
 
@@ -71,27 +73,36 @@ function createErrorResponse(message: string, runtimeMode: RuntimeMode, status: 
 }
 
 export function createApp({
-  store,
-  aiRuntime,
   runtimeMode,
+  aiRuntime,
+  createLedgerStore,
+  demoStoreRef,
+  apiConfig,
   allowTestReset,
   supabaseUrl,
-  supabaseServiceRoleKey,
+  supabaseSecretKey,
   skipAuthVerification,
 }: CreateAppOptions) {
   const app = new Hono();
-  let currentStore = store;
-
   app.use("/api/*", cors());
   app.use(
     "/api/*",
     authMiddleware({
       runtimeMode,
       supabaseUrl,
-      supabaseServiceRoleKey,
+      supabaseSecretKey,
       skipVerification: skipAuthVerification,
     }),
   );
+  app.use("/api/*", async (context, next) => {
+    const store = createLedgerStore({
+      organizationId: context.get("organizationId"),
+      workspaceId: context.get("workspaceId"),
+    });
+    context.set("store", store);
+    await next();
+  });
+
   app.onError((error) => {
     if (error instanceof HTTPException) {
       return createErrorResponse(error.message, runtimeMode, error.status);
@@ -107,35 +118,39 @@ export function createApp({
 
   app.get("/health", (context) => context.json({ ok: true, runtimeMode }));
 
-  app.get("/api/workspace", async (context) => context.json(await currentStore.getSnapshot()));
-  app.get("/api/reviews/feed", async (context) => context.json(await currentStore.getReviewFeed()));
-  app.get("/api/reports/journal", async (context) => context.json((await currentStore.getReports()).journal));
-  app.get("/api/reports/general-ledger", async (context) => context.json((await currentStore.getReports()).balances));
-  app.get("/api/reports/trial-balance", async (context) => context.json((await currentStore.getReports()).balances));
-  app.get("/api/reports/vat-prep", async (context) => context.json((await currentStore.getReports()).vat));
+  app.get("/api/workspace", async (context) => context.json(await context.get("store").getSnapshot()));
+  app.get("/api/reviews/feed", async (context) => context.json(await context.get("store").getReviewFeed()));
+  app.get("/api/reports/journal", async (context) => context.json((await context.get("store").getReports()).journal));
+  app.get("/api/reports/general-ledger", async (context) =>
+    context.json((await context.get("store").getReports()).balances),
+  );
+  app.get("/api/reports/trial-balance", async (context) =>
+    context.json((await context.get("store").getReports()).balances),
+  );
+  app.get("/api/reports/vat-prep", async (context) => context.json((await context.get("store").getReports()).vat));
 
   app.post("/api/evidence", async (context) => {
     const input = await parseBody(context.req.raw, evidenceCreateInputSchema);
-    return context.json(await currentStore.createEvidence(input), 201);
+    return context.json(await context.get("store").createEvidence(input), 201);
   });
 
   app.post("/api/evidence/compose", async (context) => {
     const input = await parseBody(context.req.raw, evidenceComposeInputSchema);
-    return context.json(await currentStore.composeEvidence(input), 201);
+    return context.json(await context.get("store").composeEvidence(input), 201);
   });
 
   app.post("/api/uploads/init", async (context) => {
     const input = await parseBody(context.req.raw, uploadInitSchema);
-    return context.json({
-      uploadId: crypto.randomUUID(),
-      filename: input.filename,
-      uploadUrl: `/api/uploads/${crypto.randomUUID()}`,
-      expiresInSeconds: 900,
+    const evidenceId = crypto.randomUUID();
+    const init = await createBlobUploadInit(apiConfig, input, {
+      organizationId: context.get("organizationId"),
+      evidenceId,
     });
+    return context.json(init);
   });
 
   app.post("/api/evidence/:id/extract", async (context) => {
-    const extraction = await currentStore.getEvidenceContext(context.req.param("id"));
+    const extraction = await context.get("store").getEvidenceContext(context.req.param("id"));
     if (!extraction) throw new HTTPException(404, { message: "Evidence not found" });
 
     return context.json({
@@ -146,28 +161,28 @@ export function createApp({
 
   app.post("/api/vouchers/:id/suggest", async (context) => {
     await parseBody(context.req.raw, suggestionRequestSchema);
-    const suggestion = await currentStore.suggestVoucher(context.req.param("id"));
+    const suggestion = await context.get("store").suggestVoucher(context.req.param("id"));
     if (!suggestion) throw new HTTPException(404, { message: "Voucher not found" });
     return context.json(suggestion);
   });
 
   app.post("/api/reviews/:id/approve", async (context) => {
     const input = await parseBody(context.req.raw, reviewDecisionInputSchema);
-    const review = await currentStore.applyReviewDecision(context.req.param("id"), "approve", input);
+    const review = await context.get("store").applyReviewDecision(context.req.param("id"), "approve", input);
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return context.json(review);
   });
 
   app.post("/api/reviews/:id/reject", async (context) => {
     const input = await parseBody(context.req.raw, reviewDecisionInputSchema);
-    const review = await currentStore.applyReviewDecision(context.req.param("id"), "reject", input);
+    const review = await context.get("store").applyReviewDecision(context.req.param("id"), "reject", input);
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return context.json(review);
   });
 
   app.post("/api/reviews/:id/book-without-vat", async (context) => {
     const input = await parseBody(context.req.raw, reviewDecisionInputSchema);
-    const review = await currentStore.applyReviewDecision(context.req.param("id"), "book-without-vat", input);
+    const review = await context.get("store").applyReviewDecision(context.req.param("id"), "book-without-vat", input);
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return context.json(review);
   });
@@ -182,12 +197,12 @@ export function createApp({
 
   app.get("/api/exports/sie", async (context) => {
     context.header("content-type", "text/plain; charset=utf-8");
-    return context.body(await buildSIEExport(currentStore));
+    return context.body(await buildSIEExport(context.get("store")));
   });
 
   app.post("/api/assistant/sessions", async (context) => {
     const input = await parseBody(context.req.raw, assistantRequestSchema);
-    const snapshot = await currentStore.getSnapshot();
+    const snapshot = await context.get("store").getSnapshot();
     const citations = snapshot.reviews[0]?.suggestion?.citations ?? [
       {
         id: "internal_arch",
@@ -202,7 +217,7 @@ export function createApp({
 
   app.post("/api/knowledge/query", async (context) => {
     const input = await parseBody(context.req.raw, knowledgeQuerySchema);
-    const snapshot = await currentStore.getSnapshot();
+    const snapshot = await context.get("store").getSnapshot();
     return context.json({
       query: input.query,
       citations: snapshot.assistantExamples[0]?.citations ?? [],
@@ -213,33 +228,34 @@ export function createApp({
 
   app.post("/api/simulations/run", async (context) => {
     const input = await parseBody(context.req.raw, simulationRequestSchema);
-    return context.json(await currentStore.runSimulation(input), 201);
+    return context.json(await context.get("store").runSimulation(input), 201);
   });
 
-  app.post("/api/close-runs", async (context) => context.json(await currentStore.getCloseRun(), 201));
+  app.post("/api/close-runs", async (context) => context.json(await context.get("store").getCloseRun(), 201));
   app.get("/api/close-runs/:id", async (context) =>
     context.json({
-      ...(await currentStore.getCloseRun()),
+      ...(await context.get("store").getCloseRun()),
       id: context.req.param("id"),
     }),
   );
 
-  app.get("/api/settings/company", async (context) => context.json(await currentStore.getCompanySettings()));
+  app.get("/api/settings/company", async (context) => context.json(await context.get("store").getCompanySettings()));
 
   app.put("/api/settings/company", async (context) => {
     const input = await parseBody(context.req.raw, companySettingsSchema);
-    return context.json(await currentStore.saveCompanySettings(input));
+    return context.json(await context.get("store").saveCompanySettings(input));
   });
 
-  app.post("/api/compliance-watch/refresh", async (context) => context.json((await currentStore.getSnapshot()).alerts));
+  app.post("/api/compliance-watch/refresh", async (context) =>
+    context.json((await context.get("store").getSnapshot()).alerts),
+  );
 
   app.post("/api/testing/reset", (context) => {
-    // This stays opt-in so local e2e coverage can reset the in-memory scaffold without exposing a production reset hook.
-    if (!allowTestReset || runtimeMode !== "demo" || !(currentStore instanceof MemoryLedgerStore)) {
+    if (!allowTestReset || runtimeMode !== "demo") {
       throw new HTTPException(404, { message: "Not found" });
     }
 
-    currentStore = new MemoryLedgerStore();
+    demoStoreRef.current = new MemoryLedgerStore();
     return context.json({ ok: true });
   });
 
