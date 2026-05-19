@@ -9,7 +9,6 @@ import {
   reviewDecisionInputSchema,
   simulationRequestSchema,
   suggestionRequestSchema,
-  type TenantScope,
   uploadInitSchema,
 } from "@jpx-accounting/contracts";
 import type { LedgerStore } from "@jpx-accounting/domain";
@@ -22,11 +21,12 @@ import { createBlobUploadInit } from "./blob-upload";
 import type { ApiRuntimeConfig } from "./config";
 import { authMiddleware } from "./middleware/auth";
 import { LedgerStoreUnavailableError } from "./runtime";
+import type { LedgerStoreScope } from "./store-factory";
 
 type CreateAppOptions = {
   runtimeMode: RuntimeMode;
   aiRuntime: AiRuntime;
-  createLedgerStore: (scope: TenantScope) => LedgerStore;
+  createLedgerStore: (scope: LedgerStoreScope) => LedgerStore;
   demoStoreRef: { current: MemoryLedgerStore };
   apiConfig: ApiRuntimeConfig;
   allowTestReset?: boolean | undefined;
@@ -99,6 +99,7 @@ export function createApp({
     const store = createLedgerStore({
       organizationId: context.get("organizationId"),
       workspaceId: context.get("workspaceId"),
+      userId: context.get("userId"),
     });
     context.set("store", store);
     await next();

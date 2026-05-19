@@ -1,11 +1,10 @@
 import { createAiRuntime } from "@jpx-accounting/ai-core";
-import type { TenantScope } from "@jpx-accounting/contracts";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
 import type { SupabaseClient } from "@jpx-accounting/supabase-client";
 import { createServiceClient } from "@jpx-accounting/supabase-client";
 
 import type { ApiRuntimeConfig } from "./config";
-import { createLedgerStore } from "./store-factory";
+import { createLedgerStore, type LedgerStoreScope } from "./store-factory";
 
 export class LedgerStoreUnavailableError extends Error {
   constructor(message: string) {
@@ -39,7 +38,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
     demoStoreRef,
     supabase: supabase as SupabaseClient | null,
     aiRuntime,
-    createLedgerStore: (scope: TenantScope) =>
+    createLedgerStore: (scope: LedgerStoreScope) =>
       createLedgerStore(
         {
           runtimeMode: config.runtimeMode,

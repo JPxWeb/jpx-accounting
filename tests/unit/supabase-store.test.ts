@@ -55,7 +55,11 @@ function createMockSupabaseClient(options?: { failTable?: string; chainConflictO
 
 test("SupabaseLedgerStore.createEvidence returns evidence, voucher, and review", async () => {
   const { client } = createMockSupabaseClient();
-  const store = new SupabaseLedgerStore(client, { organizationId: "org_test", workspaceId: "ws_test" });
+  const store = new SupabaseLedgerStore(client, {
+    organizationId: "org_test",
+    workspaceId: "ws_test",
+    userId: "user_test",
+  });
 
   const result = await store.createEvidence({
     organizationId: "org_test",
@@ -75,7 +79,11 @@ test("SupabaseLedgerStore.createEvidence returns evidence, voucher, and review",
 
 test("SupabaseLedgerStore.createEvidence rejects when persistence fails", async () => {
   const { client } = createMockSupabaseClient({ failTable: "evidence_objects" });
-  const store = new SupabaseLedgerStore(client, { organizationId: "org_test", workspaceId: "ws_test" });
+  const store = new SupabaseLedgerStore(client, {
+    organizationId: "org_test",
+    workspaceId: "ws_test",
+    userId: "user_test",
+  });
 
   await assert.rejects(
     () =>
@@ -94,7 +102,7 @@ test("SupabaseLedgerStore.createEvidence rejects when persistence fails", async 
 
 test("appendEvent retries on hash-chain unique violation", async () => {
   const { client } = createMockSupabaseClient({ chainConflictOnce: true });
-  const store = new SupabaseLedgerStore(client, { organizationId: "org_a", workspaceId: "ws_a" });
+  const store = new SupabaseLedgerStore(client, { organizationId: "org_a", workspaceId: "ws_a", userId: "user_test" });
 
   await assert.doesNotReject(() =>
     store.createEvidence({
@@ -121,6 +129,40 @@ test("suggestVoucher returns undefined for a voucher outside the caller's org", 
       },
     }),
   } as never;
-  const store = new SupabaseLedgerStore(client, { organizationId: "org_a", workspaceId: "ws_a" });
+  const store = new SupabaseLedgerStore(client, { organizationId: "org_a", workspaceId: "ws_a", userId: "user_test" });
   assert.equal(await store.suggestVoucher("v1"), undefined);
+});
+
+test("saveCompanySettings attributes the audit event to the authenticated user", async () => {
+  const inserted: Record<string, unknown>[] = [];
+  const client = {
+    schema: () => ({
+      from: () => {
+        const chain: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "order", "limit"]) chain[m] = () => chain;
+        chain.maybeSingle = async () => ({ data: null, error: null });
+        chain.upsert = async (row: Record<string, unknown>) => {
+          inserted.push(row);
+          return { error: null };
+        };
+        chain.insert = async (row: Record<string, unknown>) => {
+          inserted.push(row);
+          return { error: null };
+        };
+        return chain;
+      },
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, { organizationId: "org_a", workspaceId: "ws_a", userId: "user_real" });
+  await store.saveCompanySettings({
+    organizationId: "org_a",
+    organizationName: "X AB",
+    organizationNumber: "556677-8899",
+    addressLine1: "A 1",
+    postalCode: "111 22",
+    city: "Stockholm",
+    contactEmail: "attacker@evil.test",
+  });
+  const settingsRow = inserted.find((r) => "updated_by" in r);
+  assert.equal(settingsRow?.updated_by, "user_real");
 });

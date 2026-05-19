@@ -50,7 +50,7 @@ function delay(ms: number): Promise<void> {
 export class SupabaseLedgerStore implements LedgerStore {
   constructor(
     private readonly supabase: SupabaseClient,
-    private readonly ctx: TenantScope,
+    private readonly ctx: TenantScope & { userId: string },
   ) {}
 
   private ledger() {
@@ -765,7 +765,7 @@ export class SupabaseLedgerStore implements LedgerStore {
 
   async saveCompanySettings(input: CompanySettings): Promise<CompanySettings> {
     const parsed = companySettingsSchema.parse(input);
-    const updatedBy = parsed.contactEmail || "system";
+    const updatedBy = this.ctx.userId;
 
     const { error } = await this.ledger().from("organization_settings").upsert({
       organization_id: this.ctx.organizationId,

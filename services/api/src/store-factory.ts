@@ -73,7 +73,7 @@ class UnavailableLedgerStore implements LedgerStore {
   }
 }
 
-export type LedgerStoreScope = TenantScope;
+export type LedgerStoreScope = TenantScope & { userId: string };
 
 export type CreateLedgerStoreDeps = {
   runtimeMode: RuntimeMode;
