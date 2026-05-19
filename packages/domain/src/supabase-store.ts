@@ -481,8 +481,26 @@ export class SupabaseLedgerStore implements LedgerStore {
       .order("created_at", { ascending: false });
 
     if (error) throw new Error(`Failed to load review feed: ${error.message}`);
+    const rows = data ?? [];
 
-    return Promise.all((data ?? []).map((row) => this.hydrateReviewRow(row)));
+    const missingVoucherIds = rows.filter((r) => !r.suggestion).map((r) => r.voucher_id as string);
+    const suggestionsByVoucher = new Map<string, AccountingSuggestion>();
+    if (missingVoucherIds.length > 0) {
+      // suggestions has no organization_id column; the voucher_ids here come from review_tasks
+      // rows already filtered by org+workspace above, so the set is transitively org-scoped.
+      const { data: suggestionRows, error: sErr } = await this.ledger()
+        .from("suggestions")
+        .select("*")
+        .in("voucher_id", missingVoucherIds);
+      if (sErr) throw new Error(`Failed to load suggestions: ${sErr.message}`);
+      for (const row of suggestionRows ?? []) {
+        suggestionsByVoucher.set(row.voucher_id as string, mapSuggestionRow(row));
+      }
+    }
+
+    return rows.map((row) =>
+      row.suggestion ? mapReviewRow(row) : mapReviewRow(row, suggestionsByVoucher.get(row.voucher_id as string)),
+    );
   }
 
   async getReports(): Promise<ReportBundle> {

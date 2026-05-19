@@ -173,3 +173,88 @@ test("saveCompanySettings attributes the audit event to the authenticated user",
   const settingsRow = inserted.find((r) => "updated_by" in r);
   assert.equal(settingsRow?.updated_by, "user_real");
 });
+
+test("getReviewFeed skips the suggestion batch when all rows carry embedded suggestions", async () => {
+  let suggestionReads = 0;
+  const reviews = [
+    {
+      id: "r1",
+      voucher_id: "v1",
+      title: "a",
+      status: "needs-review",
+      suggested_action: "x",
+      provenance_timeline: [],
+      suggestion: {
+        id: "s1",
+        voucherId: "v1",
+        accountNumber: "6540",
+        accountName: "IT-tjänster",
+        vatCode: "VAT25",
+        confidence: 0.9,
+        reasoning: "r",
+        kind: "recommendation",
+        citations: [],
+        ruleHits: [],
+      },
+    },
+  ];
+  const client = {
+    schema: () => ({
+      from: (table: string) => {
+        const chain: Record<string, unknown> = { _table: table };
+        for (const m of ["select", "eq"]) chain[m] = () => chain;
+        chain.order = async () => ({ data: reviews, error: null });
+        chain.in = async () => {
+          suggestionReads++;
+          return { data: [], error: null };
+        };
+        return chain;
+      },
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, { organizationId: "o", workspaceId: "w", userId: "u" });
+  const feed = await store.getReviewFeed();
+  assert.equal(feed.length, 1);
+  assert.equal(suggestionReads, 0);
+});
+
+test("getReviewFeed fetches suggestions in one batched query", async () => {
+  let suggestionReads = 0;
+  const reviews = [
+    {
+      id: "r1",
+      voucher_id: "v1",
+      title: "a",
+      status: "needs-review",
+      suggested_action: "x",
+      provenance_timeline: [],
+    },
+    {
+      id: "r2",
+      voucher_id: "v2",
+      title: "b",
+      status: "needs-review",
+      suggested_action: "x",
+      provenance_timeline: [],
+    },
+  ];
+  const client = {
+    schema: () => ({
+      from: (table: string) => {
+        const chain: Record<string, unknown> = { _table: table };
+        for (const m of ["select", "eq"]) chain[m] = () => chain;
+        chain.maybeSingle = async () => ({ data: null, error: null });
+        chain.order = async () => ({ data: reviews, error: null });
+        chain.in = async () => {
+          suggestionReads++;
+          return { data: [], error: null };
+        };
+        return chain;
+      },
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, { organizationId: "o", workspaceId: "w", userId: "u" });
+  const feed = await store.getReviewFeed();
+  assert.equal(feed.length, 2);
+  assert.equal(suggestionReads, 1);
+});
