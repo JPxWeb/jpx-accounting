@@ -9,6 +9,7 @@ import {
   reviewDecisionInputSchema,
   simulationRequestSchema,
   suggestionRequestSchema,
+  type TenantScope,
   uploadInitSchema,
 } from "@jpx-accounting/contracts";
 import type { LedgerStore } from "@jpx-accounting/domain";
@@ -25,7 +26,7 @@ import { LedgerStoreUnavailableError } from "./runtime";
 type CreateAppOptions = {
   runtimeMode: RuntimeMode;
   aiRuntime: AiRuntime;
-  createLedgerStore: (scope: { organizationId: string; workspaceId: string }) => LedgerStore;
+  createLedgerStore: (scope: TenantScope) => LedgerStore;
   demoStoreRef: { current: MemoryLedgerStore };
   apiConfig: ApiRuntimeConfig;
   allowTestReset?: boolean | undefined;

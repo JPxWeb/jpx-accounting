@@ -308,6 +308,12 @@ export const workspaceSnapshotSchema = z.object({
   alerts: z.array(complianceAlertSchema),
 });
 
+export const tenantScopeSchema = z.object({
+  organizationId: z.string(),
+  workspaceId: z.string(),
+});
+export type TenantScope = z.infer<typeof tenantScopeSchema>;
+
 export const userProfileSchema = z.object({
   userId: z.string(),
   email: z.string().email(),

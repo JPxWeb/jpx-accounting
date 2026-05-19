@@ -1,4 +1,4 @@
-import type { RuntimeMode } from "@jpx-accounting/contracts";
+import type { RuntimeMode, TenantScope } from "@jpx-accounting/contracts";
 import type { LedgerStore } from "@jpx-accounting/domain";
 import { type MemoryLedgerStore, SupabaseLedgerStore } from "@jpx-accounting/domain";
 import type { SupabaseClient } from "@jpx-accounting/supabase-client";
@@ -73,10 +73,7 @@ class UnavailableLedgerStore implements LedgerStore {
   }
 }
 
-export type LedgerStoreScope = {
-  organizationId: string;
-  workspaceId: string;
-};
+export type LedgerStoreScope = TenantScope;
 
 export type CreateLedgerStoreDeps = {
   runtimeMode: RuntimeMode;

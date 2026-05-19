@@ -15,6 +15,7 @@ import {
   type ReviewTask,
   type SimulationRequest,
   type SimulationRun,
+  type TenantScope,
   type Voucher,
   type WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
@@ -38,11 +39,6 @@ import {
   mapVoucherRow,
 } from "./supabase-mappers";
 
-type StoreContext = {
-  organizationId: string;
-  workspaceId: string;
-};
-
 const APPEND_EVENT_MAX_RETRIES = 5;
 const APPEND_EVENT_BACKOFF_BASE_MS = 20;
 const PG_UNIQUE_VIOLATION = "23505";
@@ -54,7 +50,7 @@ function delay(ms: number): Promise<void> {
 export class SupabaseLedgerStore implements LedgerStore {
   constructor(
     private readonly supabase: SupabaseClient,
-    private readonly ctx: StoreContext,
+    private readonly ctx: TenantScope,
   ) {}
 
   private ledger() {

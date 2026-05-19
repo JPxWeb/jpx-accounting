@@ -1,4 +1,5 @@
 import { createAiRuntime } from "@jpx-accounting/ai-core";
+import type { TenantScope } from "@jpx-accounting/contracts";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
 import type { SupabaseClient } from "@jpx-accounting/supabase-client";
 import { createServiceClient } from "@jpx-accounting/supabase-client";
@@ -38,7 +39,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
     demoStoreRef,
     supabase: supabase as SupabaseClient | null,
     aiRuntime,
-    createLedgerStore: (scope: { organizationId: string; workspaceId: string }) =>
+    createLedgerStore: (scope: TenantScope) =>
       createLedgerStore(
         {
           runtimeMode: config.runtimeMode,
