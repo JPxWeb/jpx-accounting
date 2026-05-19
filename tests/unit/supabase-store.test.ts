@@ -133,6 +133,13 @@ test("suggestVoucher returns undefined for a voucher outside the caller's org", 
   assert.equal(await store.suggestVoucher("v1"), undefined);
 });
 
+test("Supabase runSimulation/getCloseRun reject instead of returning fake data", async () => {
+  const client = { schema: () => ({ from: () => ({}) }) } as never;
+  const store = new SupabaseLedgerStore(client, { organizationId: "o", workspaceId: "w", userId: "u" });
+  await assert.rejects(() => store.runSimulation({ title: "t", scenario: "s", actorId: "u" }), /not yet implemented/);
+  await assert.rejects(() => store.getCloseRun(), /not yet implemented/);
+});
+
 test("saveCompanySettings attributes the audit event to the authenticated user", async () => {
   const inserted: Record<string, unknown>[] = [];
   const client = {

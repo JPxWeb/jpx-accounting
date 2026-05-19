@@ -47,6 +47,13 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export class NotImplementedInSupabaseStore extends Error {
+  constructor(method: string) {
+    super(`${method} is not yet implemented for the Supabase-backed store.`);
+    this.name = "NotImplementedInSupabaseStore";
+  }
+}
+
 export class SupabaseLedgerStore implements LedgerStore {
   constructor(
     private readonly supabase: SupabaseClient,
@@ -527,7 +534,12 @@ export class SupabaseLedgerStore implements LedgerStore {
         .limit(5),
       this.getReviewFeed(),
       this.getReports(),
-      this.getCloseRun(),
+      Promise.resolve<CloseRun>({
+        id: "close_current",
+        period: new Date().toISOString().slice(0, 7),
+        generatedAt: nowIso(),
+        checklist: [],
+      }),
     ]);
 
     if (evidence.error) throw new Error(`Failed to load evidence: ${evidence.error.message}`);
@@ -727,27 +739,12 @@ export class SupabaseLedgerStore implements LedgerStore {
     return session;
   }
 
-  async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
-    return {
-      id: createId("sim"),
-      title: input.title,
-      scenario: input.scenario,
-      outcomeSummary: "Shadow ledger run completed without mutating production postings.",
-      affectedAccounts: ["6071", "2641", "6991"],
-    };
+  async runSimulation(_input: SimulationRequest): Promise<SimulationRun> {
+    throw new NotImplementedInSupabaseStore("runSimulation");
   }
 
   async getCloseRun(): Promise<CloseRun> {
-    return {
-      id: "close_current",
-      period: new Date().toISOString().slice(0, 7),
-      generatedAt: nowIso(),
-      checklist: [
-        { id: "close_1", label: "Confirm all uploaded evidence has a linked voucher", status: "open" },
-        { id: "close_2", label: "Review blocked VAT deductions", status: "open" },
-        { id: "close_3", label: "Export SIE package for accountant review", status: "open" },
-      ],
-    };
+    throw new NotImplementedInSupabaseStore("getCloseRun");
   }
 
   async getCompanySettings(): Promise<CompanySettings | null> {

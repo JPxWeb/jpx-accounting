@@ -8,4 +8,4 @@ export * from "./projections";
 export * from "./rules";
 export * from "./store";
 export * from "./supabase-mappers";
-export { SupabaseLedgerStore } from "./supabase-store";
+export { NotImplementedInSupabaseStore, SupabaseLedgerStore } from "./supabase-store";
