@@ -1,5 +1,6 @@
 import type { AccountBalanceProjection, JournalEntryProjection, VatProjection } from "@jpx-accounting/contracts";
 
+import { ACCOUNT_INPUT_VAT } from "./bas";
 import type { LedgerLine } from "./ledger-line";
 
 export function buildJournal(lines: LedgerLine[]): JournalEntryProjection[] {
@@ -48,7 +49,7 @@ export function buildVat(lines: LedgerLine[]): VatProjection[] {
     };
 
     current.baseAmount += line.debit || line.credit;
-    if (line.accountNumber === "2641") {
+    if (line.accountNumber === ACCOUNT_INPUT_VAT) {
       current.vatAmount += line.debit - line.credit;
     }
     map.set(line.vatCode, current);

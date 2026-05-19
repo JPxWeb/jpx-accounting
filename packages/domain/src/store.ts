@@ -18,6 +18,7 @@ import type {
   Voucher,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
+import { ACCOUNT_COMPANY_BANK, ACCOUNT_INPUT_VAT, findBasAccount, VAT_CODE_NONE } from "./bas";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso } from "./ids";
 import type { LedgerLine } from "./ledger-line";
@@ -72,8 +73,8 @@ function initialLedgerLines(): LedgerLine[] {
     },
     {
       voucherId: "voucher_seed_1",
-      accountNumber: "2641",
-      accountName: "Debiterad ingående moms",
+      accountNumber: ACCOUNT_INPUT_VAT,
+      accountName: findBasAccount(ACCOUNT_INPUT_VAT)!.name,
       description: "Seeded input VAT",
       debit: 250,
       credit: 0,
@@ -83,12 +84,12 @@ function initialLedgerLines(): LedgerLine[] {
     },
     {
       voucherId: "voucher_seed_1",
-      accountNumber: "1930",
-      accountName: "Företagskonto",
+      accountNumber: ACCOUNT_COMPANY_BANK,
+      accountName: findBasAccount(ACCOUNT_COMPANY_BANK)!.name,
       description: "Seeded bank outflow",
       debit: 0,
       credit: 1250,
-      vatCode: "NA",
+      vatCode: VAT_CODE_NONE,
       bookedAt: nowIso(),
       deductible: false,
     },

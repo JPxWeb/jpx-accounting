@@ -1,5 +1,6 @@
 import type { AccountingSuggestion, Voucher } from "@jpx-accounting/contracts";
 
+import { ACCOUNT_COMPANY_BANK, ACCOUNT_INPUT_VAT, findBasAccount, VAT_CODE_NONE } from "./bas";
 import type { LedgerLine } from "./ledger-line";
 
 export function buildPostingLines(
@@ -27,8 +28,8 @@ export function buildPostingLines(
     },
     {
       voucherId: voucher.id,
-      accountNumber: "2641",
-      accountName: "Debiterad ingående moms",
+      accountNumber: ACCOUNT_INPUT_VAT,
+      accountName: findBasAccount(ACCOUNT_INPUT_VAT)!.name,
       description: `${description} VAT`,
       debit: vatAmount,
       credit: 0,
@@ -38,12 +39,12 @@ export function buildPostingLines(
     },
     {
       voucherId: voucher.id,
-      accountNumber: "1930",
-      accountName: "Företagskonto",
+      accountNumber: ACCOUNT_COMPANY_BANK,
+      accountName: findBasAccount(ACCOUNT_COMPANY_BANK)!.name,
       description,
       debit: 0,
       credit: amount,
-      vatCode: "NA",
+      vatCode: VAT_CODE_NONE,
       bookedAt: occurredAt,
       deductible: false,
     },

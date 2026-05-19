@@ -21,3 +21,7 @@ export const basAccounts: BasAccount[] = [
 export function findBasAccount(number: string) {
   return basAccounts.find((account) => account.number === number);
 }
+
+export const ACCOUNT_INPUT_VAT = "2641";
+export const ACCOUNT_COMPANY_BANK = "1930";
+export const VAT_CODE_NONE = "NA";
