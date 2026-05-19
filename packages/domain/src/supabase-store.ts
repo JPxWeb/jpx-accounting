@@ -21,7 +21,6 @@ import {
 } from "@jpx-accounting/contracts";
 import type { SupabaseClient } from "@jpx-accounting/supabase-client";
 
-import { buildExtractedFields, guessAccountingMethod } from "./extraction";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso } from "./ids";
 import { buildPostingLines } from "./posting";
@@ -38,6 +37,7 @@ import {
   mapSuggestionRow,
   mapVoucherRow,
 } from "./supabase-mappers";
+import { buildVoucherDraft } from "./voucher-draft";
 
 const APPEND_EVENT_MAX_RETRIES = 5;
 const APPEND_EVENT_BACKOFF_BASE_MS = 20;
@@ -142,56 +142,14 @@ export class SupabaseLedgerStore implements LedgerStore {
       trustLevel: "user-upload",
     };
 
-    const extractedFields = buildExtractedFields(input);
-    const grossAmount = 1249;
-    const voucher: Voucher = {
-      id: voucherId,
-      organizationId: input.organizationId,
-      workspaceId: input.workspaceId,
-      evidencePacketId: packetId,
-      voucherNumber: `V-${Date.now() % 100000}`,
-      status: "needs-review",
-      accountingMethod: guessAccountingMethod(input),
-      extractedFields,
-      voucherFields: {
-        supplierName: extractedFields.find((f) => f.key === "supplierName")?.value,
-        supplierVatNumber: extractedFields.find((f) => f.key === "supplierVatNumber")?.value,
-        invoiceNumber: extractedFields.find((f) => f.key === "invoiceNumber")?.value,
-        receiptDate: extractedFields.find((f) => f.key === "receiptDate")?.value,
-        transactionDate: extractedFields.find((f) => f.key === "transactionDate")?.value,
-        description: input.title,
-        grossAmount,
-        netAmount: 999.2,
-        vatAmount: 249.8,
-        vatRate: 25,
-        currency: "SEK",
-      },
-      createdAt,
-      createdBy: input.actorId,
-    };
-
-    const ruleHits = evaluateVoucherRules(voucher);
-    const suggestion = buildDeterministicSuggestion(voucher, ruleHits);
-
-    const review: ReviewTask = {
-      id: createId("review"),
+    const voucherNumber = `V-${Date.now() % 100000}`;
+    const { voucher, review, suggestion } = buildVoucherDraft({
       voucherId,
-      title: `Review ${voucher.voucherNumber}`,
-      status: "needs-review",
-      blockedReason: ruleHits.some((r) => r.severity === "blocking")
-        ? "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved."
-        : undefined,
-      suggestedAction: ruleHits.some((r) => r.severity === "blocking")
-        ? "Request more evidence or post without VAT deduction."
-        : "Approve the proposed posting.",
-      suggestion,
-      provenanceTimeline: [
-        { id: createId("step"), label: "Evidence received", timestamp: createdAt, actor: input.actorId },
-        { id: createId("step"), label: "Fields extracted", timestamp: createdAt, actor: "system-extractor" },
-        { id: createId("step"), label: "Rules applied", timestamp: createdAt, actor: "system-rules" },
-        { id: createId("step"), label: "Suggestion generated", timestamp: createdAt, actor: "system-ai" },
-      ],
-    };
+      packetId,
+      voucherNumber,
+      createdAt,
+      input,
+    });
 
     const packet: EvidencePacket = {
       id: packetId,

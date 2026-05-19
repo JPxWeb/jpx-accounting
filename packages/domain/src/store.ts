@@ -18,13 +18,13 @@ import type {
   Voucher,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
-import { buildExtractedFields, guessAccountingMethod } from "./extraction";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso } from "./ids";
 import type { LedgerLine } from "./ledger-line";
 import { buildPostingLines } from "./posting";
 import { buildBalances, buildJournal, buildVat } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
+import { buildVoucherDraft } from "./voucher-draft";
 
 export type ReviewAction = "approve" | "reject" | "book-without-vat";
 
@@ -205,54 +205,14 @@ export class MemoryLedgerStore implements LedgerStore {
       voiceTranscript: input.extractedText,
     };
 
-    const extractedFields = buildExtractedFields(input);
-    const voucher: Voucher = {
-      id: voucherId,
-      organizationId: input.organizationId,
-      workspaceId: input.workspaceId,
-      evidencePacketId: packetId,
-      voucherNumber: `V-${this.vouchers.size + 1001}`,
-      status: "needs-review",
-      accountingMethod: guessAccountingMethod(input),
-      extractedFields,
-      voucherFields: {
-        supplierName: extractedFields.find((field) => field.key === "supplierName")?.value,
-        supplierVatNumber: extractedFields.find((field) => field.key === "supplierVatNumber")?.value,
-        invoiceNumber: extractedFields.find((field) => field.key === "invoiceNumber")?.value,
-        receiptDate: extractedFields.find((field) => field.key === "receiptDate")?.value,
-        transactionDate: extractedFields.find((field) => field.key === "transactionDate")?.value,
-        description: input.title,
-        grossAmount: 1249,
-        netAmount: 999.2,
-        vatAmount: 249.8,
-        vatRate: 25,
-        currency: "SEK",
-      },
-      createdAt,
-      createdBy: input.actorId,
-    };
-
-    const ruleHits = evaluateVoucherRules(voucher);
-    const suggestion = buildDeterministicSuggestion(voucher, ruleHits);
-    const review: ReviewTask = {
-      id: createId("review"),
+    const voucherNumber = `V-${this.vouchers.size + 1001}`;
+    const { voucher, review, suggestion } = buildVoucherDraft({
       voucherId,
-      title: `Review ${voucher.voucherNumber}`,
-      status: "needs-review",
-      blockedReason: ruleHits.some((rule) => rule.severity === "blocking")
-        ? "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved."
-        : undefined,
-      suggestedAction: ruleHits.some((rule) => rule.severity === "blocking")
-        ? "Request more evidence or post without VAT deduction."
-        : "Approve the proposed posting.",
-      suggestion,
-      provenanceTimeline: [
-        { id: createId("step"), label: "Evidence received", timestamp: createdAt, actor: input.actorId },
-        { id: createId("step"), label: "Fields extracted", timestamp: createdAt, actor: "system-extractor" },
-        { id: createId("step"), label: "Rules applied", timestamp: createdAt, actor: "system-rules" },
-        { id: createId("step"), label: "Suggestion generated", timestamp: createdAt, actor: "system-ai" },
-      ],
-    };
+      packetId,
+      voucherNumber,
+      createdAt,
+      input,
+    });
 
     this.evidence.set(evidenceId, evidence);
     this.evidencePackets.set(packetId, packet);
@@ -282,7 +242,7 @@ export class MemoryLedgerStore implements LedgerStore {
       eventType: "FieldsExtracted",
       actorId: "system-extractor",
       occurredAt: createdAt,
-      payload: { extractedFields },
+      payload: { extractedFields: voucher.extractedFields },
     });
 
     this.appendEvent({
