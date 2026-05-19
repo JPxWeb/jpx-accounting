@@ -2,7 +2,7 @@ import type { RuntimeMode } from "@jpx-accounting/contracts";
 import { createClient } from "@supabase/supabase-js";
 import type { Context, MiddlewareHandler } from "hono";
 
-import { parseTenantFromClaims } from "./tenant";
+import { MissingTenantClaimError, type ParsedTenant, parseTenantFromClaims } from "./tenant";
 
 type AuthMiddlewareOptions = {
   runtimeMode: RuntimeMode;
@@ -62,7 +62,15 @@ export function authMiddleware(options: AuthMiddlewareOptions): MiddlewareHandle
       return context.json({ error: "Invalid or expired token" }, 401);
     }
 
-    const tenant = parseTenantFromClaims(data.claims as Record<string, unknown>);
+    let tenant: ParsedTenant;
+    try {
+      tenant = parseTenantFromClaims(data.claims as Record<string, unknown>);
+    } catch (err) {
+      if (err instanceof MissingTenantClaimError) {
+        return context.json({ error: "Token is missing organization claims" }, 401);
+      }
+      throw err;
+    }
     context.set("userId", tenant.userId);
     context.set("userEmail", tenant.userEmail);
     context.set("organizationId", tenant.organizationId);
