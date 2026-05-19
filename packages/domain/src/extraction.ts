@@ -1,4 +1,5 @@
 import type { AccountingMethod, EvidenceCreateInput, ExtractedField } from "@jpx-accounting/contracts";
+import { today } from "./ids";
 
 export function guessSupplier(input: EvidenceCreateInput): string {
   const value = `${input.title} ${input.originalFilename} ${input.extractedText ?? ""}`.toLowerCase();
@@ -15,11 +16,10 @@ export function guessAccountingMethod(input: EvidenceCreateInput): AccountingMet
 }
 
 export function buildExtractedFields(input: EvidenceCreateInput): ExtractedField[] {
-  const today = new Date().toISOString().slice(0, 10);
   return [
     { key: "supplierName", label: "Supplier", value: guessSupplier(input), confidence: 0.71, required: true },
-    { key: "receiptDate", label: "Receipt date", value: today, confidence: 0.98, required: true },
-    { key: "transactionDate", label: "Transaction date", value: today, confidence: 0.85, required: false },
+    { key: "receiptDate", label: "Receipt date", value: today(), confidence: 0.98, required: true },
+    { key: "transactionDate", label: "Transaction date", value: today(), confidence: 0.85, required: false },
     { key: "grossAmount", label: "Gross amount", value: "1249.00", confidence: 0.84, required: true },
     {
       key: "invoiceNumber",

@@ -20,7 +20,7 @@ import type {
 } from "@jpx-accounting/contracts";
 import { ACCOUNT_COMPANY_BANK, ACCOUNT_INPUT_VAT, findBasAccount, VAT_CODE_NONE } from "./bas";
 import { buildEventHash } from "./hash-chain";
-import { createId, nowIso } from "./ids";
+import { createId, nowIso, today } from "./ids";
 import type { LedgerLine } from "./ledger-line";
 import { buildPostingLines } from "./posting";
 import { buildBalances, buildJournal, buildVat } from "./projections";
@@ -163,7 +163,7 @@ export class MemoryLedgerStore implements LedgerStore {
 
   private appendEvent(event: Omit<LedgerEvent, "id" | "eventHash" | "previousHash" | "digestDate">) {
     const previousHash = this.events.at(-1)?.eventHash ?? "GENESIS";
-    const digestDate = new Date().toISOString().slice(0, 10);
+    const digestDate = today();
     const payload = JSON.stringify(event.payload);
 
     const fullEvent: LedgerEvent = {

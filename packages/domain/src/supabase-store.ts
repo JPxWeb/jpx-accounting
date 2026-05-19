@@ -22,7 +22,7 @@ import {
 import type { SupabaseClient } from "@jpx-accounting/supabase-client";
 
 import { buildEventHash } from "./hash-chain";
-import { createId, nowIso } from "./ids";
+import { createId, nowIso, today } from "./ids";
 import { buildPostingLines } from "./posting";
 import { buildJournal } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
@@ -72,7 +72,7 @@ export class SupabaseLedgerStore implements LedgerStore {
     event: Omit<LedgerEvent, "id" | "eventHash" | "previousHash" | "digestDate" | "organizationId" | "workspaceId">,
   ): Promise<LedgerEvent> {
     const payload = JSON.stringify(event.payload);
-    const digestDate = new Date().toISOString().slice(0, 10);
+    const digestDate = today();
 
     for (let attempt = 0; attempt < APPEND_EVENT_MAX_RETRIES; attempt++) {
       const { data: lastEvent } = await this.ledger()
