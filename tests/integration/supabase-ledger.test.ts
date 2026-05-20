@@ -15,6 +15,7 @@ test("supabase ledger integration", { skip: !supabaseUrl || !secretKey }, async 
   const store = new SupabaseLedgerStore(supabase, {
     organizationId,
     workspaceId: "workspace_main",
+    userId: "user_integration",
   });
 
   const created = await store.createEvidence({

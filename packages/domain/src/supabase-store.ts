@@ -649,7 +649,8 @@ export class SupabaseLedgerStore implements LedgerStore {
         provenance_timeline: provenanceTimeline,
       })
       .eq("id", reviewId)
-      .eq("organization_id", this.ctx.organizationId);
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId);
 
     if (updateReviewError) throw new Error(`Failed to update review: ${updateReviewError.message}`);
 
@@ -657,7 +658,8 @@ export class SupabaseLedgerStore implements LedgerStore {
       .from("vouchers")
       .update({ status: nextStatus })
       .eq("id", voucher.id)
-      .eq("organization_id", this.ctx.organizationId);
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId);
 
     if (updateVoucherError) throw new Error(`Failed to update voucher: ${updateVoucherError.message}`);
 

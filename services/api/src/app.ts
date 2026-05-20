@@ -12,7 +12,7 @@ import {
   uploadInitSchema,
 } from "@jpx-accounting/contracts";
 import type { LedgerStore } from "@jpx-accounting/domain";
-import { MemoryLedgerStore } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, NotImplementedInSupabaseStore } from "@jpx-accounting/domain";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
@@ -112,6 +112,10 @@ export function createApp({
 
     if (error instanceof LedgerStoreUnavailableError || error instanceof AiRuntimeUnavailableError) {
       return createErrorResponse(error.message, runtimeMode, 503);
+    }
+
+    if (error instanceof NotImplementedInSupabaseStore) {
+      return createErrorResponse(error.message, runtimeMode, 501);
     }
 
     console.error(error);
