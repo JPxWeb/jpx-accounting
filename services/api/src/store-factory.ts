@@ -3,7 +3,7 @@ import type { LedgerStore } from "@jpx-accounting/domain";
 import { type MemoryLedgerStore, SupabaseLedgerStore } from "@jpx-accounting/domain";
 import type { SupabaseClient } from "@jpx-accounting/supabase-client";
 
-import { LedgerStoreUnavailableError } from "./runtime";
+import { LEDGER_STORE_UNAVAILABLE_REASON, LedgerStoreUnavailableError } from "./runtime";
 
 class UnavailableLedgerStore implements LedgerStore {
   constructor(private readonly reason: string) {}
@@ -98,7 +98,5 @@ export function createLedgerStore(deps: CreateLedgerStoreDeps, scope: LedgerStor
     return new SupabaseLedgerStore(deps.supabase, scope);
   }
 
-  return new UnavailableLedgerStore(
-    "Workspace data is unavailable in normal mode until a non-demo LedgerStore implementation is configured.",
-  );
+  return new UnavailableLedgerStore(LEDGER_STORE_UNAVAILABLE_REASON);
 }

@@ -13,6 +13,9 @@ export class LedgerStoreUnavailableError extends Error {
   }
 }
 
+export const LEDGER_STORE_UNAVAILABLE_REASON =
+  "Workspace data is unavailable in normal mode until a non-demo LedgerStore implementation is configured.";
+
 export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
   const demoStoreRef = { current: new MemoryLedgerStore() };
   const supabase =
