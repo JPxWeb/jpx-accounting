@@ -10,6 +10,10 @@ function getApiBaseUrl() {
 }
 
 async function proxyRequest(request: Request, path: string[]) {
+  // The browser talks to this same-origin route so API targeting stays runtime-configurable
+  // in Azure and during e2e runs. In normal mode it attaches the Supabase access token; the
+  // Hono API then re-verifies that token (getClaims). The double validation is intentional and
+  // accepted: it keeps the browser from ever holding an API-trusted credential directly.
   const { runtimeMode } = getWebServerRuntimeConfig();
   const baseUrl = getApiBaseUrl();
   if (!baseUrl) {
