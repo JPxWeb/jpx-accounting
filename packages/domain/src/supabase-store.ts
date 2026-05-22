@@ -22,7 +22,7 @@ import {
 import type { SupabaseClient } from "@jpx-accounting/supabase-client";
 
 import { buildEventHash } from "./hash-chain";
-import { createId, nowIso, today } from "./ids";
+import { createId, nowIso, thisMonth, today } from "./ids";
 import { buildPostingLines } from "./posting";
 import { buildJournal } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
@@ -149,6 +149,7 @@ export class SupabaseLedgerStore implements LedgerStore {
       voucherNumber,
       createdAt,
       input,
+      actorUserId: this.ctx.userId,
     });
 
     const packet: EvidencePacket = {
@@ -253,7 +254,7 @@ export class SupabaseLedgerStore implements LedgerStore {
       aggregateType: "evidence",
       aggregateId: evidence.id,
       eventType: "EvidenceReceived",
-      actorId: input.actorId,
+      actorId: this.ctx.userId,
       occurredAt: evidence.createdAt,
       payload: evidence as unknown as Record<string, unknown>,
     });
@@ -262,7 +263,7 @@ export class SupabaseLedgerStore implements LedgerStore {
       aggregateType: "voucher",
       aggregateId: voucher.id,
       eventType: "VoucherCreated",
-      actorId: input.actorId,
+      actorId: this.ctx.userId,
       occurredAt: evidence.createdAt,
       payload: voucher as unknown as Record<string, unknown>,
     });
@@ -531,7 +532,7 @@ export class SupabaseLedgerStore implements LedgerStore {
       this.getReports(),
       Promise.resolve<CloseRun>({
         id: "close_current",
-        period: new Date().toISOString().slice(0, 7),
+        period: thisMonth(),
         generatedAt: nowIso(),
         checklist: [],
       }),
@@ -638,7 +639,7 @@ export class SupabaseLedgerStore implements LedgerStore {
               ? "Review rejected"
               : "Booked without VAT deduction",
         timestamp: occurredAt,
-        actor: input.actorId,
+        actor: this.ctx.userId,
       },
     ];
 
@@ -667,7 +668,7 @@ export class SupabaseLedgerStore implements LedgerStore {
       aggregateType: "review",
       aggregateId: reviewId,
       eventType: action === "approve" ? "ReviewApproved" : "ReviewRejected",
-      actorId: input.actorId,
+      actorId: this.ctx.userId,
       occurredAt,
       payload: { action, notes: input.notes },
     });
@@ -700,7 +701,7 @@ export class SupabaseLedgerStore implements LedgerStore {
         aggregateType: "ledger",
         aggregateId: voucher.id,
         eventType: "PostedToLedger",
-        actorId: input.actorId,
+        actorId: this.ctx.userId,
         occurredAt,
         payload: { action, suggestion: review.suggestion },
       });

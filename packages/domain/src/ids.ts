@@ -9,3 +9,7 @@ export function nowIso() {
 export function today() {
   return new Date().toISOString().slice(0, 10);
 }
+
+export function thisMonth() {
+  return new Date().toISOString().slice(0, 7);
+}

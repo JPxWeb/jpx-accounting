@@ -10,6 +10,12 @@ export type VoucherDraftInput = {
   voucherNumber: string;
   createdAt: string;
   input: EvidenceCreateInput;
+  // Authenticated actor for audit attribution on the initial provenance step.
+  // Supabase store passes this.ctx.userId; the demo MemoryLedgerStore passes
+  // input.actorId since it has no auth context. Domain "createdBy" fields stay
+  // sourced from input.actorId (they record the request's claimed creator,
+  // which the audit trail is for verifying, not for attribution).
+  actorUserId: string;
 };
 
 export function buildVoucherDraft(d: VoucherDraftInput): {
@@ -58,7 +64,7 @@ export function buildVoucherDraft(d: VoucherDraftInput): {
     suggestedAction: blocked ? "Request more evidence or post without VAT deduction." : "Approve the proposed posting.",
     suggestion,
     provenanceTimeline: [
-      { id: createId("step"), label: "Evidence received", timestamp: d.createdAt, actor: d.input.actorId },
+      { id: createId("step"), label: "Evidence received", timestamp: d.createdAt, actor: d.actorUserId },
       { id: createId("step"), label: "Fields extracted", timestamp: d.createdAt, actor: "system-extractor" },
       { id: createId("step"), label: "Rules applied", timestamp: d.createdAt, actor: "system-rules" },
       { id: createId("step"), label: "Suggestion generated", timestamp: d.createdAt, actor: "system-ai" },

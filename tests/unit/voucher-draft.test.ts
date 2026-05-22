@@ -9,10 +9,11 @@ test("buildVoucherDraft produces voucher + review + suggestion from extracted fi
     packetId: "p1",
     voucherNumber: "V-1001",
     createdAt: "2026-05-19T00:00:00.000Z",
+    actorUserId: "user_authenticated",
     input: {
       organizationId: "o",
       workspaceId: "w",
-      actorId: "u",
+      actorId: "attacker_from_body",
       title: "OpenAI subscription invoice",
       originalFilename: "openai.pdf",
       mimeType: "application/pdf",
@@ -27,4 +28,9 @@ test("buildVoucherDraft produces voucher + review + suggestion from extracted fi
     ["Evidence received", "Fields extracted", "Rules applied", "Suggestion generated"],
   );
   assert.equal(draft.suggestion.voucherId, "v1");
+  // The initial provenance step must attribute to the authenticated actor, never the
+  // request body's actorId — same audit invariant as the EvidenceReceived/VoucherCreated events.
+  assert.equal(draft.review.provenanceTimeline[0]?.actor, "user_authenticated");
+  // domain entity attribution still comes from the body
+  assert.equal(draft.voucher.createdBy, "attacker_from_body");
 });

@@ -463,3 +463,250 @@ test("getEvidenceContext resolves voucher across multiple packet links without p
   assert.equal(voucherReads, 1); // ONE .in(...) query, not one per packet
   assert.equal(ctx?.packet?.id, "p2"); // coherent: packet matches the returned voucher
 });
+
+test("createEvidence attributes EvidenceReceived/VoucherCreated audit events to ctx.userId, not input.actorId", async () => {
+  const inserted: Record<string, unknown>[] = [];
+  const client = {
+    schema: () => ({
+      from: (table: string) => {
+        const chain: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "order", "limit"]) chain[m] = () => chain;
+        chain.maybeSingle = async () => ({ data: null, error: null });
+        chain.insert = async (row: Record<string, unknown>) => {
+          if (table === "events") inserted.push(row);
+          return { error: null };
+        };
+        return chain;
+      },
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, {
+    organizationId: "org_a",
+    workspaceId: "ws_a",
+    userId: "user_real",
+  });
+
+  const result = await store.createEvidence({
+    organizationId: "org_a",
+    workspaceId: "ws_a",
+    actorId: "attacker_from_body",
+    title: "Test",
+    originalFilename: "t.pdf",
+    mimeType: "application/pdf",
+    modalities: ["pdf"],
+  });
+
+  const evidenceEvent = inserted.find((e) => e.event_type === "EvidenceReceived");
+  const voucherEvent = inserted.find((e) => e.event_type === "VoucherCreated");
+  const suggestionEvent = inserted.find((e) => e.event_type === "SuggestionGenerated");
+
+  assert.equal(evidenceEvent?.actor_id, "user_real", "EvidenceReceived must attribute to ctx.userId");
+  assert.equal(voucherEvent?.actor_id, "user_real", "VoucherCreated must attribute to ctx.userId");
+  assert.equal(suggestionEvent?.actor_id, "system-ai", "SuggestionGenerated stays system-ai");
+  // Initial provenance step must also attribute to ctx.userId via buildVoucherDraft's actorUserId.
+  assert.equal(
+    result.review.provenanceTimeline[0]?.actor,
+    "user_real",
+    "First provenance step ('Evidence received') must attribute to ctx.userId, not input.actorId",
+  );
+});
+
+test("applyReviewDecision attributes ReviewApproved + PostedToLedger + provenance step to ctx.userId, not input.actorId", async () => {
+  const inserted: Record<string, unknown>[] = [];
+  const updated: Record<string, unknown>[] = [];
+  const reviewRow = {
+    id: "r1",
+    organization_id: "org_a",
+    workspace_id: "ws_a",
+    voucher_id: "v1",
+    title: "Review V-1",
+    status: "needs-review",
+    suggested_action: "Approve",
+    suggestion: {
+      id: "s1",
+      voucherId: "v1",
+      accountNumber: "6540",
+      accountName: "IT-tjänster",
+      vatCode: "VAT25",
+      confidence: 0.9,
+      reasoning: "r",
+      kind: "recommendation",
+      citations: [],
+      ruleHits: [],
+    },
+    provenance_timeline: [],
+  };
+  const voucherRow = {
+    id: "v1",
+    organization_id: "org_a",
+    workspace_id: "ws_a",
+    evidence_packet_id: "p1",
+    voucher_number: "V-1",
+    status: "needs-review",
+    accounting_method: "invoice",
+    extracted_fields: [],
+    voucher_fields: {
+      grossAmount: 1249,
+      netAmount: 999.2,
+      vatAmount: 249.8,
+      vatRate: 25,
+      currency: "SEK",
+      description: "Test",
+    },
+    created_at: "2026-05-19T00:00:00.000Z",
+    created_by: "user_real",
+  };
+
+  const client = {
+    schema: () => ({
+      from: (table: string) => {
+        const chain: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "order", "limit"]) chain[m] = () => chain;
+        chain.maybeSingle = async () => {
+          if (table === "review_tasks") return { data: reviewRow, error: null };
+          if (table === "vouchers") return { data: voucherRow, error: null };
+          if (table === "events") return { data: null, error: null };
+          return { data: null, error: null };
+        };
+        chain.insert = async (row: Record<string, unknown>) => {
+          if (table === "events") inserted.push(row);
+          return { error: null };
+        };
+        chain.update = (row: Record<string, unknown>) => {
+          updated.push({ table, ...row });
+          return chain;
+        };
+        return chain;
+      },
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, {
+    organizationId: "org_a",
+    workspaceId: "ws_a",
+    userId: "user_real",
+  });
+
+  const updatedReview = await store.applyReviewDecision("r1", "approve", {
+    actorId: "attacker_from_body",
+    notes: "ok",
+  });
+
+  const reviewEvent = inserted.find((e) => e.event_type === "ReviewApproved");
+  const ledgerEvent = inserted.find((e) => e.event_type === "PostedToLedger");
+
+  assert.equal(reviewEvent?.actor_id, "user_real", "ReviewApproved must attribute to ctx.userId");
+  assert.equal(ledgerEvent?.actor_id, "user_real", "PostedToLedger must attribute to ctx.userId");
+
+  const latestStep = updatedReview?.provenanceTimeline.at(-1);
+  assert.equal(latestStep?.actor, "user_real", "provenance step actor must be ctx.userId");
+
+  // Lock in that both the review_tasks and vouchers tables were updated exactly once.
+  // This catches a regression where applyReviewDecision forgets one of the two writes.
+  assert.equal(
+    updated.filter((u) => u.table === "review_tasks").length,
+    1,
+    "review_tasks must be updated exactly once",
+  );
+  assert.equal(updated.filter((u) => u.table === "vouchers").length, 1, "vouchers must be updated exactly once");
+});
+
+test("suggestVoucher returns the stored suggestion when one exists for an in-org voucher", async () => {
+  const voucherRow = {
+    id: "v1",
+    organization_id: "org_a",
+    workspace_id: "ws_a",
+    evidence_packet_id: "p1",
+    voucher_number: "V-1",
+    status: "needs-review",
+    accounting_method: "invoice",
+    extracted_fields: [],
+    voucher_fields: {},
+    created_at: "2026-05-19T00:00:00.000Z",
+    created_by: "u",
+  };
+  const suggestionRow = {
+    id: "s1",
+    voucher_id: "v1",
+    account_number: "6540",
+    account_name: "IT-tjänster",
+    vat_code: "VAT25",
+    confidence: 0.9,
+    reasoning: "stored",
+    kind: "recommendation",
+    citations: [],
+    rule_hits: [],
+  };
+  const client = {
+    schema: () => ({
+      from: (table: string) => {
+        const chain: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "order", "limit"]) chain[m] = () => chain;
+        chain.maybeSingle = async () => {
+          if (table === "vouchers") return { data: voucherRow, error: null };
+          if (table === "suggestions") return { data: suggestionRow, error: null };
+          return { data: null, error: null };
+        };
+        return chain;
+      },
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, {
+    organizationId: "org_a",
+    workspaceId: "ws_a",
+    userId: "u",
+  });
+
+  const result = await store.suggestVoucher("v1");
+  assert.equal(result?.id, "s1");
+  assert.equal(result?.accountNumber, "6540");
+  assert.equal(result?.reasoning, "stored");
+});
+
+test("suggestVoucher falls back to deterministic suggestion when none is stored", async () => {
+  const voucherRow = {
+    id: "v1",
+    organization_id: "org_a",
+    workspace_id: "ws_a",
+    evidence_packet_id: "p1",
+    voucher_number: "V-1",
+    status: "needs-review",
+    accounting_method: "invoice",
+    extracted_fields: [
+      { key: "supplierName", label: "Supplier", value: "OpenAI Ireland", confidence: 0.9, required: true },
+    ],
+    voucher_fields: {
+      supplierName: "OpenAI Ireland",
+      description: "OpenAI",
+      grossAmount: 1249,
+      netAmount: 999.2,
+      vatAmount: 249.8,
+      vatRate: 25,
+      currency: "SEK",
+    },
+    created_at: "2026-05-19T00:00:00.000Z",
+    created_by: "u",
+  };
+  const client = {
+    schema: () => ({
+      from: (table: string) => {
+        const chain: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "order", "limit"]) chain[m] = () => chain;
+        chain.maybeSingle = async () => {
+          if (table === "vouchers") return { data: voucherRow, error: null };
+          if (table === "suggestions") return { data: null, error: null };
+          return { data: null, error: null };
+        };
+        return chain;
+      },
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, {
+    organizationId: "org_a",
+    workspaceId: "ws_a",
+    userId: "u",
+  });
+
+  const result = await store.suggestVoucher("v1");
+  assert.ok(result, "fallback must produce a deterministic suggestion when none stored");
+  assert.equal(result.voucherId, "v1");
+});

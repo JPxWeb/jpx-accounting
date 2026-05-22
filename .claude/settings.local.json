@@ -127,7 +127,13 @@
       "Bash(dir \"C:\\\\git\\\\jpx-accounting\\\\apps\\\\web\\\\node_modules\\\\@base-ui\\\\react\" /b)",
       "Bash(Get-Content \"C:\\\\Users\\\\hejko\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--git-jpx-accounting\\\\fc4d8081-db6a-4a3e-8e44-e2bfa0819698\\\\tasks\\\\a92321cc26cc59a42.output\" -Tail 50)",
       "Bash(git diff *)",
-      "Bash(cygpath -w /tmp/tracked.diff)"
+      "Bash(cygpath -w /tmp/tracked.diff)",
+      "Skill(code-review:code-review)",
+      "Skill(code-review:code-review:*)",
+      "Bash(ls supabase/migrations/)",
+      "Bash(dir supabase\\\\migrations)",
+      "Bash(ls tests/tsconfig.json)",
+      "Bash(cat tests/tsconfig.json)"
     ],
     "additionalDirectories": [
       "\\tmp"

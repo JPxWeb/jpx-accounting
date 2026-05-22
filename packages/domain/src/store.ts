@@ -213,6 +213,8 @@ export class MemoryLedgerStore implements LedgerStore {
       voucherNumber,
       createdAt,
       input,
+      // Demo store has no auth context; preserve legacy body-actor attribution.
+      actorUserId: input.actorId,
     });
 
     this.evidence.set(evidenceId, evidence);

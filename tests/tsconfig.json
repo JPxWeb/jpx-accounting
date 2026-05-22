@@ -1,0 +1,22 @@
+{
+  "//": "Why this file deviates from the plan's minimal config: under pnpm workspaces neither 'hono' nor '@supabase/supabase-js' is hoisted to the repo-root node_modules (they live under services/api/node_modules), so tsc -p tests/tsconfig.json cannot resolve those imports without explicit path entries. Overriding baseRef to '..' is what then forces the @jpx-accounting/* paths to be restated (TypeScript resolves the inherited paths relative to *this* file's baseUrl). Known fragility: @supabase/supabase-js has divergent version ranges across workspaces; tests typecheck against services/api's copy. Pin via pnpm.overrides if drift starts mattering.",
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "baseUrl": "..",
+    "types": ["node"],
+    "paths": {
+      "@jpx-accounting/contracts": ["packages/contracts/src/index.ts"],
+      "@jpx-accounting/domain": ["packages/domain/src/index.ts"],
+      "@jpx-accounting/api-client": ["packages/api-client/src/index.ts"],
+      "@jpx-accounting/ai-core": ["packages/ai-core/src/index.ts"],
+      "@jpx-accounting/reporting": ["packages/reporting/src/index.ts"],
+      "@jpx-accounting/ui-tokens": ["packages/ui-tokens/src/index.ts"],
+      "@jpx-accounting/supabase-client": ["packages/supabase-client/src/index.ts"],
+      "hono": ["services/api/node_modules/hono"],
+      "@supabase/supabase-js": ["services/api/node_modules/@supabase/supabase-js"]
+    }
+  },
+  "include": ["**/*.ts"]
+}
