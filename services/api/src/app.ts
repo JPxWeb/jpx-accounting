@@ -219,10 +219,14 @@ export function createApp({
 
   app.post("/api/knowledge/query", async (context) => {
     const input = await parseBody(context.req.raw, knowledgeQuerySchema);
-    const snapshot = await context.get("store").getSnapshot();
+    // Knowledge query is a placeholder until the Azure AI Search index ships.
+    // Returning citations from the latest assistant session was a copy-paste
+    // shortcut that attributed the assistant scaffold's "Internal architecture
+    // policy" citation to arbitrary knowledge queries — wrong provenance in a
+    // regulated audit context.
     return context.json({
       query: input.query,
-      citations: snapshot.assistantExamples[0]?.citations ?? [],
+      citations: [],
       answer:
         "Knowledge queries are routed through the same grounded advisory stack; next step is indexing effective-dated internal and official documents into Azure AI Search.",
     });

@@ -433,12 +433,37 @@ export class MemoryLedgerStore implements LedgerStore {
     const reviews = [...this.reviews.values()];
     const vouchers = [...this.vouchers.values()];
     const detected = detectComplianceIssues(reviews, vouchers, today());
-    // Idempotent refresh: replace any prior auto-detected alerts with the
-    // freshly detected set. Seeded informational alerts (kind:
-    // "representation-review") stay in place.
-    const seeded = this.alerts.filter((a) => a.kind === "representation-review");
-    this.alerts.length = 0;
-    this.alerts.push(...seeded, ...detected);
+    const autoDetectedKinds = new Set(["stale-blocked", "missing-supplier-vat"]);
+    const detectedKey = (kind: string, targetId: string | undefined) => `${kind}::${targetId ?? ""}`;
+    const detectedKeys = new Set(detected.map((a) => detectedKey(a.kind, a.targetId)));
+    const detectedIds = new Set(detected.map((a) => a.id));
+
+    // Mark previously-open auto-detected alerts as 'resolved' when their
+    // condition no longer holds — symmetric with the SupabaseLedgerStore
+    // behavior. Seeded informational alerts (e.g. representation-review,
+    // legacy) are left as-is.
+    for (const alert of this.alerts) {
+      if (
+        autoDetectedKinds.has(alert.kind) &&
+        alert.status === "open" &&
+        !detectedKeys.has(detectedKey(alert.kind, alert.targetId))
+      ) {
+        alert.status = "resolved";
+      }
+    }
+    // Append any newly-detected alerts whose deterministic ID isn't already
+    // present. Deterministic IDs in detectComplianceIssues mean re-detecting
+    // the same condition doesn't add a duplicate row.
+    const existingIds = new Set(this.alerts.map((a) => a.id));
+    for (const alert of detected) {
+      if (!existingIds.has(alert.id)) this.alerts.push(alert);
+    }
+    // If a previously-resolved alert flips back to detected, reopen it.
+    for (const alert of this.alerts) {
+      if (autoDetectedKinds.has(alert.kind) && alert.status === "resolved" && detectedIds.has(alert.id)) {
+        alert.status = "open";
+      }
+    }
     return [...this.alerts];
   }
 
@@ -446,6 +471,14 @@ export class MemoryLedgerStore implements LedgerStore {
     const requestedReviews = input.reviewIds
       .map((id) => this.reviews.get(id))
       .filter((r): r is ReviewTask => Boolean(r));
+    // Fail loud when the caller asked about review IDs that don't exist
+    // in this scope — a silent 201 with empty deltas masks bugs (typos,
+    // cross-workspace IDs, deletions) that the caller needs to know about.
+    if (requestedReviews.length !== input.reviewIds.length) {
+      const found = new Set(requestedReviews.map((r) => r.id));
+      const missing = input.reviewIds.filter((id) => !found.has(id));
+      throw new Error(`runSimulation: ${missing.length} review(s) not found in this workspace: ${missing.join(", ")}`);
+    }
     const requestedVouchers = requestedReviews
       .map((r) => this.vouchers.get(r.voucherId))
       .filter((v): v is Voucher => Boolean(v));

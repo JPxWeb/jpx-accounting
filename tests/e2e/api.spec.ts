@@ -146,17 +146,24 @@ test("assistant, knowledge, simulation, close, and import endpoints round-trip",
   expect(knowledge.ok()).toBeTruthy();
   expect((await knowledge.json()).answer).toContain("Azure AI Search");
 
+  const simulationWorkspace = await request.get(`${apiBaseUrl}/api/workspace`);
+  const simulationSnapshot = await simulationWorkspace.json();
   const simulation = await request.post(`${apiBaseUrl}/api/simulations/run`, {
     data: {
       actorId: "user_founder",
       title: "Representation reclassification",
       scenario: "Treat a lunch receipt as representation and compare VAT impact.",
+      reviewIds: [simulationSnapshot.reviews[0].id],
+      action: "approve",
     },
   });
   expect(simulation.ok()).toBeTruthy();
-  expect(await simulation.json()).toMatchObject({
+  const simulationData = await simulation.json();
+  expect(simulationData).toMatchObject({
     title: "Representation reclassification",
   });
+  expect(Array.isArray(simulationData.balanceDelta)).toBeTruthy();
+  expect(Array.isArray(simulationData.vatDelta)).toBeTruthy();
 
   const closeRun = await request.post(`${apiBaseUrl}/api/close-runs`);
   expect(closeRun.ok()).toBeTruthy();

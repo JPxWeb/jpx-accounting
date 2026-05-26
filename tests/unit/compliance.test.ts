@@ -149,3 +149,69 @@ test("both rules fire simultaneously on independent vouchers", () => {
   assert.ok(alerts.some((a) => a.kind === "stale-blocked"));
   assert.ok(alerts.some((a) => a.kind === "missing-supplier-vat"));
 });
+
+test("detectComplianceIssues produces deterministic alert IDs per (kind, targetId)", () => {
+  const blocking = reviewFixture({
+    suggestion: {
+      ...reviewFixture().suggestion!,
+      ruleHits: [
+        {
+          id: "rh1",
+          code: "vat-missing",
+          title: "Missing supplier VAT",
+          severity: "blocking",
+          message: "Supplier VAT is required",
+          sourceIds: [],
+        },
+      ],
+    },
+  });
+  const v = voucherFixture({ createdAt: "2026-05-01T00:00:00.000Z" });
+  const first = detectComplianceIssues([blocking], [v], "2026-05-09");
+  const second = detectComplianceIssues([blocking], [v], "2026-05-10");
+  assert.equal(first[0]?.id, second[0]?.id, "same condition → same alert id across runs");
+});
+
+test("daysBetween throws on malformed input rather than returning NaN silently", () => {
+  const blocking = reviewFixture({
+    suggestion: {
+      ...reviewFixture().suggestion!,
+      ruleHits: [
+        {
+          id: "rh1",
+          code: "vat-missing",
+          title: "Missing supplier VAT",
+          severity: "blocking",
+          message: "Supplier VAT is required",
+          sourceIds: [],
+        },
+      ],
+    },
+  });
+  const v = voucherFixture({ createdAt: "not-a-date" });
+  assert.throws(() => detectComplianceIssues([blocking], [v], "2026-05-09"));
+});
+
+test("clock-skew normalized: voucher created late at night still hits stale-blocked on day 8", () => {
+  const blocking = reviewFixture({
+    suggestion: {
+      ...reviewFixture().suggestion!,
+      ruleHits: [
+        {
+          id: "rh1",
+          code: "vat-missing",
+          title: "Missing supplier VAT",
+          severity: "blocking",
+          message: "Supplier VAT is required",
+          sourceIds: [],
+        },
+      ],
+    },
+  });
+  // Voucher created at 23:00 on day D, today is D+8 at 00:00 — raw daysBetween
+  // would have been 7.04, floored to 7, missing the threshold. Normalized to
+  // date-only the diff is exactly 8 days and the rule fires.
+  const v = voucherFixture({ createdAt: "2026-05-01T23:00:00.000Z" });
+  const alerts = detectComplianceIssues([blocking], [v], "2026-05-09");
+  assert.equal(alerts.length, 1);
+});

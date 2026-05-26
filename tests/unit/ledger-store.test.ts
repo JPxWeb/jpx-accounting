@@ -67,3 +67,47 @@ test("MemoryLedgerStore.refreshComplianceAlerts returns rule output and is idemp
   assert.equal(first.length, second.length);
   assert.ok(first.some((a) => a.kind === "representation-review"));
 });
+
+test("MemoryLedgerStore.runSimulation rejects when reviewIds don't all resolve", async () => {
+  const store = new MemoryLedgerStore();
+  await assert.rejects(
+    () =>
+      store.runSimulation({
+        actorId: "user_test",
+        title: "bogus",
+        scenario: "uses a review id that doesn't exist",
+        reviewIds: ["review_does_not_exist_anywhere"],
+        action: "approve",
+      }),
+    /not found in this workspace/,
+  );
+});
+
+test("MemoryLedgerStore.refreshComplianceAlerts marks resolved alerts when condition clears, doesn't re-mint IDs", async () => {
+  const store = new MemoryLedgerStore();
+  // Force a stale-blocked alert by aging the seeded voucher
+  const reviews = await store.getReviewFeed();
+  const review = reviews[0];
+  assert.ok(review, "seeded review exists");
+  // Mutate the suggestion to include a blocking rule hit; mutate voucher to be old
+  if (review.suggestion) {
+    review.suggestion.ruleHits = [
+      { id: "rh1", code: "vat-missing", title: "missing", severity: "blocking", message: "x", sourceIds: [] },
+    ];
+  }
+  // Find the voucher and rewind createdAt to 10 days ago via direct map access — use a known long-past date
+  const internalVouchers = (store as unknown as { vouchers: Map<string, { createdAt: string }> }).vouchers;
+  for (const v of internalVouchers.values()) v.createdAt = "2026-01-01T00:00:00.000Z";
+
+  const first = await store.refreshComplianceAlerts();
+  const staleFirst = first.find((a) => a.kind === "stale-blocked");
+  assert.ok(staleFirst, "stale-blocked detected on first run");
+  assert.equal(staleFirst.status, "open");
+
+  // Clear the blocking hit → condition no longer holds → should be marked resolved on next refresh
+  if (review.suggestion) review.suggestion.ruleHits = [];
+  const second = await store.refreshComplianceAlerts();
+  const staleSecond = second.find((a) => a.id === staleFirst.id);
+  assert.ok(staleSecond, "alert still present (not deleted)");
+  assert.equal(staleSecond.status, "resolved", "marked resolved when condition cleared");
+});

@@ -744,6 +744,28 @@ export class SupabaseLedgerStore implements LedgerStore {
     if (rErr) throw new Error(`Failed to load reviews: ${rErr.message}`);
     const reviews = (reviewRows ?? []).map((row) => mapReviewRow(row));
 
+    // Hydrate suggestions for any reviews whose embedded suggestion column is
+    // null (mirrors the getReviewFeed Task 7 hardening pattern). Without this,
+    // stale-blocked detection silently misses production rows whose suggestion
+    // was persisted to the suggestions table rather than embedded.
+    const missingVoucherIds = reviews.filter((r) => !r.suggestion).map((r) => r.voucherId);
+    if (missingVoucherIds.length > 0) {
+      const { data: suggestionRows, error: sErr } = await this.ledger()
+        .from("suggestions")
+        .select("*")
+        .in("voucher_id", missingVoucherIds);
+      if (sErr) throw new Error(`Failed to load suggestions: ${sErr.message}`);
+      const suggestionsByVoucher = new Map(
+        (suggestionRows ?? []).map((row) => [row.voucher_id as string, mapSuggestionRow(row)]),
+      );
+      for (const review of reviews) {
+        if (!review.suggestion) {
+          const hydrated = suggestionsByVoucher.get(review.voucherId);
+          if (hydrated) review.suggestion = hydrated;
+        }
+      }
+    }
+
     const { data: voucherRows, error: vErr } = await this.ledger()
       .from("vouchers")
       .select("*")
@@ -775,6 +797,33 @@ export class SupabaseLedgerStore implements LedgerStore {
       if (uErr) throw new Error(`Failed to upsert compliance alerts: ${uErr.message}`);
     }
 
+    // Mark previously-open auto-detected alerts whose condition no longer
+    // holds as 'resolved'. Without this, alerts accumulate forever even when
+    // the underlying voucher has been approved or the VAT number filled in.
+    // Seeded alerts (kind='legacy' or 'representation-review') are not auto-
+    // detected and are deliberately left alone.
+    const detectedKey = (kind: string, targetId: string | null | undefined) => `${kind}::${targetId ?? ""}`;
+    const detectedKeys = new Set(detected.map((a) => detectedKey(a.kind, a.targetId)));
+    const autoDetectedKinds = ["stale-blocked", "missing-supplier-vat"];
+    const { data: openRows, error: openErr } = await this.ledger()
+      .from("compliance_alerts")
+      .select("id, kind, target_id")
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .eq("status", "open")
+      .in("kind", autoDetectedKinds);
+    if (openErr) throw new Error(`Failed to load open alerts: ${openErr.message}`);
+    const toResolve = (openRows ?? [])
+      .filter((row) => !detectedKeys.has(detectedKey(row.kind as string, (row.target_id as string | null) ?? null)))
+      .map((row) => row.id as string);
+    if (toResolve.length > 0) {
+      const { error: resErr } = await this.ledger()
+        .from("compliance_alerts")
+        .update({ status: "resolved", resolved_at: nowIso(), resolved_by: this.ctx.userId })
+        .in("id", toResolve);
+      if (resErr) throw new Error(`Failed to mark alerts resolved: ${resErr.message}`);
+    }
+
     const { data: allRows, error: allErr } = await this.ledger()
       .from("compliance_alerts")
       .select("*")
@@ -794,6 +843,12 @@ export class SupabaseLedgerStore implements LedgerStore {
       .in("id", input.reviewIds);
     if (rErr) throw new Error(`Failed to load reviews: ${rErr.message}`);
     const reviews = (reviewRows ?? []).map((row) => mapReviewRow(row));
+
+    if (reviews.length !== input.reviewIds.length) {
+      const found = new Set(reviews.map((r) => r.id));
+      const missing = input.reviewIds.filter((id) => !found.has(id));
+      throw new Error(`runSimulation: ${missing.length} review(s) not found in this workspace: ${missing.join(", ")}`);
+    }
 
     const voucherIds = [...new Set(reviews.map((r) => r.voucherId))];
     let vouchers: Voucher[] = [];

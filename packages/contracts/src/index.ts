@@ -245,7 +245,7 @@ export const complianceAlertSchema = z.object({
   impactSummary: z.string(),
   kind: z.string(),
   severity: z.enum(["info", "warning", "critical"]),
-  status: z.enum(["open", "resolved"]),
+  status: z.enum(["open", "acknowledged", "resolved", "dismissed"]),
   targetId: z.string().optional(),
   body: z.string().optional(),
 });

@@ -10,6 +10,9 @@
 //
 // Writes only to projections.* — never touches ledger.* (the legal record).
 
+import { randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
+
 import { buildPostingLines } from "@jpx-accounting/domain";
 import { createClient } from "@supabase/supabase-js";
 
@@ -47,6 +50,7 @@ export function replayJournalLinesFromEvents(events: EventRow[], vouchersById: M
     );
     for (const line of postingLines) {
       lines.push({
+        id: `jrn_${randomUUID()}`,
         organization_id: event.organization_id,
         workspace_id: event.workspace_id,
         voucher_id: line.voucherId,
@@ -86,6 +90,15 @@ async function main() {
   const key = process.env.SUPABASE_SECRET_KEY;
   if (!url || !key) {
     console.error("SUPABASE_URL and SUPABASE_SECRET_KEY are required");
+    process.exit(2);
+  }
+  // Blast-radius safeguard: --apply must always be scoped. Reading globally for
+  // a dry-run summary is fine; writing across every tenant in one command is
+  // not. Operators who genuinely want a global rebuild must script a loop.
+  if (apply && (!org || !workspace)) {
+    console.error(
+      "--apply requires both --org and --workspace; refusing to rewrite projections across every tenant in one run.",
+    );
     process.exit(2);
   }
   const supabase = createClient(url, key, { auth: { persistSession: false } });
@@ -175,8 +188,11 @@ async function main() {
   }
 }
 
-const argv1 = process.argv[1] ?? "";
-const isMain = import.meta.url === `file://${argv1.replace(/\\/g, "/")}`;
+// Use pathToFileURL to construct the expected import.meta.url — it handles
+// Windows drive letters (file:///C:/...) and POSIX absolute paths (file:///...)
+// uniformly. Hand-rolling the URL is the path to subtle cross-platform bugs.
+const argv1 = process.argv[1];
+const isMain = argv1 !== undefined && import.meta.url === pathToFileURL(argv1).href;
 if (isMain) {
   main().catch((err) => {
     console.error(err);
