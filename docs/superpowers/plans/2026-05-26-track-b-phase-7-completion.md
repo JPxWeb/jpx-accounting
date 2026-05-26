@@ -31,7 +31,7 @@
 
 | File | Action | Tasks |
 |------|--------|-------|
-| `scripts/rebuild-projections.mjs` | NEW — one-shot ops script | 1 |
+| `scripts/rebuild-projections.ts` | NEW — one-shot ops script | 1 |
 | `tests/unit/rebuild-projections.test.ts` | NEW | 1 |
 | `supabase/migrations/<ts>_enable_supa_audit.sql` | NEW | 2 |
 | `supabase/migrations/20260324000000_schema_v2.sql` | MODIFY — remove dead commented block | 2 |
@@ -62,7 +62,7 @@ The rebuild script is intentionally first: it touches no domain code, no contrac
 ### Task 1: One-shot rebuild script with dry-run default
 
 **Files:**
-- Create: `scripts/rebuild-projections.mjs`
+- Create: `scripts/rebuild-projections.ts`
 - Create: `tests/unit/rebuild-projections.test.ts`
 
 The script extracts a pure replay function so the test can verify replay without running the whole script (which needs env vars and a live DB). The script body wires that function to a Supabase client.
@@ -75,7 +75,7 @@ Create `tests/unit/rebuild-projections.test.ts` with:
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { replayJournalLinesFromEvents } from "../../scripts/rebuild-projections.mjs";
+import { replayJournalLinesFromEvents } from "../../scripts/rebuild-projections";
 
 test("replayJournalLinesFromEvents reconstructs lines from PostedToLedger events", () => {
   const voucher = {
@@ -149,14 +149,14 @@ Expected: FAIL — the module does not exist.
 
 - [ ] **Step 3: Create the script with the exported pure function**
 
-Create `scripts/rebuild-projections.mjs` with:
+Create `scripts/rebuild-projections.ts` with:
 
-```js
-#!/usr/bin/env node
+```ts
+#!/usr/bin/env -S tsx
 // Replay ledger.events into projections.journal_entries. Dry-run by default.
 //
 // Usage:
-//   node scripts/rebuild-projections.mjs [--org <id>] [--workspace <id>] [--apply]
+//   tsx scripts/rebuild-projections.ts [--org <id>] [--workspace <id>] [--apply]
 //
 // Env: SUPABASE_URL, SUPABASE_SECRET_KEY (required even for dry-run; refusal
 // without them prevents anon-key footguns).
@@ -164,16 +164,30 @@ Create `scripts/rebuild-projections.mjs` with:
 // Writes only to projections.* — never touches ledger.* (the legal record).
 
 import { createClient } from "@supabase/supabase-js";
-import { buildPostingLines } from "../packages/domain/dist/posting.js";
 
-export function replayJournalLinesFromEvents(events, vouchersById) {
-  const lines = [];
+import { buildPostingLines } from "@jpx-accounting/domain";
+
+type EventRow = {
+  event_type: string;
+  payload: { action?: "approve" | "book-without-vat"; suggestion?: Parameters<typeof buildPostingLines>[1] };
+  aggregate_id?: string;
+  occurred_at: string;
+  organization_id: string;
+  workspace_id: string;
+};
+
+type VoucherLite = { id: string; voucherFields: Parameters<typeof buildPostingLines>[0]["voucherFields"] };
+
+export function replayJournalLinesFromEvents(events: EventRow[], vouchersById: Map<string, VoucherLite>) {
+  const lines: Array<Record<string, unknown>> = [];
   for (const event of events) {
     if (event.event_type !== "PostedToLedger") continue;
-    const { action, suggestion } = event.payload;
+    const action = event.payload.action;
+    const suggestion = event.payload.suggestion;
+    if (!action || !suggestion || !event.aggregate_id) continue;
     const voucher = vouchersById.get(event.aggregate_id);
     if (!voucher) continue; // voucher hard-deleted (shouldn't happen but skip silently)
-    const postingLines = buildPostingLines(voucher, suggestion, action, event.occurred_at);
+    const postingLines = buildPostingLines(voucher as Parameters<typeof buildPostingLines>[0], suggestion, action, event.occurred_at);
     for (const line of postingLines) {
       lines.push({
         organization_id: event.organization_id,
@@ -193,8 +207,8 @@ export function replayJournalLinesFromEvents(events, vouchersById) {
   return lines;
 }
 
-function parseArgs(argv) {
-  const args = { org: undefined, workspace: undefined, apply: false };
+function parseArgs(argv: string[]) {
+  const args: { org?: string; workspace?: string; apply: boolean } = { apply: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--org") args.org = argv[++i];
     else if (argv[i] === "--workspace") args.workspace = argv[++i];
@@ -284,34 +298,30 @@ async function main() {
 }
 
 // Run only when invoked as a script, not when imported by tests.
-const isMain = import.meta.url === `file://${process.argv[1].replace(/\\/g, "/")}`;
+const argv1 = process.argv[1] ?? "";
+const isMain = import.meta.url === `file://${argv1.replace(/\\/g, "/")}`;
 if (isMain) await main();
 ```
 
-Note: the import path `../packages/domain/dist/posting.js` requires the domain package to be built first (`pnpm --filter @jpx-accounting/domain build`). The test imports the script directly (top of file), so the import of `buildPostingLines` will be triggered there too — verify the domain dist exists.
+The TypeScript script uses the workspace package alias `@jpx-accounting/domain` — tsx (used by both `pnpm test:unit` and direct script invocation) resolves it through pnpm's symlinks. No prior build step required.
 
-- [ ] **Step 4: Build the domain package so the import resolves**
-
-Run: `pnpm --filter @jpx-accounting/domain build`
-Expected: clean build with no errors.
-
-- [ ] **Step 5: Run the test — expect PASS**
+- [ ] **Step 4: Run the test — expect PASS**
 
 Run: `npx tsx --test tests/unit/rebuild-projections.test.ts`
 Expected: 2/2 tests pass.
 
-- [ ] **Step 6: Smoke-test the dry-run mode (optional, requires Supabase env)**
+- [ ] **Step 5: Smoke-test the dry-run mode (optional, requires Supabase env)**
 
 If `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are set, run:
-`node scripts/rebuild-projections.mjs --org org_jpx --workspace workspace_main`
+`npx tsx scripts/rebuild-projections.ts --org org_jpx --workspace workspace_main`
 Expected: prints replay summary; no rows written; exits 0. If the env vars are absent, exits 2 with a clear message.
 
-- [ ] **Step 7: Full suite still green**
+- [ ] **Step 6: Full suite still green**
 
 Run: `pnpm test:unit && pnpm typecheck && pnpm typecheck:tests`
 Expected: all green.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add scripts/rebuild-projections.mjs tests/unit/rebuild-projections.test.ts
@@ -1458,12 +1468,9 @@ export * from "./compliance";
 Run: `npx tsx --test tests/unit/compliance.test.ts`
 Expected: 6/6 pass.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Hold — do not commit yet**
 
-```bash
-git add packages/contracts/src/index.ts packages/domain/src/compliance.ts packages/domain/src/index.ts tests/unit/compliance.test.ts
-git commit -m "feat(domain): detectComplianceIssues with stale-blocked + missing-supplier-vat rules"
-```
+The contract change in Step 3 leaves the existing `MemoryLedgerStore` seeded alert and `mapComplianceAlertRow` failing type validation until Task 9 fixes both. Proceed to Task 9; the commit will bundle Tasks 8 and 9 together.
 
 ---
 
@@ -1575,11 +1582,11 @@ private readonly alerts: ComplianceAlert[] = [
 Run: `pnpm typecheck && pnpm test:unit && pnpm typecheck:tests`
 Expected: all green.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Commit Tasks 8 and 9 together (atomic contract change)**
 
 ```bash
-git add supabase/migrations/ packages/domain/src/supabase-mappers.ts packages/domain/src/store.ts
-git commit -m "feat(supabase,domain): compliance_alerts dedup index + extended schema mapping"
+git add packages/contracts/src/index.ts packages/domain/src/compliance.ts packages/domain/src/index.ts packages/domain/src/supabase-mappers.ts packages/domain/src/store.ts supabase/migrations/ tests/unit/compliance.test.ts
+git commit -m "feat(domain,supabase): compliance alert schema + detection rules + dedup index"
 ```
 
 ---
@@ -1924,7 +1931,7 @@ After Task 13 commits, verify the sprint is shippable end-to-end:
   3. Re-run the refresh → identical response (idempotent).
   4. `POST /api/simulations/run` with `{ reviewIds: ["<seeded-review-id>"], action: "approve", title: "what-if", scenario: "approve seeded", actorId: "..." }` returns `SimulationRun` with non-empty `balanceDelta`.
   5. `GET /api/reports/trial-balance` is unchanged from before the simulation call.
-  6. `node scripts/rebuild-projections.mjs --org org_jpx --workspace workspace_main` prints dry-run summary; with `--apply`, reports remain byte-identical.
+  6. `npx tsx scripts/rebuild-projections.ts --org org_jpx --workspace workspace_main` prints dry-run summary; with `--apply`, reports remain byte-identical.
 - [ ] Demo E2E (`pnpm build && pnpm test:e2e`) still green.
 - [ ] DEV_STATUS.md Track B Phase 7 row reflects the new state.
 
