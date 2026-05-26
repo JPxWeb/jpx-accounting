@@ -86,6 +86,8 @@ The web app uses Next.js App Router with a `(shell)` route group for the 5-tab l
 
 **Development status:** see `docs/DEV_STATUS.md` for phase completion, code TODOs, and next-phase recommendations.
 
+**Conventions / anti-patterns:** see `docs/CONVENTIONS.md` for rules distilled from past incidents (schema-contract sync, partial-index pitfalls, store parity, citation provenance, etc.). Consult before changes that touch contracts, migrations, or `LedgerStore` implementations.
+
 ### Database (Supabase)
 
 `supabase/migrations/20260324000000_schema_v2.sql` defines two schemas:
