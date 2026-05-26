@@ -367,15 +367,9 @@ create policy org_isolation on projections.vat_summary
 -- ---------------------------------------------------------------------------
 -- 6. Audit tracking (supa_audit)
 -- ---------------------------------------------------------------------------
--- Track mutations on mutable tables. Events table is append-only so we skip it.
--- Note: supa_audit must be enabled in the Supabase dashboard extensions first.
--- Uncomment these lines after enabling the extension:
---
--- create extension if not exists supa_audit;
--- select audit.enable_tracking('ledger.vouchers'::regclass);
--- select audit.enable_tracking('ledger.review_tasks'::regclass);
--- select audit.enable_tracking('ledger.compliance_alerts'::regclass);
--- select audit.enable_tracking('ledger.assistant_sessions'::regclass);
+-- supa_audit row-history tracking is enabled in a later migration
+-- (20260526000000_enable_supa_audit.sql) once the project's extension
+-- allowlist is verified.
 
 
 -- ---------------------------------------------------------------------------
