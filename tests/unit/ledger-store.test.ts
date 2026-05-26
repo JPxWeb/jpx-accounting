@@ -51,3 +51,11 @@ test("MemoryLedgerStore.runSimulation returns real projection deltas and writes 
   const reportsAfter = await store.getReports();
   assert.deepEqual(reportsAfter, reportsBefore, "runSimulation must not mutate ledger state");
 });
+
+test("MemoryLedgerStore.answerAssistantQuestion delegates to the shared scaffold", async () => {
+  const store = new MemoryLedgerStore();
+  const answer = await store.answerAssistantQuestion("Can I deduct this?");
+  assert.equal(answer.status, "grounded");
+  assert.equal(answer.citations.length, 1);
+  assert.equal(answer.question, "Can I deduct this?");
+});

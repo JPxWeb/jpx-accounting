@@ -21,6 +21,7 @@ import {
 } from "@jpx-accounting/contracts";
 import type { SupabaseClient } from "@jpx-accounting/supabase-client";
 
+import { buildAssistantScaffold } from "./assistant";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, thisMonth, today } from "./ids";
 import { buildPostingLines } from "./posting";
@@ -716,13 +717,7 @@ export class SupabaseLedgerStore implements LedgerStore {
   }
 
   async answerAssistantQuestion(question: string): Promise<AssistantSession> {
-    const session: AssistantSession = {
-      id: createId("assistant"),
-      question,
-      answer: "Database-backed assistant sessions are not yet implemented.",
-      status: "grounded",
-      citations: [],
-    };
+    const session = buildAssistantScaffold(question);
 
     await this.ledger().from("assistant_sessions").insert({
       id: session.id,

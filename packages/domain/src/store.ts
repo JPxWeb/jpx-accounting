@@ -18,6 +18,7 @@ import type {
   Voucher,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
+import { buildAssistantScaffold } from "./assistant";
 import { ACCOUNT_COMPANY_BANK, ACCOUNT_INPUT_VAT, findBasAccount, VAT_CODE_NONE } from "./bas";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
@@ -418,21 +419,7 @@ export class MemoryLedgerStore implements LedgerStore {
   }
 
   async answerAssistantQuestion(question: string) {
-    const answer: AssistantSession = {
-      id: createId("assistant"),
-      question,
-      answer:
-        "This scaffold uses grounded, citation-first advisory. In production the answer would combine Azure AI Search retrieval, policy sources, and Responses API reasoning before it reaches the reviewer.",
-      status: "grounded",
-      citations: [
-        {
-          id: "cit_arch",
-          title: "Internal architecture policy",
-          sourceType: "internal",
-          excerpt: "AI may suggest and explain, but may not silently mutate accounting state.",
-        },
-      ],
-    };
+    const answer = buildAssistantScaffold(question);
     this.assistantExamples.unshift(answer);
     return answer;
   }

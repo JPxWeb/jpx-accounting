@@ -1,3 +1,4 @@
+export * from "./assistant";
 export * from "./bas";
 export * from "./extraction";
 export * from "./hash-chain";
