@@ -16,7 +16,12 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
   const queryClient = useQueryClient();
 
   const form = useForm<CompanySettings>({
-    resolver: zodResolver(companySettingsSchema),
+    // @hookform/resolvers v5.2 has an overload-resolution bug on Zod v4 schemas:
+    // TS picks the Zod 3 overload first and fails on a missing `_def.typeName`.
+    // The runtime is correct (resolver duck-types the schema). Cast keeps the
+    // call site type-safe for the form (useForm<CompanySettings>) without
+    // affecting runtime behavior.
+    resolver: zodResolver(companySettingsSchema as never),
     defaultValues: defaultData,
   });
 
