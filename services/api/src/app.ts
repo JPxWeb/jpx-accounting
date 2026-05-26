@@ -249,7 +249,7 @@ export function createApp({
   });
 
   app.post("/api/compliance-watch/refresh", async (context) =>
-    context.json((await context.get("store").getSnapshot()).alerts),
+    context.json(await context.get("store").refreshComplianceAlerts()),
   );
 
   app.post("/api/testing/reset", (context) => {
