@@ -20,6 +20,7 @@ import type {
 } from "@jpx-accounting/contracts";
 import { buildAssistantScaffold } from "./assistant";
 import { ACCOUNT_COMPANY_BANK, ACCOUNT_INPUT_VAT, findBasAccount, VAT_CODE_NONE } from "./bas";
+import { detectComplianceIssues } from "./compliance";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
 import type { LedgerLine } from "./ledger-line";
@@ -51,6 +52,7 @@ export interface LedgerStore {
     input: ReviewDecisionInput,
   ): Promise<ReviewTask | undefined>;
   answerAssistantQuestion(question: string): Promise<AssistantSession>;
+  refreshComplianceAlerts(): Promise<ComplianceAlert[]>;
   runSimulation(input: SimulationRequest): Promise<SimulationRun>;
   getCloseRun(): Promise<CloseRun>;
   getCompanySettings(): Promise<CompanySettings | null>;
@@ -425,6 +427,19 @@ export class MemoryLedgerStore implements LedgerStore {
     const answer = buildAssistantScaffold(question);
     this.assistantExamples.unshift(answer);
     return answer;
+  }
+
+  async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
+    const reviews = [...this.reviews.values()];
+    const vouchers = [...this.vouchers.values()];
+    const detected = detectComplianceIssues(reviews, vouchers, today());
+    // Idempotent refresh: replace any prior auto-detected alerts with the
+    // freshly detected set. Seeded informational alerts (kind:
+    // "representation-review") stay in place.
+    const seeded = this.alerts.filter((a) => a.kind === "representation-review");
+    this.alerts.length = 0;
+    this.alerts.push(...seeded, ...detected);
+    return [...this.alerts];
   }
 
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {

@@ -59,3 +59,11 @@ test("MemoryLedgerStore.answerAssistantQuestion delegates to the shared scaffold
   assert.equal(answer.citations.length, 1);
   assert.equal(answer.question, "Can I deduct this?");
 });
+
+test("MemoryLedgerStore.refreshComplianceAlerts returns rule output and is idempotent", async () => {
+  const store = new MemoryLedgerStore();
+  const first = await store.refreshComplianceAlerts();
+  const second = await store.refreshComplianceAlerts();
+  assert.equal(first.length, second.length);
+  assert.ok(first.some((a) => a.kind === "representation-review"));
+});

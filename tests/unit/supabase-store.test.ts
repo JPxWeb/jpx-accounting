@@ -789,3 +789,95 @@ test("SupabaseLedgerStore.runSimulation fetches scope-matched reviews/vouchers a
   assert.ok(simEvent, "SimulationExecuted event must be persisted");
   assert.equal(simEvent.actor_id, "u", "actor_id is the authenticated user");
 });
+
+test("SupabaseLedgerStore.refreshComplianceAlerts upserts detected alerts and returns the list", async () => {
+  const reviewRow = {
+    id: "r1",
+    organization_id: "o",
+    workspace_id: "w",
+    voucher_id: "v1",
+    title: "Review V-1",
+    status: "needs-review",
+    suggested_action: "Approve",
+    suggestion: {
+      id: "s1",
+      voucherId: "v1",
+      accountNumber: "6540",
+      accountName: "IT-tjänster",
+      vatCode: "VAT25",
+      confidence: 0.9,
+      reasoning: "r",
+      kind: "recommendation",
+      citations: [],
+      ruleHits: [
+        {
+          id: "rh1",
+          code: "vat-missing",
+          title: "Missing VAT",
+          severity: "blocking",
+          message: "Supplier VAT is required",
+          sourceIds: [],
+        },
+      ],
+    },
+    provenance_timeline: [],
+  };
+  const voucherRow = {
+    id: "v1",
+    organization_id: "o",
+    workspace_id: "w",
+    evidence_packet_id: "p1",
+    voucher_number: "V-1",
+    status: "needs-review",
+    accounting_method: "invoice",
+    extracted_fields: [],
+    voucher_fields: {},
+    created_at: "2020-01-01T00:00:00.000Z",
+    created_by: "u",
+  };
+  const upserted: Record<string, unknown>[] = [];
+  const persistedAlerts: Record<string, unknown>[] = [];
+  const client = {
+    schema: () => ({
+      from: (table: string) => {
+        // review_tasks and vouchers terminate at the 2nd .eq (no .order in those paths).
+        // compliance_alerts read continues past 2nd .eq to .order (async terminal).
+        const chain: Record<string, unknown> = {};
+        chain.select = () => chain;
+        chain.limit = () => chain;
+        chain.in = () => chain;
+        chain.maybeSingle = async () => ({ data: null, error: null });
+        let eqCount = 0;
+        chain.eq = () => {
+          eqCount++;
+          if (eqCount >= 2 && table === "review_tasks") return Promise.resolve({ data: [reviewRow], error: null });
+          if (eqCount >= 2 && table === "vouchers") return Promise.resolve({ data: [voucherRow], error: null });
+          return chain;
+        };
+        chain.order = async () => {
+          if (table === "compliance_alerts") return { data: persistedAlerts, error: null };
+          return { data: [], error: null };
+        };
+        chain.upsert = async (rows: Record<string, unknown>[]) => {
+          if (table === "compliance_alerts") {
+            upserted.push(...rows);
+            persistedAlerts.push(...rows);
+          }
+          return { error: null };
+        };
+        chain.insert = async () => ({ error: null });
+        return chain;
+      },
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, { organizationId: "o", workspaceId: "w", userId: "u" });
+
+  const alerts = await store.refreshComplianceAlerts();
+  assert.ok(
+    alerts.some((a) => a.kind === "stale-blocked"),
+    "stale-blocked alert produced",
+  );
+  assert.equal(upserted.length, 1, "one alert upserted to DB");
+  assert.equal(upserted[0]?.kind, "stale-blocked");
+  assert.equal(upserted[0]?.target_id, "v1");
+});

@@ -64,6 +64,10 @@ class UnavailableLedgerStore implements LedgerStore {
     return this.fail();
   }
 
+  async refreshComplianceAlerts() {
+    return this.fail();
+  }
+
   async runSimulation() {
     return this.fail();
   }

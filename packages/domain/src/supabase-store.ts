@@ -3,6 +3,7 @@ import {
   type AssistantSession,
   type CloseRun,
   type CompanySettings,
+  type ComplianceAlert,
   companySettingsSchema,
   type EvidenceComposeInput,
   type EvidenceCreateInput,
@@ -22,6 +23,7 @@ import {
 import type { SupabaseClient } from "@jpx-accounting/supabase-client";
 
 import { buildAssistantScaffold } from "./assistant";
+import { detectComplianceIssues } from "./compliance";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, thisMonth, today } from "./ids";
 import { buildPostingLines } from "./posting";
@@ -731,6 +733,56 @@ export class SupabaseLedgerStore implements LedgerStore {
     });
 
     return session;
+  }
+
+  async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
+    const { data: reviewRows, error: rErr } = await this.ledger()
+      .from("review_tasks")
+      .select("*")
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId);
+    if (rErr) throw new Error(`Failed to load reviews: ${rErr.message}`);
+    const reviews = (reviewRows ?? []).map((row) => mapReviewRow(row));
+
+    const { data: voucherRows, error: vErr } = await this.ledger()
+      .from("vouchers")
+      .select("*")
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId);
+    if (vErr) throw new Error(`Failed to load vouchers: ${vErr.message}`);
+    const vouchers = (voucherRows ?? []).map((row) => mapVoucherRow(row));
+
+    const detected = detectComplianceIssues(reviews, vouchers, today());
+
+    if (detected.length > 0) {
+      const rows = detected.map((alert) => ({
+        id: alert.id,
+        organization_id: this.ctx.organizationId,
+        workspace_id: this.ctx.workspaceId,
+        title: alert.title,
+        source: alert.source,
+        detected_at: alert.detectedAt,
+        impact_summary: alert.impactSummary,
+        kind: alert.kind,
+        severity: alert.severity,
+        status: alert.status,
+        target_id: alert.targetId ?? null,
+        body: alert.body ?? null,
+      }));
+      const { error: uErr } = await this.ledger()
+        .from("compliance_alerts")
+        .upsert(rows, { onConflict: "organization_id,workspace_id,kind,target_id" });
+      if (uErr) throw new Error(`Failed to upsert compliance alerts: ${uErr.message}`);
+    }
+
+    const { data: allRows, error: allErr } = await this.ledger()
+      .from("compliance_alerts")
+      .select("*")
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .order("detected_at", { ascending: false });
+    if (allErr) throw new Error(`Failed to read compliance alerts: ${allErr.message}`);
+    return (allRows ?? []).map((row) => mapComplianceAlertRow(row));
   }
 
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
