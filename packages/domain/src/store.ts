@@ -129,6 +129,9 @@ export class MemoryLedgerStore implements LedgerStore {
       detectedAt: nowIso(),
       impactSummary:
         "Two receipts look like representation and should be checked against attendee and VAT-limit rules.",
+      kind: "representation-review",
+      severity: "info",
+      status: "open",
     },
   ];
 

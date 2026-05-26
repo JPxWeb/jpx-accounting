@@ -243,6 +243,11 @@ export const complianceAlertSchema = z.object({
   source: z.string(),
   detectedAt: z.string(),
   impactSummary: z.string(),
+  kind: z.string(),
+  severity: z.enum(["info", "warning", "critical"]),
+  status: z.enum(["open", "resolved"]),
+  targetId: z.string().optional(),
+  body: z.string().optional(),
 });
 
 export const reportBundleSchema = z.object({

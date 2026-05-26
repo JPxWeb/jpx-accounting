@@ -1,5 +1,6 @@
 export * from "./assistant";
 export * from "./bas";
+export * from "./compliance";
 export * from "./extraction";
 export * from "./hash-chain";
 export * from "./ids";

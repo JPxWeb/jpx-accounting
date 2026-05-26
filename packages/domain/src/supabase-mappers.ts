@@ -99,7 +99,12 @@ export function mapComplianceAlertRow(row: Record<string, unknown>): ComplianceA
     title: row.title,
     source: row.source,
     detectedAt: row.detected_at,
-    impactSummary: row.impact_summary,
+    impactSummary: row.impact_summary ?? row.body ?? "",
+    kind: row.kind ?? "legacy",
+    severity: row.severity ?? "info",
+    status: row.status ?? "open",
+    targetId: row.target_id ?? undefined,
+    body: row.body ?? undefined,
   });
 }
 
