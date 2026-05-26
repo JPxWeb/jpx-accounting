@@ -1,6 +1,6 @@
 # Development Status
 
-**Last reviewed:** 2026-05-19  
+**Last reviewed:** 2026-05-26  
 **Purpose:** Single source of truth for what is done, what is open, and what to build next. Update this file at the end of each dev phase.
 
 ## Verification baseline
@@ -78,7 +78,7 @@ The sweep in [`PLAN.md`](./PLAN.md) is **largely complete**. Demo vs normal runt
 | **4** | Web Supabase Auth + proxy Bearer token | **Done** (Next.js 16 `proxy.ts` + `@supabase/ssr`) |
 | **5** | Azure Blob upload (`/api/uploads/init` SAS) | **Done** (stub without `AZURE_STORAGE_ACCOUNT`; user-delegation SAS when configured) |
 | **6** | Seed, integration tests, normal-mode E2E, hosted eu-north-1 | **Done** (seed + `pnpm test:integration`; hosted checklist manual) |
-| **7** | Hardening (JWT-claim RLS, assistant/compliance DB, supa_audit) | Partial — JWT-claim RLS migration landed; rest optional |
+| **7** | Hardening (JWT-claim RLS, assistant/compliance DB, supa_audit, real runSimulation, rebuild script) | Done — 7.2/7.3/7.4/7.5 landed 2026-05-26 ([plan](./superpowers/plans/2026-05-26-track-b-phase-7-completion.md)). 7.6 (Azure Postgres prep) and getCloseRun real impl remain deferred. |
 
 | Area | Status |
 |------|--------|
