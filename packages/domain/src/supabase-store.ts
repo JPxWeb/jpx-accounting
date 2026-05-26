@@ -26,6 +26,7 @@ import { createId, nowIso, thisMonth, today } from "./ids";
 import { buildPostingLines } from "./posting";
 import { buildJournal } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
+import { simulateApprovals } from "./simulation";
 import type { LedgerStore, ReviewAction } from "./store";
 import {
   mapAssistantSessionRow,
@@ -170,7 +171,7 @@ export class SupabaseLedgerStore implements LedgerStore {
     voucher: Voucher,
     review: ReviewTask,
     suggestion: AccountingSuggestion,
-    input: EvidenceCreateInput,
+    _input: EvidenceCreateInput,
   ) {
     const { error: evidenceError } = await this.ledger().from("evidence_objects").insert({
       id: evidence.id,
@@ -737,8 +738,58 @@ export class SupabaseLedgerStore implements LedgerStore {
     return session;
   }
 
-  async runSimulation(_input: SimulationRequest): Promise<SimulationRun> {
-    throw new NotImplementedInSupabaseStore("runSimulation");
+  async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
+    const { data: reviewRows, error: rErr } = await this.ledger()
+      .from("review_tasks")
+      .select("*")
+      .eq("organization_id", this.ctx.organizationId)
+      .eq("workspace_id", this.ctx.workspaceId)
+      .in("id", input.reviewIds);
+    if (rErr) throw new Error(`Failed to load reviews: ${rErr.message}`);
+    const reviews = (reviewRows ?? []).map((row) => mapReviewRow(row));
+
+    const voucherIds = [...new Set(reviews.map((r) => r.voucherId))];
+    let vouchers: Voucher[] = [];
+    if (voucherIds.length > 0) {
+      const { data: voucherRows, error: vErr } = await this.ledger()
+        .from("vouchers")
+        .select("*")
+        .eq("organization_id", this.ctx.organizationId)
+        .eq("workspace_id", this.ctx.workspaceId)
+        .in("id", voucherIds);
+      if (vErr) throw new Error(`Failed to load vouchers: ${vErr.message}`);
+      vouchers = (voucherRows ?? []).map((row) => mapVoucherRow(row));
+    }
+
+    const suggestions = reviews.map((r) => r.suggestion).filter((s): s is NonNullable<typeof s> => Boolean(s));
+
+    const { balanceDelta, vatDelta, affectedAccounts } = simulateApprovals(
+      reviews,
+      suggestions,
+      vouchers,
+      input.action,
+    );
+
+    const result: SimulationRun = {
+      id: createId("sim"),
+      title: input.title,
+      scenario: input.scenario,
+      outcomeSummary: `Simulated ${reviews.length} review(s); ${affectedAccounts.length} accounts affected. No production postings were changed.`,
+      affectedAccounts,
+      balanceDelta,
+      vatDelta,
+    };
+
+    await this.appendEvent({
+      aggregateType: "simulation",
+      aggregateId: result.id,
+      eventType: "SimulationExecuted",
+      actorId: this.ctx.userId,
+      occurredAt: nowIso(),
+      payload: result as unknown as Record<string, unknown>,
+    });
+
+    return result;
   }
 
   async getCloseRun(): Promise<CloseRun> {

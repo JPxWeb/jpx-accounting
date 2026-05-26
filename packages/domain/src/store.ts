@@ -25,6 +25,7 @@ import type { LedgerLine } from "./ledger-line";
 import { buildPostingLines } from "./posting";
 import { buildBalances, buildJournal, buildVat } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
+import { simulateApprovals } from "./simulation";
 import { buildVoucherDraft } from "./voucher-draft";
 
 export type ReviewAction = "approve" | "reject" | "book-without-vat";
@@ -74,6 +75,7 @@ function initialLedgerLines(): LedgerLine[] {
     {
       voucherId: "voucher_seed_1",
       accountNumber: ACCOUNT_INPUT_VAT,
+      // biome-ignore lint/style/noNonNullAssertion: ACCOUNT_INPUT_VAT is a hardcoded BAS constant guaranteed present in bas.ts
       accountName: findBasAccount(ACCOUNT_INPUT_VAT)!.name,
       description: "Seeded input VAT",
       debit: 250,
@@ -85,6 +87,7 @@ function initialLedgerLines(): LedgerLine[] {
     {
       voucherId: "voucher_seed_1",
       accountNumber: ACCOUNT_COMPANY_BANK,
+      // biome-ignore lint/style/noNonNullAssertion: ACCOUNT_COMPANY_BANK is a hardcoded BAS constant guaranteed present in bas.ts
       accountName: findBasAccount(ACCOUNT_COMPANY_BANK)!.name,
       description: "Seeded bank outflow",
       debit: 0,
@@ -435,13 +438,31 @@ export class MemoryLedgerStore implements LedgerStore {
   }
 
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
+    const requestedReviews = input.reviewIds
+      .map((id) => this.reviews.get(id))
+      .filter((r): r is ReviewTask => Boolean(r));
+    const requestedVouchers = requestedReviews
+      .map((r) => this.vouchers.get(r.voucherId))
+      .filter((v): v is Voucher => Boolean(v));
+    const requestedSuggestions = requestedVouchers
+      .map((v) => this.suggestions.get(v.id))
+      .filter((s): s is AccountingSuggestion => Boolean(s));
+
+    const { balanceDelta, vatDelta, affectedAccounts } = simulateApprovals(
+      requestedReviews,
+      requestedSuggestions,
+      requestedVouchers,
+      input.action,
+    );
+
     const result: SimulationRun = {
       id: createId("sim"),
       title: input.title,
       scenario: input.scenario,
-      outcomeSummary:
-        "Shadow ledger run completed. No production postings were changed; the scenario should be reviewed against the active VAT and policy rules before adoption.",
-      affectedAccounts: ["6071", "2641", "6991"],
+      outcomeSummary: `Simulated ${requestedReviews.length} review(s); ${affectedAccounts.length} accounts affected. No production postings were changed.`,
+      affectedAccounts,
+      balanceDelta,
+      vatDelta,
     };
 
     this.appendEvent({

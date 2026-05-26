@@ -6,6 +6,7 @@ export * from "./ledger-line";
 export * from "./posting";
 export * from "./projections";
 export * from "./rules";
+export * from "./simulation";
 export * from "./store";
 export * from "./supabase-mappers";
 export { NotImplementedInSupabaseStore, SupabaseLedgerStore } from "./supabase-store";

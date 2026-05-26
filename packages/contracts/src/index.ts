@@ -207,6 +207,21 @@ export const simulationRunSchema = z.object({
   scenario: z.string(),
   outcomeSummary: z.string(),
   affectedAccounts: z.array(z.string()),
+  balanceDelta: z.array(
+    z.object({
+      accountNumber: z.string(),
+      accountName: z.string(),
+      deltaDebit: z.number(),
+      deltaCredit: z.number(),
+    }),
+  ),
+  vatDelta: z.array(
+    z.object({
+      vatCode: z.string(),
+      deltaBase: z.number(),
+      deltaAmount: z.number(),
+    }),
+  ),
 });
 
 export const closeRunSchema = z.object({
@@ -289,7 +304,8 @@ export const simulationRequestSchema = z.object({
   actorId: z.string(),
   title: z.string(),
   scenario: z.string(),
-  voucherId: z.string().optional(),
+  reviewIds: z.array(z.string()).min(1).max(50),
+  action: z.enum(["approve", "book-without-vat"]),
 });
 
 export const uploadInitSchema = z.object({

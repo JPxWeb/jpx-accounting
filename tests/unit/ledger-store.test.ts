@@ -28,3 +28,26 @@ test("MemoryLedgerStore satisfies the LedgerStore contract for create, review, a
   assert.equal(approved?.status, "approved");
   assert.equal((await store.getReports()).journal.length, journalBefore + 3);
 });
+
+test("MemoryLedgerStore.runSimulation returns real projection deltas and writes no journal lines", async () => {
+  const store = new MemoryLedgerStore();
+  const reviews = await store.getReviewFeed();
+  const target = reviews[0];
+  assert.ok(target, "seed must include at least one review");
+
+  const reportsBefore = await store.getReports();
+
+  const sim = await store.runSimulation({
+    actorId: "user_test",
+    title: "What if I approve the seeded review",
+    scenario: "approve 1 pending",
+    reviewIds: [target.id],
+    action: "approve",
+  });
+
+  assert.ok(sim.balanceDelta.length > 0, "balance delta non-empty");
+  assert.ok(sim.affectedAccounts.includes("2641"), "input VAT must be in affected accounts");
+
+  const reportsAfter = await store.getReports();
+  assert.deepEqual(reportsAfter, reportsBefore, "runSimulation must not mutate ledger state");
+});

@@ -133,10 +133,9 @@ test("suggestVoucher returns undefined for a voucher outside the caller's org", 
   assert.equal(await store.suggestVoucher("v1"), undefined);
 });
 
-test("Supabase runSimulation/getCloseRun reject instead of returning fake data", async () => {
+test("Supabase getCloseRun rejects with not-yet-implemented", async () => {
   const client = { schema: () => ({ from: () => ({}) }) } as never;
   const store = new SupabaseLedgerStore(client, { organizationId: "o", workspaceId: "w", userId: "u" });
-  await assert.rejects(() => store.runSimulation({ title: "t", scenario: "s", actorId: "u" }), /not yet implemented/);
   await assert.rejects(() => store.getCloseRun(), /not yet implemented/);
 });
 
@@ -709,4 +708,84 @@ test("suggestVoucher falls back to deterministic suggestion when none is stored"
   const result = await store.suggestVoucher("v1");
   assert.ok(result, "fallback must produce a deterministic suggestion when none stored");
   assert.equal(result.voucherId, "v1");
+});
+
+test("SupabaseLedgerStore.runSimulation fetches scope-matched reviews/vouchers and returns deltas", async () => {
+  const reviewRow = {
+    id: "r1",
+    organization_id: "org_a",
+    workspace_id: "ws_a",
+    voucher_id: "v1",
+    title: "Review V-1",
+    status: "needs-review",
+    suggested_action: "Approve",
+    suggestion: {
+      id: "s1",
+      voucherId: "v1",
+      accountNumber: "6540",
+      accountName: "IT-tjänster",
+      vatCode: "VAT25",
+      confidence: 0.9,
+      reasoning: "r",
+      kind: "recommendation",
+      citations: [],
+      ruleHits: [],
+    },
+    provenance_timeline: [],
+  };
+  const voucherRow = {
+    id: "v1",
+    organization_id: "org_a",
+    workspace_id: "ws_a",
+    evidence_packet_id: "p1",
+    voucher_number: "V-1",
+    status: "needs-review",
+    accounting_method: "invoice",
+    extracted_fields: [],
+    voucher_fields: {
+      grossAmount: 1249,
+      netAmount: 999.2,
+      vatAmount: 249.8,
+      vatRate: 25,
+      currency: "SEK",
+      description: "Test",
+    },
+    created_at: "2026-05-01T00:00:00.000Z",
+    created_by: "u",
+  };
+  const inserted: Record<string, unknown>[] = [];
+  const client = {
+    schema: () => ({
+      from: (table: string) => {
+        const chain: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "order", "limit"]) chain[m] = () => chain;
+        chain.maybeSingle = async () => ({ data: null, error: null });
+        chain.in = async () => {
+          if (table === "review_tasks") return { data: [reviewRow], error: null };
+          if (table === "vouchers") return { data: [voucherRow], error: null };
+          return { data: [], error: null };
+        };
+        chain.insert = async (row: Record<string, unknown>) => {
+          if (table === "events") inserted.push(row);
+          return { error: null };
+        };
+        return chain;
+      },
+    }),
+  } as never;
+  const store = new SupabaseLedgerStore(client, { organizationId: "org_a", workspaceId: "ws_a", userId: "u" });
+
+  const sim = await store.runSimulation({
+    actorId: "u",
+    title: "What if",
+    scenario: "approve 1",
+    reviewIds: ["r1"],
+    action: "approve",
+  });
+
+  assert.equal(sim.affectedAccounts.length, 3);
+  assert.ok(sim.balanceDelta.find((b) => b.accountNumber === "6540" && b.deltaDebit === 999.2));
+  const simEvent = inserted.find((e) => e.event_type === "SimulationExecuted");
+  assert.ok(simEvent, "SimulationExecuted event must be persisted");
+  assert.equal(simEvent.actor_id, "u", "actor_id is the authenticated user");
 });
