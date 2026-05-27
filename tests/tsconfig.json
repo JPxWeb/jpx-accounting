@@ -1,0 +1,26 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+    "baseUrl": "..",
+    "paths": {
+      "@jpx-accounting/contracts": ["packages/contracts/src/index.ts"],
+      "@jpx-accounting/domain": ["packages/domain/src/index.ts"],
+      "@jpx-accounting/api-client": ["packages/api-client/src/index.ts"],
+      "@jpx-accounting/ai-core": ["packages/ai-core/src/index.ts"],
+      "@jpx-accounting/reporting": ["packages/reporting/src/index.ts"],
+      "@jpx-accounting/ui-tokens": ["packages/ui-tokens/src/index.ts"],
+      "@jpx-accounting/persistence-postgres": [
+        "packages/persistence-postgres/src/index.ts"
+      ],
+      "@jpx-accounting/document-intelligence": [
+        "packages/document-intelligence/src/index.ts"
+      ]
+    }
+  },
+  "include": ["unit/**/*.ts", "integration/**/*.ts"],
+  "exclude": ["e2e/**/*", "**/node_modules/**"]
+}
