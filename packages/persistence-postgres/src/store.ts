@@ -1125,6 +1125,9 @@ export class PostgresLedgerStore implements LedgerStore {
         outcomeSummary:
           "Shadow ledger run completed. No production postings were changed; the scenario should be reviewed against the active VAT and policy rules before adoption.",
         affectedAccounts: ["6071", "2641", "6991"],
+        // TODO(PR-C): replace with real projection diff via simulateApprovals
+        balanceDelta: [],
+        vatDelta: [],
       };
 
       await this.appendEvent(

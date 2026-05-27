@@ -202,6 +202,9 @@ export class MemoryLedgerStore implements LedgerStore {
       detectedAt: nowIso(),
       impactSummary:
         "Two receipts look like representation and should be checked against attendee and VAT-limit rules.",
+      kind: "missing-supplier-vat",
+      severity: "warning",
+      status: "open",
     },
   ];
 
@@ -570,6 +573,9 @@ export class MemoryLedgerStore implements LedgerStore {
       outcomeSummary:
         "Shadow ledger run completed. No production postings were changed; the scenario should be reviewed against the active VAT and policy rules before adoption.",
       affectedAccounts: ["6071", "2641", "6991"],
+      // TODO(Task 13): replace with real simulateApprovals projection diff.
+      balanceDelta: [],
+      vatDelta: [],
     };
 
     this.appendEvent({
