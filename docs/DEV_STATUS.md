@@ -1,11 +1,9 @@
 # Development Status
 
-**Last reviewed:** 2026-05-27 (post-merge)
+**Last reviewed:** 2026-05-27 (post-deploy-cleanup sweep)
 **Purpose:** Track phase completion, ported work, and open UI follow-ups. Update at the end of each phase.
 
-> This file was created during the Phase 7 port from `deploy` → `main` (PR-A docs cherry-pick). Earlier phase-by-phase status from the `deploy` branch is preserved only by reference; the canonical implementation now lives on `main` and uses `PostgresLedgerStore` rather than the obsoleted `SupabaseLedgerStore` lineage. See [`docs/superpowers/plans/2026-05-27-deploy-to-main-port-plan.md`](./superpowers/plans/2026-05-27-deploy-to-main-port-plan.md) for the full survey and [`docs/superpowers/plans/2026-05-27-port-phase-7-to-main.md`](./superpowers/plans/2026-05-27-port-phase-7-to-main.md) for the executable plan.
->
-> **Phase 7 port status (2026-05-27):** PR-A (#15), PR-B (#16), PR-C (#17) all squash-merged into `main`. Original `deploy → main` PR #14 closed as superseded. **The data-layer port is complete.** Remaining `deploy` work is the Track A IA web sprint (PR-D) — out of scope for the current port.
+> **Deploy → main port is complete (2026-05-27).** Eight PRs (A, B, C, D1, D2, D3, G, H1) drained the useful work from `origin/deploy` and reset `origin/deploy` to match `origin/main`. The Track A IA web layer (5-tab navigation, ambient digest, settings layout, Today per-card actions, Books) is on `main` with shadcn/ui primitives in place; the underlying data layer (`PostgresLedgerStore`) has the full Phase 7 contract surface. Future-work plans + design specs from the `deploy` lineage are preserved under [`docs/superpowers/plans/`](./superpowers/plans/) and [`docs/superpowers/specs/`](./superpowers/specs/).
 
 ## Verification baseline
 
@@ -14,13 +12,19 @@ Run before opening any PR:
 ```bash
 pnpm typecheck         # all workspace packages (10 workspaces)
 pnpm test:unit         # node:test + tsx unit suite (tests/unit/**)
-pnpm lint              # ESLint (Biome migration is planned, not yet done)
+pnpm typecheck:tests   # tests/tsconfig.json typecheck (added in PR-B)
+pnpm lint              # ESLint
 pnpm format:check      # Prettier
 pnpm build             # web + API
-pnpm test:e2e          # Playwright (builds first; demo API on 3201, web on 3200)
 ```
 
-`pnpm check` runs the full `lint → format:check → typecheck → test:unit → build` chain.
+`pnpm check` runs the full `lint → format:check → typecheck → typecheck:tests → test:unit → build` chain.
+
+E2E is **opt-in on PRs** (PR-H1, #28): apply the `run-e2e` label to trigger the Playwright job. E2E runs automatically on pushes to `main` (pre-deploy gate) and via `workflow_dispatch`. Use it for any user-facing change where regressions would be hard to catch otherwise.
+
+```bash
+pnpm test:e2e          # local Playwright (builds first; demo API on 3201, web on 3200)
+```
 
 Integration tests against a real Postgres are gated on `SUPABASE_DB_URL`:
 
@@ -28,49 +32,38 @@ Integration tests against a real Postgres are gated on `SUPABASE_DB_URL`:
 SUPABASE_DB_URL=<local-postgres-url> pnpm test:integration
 ```
 
-An additional `pnpm typecheck:tests` script (typechecking files under `tests/`) was introduced in PR-B and is now part of the gate.
+---
+
+## Merged PRs (2026-05-27 port sweep)
+
+| PR        | Scope                                                                                                                                                                                                                            | Status                                                             |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| **PR-A**  | Docs cherry-pick (CONVENTIONS, Phase 7 spec + plans, initial DEV_STATUS)                                                                                                                                                         | **MERGED** [#15](https://github.com/JPxWeb/jpx-accounting/pull/15) |
+| **PR-B**  | Contracts, pure domain helpers, `MemoryLedgerStore` extensions, API routes, migration `0004`, `typecheck:tests` script                                                                                                           | **MERGED** [#16](https://github.com/JPxWeb/jpx-accounting/pull/16) |
+| **PR-C**  | `PostgresLedgerStore` real implementations (`runSimulation`, `refreshComplianceAlerts`, `answerAssistantQuestion`, company settings round-trip)                                                                                  | **MERGED** [#17](https://github.com/JPxWeb/jpx-accounting/pull/17) |
+| **PR-D1** | shadcn/ui foundation (deps, OKLCH theme, `@/` alias, `cn` helper, 18 primitives, Sonner toaster mount, skip-to-content link, `useIsMobile` hook)                                                                                 | **MERGED** [#19](https://github.com/JPxWeb/jpx-accounting/pull/19) |
+| **PR-G**  | Security + tooling — SHA-pinned GHA workflows, Husky v9 + lint-staged, `.cursorignore`, worktree gitignore                                                                                                                       | **MERGED** [#25](https://github.com/JPxWeb/jpx-accounting/pull/25) |
+| **PR-D2** | Settings layout + sidebar, RHF company form, 8 settings sub-routes (about, ai-posture, company, compliance, fiscal-year, integrations, retention, team) — most are stubs; the form pattern is the reusable piece                 | **MERGED** [#26](https://github.com/JPxWeb/jpx-accounting/pull/26) |
+| **PR-D3** | 5-tab IA refactor (Today / Capture / Books / Reports / Settings), ambient digest as parallel route (`(shell)/@digest/`), Today per-card actions with filter UI, Books screen with tab dispatch, NuqsAdapter wired at root layout | **MERGED** [#27](https://github.com/JPxWeb/jpx-accounting/pull/27) |
+| **PR-H1** | CI E2E gated behind `run-e2e` label + auto-run on main pushes + `workflow_dispatch`                                                                                                                                              | **MERGED** [#28](https://github.com/JPxWeb/jpx-accounting/pull/28) |
+| **PR-H**  | Port deferred plan + spec docs from `deploy`; refresh DEV_STATUS + CLAUDE.md; reset `origin/deploy` to match `origin/main`                                                                                                       | (this PR)                                                          |
+
+PR #14 (original `deploy → main`) was closed as superseded by the 8-PR port. PR-F (deploy-only `PostgresLedgerStore` perf ports) was opened, then closed as a no-op — all five intent patterns were already present in main's `PostgresLedgerStore`.
 
 ---
 
-## Phase 7 port status
+## Open follow-ups
 
-| PR          | Scope                                                                                                                                         | Status                                                             |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **PR-A**    | Docs cherry-pick (CONVENTIONS, Phase 7 spec + plans, this DEV_STATUS)                                                                         | **MERGED** [#15](https://github.com/JPxWeb/jpx-accounting/pull/15) |
-| **PR-B**    | Contracts, pure domain helpers, `MemoryLedgerStore` extensions, API routes, migration `0004`                                                  | **MERGED** [#16](https://github.com/JPxWeb/jpx-accounting/pull/16) |
-| **PR-C**    | `PostgresLedgerStore` real implementations (`runSimulation`, `refreshComplianceAlerts`, `answerAssistantQuestion`, company settings)          | **MERGED** [#17](https://github.com/JPxWeb/jpx-accounting/pull/17) |
-| **PR-D1**   | Track A IA web — shadcn/ui foundation (deps, OKLCH theme, `@/` alias, `cn` helper, 18 primitives, Sonner toaster mount, skip-to-content link) | **MERGED** [#19](https://github.com/JPxWeb/jpx-accounting/pull/19) |
-| **PR-D2/3** | Remaining Track A IA web — screen refactors, settings layout, Books page, ambient digest, Today per-card actions                              | Pending; see "Remaining deploy work" below                         |
-
-**PR #14** (original `deploy → main`) closed as superseded. Phase 7 data-layer port is complete on `main`; PR-D1 ships the shadcn foundation for the IA refactor sprints.
-
-### Post-merge follow-ups
+### Data-layer (small, well-scoped)
 
 - **Manual integration test** against a live Postgres before the next deploy: `SUPABASE_DB_URL=... pnpm test:integration` to exercise the 4 new round-trips (`runSimulation` real diff + `ReviewNotFoundError`, `answerAssistantQuestion` persists, `refreshComplianceAlerts` idempotency, settings round-trip).
 - **Migration 0004** applies cleanly to PG ≥ 15 (Supabase ships PG 17). Coordinate with the schema owner before applying to production.
+- **Document Intelligence read-SAS path** — `/api/evidence/:id/extract` currently uses a placeholder URL. Real OCR results require adding `BlobUploader.mintReadSas(blobPath)`, an `updateEvidenceExtraction()` method on `LedgerStore`, and an `ExtractionRefreshed` event type.
+- **Shared posting helpers** — `buildExtractedFields`, `initialLedgerLines`, `guessSupplier`, `guessAccountingMethod` are still duplicated between `MemoryLedgerStore` and `PostgresLedgerStore`. The right cleanup PR exports them from `@jpx-accounting/domain` and removes the copies. Don't change one side without the other.
 
----
+### UI follow-ups from Track B Phase 7 (2026-05-26 fix passes)
 
-## Remaining deploy work (PR-D scope, future sprint)
-
-109 commits remain on `deploy` that did not make it to `main` via the Phase 7 port. Categorized:
-
-| Bucket                                                                 | Approx count      | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ---------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Phase 7 work (already ported)**                                      | ~25               | Landed via PR-A/B/C. The deploy SHAs differ from the squash-merge SHAs on main, so `git log` still shows them as "ahead" — but the content is in.                                                                                                                                                                                                                                                                                                                                                      |
-| **Obsoleted — SupabaseLedgerStore lineage**                            | ~10               | Never to be ported (`efea3d0`, `736a5e6`, `9a1ba6c`, `fa5425f`, `6f080b3`, `4dec542`, etc.). Code is dead on `main`'s `PostgresLedgerStore` architecture.                                                                                                                                                                                                                                                                                                                                              |
-| **Worth-porting perf/cleanup ideas (Supabase impls, port the intent)** | ~5                | `b4082de` (projection aggregates via trigger), `7fa1887` (parallel queries on getEvidenceContext), `757c701` (getReviewFeed batched suggestion lookups), `10844e2` (suggestVoucher org-scoped gate), `3f8298f` (settings audit attribution). Apply the _intent_ to `PostgresLedgerStore` in a small follow-up sprint.                                                                                                                                                                                  |
-| **Track A IA web work**                                                | ~40 → ~25         | **PR-D1 shipped the foundation (#19, 2026-05-27): 14 deps (incl. nuqs, react-hook-form, sonner, @tanstack/react-table), shadcn `base-nova` config, `@/` path alias, `cn` helper, OKLCH theme + dark var, 18 primitives, Sonner toaster mount, skip-to-content a11y link, `useIsMobile` hook.** Remaining D2/D3: settings layout with sub-navigation, Books page with tab dispatch, ambient digest parallel route, Today per-card actions, screen refactors to consume shadcn primitives, axe-core E2E. |
-| **Chore / setup**                                                      | ~10               | Biome, Husky + lint-staged, .editorconfig, Cursor rules, GitHub Actions SHA pinning, Stop hooks. Some overlap with what main has; needs per-commit conflict resolution.                                                                                                                                                                                                                                                                                                                                |
-| **Unified radius / shadcn theme**                                      | shipped via PR-D1 | OKLCH theme tokens + `--radius: 0.75rem` landed on main alongside the existing bespoke `@theme` radius scale. No bulk-refactor of existing components; coexistence model.                                                                                                                                                                                                                                                                                                                              |
-
-Main's web app today has the `(shell)` route group, `app-shell.tsx`, `command-palette.tsx`, providers, PWA, screens, plus React Query 5, Motion 12, Tailwind 4, **and the full shadcn/ui foundation as of PR-D1** (nuqs, react-hook-form, sonner, @base-ui/react, @tanstack/react-table, 18 primitives in `apps/web/components/ui/`). The remaining D2/D3 work is screen refactors to actually consume these primitives — no new dep churn expected.
-
----
-
-## UI follow-ups from Track B Phase 7 (2026-05-26 fix passes)
-
-The data-layer work shipped contract surfaces ahead of the UI. These items capture the UI work that the API now expects but no web component consumes yet. None block merge; they are the "first thing to wire when building the compliance / simulation UI."
+The data-layer work shipped contract surfaces ahead of the UI. These items capture the UI work that the API now expects but no web component consumes yet. None block merge.
 
 | #   | Surface                              | What the API exposes                                                                                                                                                                 | UI work needed                                                                                                                                                                                           | Priority                                   |
 | --- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
@@ -85,6 +78,22 @@ The data-layer work shipped contract surfaces ahead of the UI. These items captu
 
 **Convention reminders for the eventual UI sprint:**
 
-- CONVENTIONS Rule 17 — clone before mutating any state returned by `getSnapshot()`. The Memory store is a singleton in demo mode; in-place mutation leaks across requests
-- CONVENTIONS Rule 20 — never render a system sentinel (`system:*`, `system-ai`, `system-extractor`) as a username; show "Auto" / "System" with appropriate context
-- CONVENTIONS Rule 26 — default to active state; opt into historical with an explicit toggle
+- CONVENTIONS Rule 17 — clone before mutating any state returned by `getSnapshot()`. The Memory store is a singleton in demo mode; in-place mutation leaks across requests.
+- CONVENTIONS Rule 20 — never render a system sentinel (`system:*`, `system-ai`, `system-extractor`) as a username; show "Auto" / "System" with appropriate context.
+- CONVENTIONS Rule 26 — default to active state; opt into historical with an explicit toggle.
+
+### Forward-looking plans (preserved under `docs/superpowers/plans/`)
+
+These captured the future-work intent from the `deploy` lineage and were ported in PR-H so they survive the `deploy` reset. None are scheduled; pick one when starting a new sprint.
+
+| Plan                                                                                                                                             | Status                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [Unified radius](./superpowers/plans/2026-04-01-unified-radius.md)                                                                               | Not started; PR-D1 introduced `--radius: 0.75rem` but did not refactor existing bespoke radii to consume it                                                  |
+| [IA restructure](./superpowers/plans/2026-05-13-ia-restructure.md)                                                                               | **Foundation landed in PR-D3** (5-tab nav, ambient digest, NuqsAdapter). Remaining: settings depth, Today filter persistence in URL state, Books drill-downs |
+| [Track A Phase 5 — Capture](./superpowers/plans/2026-05-19-track-a-phase-5-capture.md)                                                           | Not started. `/capture` is a stub page after PR-D3                                                                                                           |
+| [Track A Phase 6 — Advisor (Cmd-K)](./superpowers/plans/2026-05-19-track-a-phase-6-advisor.md)                                                   | Not started. Existing command palette is the seed; the real advisor surface is unbuilt                                                                       |
+| [Track A Phase 7 — Reports](./superpowers/plans/2026-05-19-track-a-phase-7-reports.md)                                                           | Not started. `/reports` exists but lacks drill-downs                                                                                                         |
+| [Track A Phase 8 — Settings depth + simulations](./superpowers/plans/2026-05-19-track-a-phase-8-settings.md)                                     | **Partially landed in PR-D2** (layout + sidebar + company form). 7 sub-pages are stubs                                                                       |
+| [Supabase hardening](./superpowers/plans/2026-05-19-supabase-hardening.md) + [follow-ups](./superpowers/plans/2026-05-20-hardening-followups.md) | Plans were written against the `SupabaseLedgerStore` lineage; reuse the _intent_ (RLS verification, fail-closed auth) when applying to `PostgresLedgerStore` |
+
+Design specs for these plans live under [`docs/superpowers/specs/`](./superpowers/specs/) (unified-radius-design, shadcn-setup-design, ia-restructure-design, track-a-finish-ia-design).
