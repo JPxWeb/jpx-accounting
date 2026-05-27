@@ -23,14 +23,19 @@ import type {
 } from "@jpx-accounting/contracts";
 
 import {
+  buildAssistantScaffold,
   buildBalances,
   buildDeterministicSuggestion,
   buildEventHash,
   buildJournal,
   buildVat,
   createId,
+  detectComplianceIssues,
   evaluateVoucherRules,
   nowIso,
+  ReviewNotFoundError,
+  simulateApprovals,
+  today,
   type LedgerStore,
   type ReviewAction,
 } from "@jpx-accounting/domain";
@@ -1099,37 +1104,75 @@ export class PostgresLedgerStore implements LedgerStore {
   }
 
   async answerAssistantQuestion(question: string): Promise<AssistantSession> {
-    return {
-      id: createId("assistant"),
-      question,
-      answer:
-        "This scaffold uses grounded, citation-first advisory. In production the answer would combine Azure AI Search retrieval, policy sources, and Responses API reasoning before it reaches the reviewer.",
-      status: "grounded",
-      citations: [
-        {
-          id: "cit_arch",
-          title: "Internal architecture policy",
-          sourceType: "internal",
-          excerpt: "AI may suggest and explain, but may not silently mutate accounting state.",
-        },
-      ],
-    };
+    const session = buildAssistantScaffold(question);
+
+    await this.client.begin(async (tx) => {
+      await tx`
+        INSERT INTO ledger.assistant_sessions
+          (id, organization_id, workspace_id, question, answer, status, citations, actor_id)
+        VALUES
+          (${session.id}, ${this.defaults.organizationId}, ${this.defaults.workspaceId},
+           ${session.question}, ${session.answer}, ${session.status},
+           ${tx.json(session.citations as unknown as Parameters<typeof tx.json>[0])}, null)
+      `;
+    });
+
+    return session;
   }
 
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
     return this.client.begin(async (tx) => {
       const tailHash = await this.lockWorkspaceTail(tx);
 
+      // Dedup at boundary (CONVENTIONS Rule 23). Postgres ANY(...) would dedupe
+      // anyway, but explicit dedup makes the length-check correct.
+      const reviewIds = [...new Set(input.reviewIds)];
+
+      const reviewRows = await tx<ReviewRow[]>`
+        SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
+               suggested_action, suggestion, provenance_timeline, title, created_at
+        FROM ledger.review_tasks
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+          AND id = ANY(${reviewIds})
+      `;
+      if (reviewRows.length !== reviewIds.length) {
+        const found = new Set(reviewRows.map((r) => r.id));
+        throw new ReviewNotFoundError(reviewIds.filter((id) => !found.has(id)));
+      }
+
+      const voucherIds = [...new Set(reviewRows.map((r) => r.voucher_id))];
+      const voucherRows =
+        voucherIds.length === 0
+          ? []
+          : await tx<VoucherRow[]>`
+        SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+        FROM ledger.vouchers
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+          AND id = ANY(${voucherIds})
+      `;
+
+      const reviews = reviewRows.map(rowToReview);
+      const vouchers = voucherRows.map(rowToVoucher);
+      const suggestions = reviews.map((r) => r.suggestion).filter((s): s is AccountingSuggestion => Boolean(s));
+
+      const { balanceDelta, vatDelta, affectedAccounts } = simulateApprovals(
+        reviews,
+        suggestions,
+        vouchers,
+        input.action,
+      );
+
       const result: SimulationRun = {
         id: createId("sim"),
         title: input.title,
         scenario: input.scenario,
-        outcomeSummary:
-          "Shadow ledger run completed. No production postings were changed; the scenario should be reviewed against the active VAT and policy rules before adoption.",
-        affectedAccounts: ["6071", "2641", "6991"],
-        // TODO(PR-C): replace with real projection diff via simulateApprovals
-        balanceDelta: [],
-        vatDelta: [],
+        outcomeSummary: `Simulated ${reviews.length} review(s); ${affectedAccounts.length} accounts affected. No production postings were changed.`,
+        affectedAccounts,
+        balanceDelta,
+        vatDelta,
       };
 
       await this.appendEvent(
@@ -1165,18 +1208,143 @@ export class PostgresLedgerStore implements LedgerStore {
   }
 
   async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
-    // TODO(PR-C): implement against compliance_alerts table (migration 0004 adds it).
-    throw new Error("refreshComplianceAlerts not yet implemented for PostgresLedgerStore");
+    return this.client.begin(async (tx) => {
+      const reviewRows = await tx<ReviewRow[]>`
+        SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
+               suggested_action, suggestion, provenance_timeline, title, created_at
+        FROM ledger.review_tasks
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+      `;
+      const reviews = reviewRows.map(rowToReview);
+
+      // Suggestions are embedded on review_tasks.suggestion (jsonb) on main —
+      // no separate suggestions table to hydrate from. If a row has null
+      // suggestion, the stale-blocked rule won't fire for it (intentional —
+      // a review without any suggestion can't have rule hits).
+
+      const voucherRows = await tx<VoucherRow[]>`
+        SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+        FROM ledger.vouchers
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+      `;
+      const vouchers = voucherRows.map(rowToVoucher);
+
+      const detected = detectComplianceIssues(reviews, vouchers, today());
+
+      if (detected.length > 0) {
+        // Upsert via ON CONFLICT on (org, workspace, kind, target_id) — unique
+        // index with NULLS NOT DISTINCT from migration 0004. Explicitly clear
+        // resolved_at/resolved_by on every upsert so re-detected alerts don't
+        // carry stale resolution metadata (CONVENTIONS Rule 18).
+        for (const alert of detected) {
+          await tx`
+            INSERT INTO ledger.compliance_alerts
+              (id, organization_id, workspace_id, title, source, detected_at,
+               impact_summary, kind, severity, status, target_id, body,
+               resolved_at, resolved_by)
+            VALUES
+              (${alert.id}, ${this.defaults.organizationId}, ${this.defaults.workspaceId},
+               ${alert.title}, ${alert.source}, ${alert.detectedAt},
+               ${alert.impactSummary}, ${alert.kind}, ${alert.severity},
+               ${alert.status}, ${alert.targetId ?? null}, ${alert.body ?? null},
+               null, null)
+            ON CONFLICT (organization_id, workspace_id, kind, target_id) DO UPDATE
+              SET status = EXCLUDED.status,
+                  detected_at = EXCLUDED.detected_at,
+                  resolved_at = null,
+                  resolved_by = null
+          `;
+        }
+      }
+
+      // Resolve any previously-open auto-detected alert whose condition no
+      // longer holds (CONVENTIONS Rule 24). Use 'system:auto-resolver' sentinel
+      // for attribution, not ctx.userId (Rule 20).
+      const detectedIds = new Set(detected.map((a) => a.id));
+      const autoOpenRows = await tx<Array<{ id: string }>>`
+        SELECT id FROM ledger.compliance_alerts
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+          AND status = 'open'
+          AND kind = ANY(${["stale-blocked", "missing-supplier-vat"]})
+      `;
+      const toResolve = autoOpenRows.filter((r) => !detectedIds.has(r.id)).map((r) => r.id);
+      if (toResolve.length > 0) {
+        await tx`
+          UPDATE ledger.compliance_alerts
+          SET status = 'resolved',
+              resolved_at = now(),
+              resolved_by = 'system:auto-resolver'
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND id = ANY(${toResolve})
+        `;
+      }
+
+      const allRows = await tx<
+        Array<{
+          id: string;
+          title: string;
+          source: string;
+          detected_at: string;
+          impact_summary: string;
+          kind: string;
+          severity: string;
+          status: string;
+          target_id: string | null;
+          body: string | null;
+        }>
+      >`
+        SELECT id, title, source, detected_at, impact_summary, kind, severity,
+               status, target_id, body
+        FROM ledger.compliance_alerts
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+        ORDER BY detected_at DESC
+      `;
+      return allRows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        source: r.source,
+        detectedAt: r.detected_at,
+        impactSummary: r.impact_summary,
+        kind: r.kind,
+        severity: r.severity as ComplianceAlert["severity"],
+        status: r.status as ComplianceAlert["status"],
+        targetId: r.target_id ?? undefined,
+        body: r.body ?? undefined,
+      }));
+    });
   }
 
   async getCompanySettings(): Promise<CompanySettings | null> {
-    // TODO(PR-C): implement against organization_settings table (migration 0004 adds it).
-    return null;
+    const rows = await this.client<Array<{ settings: CompanySettings }>>`
+      SELECT settings FROM ledger.organization_settings
+      WHERE organization_id = ${this.defaults.organizationId}
+    `;
+    return rows[0]?.settings ?? null;
   }
 
   async putCompanySettings(input: CompanySettings): Promise<CompanySettings> {
-    // TODO(PR-C): implement against organization_settings table.
-    void input;
-    throw new Error("putCompanySettings not yet implemented for PostgresLedgerStore");
+    // Authenticated user attribution would normally come from a ctx field —
+    // PostgresLedgerStore on main constructs without one, so use the org id as
+    // the audit fallback. When ctx.userId is plumbed through (separate sprint),
+    // swap this for ctx.userId.
+    await this.client.begin(async (tx) => {
+      await tx`
+        INSERT INTO ledger.organization_settings (organization_id, settings, updated_by)
+        VALUES (${this.defaults.organizationId},
+                ${tx.json(input as unknown as Parameters<typeof tx.json>[0])},
+                ${this.defaults.organizationId})
+        ON CONFLICT (organization_id) DO UPDATE
+          SET settings = EXCLUDED.settings,
+              updated_at = now(),
+              updated_by = EXCLUDED.updated_by
+      `;
+    });
+    return input;
   }
 }
