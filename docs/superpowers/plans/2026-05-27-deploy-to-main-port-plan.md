@@ -95,7 +95,7 @@ This document captures the port strategy in tractable phases. Phase A (docs cher
    - `254a986`, `f3f6134`, `cd425d1` — Phase 7 spec + plan + revision
    - `a6c0d04` — proxy rationale comment
    - `c98c7c3` — DEV_STATUS phase 7 marker (will need a tweak — see below)
-3. `c98c7c3` claims "Phase 7 Done" referencing the SupabaseLedgerStore impl that doesn't exist on main. Edit the DEV_STATUS update to instead reference: _"Phase 7 design + conventions landed via port; PostgresLedgerStore implementation tracked separately as the next sprint."_
+3. `c98c7c3` claims "Phase 7 Done" referencing the SupabaseLedgerStore impl that doesn't exist on main. Edit the `DEV_STATUS` update to instead reference: "Phase 7 design + conventions landed via port; PostgresLedgerStore implementation tracked separately as the next sprint."
 4. Open PR-1 → main. Should typecheck + lint clean.
 
 ### Phase B — Contracts (additive Zod fields)
