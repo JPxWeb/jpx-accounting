@@ -6,3 +6,8 @@ api-deploy
 playwright-report
 node_modules
 .cursor
+
+# Per-developer harness state (Claude Code auto-edits permissions list);
+# tracked so config is portable across machines but excluded from Prettier
+# to avoid format-churn PRs when the harness adds session permissions.
+.claude/settings.json
