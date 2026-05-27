@@ -8,6 +8,7 @@
     ],
     "incremental": true,
     "tsBuildInfoFile": "node_modules/.cache/web.tsbuildinfo",
+    "baseUrl": ".",
     "paths": {
       "@/*": ["./*"]
     }
