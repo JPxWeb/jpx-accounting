@@ -14,38 +14,38 @@
 
 **Commit 1 (foundation):**
 
-| File                            | Action | Responsibility                                                                       |
-| ------------------------------- | ------ | ------------------------------------------------------------------------------------ |
-| `apps/web/package.json`         | MODIFY | 15 new runtime deps + 1 dev dep                                                      |
-| `apps/web/tsconfig.json`        | MODIFY | Add `paths: { "@/*": ["./*"] }` so primitive imports `@/lib/utils` resolve           |
-| `apps/web/components.json`      | CREATE | shadcn CLI config (base-nova / neutral / lucide / cssVariables)                      |
-| `apps/web/lib/utils.ts`         | CREATE | `cn(...inputs: ClassValue[])` helper (twMerge + clsx)                                |
-| `apps/web/app/globals.css`      | MODIFY | Append `tw-animate-css` + `shadcn/tailwind.css` imports, `@custom-variant dark`, OKLCH `:root` block (light) and `.dark` block. Bespoke `@theme` radius block and existing selectors preserved. |
+| File                       | Action | Responsibility                                                                                                                                                                                  |
+| -------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/package.json`    | MODIFY | 15 new runtime deps + 1 dev dep                                                                                                                                                                 |
+| `apps/web/tsconfig.json`   | MODIFY | Add `paths: { "@/*": ["./*"] }` so primitive imports `@/lib/utils` resolve                                                                                                                      |
+| `apps/web/components.json` | CREATE | shadcn CLI config (base-nova / neutral / lucide / cssVariables)                                                                                                                                 |
+| `apps/web/lib/utils.ts`    | CREATE | `cn(...inputs: ClassValue[])` helper (twMerge + clsx)                                                                                                                                           |
+| `apps/web/app/globals.css` | MODIFY | Append `tw-animate-css` + `shadcn/tailwind.css` imports, `@custom-variant dark`, OKLCH `:root` block (light) and `.dark` block. Bespoke `@theme` radius block and existing selectors preserved. |
 
 **Commit 2 (primitives + mount):**
 
-| File                                       | Action  | Responsibility                                                              |
-| ------------------------------------------ | ------- | --------------------------------------------------------------------------- |
-| `apps/web/components/ui/badge.tsx`         | CREATE  | shadcn Badge primitive (copy from deploy)                                   |
-| `apps/web/components/ui/button.tsx`        | CREATE  | shadcn Button primitive + CVA variants                                      |
-| `apps/web/components/ui/card.tsx`          | CREATE  | shadcn Card primitive set                                                   |
-| `apps/web/components/ui/dialog.tsx`        | CREATE  | shadcn Dialog (base-ui-backed)                                              |
-| `apps/web/components/ui/form.tsx`          | CREATE  | shadcn Form primitives (react-hook-form wrappers)                           |
-| `apps/web/components/ui/input.tsx`         | CREATE  | shadcn Input                                                                |
-| `apps/web/components/ui/kbd.tsx`           | CREATE  | shadcn Kbd                                                                  |
-| `apps/web/components/ui/label.tsx`         | CREATE  | shadcn Label                                                                |
-| `apps/web/components/ui/select.tsx`        | CREATE  | shadcn Select                                                               |
-| `apps/web/components/ui/separator.tsx`     | CREATE  | shadcn Separator                                                            |
-| `apps/web/components/ui/sheet.tsx`         | CREATE  | shadcn Sheet                                                                |
-| `apps/web/components/ui/sidebar.tsx`       | CREATE  | shadcn Sidebar primitives                                                   |
-| `apps/web/components/ui/sonner.tsx`        | CREATE  | shadcn Sonner Toaster wrapper                                               |
-| `apps/web/components/ui/table.tsx`         | CREATE  | shadcn Table (pairs with `@tanstack/react-table`)                           |
-| `apps/web/components/ui/tabs.tsx`          | CREATE  | shadcn Tabs                                                                 |
-| `apps/web/components/ui/toggle.tsx`        | CREATE  | shadcn Toggle                                                               |
-| `apps/web/components/ui/toggle-group.tsx`  | CREATE  | shadcn Toggle Group                                                         |
-| `apps/web/components/ui/tooltip.tsx`       | CREATE  | shadcn Tooltip                                                              |
-| `apps/web/components/ui/skeleton.tsx`      | REPLACE | Replace main's bespoke `ScreenSkeleton` with deploy's version (preserves `ScreenSkeleton` export AND adds shadcn `Skeleton`) |
-| `apps/web/app/layout.tsx`                  | MODIFY  | Add `<Toaster />` mount + Skip-to-content link + use `cn()` for html className |
+| File                                      | Action  | Responsibility                                                                                                               |
+| ----------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/components/ui/badge.tsx`        | CREATE  | shadcn Badge primitive (copy from deploy)                                                                                    |
+| `apps/web/components/ui/button.tsx`       | CREATE  | shadcn Button primitive + CVA variants                                                                                       |
+| `apps/web/components/ui/card.tsx`         | CREATE  | shadcn Card primitive set                                                                                                    |
+| `apps/web/components/ui/dialog.tsx`       | CREATE  | shadcn Dialog (base-ui-backed)                                                                                               |
+| `apps/web/components/ui/form.tsx`         | CREATE  | shadcn Form primitives (react-hook-form wrappers)                                                                            |
+| `apps/web/components/ui/input.tsx`        | CREATE  | shadcn Input                                                                                                                 |
+| `apps/web/components/ui/kbd.tsx`          | CREATE  | shadcn Kbd                                                                                                                   |
+| `apps/web/components/ui/label.tsx`        | CREATE  | shadcn Label                                                                                                                 |
+| `apps/web/components/ui/select.tsx`       | CREATE  | shadcn Select                                                                                                                |
+| `apps/web/components/ui/separator.tsx`    | CREATE  | shadcn Separator                                                                                                             |
+| `apps/web/components/ui/sheet.tsx`        | CREATE  | shadcn Sheet                                                                                                                 |
+| `apps/web/components/ui/sidebar.tsx`      | CREATE  | shadcn Sidebar primitives                                                                                                    |
+| `apps/web/components/ui/sonner.tsx`       | CREATE  | shadcn Sonner Toaster wrapper                                                                                                |
+| `apps/web/components/ui/table.tsx`        | CREATE  | shadcn Table (pairs with `@tanstack/react-table`)                                                                            |
+| `apps/web/components/ui/tabs.tsx`         | CREATE  | shadcn Tabs                                                                                                                  |
+| `apps/web/components/ui/toggle.tsx`       | CREATE  | shadcn Toggle                                                                                                                |
+| `apps/web/components/ui/toggle-group.tsx` | CREATE  | shadcn Toggle Group                                                                                                          |
+| `apps/web/components/ui/tooltip.tsx`      | CREATE  | shadcn Tooltip                                                                                                               |
+| `apps/web/components/ui/skeleton.tsx`     | REPLACE | Replace main's bespoke `ScreenSkeleton` with deploy's version (preserves `ScreenSkeleton` export AND adds shadcn `Skeleton`) |
+| `apps/web/app/layout.tsx`                 | MODIFY  | Add `<Toaster />` mount + Skip-to-content link + use `cn()` for html className                                               |
 
 **Untouched on main (explicitly out of scope):**
 `apps/web/components/ui/icons.tsx`, `metric-card.tsx`, `screen-header.tsx`, `section-label.tsx`, `status-badge.tsx`, `unavailable-state.tsx` — bespoke project files; deploy keeps them too. No refactor in D1.
@@ -92,6 +92,7 @@ Expected: `Switched to a new branch 'port/d1-shadcn-foundation'`.
 ### Task 2: Add the 15+1 dependencies
 
 **Files:**
+
 - Modify: `apps/web/package.json`
 
 - [ ] **Step 1: Add runtime deps to `apps/web/package.json`**
@@ -138,6 +139,7 @@ Expected: install completes without `ERR_PNPM_*` errors. Some peer-dep warnings 
 ### Task 3: Add `@/` path alias
 
 **Files:**
+
 - Modify: `apps/web/tsconfig.json`
 
 - [ ] **Step 1: Add `paths` to compilerOptions**
@@ -185,6 +187,7 @@ Expected: green. The `@/` alias adds resolution capability but no current file u
 ### Task 4: Create `apps/web/lib/utils.ts`
 
 **Files:**
+
 - Create: `apps/web/lib/utils.ts`
 
 - [ ] **Step 1: Write the file**
@@ -211,6 +214,7 @@ Expected: green. `clsx` and `tailwind-merge` were installed in Task 2; importing
 ### Task 5: Create `apps/web/components.json`
 
 **Files:**
+
 - Create: `apps/web/components.json`
 
 - [ ] **Step 1: Write the file**
@@ -250,6 +254,7 @@ Create `apps/web/components.json` with this exact content (copied from deploy ve
 ### Task 6: Append shadcn theme to `apps/web/app/globals.css`
 
 **Files:**
+
 - Modify: `apps/web/app/globals.css`
 
 > **CRITICAL:** main's `globals.css` (284 lines) starts with `@import "tailwindcss"` and `@import "@jpx-accounting/ui-tokens/styles.css"`, then has a bespoke `@theme { --radius-sm: 6px; ... }` block, a `:root` block, html/body gradients, `.glass-chrome`, `.glass-panel`, and other selectors. **None of those get touched.** This task is purely additive: insert the shadcn imports + OKLCH `:root` vars + dark variant declaration.
@@ -486,6 +491,7 @@ Expected: 18 lines, each starting with `A `.
 ### Task 9: Replace `apps/web/components/ui/skeleton.tsx`
 
 **Files:**
+
 - Replace: `apps/web/components/ui/skeleton.tsx` (currently bespoke on main; deploy has a merged version)
 
 - [ ] **Step 1: Check the existing skeleton's exports**
@@ -515,6 +521,7 @@ Expected: BOTH `ScreenSkeleton` and shadcn `Skeleton` exports present. If `Scree
 ### Task 10: Update `apps/web/app/layout.tsx` with Toaster + Skip-to-content
 
 **Files:**
+
 - Modify: `apps/web/app/layout.tsx`
 
 - [ ] **Step 1: Read the current file to confirm imports**
@@ -840,6 +847,7 @@ Expected: local main shows the new PR-D1 squash commit at the tip.
 ### Task 18: Update DEV_STATUS post-merge
 
 **Files:**
+
 - Modify: `docs/DEV_STATUS.md`
 
 - [ ] **Step 1: Update the "Remaining deploy work" table**
@@ -872,20 +880,20 @@ Same as Tasks 16-17 for the doc PR.
 
 **Spec coverage:**
 
-| Spec section | Plan task(s) |
-| --- | --- |
-| §3.1 deps | Task 2 |
-| §3.2 theme + tokens (components.json, tsconfig paths, globals.css imports + OKLCH) | Task 3, 5, 6 |
-| §3.3 radius (additive — `--radius: 0.75rem` in `:root`) | Task 6 (it's in the OKLCH block) |
-| §3.4 utils (`cn` helper) | Task 4 |
-| §3.5 primitives (18) | Task 8 |
-| §3.5 skeleton merge | Task 9 |
-| §3.6 toaster mount + skip-to-content | Task 10 |
-| §3.7 Tailwind config (no JS config; rely on CSS-first) | No task needed — confirmed in survey |
-| §6 testing strategy | Task 7, Task 11 (checks); Task 12 (visual inspection) |
-| §7 commit structure | Task 7 (Commit 1), Task 13 (Commit 2) |
-| §8 deferred items | Stated as out-of-scope throughout; no tasks |
-| §9 risks (globals.css merge, peer-dep, regression) | Mitigation steps embedded in Task 2 Step 3, Task 6 prose, Task 12 Step 6 decision gate |
+| Spec section                                                                       | Plan task(s)                                                                           |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| §3.1 deps                                                                          | Task 2                                                                                 |
+| §3.2 theme + tokens (components.json, tsconfig paths, globals.css imports + OKLCH) | Task 3, 5, 6                                                                           |
+| §3.3 radius (additive — `--radius: 0.75rem` in `:root`)                            | Task 6 (it's in the OKLCH block)                                                       |
+| §3.4 utils (`cn` helper)                                                           | Task 4                                                                                 |
+| §3.5 primitives (18)                                                               | Task 8                                                                                 |
+| §3.5 skeleton merge                                                                | Task 9                                                                                 |
+| §3.6 toaster mount + skip-to-content                                               | Task 10                                                                                |
+| §3.7 Tailwind config (no JS config; rely on CSS-first)                             | No task needed — confirmed in survey                                                   |
+| §6 testing strategy                                                                | Task 7, Task 11 (checks); Task 12 (visual inspection)                                  |
+| §7 commit structure                                                                | Task 7 (Commit 1), Task 13 (Commit 2)                                                  |
+| §8 deferred items                                                                  | Stated as out-of-scope throughout; no tasks                                            |
+| §9 risks (globals.css merge, peer-dep, regression)                                 | Mitigation steps embedded in Task 2 Step 3, Task 6 prose, Task 12 Step 6 decision gate |
 
 **Placeholder scan:** no "TBD", no "similar to Task N", no "implement as appropriate". Concrete file paths, concrete code blocks, concrete commands at every step.
 
