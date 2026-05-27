@@ -134,7 +134,7 @@ function guessAccountingMethod(input: EvidenceCreateInput): AccountingMethod {
   return text.includes("invoice") ? "invoice" : "cash";
 }
 
-function buildPostingLines(
+export function buildPostingLines(
   voucher: Voucher,
   suggestion: AccountingSuggestion,
   action: "approve" | "book-without-vat",
