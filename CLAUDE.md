@@ -15,9 +15,10 @@ pnpm lint                     # ESLint (root eslint.config.mjs)
 pnpm lint:fix
 pnpm format                   # Prettier write
 pnpm format:check             # Prettier CI check
-pnpm typecheck                # TypeScript check across all packages
+pnpm typecheck                # TypeScript check across all 10 workspace packages
+pnpm typecheck:tests          # Typecheck the tests/ directory (separate tsconfig — added in PR-B)
 pnpm build                    # Build web + API (`services/api` is typecheck-only; deploy bundles API with esbuild)
-pnpm check                    # lint + format:check + typecheck + unit tests + build
+pnpm check                    # lint + format:check + typecheck + typecheck:tests + unit tests + build
 
 # Testing
 pnpm test:unit                # Unit tests: tsx --test 'tests/unit/**/*.test.ts'
@@ -36,7 +37,7 @@ tsx --test tests/unit/some-file.test.ts
 tsx --test tests/integration/postgres-ledger.test.ts
 
 # Run integration tests against a local Supabase
-# (run `supabase start`, apply migrations 0001/0002/0003, then export SUPABASE_DB_URL)
+# (run `supabase start`, apply migrations 0001-0004, then export SUPABASE_DB_URL)
 pnpm test:integration
 ```
 
@@ -46,7 +47,7 @@ pnpm monorepo (Node >=24, pnpm 10.29.2) — mobile-first Swedish accounting PWA 
 
 ### Workspace layout
 
-- **apps/web** — Next.js 16 PWA (React 19, TailwindCSS 4, React Query 5, Motion 12). Swedish locale throughout.
+- **apps/web** — Next.js 16 PWA (React 19, TailwindCSS 4, React Query 5, Motion 12, shadcn/ui via `@base-ui/react`, Sonner toaster, react-hook-form, nuqs, @tanstack/react-table). Swedish locale throughout. `@/*` path alias resolves to `apps/web/*` (see `apps/web/tsconfig.json` and `components.json`).
 - **services/api** — Hono HTTP server (port 3001). Routes in `src/app.ts`, dependency injection in `src/runtime.ts`, blob SAS minting in `src/blob.ts`. `GET /health` = liveness; `GET /ready` = readiness (`ledger` + `ai` checks). JSON errors carry `requestId`; `400`s use `code: "validation_error"` + `issues[]`. Mutating routes go through `hono-rate-limiter` and (when `SUPABASE_JWKS_URL` is set) `hono/jwk`.
 - **packages/contracts** — Zod v4 schemas: the single source of truth for all API shapes and domain types.
 - **packages/domain** — Core accounting logic: `LedgerStore` interface (**async**), append-only event sourcing with hash chain, BAS accounts, Swedish rules, projections, `MemoryLedgerStore` reference impl.
@@ -85,6 +86,9 @@ Reuse before reinventing — the following modules already exist in `apps/web/`:
 - **Assistant thread history** — `apps/web/lib/assistant-thread-storage.ts`. `prependAssistantThread(session)` writes to localStorage and **returns** the merged array; callers should consume that return value instead of calling `loadAssistantThreads()` again. Capped at `MAX_THREADS = 30`.
 - **Mobile dock + capture-pill clearance** — `.workspace-canvas` in `apps/web/app/globals.css` reserves `calc(env(safe-area-inset-bottom) + 144px)` of bottom padding on mobile and resets to `24px` at the `≥1024px` breakpoint. Locked by `tests/e2e/mobile-bottom-clearance.spec.ts`. Do not lower the mobile padding without updating both the CSS and the regression test.
 - **Primary nav labels** are `Inbox / Reports / Advisor / Settings` (`Settings`, not `Control`). The mobile project on Pixel 7 shares the dock semantics with desktop — both surfaces consume the same `navigation` array in `app-shell.tsx`.
+- **shadcn/ui primitives** live in `apps/web/components/ui/` alongside bespoke project components. Distinguishing them by import is the convention: shadcn primitives import `cn` from `@/lib/utils` and `cva` from `class-variance-authority`; bespoke components (`icons.tsx`, `metric-card.tsx`, `screen-header.tsx`, `section-label.tsx`, `status-badge.tsx`, `unavailable-state.tsx`) don't. Add new shadcn primitives via `pnpm dlx shadcn@latest add <name>` (config in `apps/web/components.json` is style `base-nova` / baseColor `neutral` / lucide). Skeleton is the merged exception — exports both shadcn `Skeleton` and bespoke `ScreenSkeleton`.
+- **Sonner toaster + Skip-to-content link** are mounted at the root layout (`apps/web/app/layout.tsx`). Call `toast("...")` from anywhere; the toaster surfaces bottom-right. The skip-to-content link targets `#main-content` — when adding new top-level routes, render an element with `id="main-content"` to make the link functional for keyboard users.
+- **useIsMobile hook** at `apps/web/hooks/use-mobile.ts` uses `useSyncExternalStore` (not `useState+useEffect` — ESLint's `react-hooks/set-state-in-effect` rule fails the latter). SSR-safe; returns `false` during render, real value after hydration.
 
 ### E2E test setup
 
@@ -95,11 +99,17 @@ Playwright runs sequentially (1 worker) against dedicated test servers: API on p
 - **`parseBody` in `services/api/src/app.ts` is intentional, not legacy.** Phase E.1 (replace with `@hono/zod-validator`) was deferred because the current helper produces the exact `{ code: "validation_error", issues: [...] }` 400-body shape that `tests/unit/api-runtime.test.ts` asserts on. Don't swap it without a parity test first.
 - **`/api/evidence/:id/extract` calls Document Intelligence with `https://placeholder/${blobPath}`** as the `urlSource`. This is a stub pending a read-SAS path on `BlobUploader` (DocIntel needs to be able to fetch the blob). Real OCR results require: (a) `BlobUploader.mintReadSas(blobPath)`, (b) a new `LedgerStore.updateEvidenceExtraction()` method + `ExtractionRefreshed` event type, (c) persistence into `voucher.extracted_fields`.
 - **Phase E.4 (`hono-openapi`) is deferred** because the existing `parseBody` works and `@hono/zod-openapi` has an open Zod v4 incompatibility (issue #1177). Switching needs a deeper Zod v4 sweep — not a one-line dep add.
-- **Helpers duplicated between `MemoryLedgerStore` and `PostgresLedgerStore`**: `buildExtractedFields`, `initialLedgerLines`, `buildPostingLines`, `guessSupplier`, `guessAccountingMethod`. They are NOT exported from `@jpx-accounting/domain`. Both stores must update in lockstep until these move to a shared module — making this change is the right cleanup PR, but don't change one side and ship.
+- **Helpers duplicated between `MemoryLedgerStore` and `PostgresLedgerStore`**: `buildExtractedFields`, `initialLedgerLines`, `guessSupplier`, `guessAccountingMethod`. They are NOT exported from `@jpx-accounting/domain`. Both stores must update in lockstep until these move to a shared module — making this change is the right cleanup PR, but don't change one side and ship. (`buildPostingLines` IS exported from `packages/domain/src/store.ts` since PR-B; `simulateApprovals` consumes it.)
+- **5 deploy-only perf/cleanup ideas worth porting to PostgresLedgerStore** (separate sprint): `b4082de` projection-aggregate triggers, `7fa1887` parallel queries on `getEvidenceContext`, `757c701` batched suggestion lookups on `getReviewFeed`, `10844e2` org-scoped-first gate on `suggestVoucher`, `3f8298f` settings audit attribution. See [`docs/superpowers/2026-05-27-deploy-to-main-port-session-handover.md`](docs/superpowers/2026-05-27-deploy-to-main-port-session-handover.md) for context.
+- **PR-D2/D3 (shadcn primitive consumers + IA refactors) still pending.** PR-D1 (#19) landed only the foundation. The 8 UI follow-ups in `docs/DEV_STATUS.md` are the work that consumes the primitives.
+- **CI E2E job intermittently hangs** (~1h for what should be 1m20s). Empty-commit retrigger (`git commit --allow-empty -m "ci: retrigger" && git push`) reliably resolves. Worth adding `paths-ignore: ['docs/**', '*.md']` to the E2E workflow to avoid the hang on docs-only PRs.
+- **Local `pnpm dev:web` port 3002 may collide** with the user's CultureDNA dev server (Vite + React Router 7). When visual inspection is needed and 3002 is taken, fall back to E2E for regression detection or coordinate the port collision before starting dev.
 
 ### Migrations
 
-SQL migrations live in `infra/supabase/migrations/000N_*.sql` and are applied in numeric order. Current: `0001_init.sql`, `0002_schema_alignment.sql`, `0003_pgvector.sql`. New migrations get the next number. They must be idempotent (`if not exists` / `if exists`) — the same file may be replayed on partial environments.
+SQL migrations live in `infra/supabase/migrations/000N_*.sql` and are applied in numeric order. Current: `0001_init.sql`, `0002_schema_alignment.sql`, `0003_pgvector.sql`, `0004_compliance_and_settings.sql`. New migrations get the next number. They must be idempotent (`if not exists` / `if exists`, CHECK constraints added via `DO $$ ... exception when duplicate_object then null; end $$;` blocks) — the same file may be replayed on partial environments.
+
+`0004` uses `NULLS NOT DISTINCT` on its unique index, which requires Postgres 15+. Supabase ships PG 17 by default, so this is safe in normal mode; self-hosted Postgres deployments need to verify.
 
 ### Deploy
 
@@ -138,4 +148,6 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for trust boundaries, the env m
 
 **Conventions / anti-patterns:** see [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for 26 rules distilled from past incidents — schema-contract sync, partial-index pitfalls, store parity between `MemoryLedgerStore` and `PostgresLedgerStore`, citation provenance, audit attribution sentinels, bounded accumulation. Consult before changes that touch contracts, migrations, or `LedgerStore` implementations.
 
-**Development status / port progress:** see [docs/DEV_STATUS.md](docs/DEV_STATUS.md) for the Phase 7 port status (PR-A/B/C) and the UI follow-ups the new API surfaces will need once landed.
+**Development status / port progress:** see [docs/DEV_STATUS.md](docs/DEV_STATUS.md) for the Phase 7 + PR-D1 port status (PR-A/B/C/D1 MERGED; PR-D2/D3 pending) and the UI follow-ups the new API surfaces will need once landed.
+
+**Session handovers:** see [docs/superpowers/2026-05-27-deploy-to-main-port-session-handover.md](docs/superpowers/2026-05-27-deploy-to-main-port-session-handover.md) for the consolidated story of the 6-PR `deploy → main` port + PR-D1 shadcn foundation effort (what was done, what was learned, what's open).
