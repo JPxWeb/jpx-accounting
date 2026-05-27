@@ -479,7 +479,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         data-testid="mobile-dock"
         className="mobile-dock glass-chrome rounded-3xl px-2 py-2 lg:hidden"
       >
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-4 gap-2">
           {navigation.map((item) => {
             const Icon = item.icon;
             const active = isPrimaryNavActive(item.href, pathname);
@@ -487,12 +487,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-label={`${item.label} — ${item.summary}`}
                 aria-current={active ? "page" : undefined}
-                className={`flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-center text-caption font-medium transition ${
+                className={`flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-3 text-center text-caption font-medium transition ${
                   active ? "bg-[var(--color-accent)] text-white!" : "text-[var(--color-text-muted)]"
                 }`}
               >
-                <Icon className="size-4" />
+                <Icon className="size-4" aria-hidden="true" />
                 {item.label}
               </Link>
             );
