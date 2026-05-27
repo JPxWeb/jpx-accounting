@@ -25,3 +25,7 @@ lh-*.json
 
 # Claude Code local settings (user-specific paths)
 .claude/settings.local.json
+
+# Git worktrees (isolated workspaces)
+.claude/worktrees/
+.worktrees/

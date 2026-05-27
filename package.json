@@ -21,7 +21,12 @@
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm typecheck:tests && pnpm test:unit && pnpm build",
     "test:e2e": "pnpm build && playwright test",
     "test:e2e:headed": "pnpm build && playwright test --headed",
-    "test:e2e:install": "playwright install chromium"
+    "test:e2e:install": "playwright install chromium",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,cjs,jsx,json,md,css,yml,yaml}": "prettier --write --ignore-unknown",
+    "*.{ts,tsx,js,mjs,cjs,jsx}": "eslint --fix --no-warn-ignored"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
@@ -29,6 +34,8 @@
     "eslint": "^9.39.4",
     "eslint-config-next": "16.2.0",
     "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.5",
     "next": "16.2.0",
     "prettier": "^3.8.3",
     "tsx": "4.21.0",
