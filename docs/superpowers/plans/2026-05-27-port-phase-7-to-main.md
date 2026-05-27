@@ -18,6 +18,8 @@
 > 6. **Task 21 (`runSimulation`):** must call `const tailHash = await this.lockWorkspaceTail(tx);` before writing and pass `tailHash` as the third argument to `this.appendEvent(tx, event, previousHash)`. The original block omitted both and would have type-errored AND broken the hash chain.
 > 7. **Task 22 (`answerAssistantQuestion`):** wrap the insert in `this.client.begin(async (tx) => …)` and use `tx.json(...)` rather than top-level `this.client.json(...)` — matches the rest of the codebase's pattern.
 >
+> 8. **`pnpm typecheck:tests` script does not exist on main.** Every "Run the suite" step in this plan references `pnpm test:unit && pnpm typecheck && pnpm typecheck:tests` — the third command will fail. PR-B must add a `tests/tsconfig.json` and a root `typecheck:tests` script as a **prerequisite** before the new test files land. Treat this as a Task 5.5 (between PR-A merge and Task 6) when executing PR-B. Suggested script: `"typecheck:tests": "tsc --noEmit -p tests/tsconfig.json"` with a `tests/tsconfig.json` that extends the root and includes `tests/**/*.ts` plus references to the workspace packages.
+>
 > These corrections were committed in PR-A so the plan future readers see matches the code they'll write. No survey-doc changes were needed (the survey is intentionally high-level and doesn't prescribe code).
 
 **Goal:** Move Phase 7's data-layer features (real `runSimulation`, `refreshComplianceAlerts`, `buildAssistantScaffold`, `ReviewNotFoundError`, contract extensions, company settings) from the `deploy` branch's dead `SupabaseLedgerStore` architecture onto `main`'s canonical `PostgresLedgerStore` architecture, while preserving the 26 conventions, Phase 7 design spec, and UI follow-ups.

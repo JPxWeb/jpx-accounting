@@ -10,19 +10,23 @@
 Run before opening any PR:
 
 ```bash
-pnpm typecheck         # all workspace packages
-pnpm typecheck:tests   # tests typecheck gate
-pnpm test:unit         # node:test + tsx unit suite
-pnpm lint              # Biome
+pnpm typecheck         # all workspace packages (10 workspaces)
+pnpm test:unit         # node:test + tsx unit suite (tests/unit/**)
+pnpm lint              # ESLint (Biome migration is planned, not yet done)
+pnpm format:check      # Prettier
 pnpm build             # web + API
 pnpm test:e2e          # Playwright (builds first; demo API on 3201, web on 3200)
 ```
+
+`pnpm check` runs the full `lint → format:check → typecheck → test:unit → build` chain.
 
 Integration tests against a real Postgres are gated on `SUPABASE_DB_URL`:
 
 ```bash
 SUPABASE_DB_URL=<local-postgres-url> pnpm test:integration
 ```
+
+> **Note:** a dedicated `pnpm typecheck:tests` script (typechecking files under `tests/`) does not exist on main yet. PR-B introduces a `tests/tsconfig.json` + a `typecheck:tests` workspace script as a prerequisite for the new test files it adds.
 
 ---
 
