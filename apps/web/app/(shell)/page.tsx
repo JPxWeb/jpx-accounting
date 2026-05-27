@@ -1,5 +1,5 @@
-import { HomeScreen } from "../../components/screens/home-screen";
+import { redirect } from "next/navigation";
 
 export default function HomePage() {
-  return <HomeScreen />;
+  redirect("/today");
 }
