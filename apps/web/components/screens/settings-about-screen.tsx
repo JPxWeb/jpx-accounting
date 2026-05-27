@@ -4,9 +4,9 @@ import { formatRuntimeModeLabel } from "../../lib/presentation";
 import { webRuntimeConfig } from "../../lib/runtime-config";
 import { ScreenHeader } from "../ui/screen-header";
 
-function ComingSoon({ title, body }: { title: string; body: string }) {
+function ComingSoon({ title, body, testId }: { title: string; body: string; testId?: string }) {
   return (
-    <section className="glass-panel rounded-3xl p-5">
+    <section className="glass-panel rounded-3xl p-5" data-testid={testId}>
       <h3 className="text-lg font-semibold text-[var(--color-text)]">{title}</h3>
       <p className="mt-3 text-sm text-[var(--color-text-muted)]">{body}</p>
       <p className="text-eyebrow mt-4">Coming soon</p>
@@ -101,7 +101,11 @@ export function SettingsAboutScreen() {
             title="Team"
             body="Invite colleagues, delegate review lanes, and separate advisory from posting roles."
           />
-          <ComingSoon title="Billing" body="Subscription, usage, and invoice delivery for the JPX workspace." />
+          <ComingSoon
+            title="Billing"
+            body="Subscription, usage, and invoice delivery for the JPX workspace."
+            testId="billing-card"
+          />
         </div>
       </div>
     </div>
