@@ -135,3 +135,7 @@ Key env vars (see `.env.example` for full list):
 - `SUPABASE_JWKS_URL`: Optional. When set (e.g. `${SUPABASE_URL}/auth/v1/keys`), `/api/*` mutating routes require a JWT verifiable against this JWKS endpoint. Default algorithm is `RS256`.
 
 See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for trust boundaries, the env matrix, and build/deploy subtleties.
+
+**Conventions / anti-patterns:** see [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for 26 rules distilled from past incidents — schema-contract sync, partial-index pitfalls, store parity between `MemoryLedgerStore` and `PostgresLedgerStore`, citation provenance, audit attribution sentinels, bounded accumulation. Consult before changes that touch contracts, migrations, or `LedgerStore` implementations.
+
+**Development status / port progress:** see [docs/DEV_STATUS.md](docs/DEV_STATUS.md) for the Phase 7 port status (PR-A/B/C) and the UI follow-ups the new API surfaces will need once landed.
