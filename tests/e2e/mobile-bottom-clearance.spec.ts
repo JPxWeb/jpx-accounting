@@ -9,7 +9,7 @@ test.beforeEach(async ({ request }) => {
 const screensWithLongContent = [
   { path: "/reports", lastCardTestId: "vat-preparation" },
   { path: "/assistant", lastCardTestId: "policy-rules-studio" },
-  { path: "/settings", lastCardTestId: "audit-spine" },
+  { path: "/settings", lastCardTestId: "billing-card" },
 ];
 
 for (const { path, lastCardTestId } of screensWithLongContent) {
