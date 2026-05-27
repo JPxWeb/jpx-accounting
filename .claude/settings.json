@@ -20,9 +20,7 @@
       "mcp__plugin_chrome-devtools-mcp_chrome-devtools__new_page",
       "mcp__plugin_chrome-devtools-mcp_chrome-devtools__evaluate_script"
     ],
-    "additionalDirectories": [
-      "C:\\Users\\JohanPalmqvist\\.cursor\\plans"
-    ]
+    "additionalDirectories": ["C:\\Users\\JohanPalmqvist\\.cursor\\plans"]
   },
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
