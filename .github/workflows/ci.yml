@@ -3,8 +3,12 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    # `labeled` is included so adding the `run-e2e` label retriggers CI and the gated E2E job actually fires.
+    # Removing a label also fires `unlabeled`, but the E2E job's `if:` re-evaluates and simply skips, so no extra cost.
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -72,7 +76,12 @@ jobs:
     name: E2E Tests
     runs-on: ubuntu-latest
     needs: build
-    if: github.event_name == 'pull_request'
+    # Opt-in on PRs (apply the `run-e2e` label), automatic on main pushes (final pre-deploy gate),
+    # and manually triggerable via the Actions UI. Avoids burning ~5 min per push on routine PRs.
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-e2e')) ||
+      github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
