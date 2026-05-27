@@ -81,4 +81,9 @@
   --space-6: 24px;
   --space-8: 32px;
   --space-10: 40px;
+
+  /* Animation timing */
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
 }

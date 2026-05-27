@@ -124,14 +124,19 @@ export function AssistantScreen() {
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
             className="glass-panel-inset mt-3 min-h-36 w-full rounded-xl px-4 py-4 text-sm outline-none"
+            aria-describedby="assistant-question-hint"
           />
+          <p id="assistant-question-hint" className="mt-2 text-xs text-[var(--color-text-muted)]">
+            The advisor cites Swedish tax law and internal policy. Responses never change the ledger.
+          </p>
           <button
             type="button"
             onClick={() => assistant.mutate(question)}
+            disabled={assistant.isPending || !question.trim()}
             data-testid="assistant-submit"
-            className="mt-4 w-full rounded-xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white sm:w-auto"
+            className="mt-4 w-full rounded-xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
           >
-            Run advisory pass
+            {assistant.isPending ? "Running…" : "Run advisory pass"}
           </button>
 
           {assistant.error ? (
