@@ -28,54 +28,87 @@ function deterministicAlertId(kind: string, targetId: string): string {
   return `alert_${kind}_${targetId}`;
 }
 
+/**
+ * Detect compliance issues across a workspace's reviews + vouchers.
+ *
+ * Per-record error isolation (CONVENTIONS Rule 21): each voucher/review is
+ * processed in a try/catch so one malformed row (e.g. corrupted createdAt
+ * timestamp) doesn't abort the whole batch — the bad record is logged and
+ * skipped, the rest of the workspace's alerts still surface.
+ *
+ * `skipped` is exposed in the return value so callers can log/surface the
+ * count if they want operator visibility.
+ */
 export function detectComplianceIssues(reviews: ReviewTask[], vouchers: Voucher[], today: string): ComplianceAlert[] {
+  return detectComplianceIssuesDetailed(reviews, vouchers, today).alerts;
+}
+
+export type ComplianceDetectionResult = {
+  alerts: ComplianceAlert[];
+  skipped: Array<{ kind: "review" | "voucher"; id: string; reason: string }>;
+};
+
+export function detectComplianceIssuesDetailed(
+  reviews: ReviewTask[],
+  vouchers: Voucher[],
+  today: string,
+): ComplianceDetectionResult {
   const vouchersById = new Map(vouchers.map((v) => [v.id, v]));
   const alerts: ComplianceAlert[] = [];
+  const skipped: ComplianceDetectionResult["skipped"] = [];
   const detectedAt = `${today}T00:00:00.000Z`;
 
   // Rule 1: stale-blocked — needs-review with blocking rule hit, voucher older than 7 days.
-  // The voucher's createdAt is normalized to its date component so time-of-day
-  // doesn't shift the boundary (a voucher created at 18:00 vs 06:00 on the same
-  // day should hit the threshold on the same calendar day).
   for (const review of reviews) {
-    if (review.status !== "needs-review") continue;
-    const ruleHits = review.suggestion?.ruleHits ?? [];
-    if (!ruleHits.some((h) => h.severity === "blocking")) continue;
-    const voucher = vouchersById.get(review.voucherId);
-    if (!voucher) continue;
-    const voucherDate = voucher.createdAt.slice(0, 10);
-    if (daysBetween(`${voucherDate}T00:00:00.000Z`, detectedAt) <= 7) continue;
-    alerts.push({
-      id: deterministicAlertId("stale-blocked", voucher.id),
-      title: `Blocked voucher unresolved for >7 days (${voucher.voucherNumber})`,
-      source: "internal/compliance",
-      detectedAt,
-      impactSummary:
-        "A voucher with mandatory missing data has been sitting in review for over a week. Resolve or book without VAT.",
-      kind: "stale-blocked",
-      severity: "warning",
-      status: "open",
-      targetId: voucher.id,
-    });
+    try {
+      if (review.status !== "needs-review") continue;
+      const ruleHits = review.suggestion?.ruleHits ?? [];
+      if (!ruleHits.some((h) => h.severity === "blocking")) continue;
+      const voucher = vouchersById.get(review.voucherId);
+      if (!voucher) continue;
+      // Normalize timestamps to UTC dates (CONVENTIONS Rule 22): roundtrip
+      // through Date so non-UTC offsets are converted before slicing, otherwise
+      // a voucher with a +02:00 offset would bucket to its local date.
+      const voucherDate = new Date(voucher.createdAt).toISOString().slice(0, 10);
+      if (daysBetween(`${voucherDate}T00:00:00.000Z`, detectedAt) <= 7) continue;
+      alerts.push({
+        id: deterministicAlertId("stale-blocked", voucher.id),
+        title: `Blocked voucher unresolved for >7 days (${voucher.voucherNumber})`,
+        source: "internal/compliance",
+        detectedAt,
+        impactSummary:
+          "A voucher with mandatory missing data has been sitting in review for over a week. Resolve or book without VAT.",
+        kind: "stale-blocked",
+        severity: "warning",
+        status: "open",
+        targetId: voucher.id,
+      });
+    } catch (err) {
+      skipped.push({ kind: "review", id: review.id, reason: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   // Rule 2: missing-supplier-vat — approved voucher without supplierVatNumber.
   for (const voucher of vouchers) {
-    if (voucher.status !== "approved") continue;
-    if (voucher.voucherFields.supplierVatNumber && voucher.voucherFields.supplierVatNumber.length > 0) continue;
-    alerts.push({
-      id: deterministicAlertId("missing-supplier-vat", voucher.id),
-      title: `Approved voucher missing supplier VAT number (${voucher.voucherNumber})`,
-      source: "Bokföringslagen / VAT requirement",
-      detectedAt,
-      impactSummary:
-        "Posted voucher has no supplier VAT number. Required for input-VAT deduction documentation under Skatteverket rules.",
-      kind: "missing-supplier-vat",
-      severity: "warning",
-      status: "open",
-      targetId: voucher.id,
-    });
+    try {
+      if (voucher.status !== "approved") continue;
+      if (voucher.voucherFields.supplierVatNumber && voucher.voucherFields.supplierVatNumber.length > 0) continue;
+      alerts.push({
+        id: deterministicAlertId("missing-supplier-vat", voucher.id),
+        title: `Approved voucher missing supplier VAT number (${voucher.voucherNumber})`,
+        source: "Bokföringslagen / VAT requirement",
+        detectedAt,
+        impactSummary:
+          "Posted voucher has no supplier VAT number. Required for input-VAT deduction documentation under Skatteverket rules.",
+        kind: "missing-supplier-vat",
+        severity: "warning",
+        status: "open",
+        targetId: voucher.id,
+      });
+    } catch (err) {
+      skipped.push({ kind: "voucher", id: voucher.id, reason: err instanceof Error ? err.message : String(err) });
+    }
   }
 
-  return alerts;
+  return { alerts, skipped };
 }

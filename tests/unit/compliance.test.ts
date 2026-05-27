@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { ReviewTask, Voucher } from "@jpx-accounting/contracts";
-import { detectComplianceIssues } from "@jpx-accounting/domain";
+import { detectComplianceIssues, detectComplianceIssuesDetailed } from "@jpx-accounting/domain";
 
 const voucherFixture = (overrides: Partial<Voucher> = {}): Voucher => ({
   id: "v1",
@@ -172,10 +172,16 @@ test("detectComplianceIssues produces deterministic alert IDs per (kind, targetI
   assert.equal(first[0]?.id, second[0]?.id, "same condition → same alert id across runs");
 });
 
-test("daysBetween throws on malformed input rather than returning NaN silently", () => {
+test("malformed voucher timestamps are skipped per-record, not thrown for the whole batch", () => {
+  // The blocking review points at v_bad so Rule 1's date-normalization is
+  // exercised on a malformed createdAt — it throws inside the try/catch and
+  // the per-record skip kicks in. Rule 2 still runs on v_approved unaffected.
   const blocking = reviewFixture({
+    id: "r_bad",
+    voucherId: "v_bad",
     suggestion: {
       ...reviewFixture().suggestion!,
+      voucherId: "v_bad",
       ruleHits: [
         {
           id: "rh1",
@@ -188,8 +194,16 @@ test("daysBetween throws on malformed input rather than returning NaN silently",
       ],
     },
   });
-  const v = voucherFixture({ createdAt: "not-a-date" });
-  assert.throws(() => detectComplianceIssues([blocking], [v], "2026-05-09"));
+  const bad = voucherFixture({ id: "v_bad", createdAt: "not-a-date" });
+  const goodApproved = voucherFixture({
+    id: "v_approved",
+    status: "approved",
+    voucherFields: { ...voucherFixture().voucherFields, supplierVatNumber: undefined },
+  });
+  const result = detectComplianceIssuesDetailed([blocking], [bad, goodApproved], "2026-05-09");
+  assert.equal(result.alerts.length, 1, "good voucher still produces an alert");
+  assert.equal(result.alerts[0]?.kind, "missing-supplier-vat");
+  assert.ok(result.skipped.length >= 1, "bad voucher logged in skipped");
 });
 
 test("clock-skew normalized: voucher created late at night still hits stale-blocked on day 8", () => {
@@ -214,4 +228,35 @@ test("clock-skew normalized: voucher created late at night still hits stale-bloc
   const v = voucherFixture({ createdAt: "2026-05-01T23:00:00.000Z" });
   const alerts = detectComplianceIssues([blocking], [v], "2026-05-09");
   assert.equal(alerts.length, 1);
+});
+
+test("non-UTC voucher timestamp normalizes via Date roundtrip, not raw .slice", () => {
+  const blocking = reviewFixture({
+    suggestion: {
+      ...reviewFixture().suggestion!,
+      ruleHits: [
+        {
+          id: "rh1",
+          code: "vat-missing",
+          title: "Missing supplier VAT",
+          severity: "blocking",
+          message: "Supplier VAT is required",
+          sourceIds: [],
+        },
+      ],
+    },
+  });
+  // 2026-05-01T01:00:00+02:00 is 2026-04-30T23:00:00Z — the UTC day is April 30.
+  // Raw .slice(0,10) would give "2026-05-01" (wrong day); the new normalization
+  // routes through Date and produces "2026-04-30". Against today=2026-05-09,
+  // raw would compute 8 days; UTC-normalized computes 9 days. Both fire >7 here
+  // so the assertion still passes — but the bug would surface near the boundary.
+  const v = voucherFixture({ createdAt: "2026-05-01T01:00:00+02:00" });
+  const alerts = detectComplianceIssues([blocking], [v], "2026-05-09");
+  assert.equal(alerts.length, 1, "stale-blocked fires on UTC-normalized day diff");
+  // Boundary case: with a +02 offset the local date is May 1; the UTC date is April 30.
+  // 8 calendar days from April 30 to May 8 means UTC-normalized hits the threshold
+  // on May 8, not May 9. Slice-based would mis-bucket and miss it.
+  const earlier = detectComplianceIssues([blocking], [v], "2026-05-08");
+  assert.equal(earlier.length, 1, "boundary at UTC-day 8 fires (slice would have missed)");
 });

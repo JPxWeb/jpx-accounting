@@ -30,7 +30,7 @@ import { buildPostingLines } from "./posting";
 import { buildJournal } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import { simulateApprovals } from "./simulation";
-import type { LedgerStore, ReviewAction } from "./store";
+import { type LedgerStore, type ReviewAction, ReviewNotFoundError } from "./store";
 import {
   mapAssistantSessionRow,
   mapComplianceAlertRow,
@@ -70,6 +70,35 @@ export class SupabaseLedgerStore implements LedgerStore {
 
   private projections() {
     return this.supabase.schema("projections");
+  }
+
+  /**
+   * Populate review.suggestion in place for any review whose embedded suggestion
+   * column is null, by batch-fetching from the suggestions table. Shared by
+   * refreshComplianceAlerts and runSimulation so both surface the same hydration
+   * behavior (Rule 15: symmetric fix).
+   *
+   * Scope safety: suggestions has no org/workspace columns; scoping is transitive
+   * via the FK on voucher_id. Callers MUST pass `reviews` that were fetched with
+   * org/workspace .eq filters in place. Documented in CONVENTIONS.md Rule 11.
+   */
+  private async hydrateMissingSuggestions(reviews: ReviewTask[]): Promise<void> {
+    const missingVoucherIds = reviews.filter((r) => !r.suggestion).map((r) => r.voucherId);
+    if (missingVoucherIds.length === 0) return;
+    const { data: suggestionRows, error } = await this.ledger()
+      .from("suggestions")
+      .select("*")
+      .in("voucher_id", missingVoucherIds);
+    if (error) throw new Error(`Failed to load suggestions: ${error.message}`);
+    const suggestionsByVoucher = new Map(
+      (suggestionRows ?? []).map((row) => [row.voucher_id as string, mapSuggestionRow(row)]),
+    );
+    for (const review of reviews) {
+      if (!review.suggestion) {
+        const hydrated = suggestionsByVoucher.get(review.voucherId);
+        if (hydrated) review.suggestion = hydrated;
+      }
+    }
   }
 
   private async appendEvent(
@@ -748,23 +777,15 @@ export class SupabaseLedgerStore implements LedgerStore {
     // null (mirrors the getReviewFeed Task 7 hardening pattern). Without this,
     // stale-blocked detection silently misses production rows whose suggestion
     // was persisted to the suggestions table rather than embedded.
-    const missingVoucherIds = reviews.filter((r) => !r.suggestion).map((r) => r.voucherId);
-    if (missingVoucherIds.length > 0) {
-      const { data: suggestionRows, error: sErr } = await this.ledger()
-        .from("suggestions")
-        .select("*")
-        .in("voucher_id", missingVoucherIds);
-      if (sErr) throw new Error(`Failed to load suggestions: ${sErr.message}`);
-      const suggestionsByVoucher = new Map(
-        (suggestionRows ?? []).map((row) => [row.voucher_id as string, mapSuggestionRow(row)]),
-      );
-      for (const review of reviews) {
-        if (!review.suggestion) {
-          const hydrated = suggestionsByVoucher.get(review.voucherId);
-          if (hydrated) review.suggestion = hydrated;
-        }
-      }
-    }
+    //
+    // Scope safety (see CONVENTIONS.md Rule 11): the `suggestions` table has no
+    // organization_id/workspace_id columns. Scoping is transitive: missingVoucherIds
+    // is sourced from the org/workspace-scoped reviews query above, voucher IDs
+    // are globally unique (`createId('voucher')`), and the FK on suggestions.voucher_id
+    // guarantees each row points to a real voucher already proven in-scope by the
+    // prior reviews query. If a future refactor drops the .eq scope filters on the
+    // reviews query, this hydration would silently leak — keep them paired.
+    await this.hydrateMissingSuggestions(reviews);
 
     const { data: voucherRows, error: vErr } = await this.ledger()
       .from("vouchers")
@@ -790,6 +811,12 @@ export class SupabaseLedgerStore implements LedgerStore {
         status: alert.status,
         target_id: alert.targetId ?? null,
         body: alert.body ?? null,
+        // Explicitly clear resolved_at/resolved_by on every upsert (CONVENTIONS
+        // Rule 18). If an alert was previously auto-resolved and is now
+        // re-detected, ON CONFLICT DO UPDATE only writes payload columns —
+        // omitting these would leave stale resolution metadata on an 'open' row.
+        resolved_at: null,
+        resolved_by: null,
       }));
       const { error: uErr } = await this.ledger()
         .from("compliance_alerts")
@@ -817,9 +844,14 @@ export class SupabaseLedgerStore implements LedgerStore {
       .filter((row) => !detectedKeys.has(detectedKey(row.kind as string, (row.target_id as string | null) ?? null)))
       .map((row) => row.id as string);
     if (toResolve.length > 0) {
+      // System sentinel for automatic resolution (CONVENTIONS Rule 20). The
+      // API caller triggered a refresh, not a resolution decision — attributing
+      // resolved_by to ctx.userId would corrupt the audit trail in 7-year
+      // Bokföringslagen replay. Human dismissals use a separate path with the
+      // real userId.
       const { error: resErr } = await this.ledger()
         .from("compliance_alerts")
-        .update({ status: "resolved", resolved_at: nowIso(), resolved_by: this.ctx.userId })
+        .update({ status: "resolved", resolved_at: nowIso(), resolved_by: "system:auto-resolver" })
         .in("id", toResolve);
       if (resErr) throw new Error(`Failed to mark alerts resolved: ${resErr.message}`);
     }
@@ -835,20 +867,28 @@ export class SupabaseLedgerStore implements LedgerStore {
   }
 
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
+    // Dedup at the boundary (Rule 23): PostgreSQL .in() dedupes server-side
+    // and MemoryLedgerStore must do the same for parity (Rule 11).
+    const reviewIds = [...new Set(input.reviewIds)];
+
     const { data: reviewRows, error: rErr } = await this.ledger()
       .from("review_tasks")
       .select("*")
       .eq("organization_id", this.ctx.organizationId)
       .eq("workspace_id", this.ctx.workspaceId)
-      .in("id", input.reviewIds);
+      .in("id", reviewIds);
     if (rErr) throw new Error(`Failed to load reviews: ${rErr.message}`);
     const reviews = (reviewRows ?? []).map((row) => mapReviewRow(row));
 
-    if (reviews.length !== input.reviewIds.length) {
+    if (reviews.length !== reviewIds.length) {
       const found = new Set(reviews.map((r) => r.id));
-      const missing = input.reviewIds.filter((id) => !found.has(id));
-      throw new Error(`runSimulation: ${missing.length} review(s) not found in this workspace: ${missing.join(", ")}`);
+      const missing = reviewIds.filter((id) => !found.has(id));
+      throw new ReviewNotFoundError(missing);
     }
+
+    // Hydrate suggestions for reviews whose embedded column is null — same
+    // helper that refreshComplianceAlerts uses (Rule 15: symmetric fix).
+    await this.hydrateMissingSuggestions(reviews);
 
     const voucherIds = [...new Set(reviews.map((r) => r.voucherId))];
     let vouchers: Voucher[] = [];

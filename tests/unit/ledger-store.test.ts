@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { LedgerStore } from "@jpx-accounting/domain";
-import { MemoryLedgerStore } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, ReviewNotFoundError } from "@jpx-accounting/domain";
 
 test("MemoryLedgerStore satisfies the LedgerStore contract for create, review, and reports", async () => {
   const store: LedgerStore = new MemoryLedgerStore();
@@ -110,4 +110,71 @@ test("MemoryLedgerStore.refreshComplianceAlerts marks resolved alerts when condi
   const staleSecond = second.find((a) => a.id === staleFirst.id);
   assert.ok(staleSecond, "alert still present (not deleted)");
   assert.equal(staleSecond.status, "resolved", "marked resolved when condition cleared");
+});
+
+test("MemoryLedgerStore.runSimulation dedupes duplicate reviewIds in input", async () => {
+  const store = new MemoryLedgerStore();
+  const reviews = await store.getReviewFeed();
+  const target = reviews[0];
+  assert.ok(target);
+  const single = await store.runSimulation({
+    actorId: "u",
+    title: "single",
+    scenario: "s",
+    reviewIds: [target.id],
+    action: "approve",
+  });
+  const dup = await store.runSimulation({
+    actorId: "u",
+    title: "dup",
+    scenario: "s",
+    reviewIds: [target.id, target.id, target.id],
+    action: "approve",
+  });
+  // After dedup, both should produce the same balance deltas (not 3x).
+  assert.deepEqual(dup.balanceDelta, single.balanceDelta);
+});
+
+test("ReviewNotFoundError carries the missing IDs for HTTP layer mapping", async () => {
+  const store = new MemoryLedgerStore();
+  try {
+    await store.runSimulation({
+      actorId: "u",
+      title: "t",
+      scenario: "s",
+      reviewIds: ["does_not_exist"],
+      action: "approve",
+    });
+    assert.fail("expected ReviewNotFoundError");
+  } catch (err) {
+    assert.ok(err instanceof ReviewNotFoundError);
+    assert.deepEqual(err.missingIds, ["does_not_exist"]);
+  }
+});
+
+test("MemoryLedgerStore.refreshComplianceAlerts clones alerts so prior callers see no mutation", async () => {
+  const store = new MemoryLedgerStore();
+  // Force a stale-blocked alert by mutating the seeded data
+  const reviews = await store.getReviewFeed();
+  const review = reviews[0];
+  assert.ok(review);
+  if (review.suggestion) {
+    review.suggestion.ruleHits = [
+      { id: "rh1", code: "vat-missing", title: "x", severity: "blocking", message: "x", sourceIds: [] },
+    ];
+  }
+  const internalVouchers = (store as unknown as { vouchers: Map<string, { createdAt: string }> }).vouchers;
+  for (const v of internalVouchers.values()) v.createdAt = "2026-01-01T00:00:00.000Z";
+
+  const first = await store.refreshComplianceAlerts();
+  const stale = first.find((a) => a.kind === "stale-blocked");
+  assert.ok(stale);
+  assert.equal(stale.status, "open");
+
+  // Clear the condition and refresh — the new returned object should report
+  // 'resolved', but the previously-captured `stale` reference should remain
+  // 'open' (immutable update, not in-place mutation).
+  if (review.suggestion) review.suggestion.ruleHits = [];
+  await store.refreshComplianceAlerts();
+  assert.equal(stale.status, "open", "prior caller's reference unchanged");
 });

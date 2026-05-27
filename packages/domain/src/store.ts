@@ -32,6 +32,18 @@ import { buildVoucherDraft } from "./voucher-draft";
 
 export type ReviewAction = "approve" | "reject" | "book-without-vat";
 
+/**
+ * Thrown when an API caller references review IDs that don't exist in the
+ * scope. Distinguished from generic Error so the HTTP layer can map it to
+ * 404 instead of 500. (Rule 16: domain errors need explicit HTTP mapping.)
+ */
+export class ReviewNotFoundError extends Error {
+  constructor(public readonly missingIds: string[]) {
+    super(`Review(s) not found in this workspace: ${missingIds.join(", ")}`);
+    this.name = "ReviewNotFoundError";
+  }
+}
+
 export interface LedgerStore {
   createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult>;
   composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket>;
@@ -61,6 +73,11 @@ export interface LedgerStore {
 
 const defaultOrganizationId = "org_jpx";
 const defaultWorkspaceId = "workspace_main";
+
+// Cap accumulated in-memory alerts to prevent unbounded growth across long
+// demo sessions (CONVENTIONS Rule 25). Seeded informational alerts are pinned;
+// auto-detected entries beyond this cap evict the oldest first.
+const MEMORY_ALERT_CAP = 500;
 
 function initialLedgerLines(): LedgerLine[] {
   return [
@@ -434,50 +451,58 @@ export class MemoryLedgerStore implements LedgerStore {
     const vouchers = [...this.vouchers.values()];
     const detected = detectComplianceIssues(reviews, vouchers, today());
     const autoDetectedKinds = new Set(["stale-blocked", "missing-supplier-vat"]);
-    const detectedKey = (kind: string, targetId: string | undefined) => `${kind}::${targetId ?? ""}`;
-    const detectedKeys = new Set(detected.map((a) => detectedKey(a.kind, a.targetId)));
-    const detectedIds = new Set(detected.map((a) => a.id));
+    const detectedById = new Map(detected.map((a) => [a.id, a]));
 
-    // Mark previously-open auto-detected alerts as 'resolved' when their
-    // condition no longer holds — symmetric with the SupabaseLedgerStore
-    // behavior. Seeded informational alerts (e.g. representation-review,
-    // legacy) are left as-is.
-    for (const alert of this.alerts) {
-      if (
-        autoDetectedKinds.has(alert.kind) &&
-        alert.status === "open" &&
-        !detectedKeys.has(detectedKey(alert.kind, alert.targetId))
-      ) {
-        alert.status = "resolved";
-      }
-    }
-    // Append any newly-detected alerts whose deterministic ID isn't already
-    // present. Deterministic IDs in detectComplianceIssues mean re-detecting
-    // the same condition doesn't add a duplicate row.
-    const existingIds = new Set(this.alerts.map((a) => a.id));
+    // Single-pass immutable rebuild (CONVENTIONS Rules 17, 24):
+    //   - Clone every existing alert before any state change so callers holding
+    //     references from prior snapshots don't observe spooky mutation.
+    //   - Auto-detected, open, no-longer-detected → status='resolved'.
+    //   - Auto-detected, resolved, still-detected → status='open' (refresh
+    //     reopens its own auto-resolutions only). NEVER reopen 'dismissed' —
+    //     that is a user-acknowledged terminal state.
+    //   - User-touched ('acknowledged', 'dismissed') or non-auto-detected kinds
+    //     are passed through unchanged.
+    const rebuilt: ComplianceAlert[] = this.alerts.map((alert) => {
+      if (!autoDetectedKinds.has(alert.kind)) return { ...alert };
+      const stillDetected = detectedById.has(alert.id);
+      if (alert.status === "open" && !stillDetected) return { ...alert, status: "resolved" };
+      if (alert.status === "resolved" && stillDetected) return { ...alert, status: "open" };
+      return { ...alert };
+    });
+
+    // Append newly-detected alerts whose deterministic ID isn't already present.
+    const existingIds = new Set(rebuilt.map((a) => a.id));
     for (const alert of detected) {
-      if (!existingIds.has(alert.id)) this.alerts.push(alert);
+      if (!existingIds.has(alert.id)) rebuilt.push({ ...alert });
     }
-    // If a previously-resolved alert flips back to detected, reopen it.
-    for (const alert of this.alerts) {
-      if (autoDetectedKinds.has(alert.kind) && alert.status === "resolved" && detectedIds.has(alert.id)) {
-        alert.status = "open";
-      }
-    }
+
+    // Bound accumulation (CONVENTIONS Rule 25): cap the in-memory store at
+    // MEMORY_ALERT_CAP entries, keeping the most-recently-detected alerts.
+    // Demo runs can churn through many vouchers; without this the list grows
+    // monotonically. Seeded informational alerts are pinned at the front so
+    // they survive eviction.
+    const seeded = rebuilt.filter((a) => !autoDetectedKinds.has(a.kind));
+    const auto = rebuilt.filter((a) => autoDetectedKinds.has(a.kind));
+    const capRemaining = Math.max(0, MEMORY_ALERT_CAP - seeded.length);
+    const trimmedAuto = auto.length > capRemaining ? auto.slice(-capRemaining) : auto;
+
+    this.alerts.length = 0;
+    this.alerts.push(...seeded, ...trimmedAuto);
     return [...this.alerts];
   }
 
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
-    const requestedReviews = input.reviewIds
-      .map((id) => this.reviews.get(id))
-      .filter((r): r is ReviewTask => Boolean(r));
+    // Dedup at the boundary (Rule 23) so Memory and Supabase produce the
+    // same simulation deltas for the same input.
+    const reviewIds = [...new Set(input.reviewIds)];
+    const requestedReviews = reviewIds.map((id) => this.reviews.get(id)).filter((r): r is ReviewTask => Boolean(r));
     // Fail loud when the caller asked about review IDs that don't exist
     // in this scope — a silent 201 with empty deltas masks bugs (typos,
     // cross-workspace IDs, deletions) that the caller needs to know about.
-    if (requestedReviews.length !== input.reviewIds.length) {
+    if (requestedReviews.length !== reviewIds.length) {
       const found = new Set(requestedReviews.map((r) => r.id));
-      const missing = input.reviewIds.filter((id) => !found.has(id));
-      throw new Error(`runSimulation: ${missing.length} review(s) not found in this workspace: ${missing.join(", ")}`);
+      const missing = reviewIds.filter((id) => !found.has(id));
+      throw new ReviewNotFoundError(missing);
     }
     const requestedVouchers = requestedReviews
       .map((r) => this.vouchers.get(r.voucherId))

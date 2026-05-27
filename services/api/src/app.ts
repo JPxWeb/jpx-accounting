@@ -12,7 +12,7 @@ import {
   uploadInitSchema,
 } from "@jpx-accounting/contracts";
 import type { LedgerStore } from "@jpx-accounting/domain";
-import { MemoryLedgerStore, NotImplementedInSupabaseStore } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, NotImplementedInSupabaseStore, ReviewNotFoundError } from "@jpx-accounting/domain";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
@@ -116,6 +116,10 @@ export function createApp({
 
     if (error instanceof NotImplementedInSupabaseStore) {
       return createErrorResponse(error.message, runtimeMode, 501);
+    }
+
+    if (error instanceof ReviewNotFoundError) {
+      return createErrorResponse(error.message, runtimeMode, 404);
     }
 
     console.error(error);
@@ -252,9 +256,16 @@ export function createApp({
     return context.json(await context.get("store").saveCompanySettings(input));
   });
 
-  app.post("/api/compliance-watch/refresh", async (context) =>
-    context.json(await context.get("store").refreshComplianceAlerts()),
-  );
+  app.post("/api/compliance-watch/refresh", async (context) => {
+    // Default-exclude resolved/dismissed alerts (CONVENTIONS Rule 26). A naive
+    // UI consumer iterating the response without filtering would otherwise
+    // render historical noise as active alerts. Callers wanting the full
+    // history pass ?includeResolved=true.
+    const includeResolved = context.req.query("includeResolved") === "true";
+    const all = await context.get("store").refreshComplianceAlerts();
+    const visible = includeResolved ? all : all.filter((a) => a.status === "open" || a.status === "acknowledged");
+    return context.json(visible);
+  });
 
   app.post("/api/testing/reset", (context) => {
     if (!allowTestReset || runtimeMode !== "demo") {
