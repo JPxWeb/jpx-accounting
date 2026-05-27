@@ -1,9 +1,11 @@
 # Development Status
 
-**Last reviewed:** 2026-05-27
+**Last reviewed:** 2026-05-27 (post-merge)
 **Purpose:** Track phase completion, ported work, and open UI follow-ups. Update at the end of each phase.
 
 > This file was created during the Phase 7 port from `deploy` → `main` (PR-A docs cherry-pick). Earlier phase-by-phase status from the `deploy` branch is preserved only by reference; the canonical implementation now lives on `main` and uses `PostgresLedgerStore` rather than the obsoleted `SupabaseLedgerStore` lineage. See [`docs/superpowers/plans/2026-05-27-deploy-to-main-port-plan.md`](./superpowers/plans/2026-05-27-deploy-to-main-port-plan.md) for the full survey and [`docs/superpowers/plans/2026-05-27-port-phase-7-to-main.md`](./superpowers/plans/2026-05-27-port-phase-7-to-main.md) for the executable plan.
+>
+> **Phase 7 port status (2026-05-27):** PR-A (#15), PR-B (#16), PR-C (#17) all squash-merged into `main`. Original `deploy → main` PR #14 closed as superseded. **The data-layer port is complete.** Remaining `deploy` work is the Track A IA web sprint (PR-D) — out of scope for the current port.
 
 ## Verification baseline
 
@@ -26,20 +28,42 @@ Integration tests against a real Postgres are gated on `SUPABASE_DB_URL`:
 SUPABASE_DB_URL=<local-postgres-url> pnpm test:integration
 ```
 
-> **Note:** a dedicated `pnpm typecheck:tests` script (typechecking files under `tests/`) does not exist on main yet. PR-B introduces a `tests/tsconfig.json` + a `typecheck:tests` workspace script as a prerequisite for the new test files it adds.
+An additional `pnpm typecheck:tests` script (typechecking files under `tests/`) was introduced in PR-B and is now part of the gate.
 
 ---
 
 ## Phase 7 port status
 
-| PR       | Scope                                                                                                                                | Status            |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
-| **PR-A** | Docs cherry-pick (CONVENTIONS, Phase 7 spec + plans, this DEV_STATUS)                                                                | **This PR**       |
-| **PR-B** | Contracts, pure domain helpers, `MemoryLedgerStore` extensions, API routes, migration `0004`                                         | Pending           |
-| **PR-C** | `PostgresLedgerStore` real implementations (`runSimulation`, `refreshComplianceAlerts`, `answerAssistantQuestion`, company settings) | Pending           |
-| **PR-D** | Track A IA web cherry-picks (separate sprint)                                                                                        | Out of scope here |
+| PR       | Scope                                                                                                                                | Status                                                                |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| **PR-A** | Docs cherry-pick (CONVENTIONS, Phase 7 spec + plans, this DEV_STATUS)                                                                | **MERGED** [#15](https://github.com/JPxWeb/jpx-accounting/pull/15)    |
+| **PR-B** | Contracts, pure domain helpers, `MemoryLedgerStore` extensions, API routes, migration `0004`                                         | **MERGED** [#16](https://github.com/JPxWeb/jpx-accounting/pull/16)    |
+| **PR-C** | `PostgresLedgerStore` real implementations (`runSimulation`, `refreshComplianceAlerts`, `answerAssistantQuestion`, company settings) | **MERGED** [#17](https://github.com/JPxWeb/jpx-accounting/pull/17)    |
+| **PR-D** | Track A IA web cherry-picks (separate sprint)                                                                                        | Out of scope; see "Remaining deploy work" below for scope information |
 
-Phase 7 design + conventions land via PR-A; the `PostgresLedgerStore` implementation is tracked by PR-B/PR-C. PR #14 (`deploy → main`) remains open as historical context and will be closed as superseded once PR-C merges.
+**PR #14** (original `deploy → main`) closed as superseded. Phase 7 data-layer port is complete on `main`.
+
+### Post-merge follow-ups
+
+- **Manual integration test** against a live Postgres before the next deploy: `SUPABASE_DB_URL=... pnpm test:integration` to exercise the 4 new round-trips (`runSimulation` real diff + `ReviewNotFoundError`, `answerAssistantQuestion` persists, `refreshComplianceAlerts` idempotency, settings round-trip).
+- **Migration 0004** applies cleanly to PG ≥ 15 (Supabase ships PG 17). Coordinate with the schema owner before applying to production.
+
+---
+
+## Remaining deploy work (PR-D scope, future sprint)
+
+109 commits remain on `deploy` that did not make it to `main` via the Phase 7 port. Categorized:
+
+| Bucket                                                                 | Approx count | Disposition                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase 7 work (already ported)**                                      | ~25          | Landed via PR-A/B/C. The deploy SHAs differ from the squash-merge SHAs on main, so `git log` still shows them as "ahead" — but the content is in.                                                                                                                                                                     |
+| **Obsoleted — SupabaseLedgerStore lineage**                            | ~10          | Never to be ported (`efea3d0`, `736a5e6`, `9a1ba6c`, `fa5425f`, `6f080b3`, `4dec542`, etc.). Code is dead on `main`'s `PostgresLedgerStore` architecture.                                                                                                                                                             |
+| **Worth-porting perf/cleanup ideas (Supabase impls, port the intent)** | ~5           | `b4082de` (projection aggregates via trigger), `7fa1887` (parallel queries on getEvidenceContext), `757c701` (getReviewFeed batched suggestion lookups), `10844e2` (suggestVoucher org-scoped gate), `3f8298f` (settings audit attribution). Apply the _intent_ to `PostgresLedgerStore` in a small follow-up sprint. |
+| **Track A IA web work**                                                | ~40          | The PR-D sprint. nuqs, react-hook-form, shadcn primitives (form, table, tabs, sidebar, skeleton), Sonner, settings layout with sub-navigation, Books page with tab dispatch, ambient digest parallel route, Today per-card actions, a11y improvements, axe-core E2E.                                                  |
+| **Chore / setup**                                                      | ~10          | Biome, Husky + lint-staged, .editorconfig, Cursor rules, GitHub Actions SHA pinning, Stop hooks. Some overlap with what main has; needs per-commit conflict resolution.                                                                                                                                               |
+| **Unified radius / shadcn theme**                                      | ~6           | Design-token additions that pair with the shadcn primitives bundle.                                                                                                                                                                                                                                                   |
+
+Main's web app today has the `(shell)` route group, `app-shell.tsx`, `command-palette.tsx`, providers, PWA, and screens, plus React Query 5, Motion 12, and Tailwind 4 — but **no** shadcn/ui, **no** nuqs, **no** react-hook-form, **no** Sonner, **no** tanstack-table. PR-D's bigger commits add these primitives + reorganize the screens to use them. Recommend surveying conflicts before sprinting; main may have absorbed parts of the IA shape independently.
 
 ---
 
