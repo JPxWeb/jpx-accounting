@@ -14,10 +14,11 @@
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "typecheck": "pnpm -r typecheck",
+    "typecheck:tests": "tsc --noEmit -p tests/tsconfig.json",
     "test:unit": "tsx --test \"tests/unit/**/*.test.ts\"",
     "test:integration": "tsx --test \"tests/integration/**/*.test.ts\"",
     "build": "pnpm --filter @jpx-accounting/web build && pnpm --filter @jpx-accounting/api build",
-    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test:unit && pnpm build",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm typecheck:tests && pnpm test:unit && pnpm build",
     "test:e2e": "pnpm build && playwright test",
     "test:e2e:headed": "pnpm build && playwright test --headed",
     "test:e2e:install": "playwright install chromium"

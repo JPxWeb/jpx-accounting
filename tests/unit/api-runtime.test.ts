@@ -7,8 +7,8 @@ import { createApiRuntimeDependencies } from "../../services/api/src/runtime";
 function createTestApiApp(runtimeMode: "demo" | "normal") {
   const corsPolicy =
     runtimeMode === "demo"
-      ? { kind: "wildcard" as const }
-      : ({ kind: "allowlist", origins: ["http://localhost:3002"] } as const);
+      ? ({ kind: "wildcard" } as const)
+      : { kind: "allowlist" as const, origins: ["http://localhost:3002"] };
 
   const dependencies = createApiRuntimeDependencies({
     port: 0,

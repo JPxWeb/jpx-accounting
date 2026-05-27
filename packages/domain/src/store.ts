@@ -2,6 +2,7 @@ import type {
   AccountingMethod,
   AccountingSuggestion,
   AssistantSession,
+  CompanySettings,
   ComplianceAlert,
   CloseRun,
   EvidenceComposeInput,
@@ -20,13 +21,28 @@ import type {
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
 
+import { buildAssistantScaffold } from "./assistant";
+import { detectComplianceIssues } from "./compliance";
 import { buildJournal, buildBalances, buildVat } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import { buildEventHash } from "./hash-chain";
-import { createId, nowIso } from "./ids";
+import { createId, nowIso, today } from "./ids";
+import { simulateApprovals } from "./simulation";
 
 type LedgerLine = Parameters<typeof buildJournal>[0][number];
 export type ReviewAction = "approve" | "reject" | "book-without-vat";
+
+/**
+ * Thrown when an API caller references review IDs that don't exist in the
+ * scope. Distinguished from generic Error so the HTTP layer maps to 404
+ * instead of catch-all 500 (CONVENTIONS Rule 16).
+ */
+export class ReviewNotFoundError extends Error {
+  constructor(public readonly missingIds: string[]) {
+    super(`Review(s) not found in this workspace: ${missingIds.join(", ")}`);
+    this.name = "ReviewNotFoundError";
+  }
+}
 
 export interface LedgerStore {
   createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult>;
@@ -48,7 +64,13 @@ export interface LedgerStore {
   answerAssistantQuestion(question: string): Promise<AssistantSession>;
   runSimulation(input: SimulationRequest): Promise<SimulationRun>;
   getCloseRun(): Promise<CloseRun>;
+  refreshComplianceAlerts(): Promise<ComplianceAlert[]>;
+  getCompanySettings(): Promise<CompanySettings | null>;
+  putCompanySettings(input: CompanySettings): Promise<CompanySettings>;
 }
+
+const MEMORY_ALERT_CAP = 500;
+const AUTO_DETECTED_KINDS = new Set(["stale-blocked", "missing-supplier-vat"]);
 
 const defaultOrganizationId = "org_jpx";
 const defaultWorkspaceId = "workspace_main";
@@ -134,7 +156,7 @@ function guessAccountingMethod(input: EvidenceCreateInput): AccountingMethod {
   return text.includes("invoice") ? "invoice" : "cash";
 }
 
-function buildPostingLines(
+export function buildPostingLines(
   voucher: Voucher,
   suggestion: AccountingSuggestion,
   action: "approve" | "book-without-vat",
@@ -194,7 +216,7 @@ export class MemoryLedgerStore implements LedgerStore {
   private readonly events: LedgerEvent[] = [];
   private readonly ledgerLines: LedgerLine[] = initialLedgerLines();
   private readonly assistantExamples: AssistantSession[] = [];
-  private readonly alerts: ComplianceAlert[] = [
+  private alerts: ComplianceAlert[] = [
     {
       id: "alert_vat_1",
       title: "Representation review queue",
@@ -202,8 +224,12 @@ export class MemoryLedgerStore implements LedgerStore {
       detectedAt: nowIso(),
       impactSummary:
         "Two receipts look like representation and should be checked against attendee and VAT-limit rules.",
+      kind: "representation-review",
+      severity: "warning",
+      status: "open",
     },
   ];
+  private companySettings: CompanySettings | null = null;
 
   constructor() {
     const seededEvidence = this.createEvidenceSync({
@@ -543,33 +569,42 @@ export class MemoryLedgerStore implements LedgerStore {
   }
 
   async answerAssistantQuestion(question: string): Promise<AssistantSession> {
-    const answer: AssistantSession = {
-      id: createId("assistant"),
-      question,
-      answer:
-        "This scaffold uses grounded, citation-first advisory. In production the answer would combine Azure AI Search retrieval, policy sources, and Responses API reasoning before it reaches the reviewer.",
-      status: "grounded",
-      citations: [
-        {
-          id: "cit_arch",
-          title: "Internal architecture policy",
-          sourceType: "internal",
-          excerpt: "AI may suggest and explain, but may not silently mutate accounting state.",
-        },
-      ],
-    };
+    const answer = buildAssistantScaffold(question);
     this.assistantExamples.unshift(answer);
     return answer;
   }
 
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
+    // Dedup at boundary (Rule 23): Postgres .in() dedupes server-side; Memory
+    // must match for parity (Rule 11).
+    const reviewIds = [...new Set(input.reviewIds)];
+    const requestedReviews = reviewIds.map((id) => this.reviews.get(id)).filter((r): r is ReviewTask => Boolean(r));
+    if (requestedReviews.length !== reviewIds.length) {
+      const found = new Set(requestedReviews.map((r) => r.id));
+      throw new ReviewNotFoundError(reviewIds.filter((id) => !found.has(id)));
+    }
+    const requestedVouchers = requestedReviews
+      .map((r) => this.vouchers.get(r.voucherId))
+      .filter((v): v is Voucher => Boolean(v));
+    const requestedSuggestions = requestedReviews
+      .map((r) => r.suggestion)
+      .filter((s): s is AccountingSuggestion => Boolean(s));
+
+    const { balanceDelta, vatDelta, affectedAccounts } = simulateApprovals(
+      requestedReviews,
+      requestedSuggestions,
+      requestedVouchers,
+      input.action,
+    );
+
     const result: SimulationRun = {
       id: createId("sim"),
       title: input.title,
       scenario: input.scenario,
-      outcomeSummary:
-        "Shadow ledger run completed. No production postings were changed; the scenario should be reviewed against the active VAT and policy rules before adoption.",
-      affectedAccounts: ["6071", "2641", "6991"],
+      outcomeSummary: `Simulated ${requestedReviews.length} review(s); ${affectedAccounts.length} accounts affected. No production postings were changed.`,
+      affectedAccounts,
+      balanceDelta,
+      vatDelta,
     };
 
     this.appendEvent({
@@ -584,6 +619,46 @@ export class MemoryLedgerStore implements LedgerStore {
     });
 
     return result;
+  }
+
+  async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
+    const detected = detectComplianceIssues([...this.reviews.values()], [...this.vouchers.values()], today());
+    const detectedById = new Map(detected.map((a) => [a.id, a]));
+
+    // Immutable single-pass rebuild (CONVENTIONS Rules 17, 24): clone before
+    // mutating so prior snapshot consumers don't observe spooky state flips.
+    // Auto-detected alerts can transition open<->resolved; user states
+    // (acknowledged, dismissed) and seeded non-auto kinds pass through unchanged.
+    const rebuilt: ComplianceAlert[] = this.alerts.map((alert) => {
+      if (!AUTO_DETECTED_KINDS.has(alert.kind)) return { ...alert };
+      const stillDetected = detectedById.has(alert.id);
+      if (alert.status === "open" && !stillDetected) return { ...alert, status: "resolved" };
+      if (alert.status === "resolved" && stillDetected) return { ...alert, status: "open" };
+      return { ...alert };
+    });
+
+    const existingIds = new Set(rebuilt.map((a) => a.id));
+    for (const alert of detected) {
+      if (!existingIds.has(alert.id)) rebuilt.push({ ...alert });
+    }
+
+    // Bound accumulation (Rule 25): cap auto-detected entries; seeded alerts pinned.
+    const seeded = rebuilt.filter((a) => !AUTO_DETECTED_KINDS.has(a.kind));
+    const auto = rebuilt.filter((a) => AUTO_DETECTED_KINDS.has(a.kind));
+    const capRemaining = Math.max(0, MEMORY_ALERT_CAP - seeded.length);
+    const trimmedAuto = auto.length > capRemaining ? auto.slice(-capRemaining) : auto;
+
+    this.alerts = [...seeded, ...trimmedAuto];
+    return [...this.alerts];
+  }
+
+  async getCompanySettings(): Promise<CompanySettings | null> {
+    return this.companySettings ? { ...this.companySettings } : null;
+  }
+
+  async putCompanySettings(input: CompanySettings): Promise<CompanySettings> {
+    this.companySettings = { ...input };
+    return { ...this.companySettings };
   }
 
   async getCloseRun(): Promise<CloseRun> {

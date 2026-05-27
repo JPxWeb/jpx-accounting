@@ -146,17 +146,28 @@ test("assistant, knowledge, simulation, close, and import endpoints round-trip",
   expect(knowledge.ok()).toBeTruthy();
   expect((await knowledge.json()).answer).toContain("Azure AI Search");
 
+  // simulationRequestSchema now requires reviewIds + action (Phase 7 port). Pick a real
+  // review from the demo seed instead of hardcoding an ID, since createId() is random.
+  const simReviews = await request.get(`${apiBaseUrl}/api/reviews/feed`);
+  const simReviewList = (await simReviews.json()) as Array<{ id: string }>;
+  expect(simReviewList.length).toBeGreaterThan(0);
+
   const simulation = await request.post(`${apiBaseUrl}/api/simulations/run`, {
     data: {
       actorId: "user_founder",
       title: "Representation reclassification",
       scenario: "Treat a lunch receipt as representation and compare VAT impact.",
+      reviewIds: [simReviewList[0]!.id],
+      action: "approve",
     },
   });
   expect(simulation.ok()).toBeTruthy();
-  expect(await simulation.json()).toMatchObject({
+  const simulationJson = await simulation.json();
+  expect(simulationJson).toMatchObject({
     title: "Representation reclassification",
   });
+  expect(Array.isArray(simulationJson.balanceDelta)).toBe(true);
+  expect(Array.isArray(simulationJson.vatDelta)).toBe(true);
 
   const closeRun = await request.post(`${apiBaseUrl}/api/close-runs`);
   expect(closeRun.ok()).toBeTruthy();

@@ -3,6 +3,8 @@ import type {
   AccountingSuggestion,
   AssistantSession,
   CloseRun,
+  CompanySettings,
+  ComplianceAlert,
   EvidenceComposeInput,
   EvidenceCreateInput,
   EvidenceCreateResult,
@@ -1125,6 +1127,9 @@ export class PostgresLedgerStore implements LedgerStore {
         outcomeSummary:
           "Shadow ledger run completed. No production postings were changed; the scenario should be reviewed against the active VAT and policy rules before adoption.",
         affectedAccounts: ["6071", "2641", "6991"],
+        // TODO(PR-C): replace with real projection diff via simulateApprovals
+        balanceDelta: [],
+        vatDelta: [],
       };
 
       await this.appendEvent(
@@ -1157,5 +1162,21 @@ export class PostgresLedgerStore implements LedgerStore {
         { id: "close_3", label: "Export SIE package for accountant review", status: "ready" },
       ],
     };
+  }
+
+  async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
+    // TODO(PR-C): implement against compliance_alerts table (migration 0004 adds it).
+    throw new Error("refreshComplianceAlerts not yet implemented for PostgresLedgerStore");
+  }
+
+  async getCompanySettings(): Promise<CompanySettings | null> {
+    // TODO(PR-C): implement against organization_settings table (migration 0004 adds it).
+    return null;
+  }
+
+  async putCompanySettings(input: CompanySettings): Promise<CompanySettings> {
+    // TODO(PR-C): implement against organization_settings table.
+    void input;
+    throw new Error("putCompanySettings not yet implemented for PostgresLedgerStore");
   }
 }

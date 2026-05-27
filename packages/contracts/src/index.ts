@@ -206,6 +206,21 @@ export const simulationRunSchema = z.object({
   scenario: z.string(),
   outcomeSummary: z.string(),
   affectedAccounts: z.array(z.string()),
+  balanceDelta: z.array(
+    z.object({
+      accountNumber: z.string(),
+      accountName: z.string(),
+      deltaDebit: z.number(),
+      deltaCredit: z.number(),
+    }),
+  ),
+  vatDelta: z.array(
+    z.object({
+      vatCode: z.string(),
+      deltaBase: z.number(),
+      deltaAmount: z.number(),
+    }),
+  ),
 });
 
 export const closeRunSchema = z.object({
@@ -227,6 +242,11 @@ export const complianceAlertSchema = z.object({
   source: z.string(),
   detectedAt: z.string(),
   impactSummary: z.string(),
+  kind: z.string(),
+  severity: z.enum(["info", "warning", "critical"]),
+  status: z.enum(["open", "acknowledged", "resolved", "dismissed"]),
+  targetId: z.string().optional(),
+  body: z.string().optional(),
 });
 
 export const reportBundleSchema = z.object({
@@ -288,7 +308,22 @@ export const simulationRequestSchema = z.object({
   actorId: z.string(),
   title: z.string(),
   scenario: z.string(),
-  voucherId: z.string().optional(),
+  reviewIds: z.array(z.string()).min(1).max(50),
+  action: z.enum(["approve", "book-without-vat"]),
+});
+
+export const companySettingsSchema = z.object({
+  organizationId: z.string(),
+  organizationName: z.string().min(1),
+  organizationNumber: z.string().regex(/^\d{6}-\d{4}$/, "Swedish org number format is XXXXXX-XXXX"),
+  addressLine1: z.string().min(1),
+  addressLine2: z.string().optional(),
+  postalCode: z.string().regex(/^\d{3}\s?\d{2}$/, "Swedish postal code format is XXX XX"),
+  city: z.string().min(1),
+  contactEmail: z.email(),
+  contactPhone: z.string().optional(),
+  bankIban: z.string().optional(),
+  bankBic: z.string().optional(),
 });
 
 export const uploadInitSchema = z.object({
@@ -355,5 +390,6 @@ export type SimulationRequest = z.infer<typeof simulationRequestSchema>;
 export type SuggestionRequest = z.infer<typeof suggestionRequestSchema>;
 export type UploadInit = z.infer<typeof uploadInitSchema>;
 export type UploadInitResult = z.infer<typeof uploadInitResultSchema>;
+export type CompanySettings = z.infer<typeof companySettingsSchema>;
 
 export type { ApiJsonErrorBody, ApiJsonErrorRuntimeMode, ApiValidationIssue } from "./api-errors";

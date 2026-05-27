@@ -73,6 +73,18 @@ export class UnavailableLedgerStore implements LedgerStore {
   async getCloseRun() {
     return this.fail();
   }
+
+  async refreshComplianceAlerts() {
+    return this.fail();
+  }
+
+  async getCompanySettings() {
+    return this.fail();
+  }
+
+  async putCompanySettings() {
+    return this.fail();
+  }
 }
 
 export function isLedgerStoreOperational(store: LedgerStore): boolean {
