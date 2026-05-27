@@ -124,6 +124,24 @@ export class AccountingApiClient {
     });
   }
 
+  async rejectReview(reviewId: string, input: ReviewDecisionInput): Promise<ReviewTask | undefined> {
+    if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "reject", input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.baseUrl, `/api/reviews/${reviewId}/reject`, reviewTaskSchema, {
+      method: "POST",
+      json: input,
+    });
+  }
+
+  async bookWithoutVatReview(reviewId: string, input: ReviewDecisionInput): Promise<ReviewTask | undefined> {
+    if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "book-without-vat", input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.baseUrl, `/api/reviews/${reviewId}/book-without-vat`, reviewTaskSchema, {
+      method: "POST",
+      json: input,
+    });
+  }
+
   async askAssistant(input: AssistantRequest): Promise<AssistantSession> {
     if (this.fallbackStore) return this.fallbackStore.answerAssistantQuestion(input.question);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");

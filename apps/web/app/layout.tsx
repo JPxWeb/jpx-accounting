@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Manrope } from "next/font/google";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 import type { ReactNode } from "react";
 
 import { Toaster } from "@/components/ui/sonner";
@@ -44,8 +45,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           Skip to content
         </a>
         <QueryProvider>
-          <ServiceWorkerRegistrar />
-          {children}
+          <NuqsAdapter>
+            <ServiceWorkerRegistrar />
+            {children}
+          </NuqsAdapter>
         </QueryProvider>
         <Toaster />
       </body>
