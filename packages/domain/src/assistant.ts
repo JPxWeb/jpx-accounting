@@ -17,8 +17,7 @@ export function buildAssistantScaffold(question: string): AssistantSession {
         id: "cit_arch",
         title: "Internal architecture policy",
         sourceType: "internal",
-        excerpt:
-          "AI may suggest and explain, but may not silently mutate accounting state.",
+        excerpt: "AI may suggest and explain, but may not silently mutate accounting state.",
       },
     ],
   };

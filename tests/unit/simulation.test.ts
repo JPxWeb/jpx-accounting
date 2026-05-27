@@ -1,17 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type {
-  AccountingSuggestion,
-  ReviewTask,
-  Voucher,
-} from "@jpx-accounting/contracts";
+import type { AccountingSuggestion, ReviewTask, Voucher } from "@jpx-accounting/contracts";
 import { simulateApprovals } from "@jpx-accounting/domain";
 
-const voucherFixture = (
-  id: string,
-  overrides: Partial<Voucher["voucherFields"]> = {},
-): Voucher => ({
+const voucherFixture = (id: string, overrides: Partial<Voucher["voucherFields"]> = {}): Voucher => ({
   id,
   organizationId: "o",
   workspaceId: "w",
@@ -57,25 +50,11 @@ const reviewFixture = (voucherId: string): ReviewTask => ({
 });
 
 test("approve produces 3-line balance delta", () => {
-  const result = simulateApprovals(
-    [reviewFixture("v1")],
-    [suggestionFixture("v1")],
-    [voucherFixture("v1")],
-    "approve",
-  );
+  const result = simulateApprovals([reviewFixture("v1")], [suggestionFixture("v1")], [voucherFixture("v1")], "approve");
   assert.equal(result.balanceDelta.length, 3);
-  assert.equal(
-    result.balanceDelta.find((b) => b.accountNumber === "6540")?.deltaDebit,
-    999.2,
-  );
-  assert.equal(
-    result.balanceDelta.find((b) => b.accountNumber === "2641")?.deltaDebit,
-    249.8,
-  );
-  assert.equal(
-    result.balanceDelta.find((b) => b.accountNumber === "1930")?.deltaCredit,
-    1249,
-  );
+  assert.equal(result.balanceDelta.find((b) => b.accountNumber === "6540")?.deltaDebit, 999.2);
+  assert.equal(result.balanceDelta.find((b) => b.accountNumber === "2641")?.deltaDebit, 249.8);
+  assert.equal(result.balanceDelta.find((b) => b.accountNumber === "1930")?.deltaCredit, 1249);
   assert.deepEqual(result.affectedAccounts.sort(), ["1930", "2641", "6540"]);
 });
 
@@ -86,10 +65,7 @@ test("book-without-vat zeroes the VAT line", () => {
     [voucherFixture("v1")],
     "book-without-vat",
   );
-  assert.equal(
-    result.balanceDelta.find((b) => b.accountNumber === "2641")?.deltaDebit,
-    0,
-  );
+  assert.equal(result.balanceDelta.find((b) => b.accountNumber === "2641")?.deltaDebit, 0);
 });
 
 test("skips reviews whose voucher is missing", () => {
@@ -109,8 +85,5 @@ test("aggregates across multiple reviews on the same account", () => {
     [voucherFixture("v1"), voucherFixture("v2")],
     "approve",
   );
-  assert.equal(
-    result.balanceDelta.find((b) => b.accountNumber === "6540")?.deltaDebit,
-    999.2 * 2,
-  );
+  assert.equal(result.balanceDelta.find((b) => b.accountNumber === "6540")?.deltaDebit, 999.2 * 2);
 });

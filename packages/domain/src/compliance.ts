@@ -10,10 +10,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function daysBetween(from: string, to: string): number {
   const fromMs = Date.parse(from);
   const toMs = Date.parse(to);
-  if (Number.isNaN(fromMs))
-    throw new Error(`daysBetween: unparseable timestamp ${JSON.stringify(from)}`);
-  if (Number.isNaN(toMs))
-    throw new Error(`daysBetween: unparseable timestamp ${JSON.stringify(to)}`);
+  if (Number.isNaN(fromMs)) throw new Error(`daysBetween: unparseable timestamp ${JSON.stringify(from)}`);
+  if (Number.isNaN(toMs)) throw new Error(`daysBetween: unparseable timestamp ${JSON.stringify(to)}`);
   return Math.floor((toMs - fromMs) / DAY_MS);
 }
 
@@ -31,11 +29,7 @@ export type ComplianceDetectionResult = {
   skipped: Array<{ kind: "review" | "voucher"; id: string; reason: string }>;
 };
 
-export function detectComplianceIssues(
-  reviews: ReviewTask[],
-  vouchers: Voucher[],
-  today: string,
-): ComplianceAlert[] {
+export function detectComplianceIssues(reviews: ReviewTask[], vouchers: Voucher[], today: string): ComplianceAlert[] {
   return detectComplianceIssuesDetailed(reviews, vouchers, today).alerts;
 }
 
@@ -86,11 +80,7 @@ export function detectComplianceIssuesDetailed(
   for (const voucher of vouchers) {
     try {
       if (voucher.status !== "approved") continue;
-      if (
-        voucher.voucherFields.supplierVatNumber &&
-        voucher.voucherFields.supplierVatNumber.length > 0
-      )
-        continue;
+      if (voucher.voucherFields.supplierVatNumber && voucher.voucherFields.supplierVatNumber.length > 0) continue;
       alerts.push({
         id: deterministicAlertId("missing-supplier-vat", voucher.id),
         title: `Approved voucher missing supplier VAT number (${voucher.voucherNumber})`,

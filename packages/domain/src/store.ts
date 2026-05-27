@@ -578,9 +578,7 @@ export class MemoryLedgerStore implements LedgerStore {
     // Dedup at boundary (Rule 23): Postgres .in() dedupes server-side; Memory
     // must match for parity (Rule 11).
     const reviewIds = [...new Set(input.reviewIds)];
-    const requestedReviews = reviewIds
-      .map((id) => this.reviews.get(id))
-      .filter((r): r is ReviewTask => Boolean(r));
+    const requestedReviews = reviewIds.map((id) => this.reviews.get(id)).filter((r): r is ReviewTask => Boolean(r));
     if (requestedReviews.length !== reviewIds.length) {
       const found = new Set(requestedReviews.map((r) => r.id));
       throw new ReviewNotFoundError(reviewIds.filter((id) => !found.has(id)));
@@ -624,11 +622,7 @@ export class MemoryLedgerStore implements LedgerStore {
   }
 
   async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
-    const detected = detectComplianceIssues(
-      [...this.reviews.values()],
-      [...this.vouchers.values()],
-      today(),
-    );
+    const detected = detectComplianceIssues([...this.reviews.values()], [...this.vouchers.values()], today());
     const detectedById = new Map(detected.map((a) => [a.id, a]));
 
     // Immutable single-pass rebuild (CONVENTIONS Rules 17, 24): clone before
@@ -638,10 +632,8 @@ export class MemoryLedgerStore implements LedgerStore {
     const rebuilt: ComplianceAlert[] = this.alerts.map((alert) => {
       if (!AUTO_DETECTED_KINDS.has(alert.kind)) return { ...alert };
       const stillDetected = detectedById.has(alert.id);
-      if (alert.status === "open" && !stillDetected)
-        return { ...alert, status: "resolved" };
-      if (alert.status === "resolved" && stillDetected)
-        return { ...alert, status: "open" };
+      if (alert.status === "open" && !stillDetected) return { ...alert, status: "resolved" };
+      if (alert.status === "resolved" && stillDetected) return { ...alert, status: "open" };
       return { ...alert };
     });
 

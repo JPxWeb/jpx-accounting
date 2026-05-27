@@ -42,9 +42,7 @@ test("simulationRunSchema requires balanceDelta and vatDelta", () => {
     scenario: "s",
     outcomeSummary: "ok",
     affectedAccounts: ["6540"],
-    balanceDelta: [
-      { accountNumber: "6540", accountName: "IT", deltaDebit: 999.2, deltaCredit: 0 },
-    ],
+    balanceDelta: [{ accountNumber: "6540", accountName: "IT", deltaDebit: 999.2, deltaCredit: 0 }],
     vatDelta: [{ vatCode: "VAT25", deltaBase: 999.2, deltaAmount: 249.8 }],
   });
   assert.equal(ok.balanceDelta.length, 1);

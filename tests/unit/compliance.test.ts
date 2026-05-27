@@ -2,10 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { ReviewTask, Voucher } from "@jpx-accounting/contracts";
-import {
-  detectComplianceIssues,
-  detectComplianceIssuesDetailed,
-} from "@jpx-accounting/domain";
+import { detectComplianceIssues, detectComplianceIssuesDetailed } from "@jpx-accounting/domain";
 
 const voucherFixture = (overrides: Partial<Voucher> = {}): Voucher => ({
   id: "v1",
@@ -61,11 +58,7 @@ const blockingRuleHit = {
 };
 
 test("no alerts on clean data", () => {
-  const alerts = detectComplianceIssues(
-    [reviewFixture()],
-    [voucherFixture()],
-    "2026-05-02",
-  );
+  const alerts = detectComplianceIssues([reviewFixture()], [voucherFixture()], "2026-05-02");
   assert.equal(alerts.length, 0);
 });
 
@@ -73,11 +66,7 @@ test("stale-blocked fires for needs-review with blocking hit > 7 days", () => {
   const blocking = reviewFixture({
     suggestion: { ...reviewFixture().suggestion!, ruleHits: [blockingRuleHit] },
   });
-  const alerts = detectComplianceIssues(
-    [blocking],
-    [voucherFixture()],
-    "2026-05-09",
-  );
+  const alerts = detectComplianceIssues([blocking], [voucherFixture()], "2026-05-09");
   assert.equal(alerts.length, 1);
   assert.equal(alerts[0]?.kind, "stale-blocked");
   assert.equal(alerts[0]?.targetId, "v1");
@@ -87,11 +76,7 @@ test("stale-blocked does NOT fire on exactly day 7", () => {
   const blocking = reviewFixture({
     suggestion: { ...reviewFixture().suggestion!, ruleHits: [blockingRuleHit] },
   });
-  const alerts = detectComplianceIssues(
-    [blocking],
-    [voucherFixture()],
-    "2026-05-08",
-  );
+  const alerts = detectComplianceIssues([blocking], [voucherFixture()], "2026-05-08");
   assert.equal(alerts.length, 0);
 });
 
@@ -149,11 +134,7 @@ test("malformed timestamps skipped per-record (don't abort batch)", () => {
       supplierVatNumber: undefined,
     },
   });
-  const result = detectComplianceIssuesDetailed(
-    [blocking],
-    [bad, goodApproved],
-    "2026-05-09",
-  );
+  const result = detectComplianceIssuesDetailed([blocking], [bad, goodApproved], "2026-05-09");
   assert.equal(result.alerts.length, 1, "good voucher still produces alert");
   assert.equal(result.alerts[0]?.kind, "missing-supplier-vat");
   assert.ok(result.skipped.length >= 1, "bad voucher in skipped");

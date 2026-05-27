@@ -1,9 +1,4 @@
-import type {
-  AccountingSuggestion,
-  ReviewTask,
-  SimulationRun,
-  Voucher,
-} from "@jpx-accounting/contracts";
+import type { AccountingSuggestion, ReviewTask, SimulationRun, Voucher } from "@jpx-accounting/contracts";
 
 import { buildPostingLines } from "./store";
 import type { ReviewAction } from "./store";
@@ -24,23 +19,17 @@ export function simulateApprovals(
   const suggestionsByVoucher = new Map(suggestions.map((s) => [s.voucherId, s]));
   const vouchersById = new Map(vouchers.map((v) => [v.id, v]));
 
-  const balanceAcc = new Map<
-    string,
-    { name: string; debit: number; credit: number }
-  >();
+  const balanceAcc = new Map<string, { name: string; debit: number; credit: number }>();
   const vatAcc = new Map<string, { base: number; amount: number }>();
 
   for (const review of reviews) {
     const voucher = vouchersById.get(review.voucherId);
     const suggestion = suggestionsByVoucher.get(review.voucherId) ?? review.suggestion;
     if (!voucher || !suggestion) continue;
-    const effectiveAction: "approve" | "book-without-vat" =
-      action === "reject" ? "approve" : action;
+    const effectiveAction: "approve" | "book-without-vat" = action === "reject" ? "approve" : action;
     const lines = buildPostingLines(voucher, suggestion, effectiveAction, voucher.createdAt);
     for (const line of lines) {
-      const entry =
-        balanceAcc.get(line.accountNumber) ??
-        { name: line.accountName, debit: 0, credit: 0 };
+      const entry = balanceAcc.get(line.accountNumber) ?? { name: line.accountName, debit: 0, credit: 0 };
       entry.debit += line.debit;
       entry.credit += line.credit;
       balanceAcc.set(line.accountNumber, entry);

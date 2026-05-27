@@ -429,9 +429,7 @@ export function createApp({
     // Default-exclude resolved/dismissed (CONVENTIONS Rule 26); ?includeResolved=true for all.
     const includeResolved = context.req.query("includeResolved") === "true";
     const all = await currentStore.refreshComplianceAlerts();
-    const visible = includeResolved
-      ? all
-      : all.filter((a) => a.status === "open" || a.status === "acknowledged");
+    const visible = includeResolved ? all : all.filter((a) => a.status === "open" || a.status === "acknowledged");
     return context.json(visible);
   });
 

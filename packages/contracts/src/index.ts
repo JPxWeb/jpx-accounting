@@ -315,14 +315,10 @@ export const simulationRequestSchema = z.object({
 export const companySettingsSchema = z.object({
   organizationId: z.string(),
   organizationName: z.string().min(1),
-  organizationNumber: z
-    .string()
-    .regex(/^\d{6}-\d{4}$/, "Swedish org number format is XXXXXX-XXXX"),
+  organizationNumber: z.string().regex(/^\d{6}-\d{4}$/, "Swedish org number format is XXXXXX-XXXX"),
   addressLine1: z.string().min(1),
   addressLine2: z.string().optional(),
-  postalCode: z
-    .string()
-    .regex(/^\d{3}\s?\d{2}$/, "Swedish postal code format is XXX XX"),
+  postalCode: z.string().regex(/^\d{3}\s?\d{2}$/, "Swedish postal code format is XXX XX"),
   city: z.string().min(1),
   contactEmail: z.email(),
   contactPhone: z.string().optional(),
