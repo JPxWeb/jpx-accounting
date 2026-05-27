@@ -3,6 +3,8 @@ import type {
   AccountingSuggestion,
   AssistantSession,
   CloseRun,
+  CompanySettings,
+  ComplianceAlert,
   EvidenceComposeInput,
   EvidenceCreateInput,
   EvidenceCreateResult,
@@ -1160,5 +1162,21 @@ export class PostgresLedgerStore implements LedgerStore {
         { id: "close_3", label: "Export SIE package for accountant review", status: "ready" },
       ],
     };
+  }
+
+  async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
+    // TODO(PR-C): implement against compliance_alerts table (migration 0004 adds it).
+    throw new Error("refreshComplianceAlerts not yet implemented for PostgresLedgerStore");
+  }
+
+  async getCompanySettings(): Promise<CompanySettings | null> {
+    // TODO(PR-C): implement against organization_settings table (migration 0004 adds it).
+    return null;
+  }
+
+  async putCompanySettings(input: CompanySettings): Promise<CompanySettings> {
+    // TODO(PR-C): implement against organization_settings table.
+    void input;
+    throw new Error("putCompanySettings not yet implemented for PostgresLedgerStore");
   }
 }
