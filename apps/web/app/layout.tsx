@@ -1,10 +1,12 @@
 import type { Metadata, Viewport } from "next";
+import { IBM_Plex_Mono, Manrope } from "next/font/google";
 import type { ReactNode } from "react";
-import { Manrope, IBM_Plex_Mono } from "next/font/google";
 
+import { Toaster } from "@/components/ui/sonner";
 import { QueryProvider } from "../components/providers/query-provider";
 import { ServiceWorkerRegistrar } from "../components/pwa/service-worker-registrar";
 import { APP_THEME_COLOR } from "../lib/presentation";
+import { cn } from "../lib/utils";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -33,12 +35,19 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="sv" className={`${manrope.variable} ${plexMono.variable}`}>
+    <html lang="sv" className={cn(manrope.variable, plexMono.variable, "font-sans")}>
       <body>
+        <a
+          href="#main-content"
+          className="fixed left-2 top-2 z-[100] -translate-y-full rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white transition focus:translate-y-0"
+        >
+          Skip to content
+        </a>
         <QueryProvider>
           <ServiceWorkerRegistrar />
           {children}
         </QueryProvider>
+        <Toaster />
       </body>
     </html>
   );
