@@ -6,6 +6,20 @@
 >
 > **Open PR:** [#14 `deploy → main`](https://github.com/JPxWeb/jpx-accounting/pull/14) is the source of the work being ported. Keep it open for historical context; the port produces fresh PRs off `main` (PR-A, PR-B, PR-C).
 
+> ### Plan corrections applied 2026-05-27 (after pre-execution verification against `origin/main`)
+>
+> The original code blocks in this plan were authored against an assumed `main` shape that was *mostly* right but drifted in 6 places. Reading the verified state of `origin/main` (commit `bf43ba5`) before each task is still the safe move, but the deltas below are now patched in-line under the headers marked **PLAN CORRECTION**:
+>
+> 1. **Task 3 (DEV_STATUS.md):** main does not have a `docs/DEV_STATUS.md` at all — original wording was "hand-merge the new section"; correction is "create the file from scratch".
+> 2. **Task 7 (complianceAlertSchema):** the seeded `alert_vat_1` literal at `packages/domain/src/store.ts:145` definitely exists and must gain `kind`/`severity`/`status` (the original "if exists" hedge was wrong).
+> 3. **Task 11 (simulation.ts):** `buildPostingLines` is confirmed **not exported** on main — the extraction step is mandatory, not conditional.
+> 4. **Task 13 Step 0 (NEW):** add `today()` helper to `packages/domain/src/ids.ts` *before* the Memory and Postgres `refreshComplianceAlerts` impls reference it. The original plan imported `today` from `./ids` but it did not exist there.
+> 5. **Tasks 21, 22, 23, 24 (PostgresLedgerStore):** every `this.organizationId` / `this.workspaceId` becomes `this.defaults.organizationId` / `this.defaults.workspaceId` — main's `PostgresLedgerStore` constructor takes a `{ organizationId, workspaceId }` struct stored on `this.defaults`.
+> 6. **Task 21 (`runSimulation`):** must call `const tailHash = await this.lockWorkspaceTail(tx);` before writing and pass `tailHash` as the third argument to `this.appendEvent(tx, event, previousHash)`. The original block omitted both and would have type-errored AND broken the hash chain.
+> 7. **Task 22 (`answerAssistantQuestion`):** wrap the insert in `this.client.begin(async (tx) => …)` and use `tx.json(...)` rather than top-level `this.client.json(...)` — matches the rest of the codebase's pattern.
+>
+> These corrections were committed in PR-A so the plan future readers see matches the code they'll write. No survey-doc changes were needed (the survey is intentionally high-level and doesn't prescribe code).
+
 **Goal:** Move Phase 7's data-layer features (real `runSimulation`, `refreshComplianceAlerts`, `buildAssistantScaffold`, `ReviewNotFoundError`, contract extensions, company settings) from the `deploy` branch's dead `SupabaseLedgerStore` architecture onto `main`'s canonical `PostgresLedgerStore` architecture, while preserving the 26 conventions, Phase 7 design spec, and UI follow-ups.
 
 **Architecture:** Main replaced `SupabaseLedgerStore` (supabase-js write path) with `PostgresLedgerStore` (postgres-js direct, `sql.begin` transactions, `lockWorkspaceTail` for hash-chain serialization). Main has a typed `ApiJsonErrorBody` envelope, JWKS-backed JWT verification on mutating routes, rate limiting, body limits, secure headers, and Azure Document Intelligence for OCR. The port keeps every piece of main's architecture and layers Phase 7's *features* on top — the pure-function helpers, contract extensions, Memory store work, and API routes all port cleanly; only PostgresLedgerStore extensions need real reimplementation.
@@ -208,44 +222,69 @@ Source: deploy commits 254a986, f3f6134, cd425d1, 99acc75 (cherry-picked).
 "
 ```
 
-### Task 3: Cherry-pick UI follow-ups section into DEV_STATUS.md
+### Task 3: Create DEV_STATUS.md on main (with UI follow-ups + port-status table)
 
 **Files:**
-- Modify: `docs/DEV_STATUS.md`
+- Create: `docs/DEV_STATUS.md`
 
-The deploy commit `c3cea90` added a `## UI follow-ups from Track B Phase 7` section. Cherry-picking the whole commit conflicts because main's DEV_STATUS has diverged. Instead, hand-merge just the new section.
+> **PLAN CORRECTION (2026-05-27):** Main does **not** currently carry a `docs/DEV_STATUS.md` file — the original task assumed there was one to hand-merge. The deploy branch's `DEV_STATUS.md` is 192 lines and carries phase-by-phase history that is partly obsoleted (it tracks `SupabaseLedgerStore` work that is dead on main). The correct action is to **create a fresh, minimal `DEV_STATUS.md`** that:
+>
+> 1. Records a port-aware verification baseline relevant to main (typecheck, tests, lint, build, e2e, integration).
+> 2. Tables the Phase 7 port status (PR-A/B/C scope + pointer to plan).
+> 3. Carries the UI follow-ups section verbatim from deploy.
 
-- [ ] **Step 1: Inspect what main has at the bottom of DEV_STATUS.md**
-
-```bash
-git show origin/main:docs/DEV_STATUS.md | tail -50
-```
-
-Read the output to find a sensible insertion point — typically just before the final "Documentation index" or "Agent handoff checklist" section, or after a "Deferred" section if one exists.
-
-- [ ] **Step 2: Extract the UI follow-ups section from deploy**
+- [ ] **Step 1: Extract the UI follow-ups section from deploy (verbatim)**
 
 ```bash
-git show deploy:docs/DEV_STATUS.md | sed -n '/## UI follow-ups from Track B Phase 7/,/^## [^U]/p' | head -n -1
+git show deploy:docs/DEV_STATUS.md | sed -n '/## UI follow-ups from Track B Phase 7/,/^## [^U]/p' | sed '$d'
 ```
 
-This prints from the section header up to (but not including) the next top-level heading. Copy the output.
+The output starts at `## UI follow-ups from Track B Phase 7 (2026-05-26 fix passes)` and stops before the next top-level heading. Copy it; you will paste it into the new file below.
 
-- [ ] **Step 3: Insert into main's DEV_STATUS.md**
+- [ ] **Step 2: Write the new file**
 
-Open `docs/DEV_STATUS.md` (currently main's version, untouched by previous tasks). Find the insertion point from Step 1. Paste the section from Step 2. The section starts with `## UI follow-ups from Track B Phase 7 (2026-05-26 fix passes)` and ends just before the "Convention reminders" subsection's closing line.
-
-- [ ] **Step 4: Also mark Phase 7 status in the appropriate table**
-
-If main's DEV_STATUS has a "Track B Phase 7" entry, find it and change it to:
+Create `docs/DEV_STATUS.md` with this structure (paste the UI follow-ups section from Step 1 into the placeholder):
 
 ```markdown
-| **7** | Hardening (JWT-claim RLS, assistant/compliance DB, supa_audit, real runSimulation, rebuild script) | In port — see [port plan](./superpowers/plans/2026-05-27-port-phase-7-to-main.md). PR-A docs landed; PR-B (architecture-light) + PR-C (PostgresLedgerStore) pending. |
+# Development Status
+
+**Last reviewed:** 2026-05-27
+**Purpose:** Track phase completion, ported work, and open UI follow-ups. Update at the end of each phase.
+
+> This file was created during the Phase 7 port from `deploy` → `main` (PR-A docs cherry-pick). Earlier phase-by-phase status from the `deploy` branch is preserved only by reference; the canonical implementation now lives on `main` and uses `PostgresLedgerStore` rather than the obsoleted `SupabaseLedgerStore` lineage. See [`docs/superpowers/plans/2026-05-27-deploy-to-main-port-plan.md`](./superpowers/plans/2026-05-27-deploy-to-main-port-plan.md) for the full survey.
+
+## Verification baseline
+
+Run before opening any PR:
+
+\`\`\`bash
+pnpm typecheck         # all workspace packages
+pnpm typecheck:tests   # tests typecheck gate
+pnpm test:unit         # node:test + tsx unit suite
+pnpm lint              # Biome
+pnpm build             # web + API
+pnpm test:e2e          # Playwright
+\`\`\`
+
+Integration tests against a real Postgres are gated on `SUPABASE_DB_URL`.
+
+---
+
+## Phase 7 port status
+
+| PR | Scope | Status |
+|----|-------|--------|
+| **PR-A** | Docs cherry-pick (CONVENTIONS, Phase 7 spec + plans, this DEV_STATUS) | **This PR** |
+| **PR-B** | Contracts, pure domain helpers, `MemoryLedgerStore` extensions, API routes, migration `0004` | Pending |
+| **PR-C** | `PostgresLedgerStore` real implementations | Pending |
+| **PR-D** | Track A IA web cherry-picks | Out of scope here |
+
+---
+
+<PASTE UI follow-ups section from Step 1 HERE>
 ```
 
-If main's DEV_STATUS doesn't reference Phase 7 at all, skip this sub-step.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add docs/DEV_STATUS.md
@@ -620,18 +659,23 @@ export const complianceAlertSchema = z.object({
 });
 ```
 
-- [ ] **Step 2: Verify the typecheck still passes**
+- [ ] **Step 2: Update the seeded `alert_vat_1` literal and re-typecheck (PLAN CORRECTION — confirmed existence)**
 
-Run: `pnpm typecheck`
-Expected: green. The new fields on `complianceAlertSchema` are constructed by Memory/Postgres stores; any existing seed data on main needs to be updated.
+> **PLAN CORRECTION:** verified on `origin/main` — there IS a seeded `ComplianceAlert` literal at [`packages/domain/src/store.ts:145`](../../../packages/domain/src/store.ts#L145) (`id: "alert_vat_1"`). After widening the schema, typecheck will fail until that literal carries the new fields. Add:
+>
+> ```ts
+> kind: "missing-supplier-vat",  // matches the seed's "Missing supplier VAT" theme
+> severity: "warning",
+> status: "open",
+> ```
+>
+> If anyone has added more seeded `ComplianceAlert` literals since this plan was written, the same fields apply. Search once to be sure:
+>
+> ```bash
+> git grep -n "id: \"alert_\|id: 'alert_" -- packages/ services/
+> ```
 
-If there's a seeded `ComplianceAlert` literal anywhere (search via `grep -rn "id: \"alert_" packages/ services/`), add the new fields with sensible defaults:
-
-```ts
-kind: "representation-review", // or "legacy" if you can't tell what it represents
-severity: "info",
-status: "open",
-```
+Then run `pnpm typecheck` to confirm green.
 
 - [ ] **Step 3: Hold — bundle with Task 8 commit**
 
@@ -1075,17 +1119,27 @@ Implementation notes:
 - Modify: `packages/domain/src/index.ts`
 - Create: `tests/unit/simulation.test.ts`
 
-- [ ] **Step 1: Verify buildPostingLines export location**
+- [ ] **Step 1: Extract `buildPostingLines` (PLAN CORRECTION — confirmed required)**
 
-Run: `git show origin/main:packages/domain/src/store.ts | grep -n "buildPostingLines\|export"` — confirm where it lives.
-
-If `buildPostingLines` is private to `store.ts` (likely on main, since `MemoryLedgerStore` uses it internally), you'll need to extract it. Check first:
+> Verified on `origin/main`: `buildPostingLines` is defined at [`packages/domain/src/store.ts:137`](../../../packages/domain/src/store.ts#L137) as `function buildPostingLines(...)` — **no `export` keyword**. Add `export` before the `function` so `simulation.ts` (next step) can import it. Also confirmed: `LedgerLine`, `AccountingSuggestion`, `Voucher` types are exported from `@jpx-accounting/contracts`.
 
 ```bash
-git grep -n "export.*buildPostingLines" -- packages/domain/src/
+git grep -n "^function buildPostingLines" packages/domain/src/store.ts
 ```
 
-If no export, extract it before Task 11 by adding `export` to its declaration in `store.ts`. The function signature on main is `(voucher: Voucher, suggestion: AccountingSuggestion, action: "approve" | "book-without-vat", occurredAt: string): LedgerLine[]`.
+Open `packages/domain/src/store.ts:137`, change the declaration from:
+
+```ts
+function buildPostingLines(
+```
+
+to:
+
+```ts
+export function buildPostingLines(
+```
+
+The function signature on main is `(voucher: Voucher, suggestion: AccountingSuggestion, action: "approve" | "book-without-vat", occurredAt: string): LedgerLine[]`. Do not change the body.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -1361,6 +1415,23 @@ Run `pnpm typecheck` again — expected: green.
 - Modify: `packages/domain/src/store.ts` (add 4 methods + the auto-detected-kinds constant + MEMORY_ALERT_CAP)
 
 Memory store now needs: `refreshComplianceAlerts`, `runSimulation` (real), `answerAssistantQuestion` (delegate to scaffold), `getCompanySettings`, `putCompanySettings`. Plus state for the alerts/settings.
+
+- [ ] **Step 0 (PLAN CORRECTION — prerequisite): Add `today()` helper to `ids.ts`**
+
+> Main's `packages/domain/src/ids.ts` exports only `createId` and `nowIso`. The `today()` helper this task (Step 4) and Task 23 import does not exist yet. Add it before the Memory store changes so the imports work, then continue with Step 1 below.
+
+In `packages/domain/src/ids.ts`, append:
+
+```ts
+/** UTC calendar day in `YYYY-MM-DD` form. Wraps `nowIso().slice(0, 10)` so
+ *  compliance detection and other day-grain logic do not have to repeat the
+ *  slice (and so future timezone tightening lives in one place). */
+export function today(): string {
+  return nowIso().slice(0, 10);
+}
+```
+
+No new test file needed — `today()` is trivially `nowIso().slice(0, 10)` and is exercised by the compliance tests in Task 10. `today` flows through `packages/domain/src/index.ts` via the existing `export * from "./ids";` line.
 
 - [ ] **Step 1: Add state fields and constants**
 
@@ -2120,13 +2191,21 @@ SUPABASE_DB_URL=<your-local-postgres-url> pnpm test:integration
 
 Expected: FAIL (stub throws).
 
-- [ ] **Step 3: Replace the stub in PostgresLedgerStore**
+- [ ] **Step 3: Replace the stub in PostgresLedgerStore (PLAN CORRECTION — see callouts)**
+
+> **PLAN CORRECTION (2026-05-27):** the original code block had three deviations from main's `PostgresLedgerStore` conventions, all now fixed below:
+>
+> 1. **Tenant scoping:** main exposes `this.defaults.organizationId` / `this.defaults.workspaceId` (a `{ organizationId, workspaceId }` struct passed to the constructor) — **not** bare `this.organizationId`. Verify by reading `git show origin/main:packages/persistence-postgres/src/store.ts | sed -n '375,420p'`.
+> 2. **Hash-chain serialization:** every mutation on main calls `const tailHash = await this.lockWorkspaceTail(tx);` BEFORE writing, then passes `tailHash` as the third argument to `this.appendEvent(tx, event, previousHash)`. The original plan body omitted both and called `appendEvent(tx, {...})` with 2 args, which is a type error AND would break the hash chain. The corrected body locks the tail and threads `tailHash` through.
+> 3. The `LedgerEvent` payload on main also requires `organizationId` and `workspaceId` set on the event — match main's `applyReviewDecision` pattern (`organizationId: voucher.organizationId` or `this.defaults.organizationId`).
 
 Find `async runSimulation(input: SimulationRequest): Promise<SimulationRun>` in `packages/persistence-postgres/src/store.ts`. Replace with:
 
 ```ts
 async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
   return this.client.begin(async (tx) => {
+    const tailHash = await this.lockWorkspaceTail(tx);
+
     // Dedup at boundary (CONVENTIONS Rule 23). Postgres .in() would dedupe
     // anyway, but explicit dedup makes the length-check correct.
     const reviewIds = [...new Set(input.reviewIds)];
@@ -2141,12 +2220,12 @@ async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
       suggestion: AccountingSuggestion | null;
       provenance_timeline: unknown[];
     }>>`
-      select id, voucher_id, title, status, blocked_reason, suggested_action,
+      SELECT id, voucher_id, title, status, blocked_reason, suggested_action,
              suggestion, provenance_timeline
-      from ledger.review_tasks
-      where organization_id = ${this.organizationId}
-        and workspace_id = ${this.workspaceId}
-        and id = any(${reviewIds})
+      FROM ledger.review_tasks
+      WHERE organization_id = ${this.defaults.organizationId}
+        AND workspace_id = ${this.defaults.workspaceId}
+        AND id = ANY(${reviewIds})
     `;
     if (reviewRows.length !== reviewIds.length) {
       const found = new Set(reviewRows.map((r) => r.id));
@@ -2165,12 +2244,12 @@ async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
       created_by: string;
       evidence_packet_id: string;
     }>>`
-      select id, voucher_number, status, accounting_method, voucher_fields,
+      SELECT id, voucher_number, status, accounting_method, voucher_fields,
              extracted_fields, created_at, created_by, evidence_packet_id
-      from ledger.vouchers
-      where organization_id = ${this.organizationId}
-        and workspace_id = ${this.workspaceId}
-        and id = any(${voucherIds})
+      FROM ledger.vouchers
+      WHERE organization_id = ${this.defaults.organizationId}
+        AND workspace_id = ${this.defaults.workspaceId}
+        AND id = ANY(${voucherIds})
     `;
 
     const reviews: ReviewTask[] = reviewRows.map((r) => ({
@@ -2185,8 +2264,8 @@ async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
     }));
     const vouchers: Voucher[] = voucherRows.map((v) => ({
       id: v.id,
-      organizationId: this.organizationId,
-      workspaceId: this.workspaceId,
+      organizationId: this.defaults.organizationId,
+      workspaceId: this.defaults.workspaceId,
       evidencePacketId: v.evidence_packet_id,
       voucherNumber: v.voucher_number,
       status: v.status as Voucher["status"],
@@ -2215,14 +2294,20 @@ async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
       vatDelta,
     };
 
-    await this.appendEvent(tx, {
-      aggregateType: "simulation",
-      aggregateId: result.id,
-      eventType: "SimulationExecuted",
-      actorId: input.actorId,
-      occurredAt: nowIso(),
-      payload: result as unknown as Record<string, unknown>,
-    });
+    await this.appendEvent(
+      tx,
+      {
+        organizationId: this.defaults.organizationId,
+        workspaceId: this.defaults.workspaceId,
+        aggregateType: "simulation",
+        aggregateId: result.id,
+        eventType: "SimulationExecuted",
+        actorId: input.actorId,
+        occurredAt: nowIso(),
+        payload: result as unknown as Record<string, unknown>,
+      },
+      tailHash,
+    );
 
     return result;
   });
@@ -2234,6 +2319,8 @@ Add the imports at the top of `packages/persistence-postgres/src/store.ts`:
 ```ts
 import { simulateApprovals, ReviewNotFoundError } from "@jpx-accounting/domain";
 ```
+
+Verify `nowIso` is already imported on main (it is — used by the existing `runSimulation` stub).
 
 - [ ] **Step 4: Run the integration test — expect PASS**
 
@@ -2263,7 +2350,9 @@ MemoryLedgerStore.
 **Files:**
 - Modify: `packages/persistence-postgres/src/store.ts`
 
-- [ ] **Step 1: Replace the method**
+- [ ] **Step 1: Replace the method (PLAN CORRECTION — use `this.defaults` and `tx.json` inside `begin`)**
+
+> **PLAN CORRECTION:** the original code used `this.organizationId` / `this.workspaceId` (not the actual field names) and `this.client.json(...)` outside a transaction. Main's pattern is to wrap inside `this.client.begin(async (tx) => …)` and use `tx.json(...)` — see how `createEvidence` and `applyReviewDecision` work on main. A single-row insert is still cheap inside `begin()` and keeps the pattern uniform.
 
 Find `async answerAssistantQuestion`. Replace with:
 
@@ -2271,13 +2360,16 @@ Find `async answerAssistantQuestion`. Replace with:
 async answerAssistantQuestion(question: string): Promise<AssistantSession> {
   const session = buildAssistantScaffold(question);
 
-  await this.client`
-    insert into ledger.assistant_sessions
-      (id, organization_id, workspace_id, question, answer, status, citations, actor_id)
-    values
-      (${session.id}, ${this.organizationId}, ${this.workspaceId}, ${session.question},
-       ${session.answer}, ${session.status}, ${this.client.json(session.citations)}, null)
-  `;
+  await this.client.begin(async (tx) => {
+    await tx`
+      INSERT INTO ledger.assistant_sessions
+        (id, organization_id, workspace_id, question, answer, status, citations, actor_id)
+      VALUES
+        (${session.id}, ${this.defaults.organizationId}, ${this.defaults.workspaceId},
+         ${session.question}, ${session.answer}, ${session.status},
+         ${tx.json(session.citations as unknown as Parameters<typeof tx.json>[0])}, null)
+    `;
+  });
 
   return session;
 }
@@ -2333,7 +2425,9 @@ This is the longest method. Three logical phases inside one transaction:
 2. Detect, upsert detected, mark stale-resolved
 3. Read back the persisted list
 
-- [ ] **Step 1: Replace the stub**
+- [ ] **Step 1: Replace the stub (PLAN CORRECTION — `this.defaults` throughout)**
+
+> **PLAN CORRECTION:** every `this.organizationId` / `this.workspaceId` reference must be `this.defaults.organizationId` / `this.defaults.workspaceId` to match the PostgresLedgerStore constructor shape on main. The `today` import requires Step 0 of Task 13 to have landed (`export function today(): string` added to `ids.ts`). The corrected body below also captures `today()` once into `detectedAt` (string) so the same value flows to both detection and the persisted `detected_at` column — preventing skew if the function is called twice within the same ms window.
 
 Find `async refreshComplianceAlerts(): Promise<ComplianceAlert[]>`. Replace with:
 
@@ -2350,11 +2444,11 @@ async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
       suggestion: AccountingSuggestion | null;
       provenance_timeline: unknown[];
     }>>`
-      select id, voucher_id, title, status, blocked_reason, suggested_action,
+      SELECT id, voucher_id, title, status, blocked_reason, suggested_action,
              suggestion, provenance_timeline
-      from ledger.review_tasks
-      where organization_id = ${this.organizationId}
-        and workspace_id = ${this.workspaceId}
+      FROM ledger.review_tasks
+      WHERE organization_id = ${this.defaults.organizationId}
+        AND workspace_id = ${this.defaults.workspaceId}
     `;
     const reviews: ReviewTask[] = reviewRows.map((r) => ({
       id: r.id,
@@ -2383,16 +2477,16 @@ async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
       created_by: string;
       evidence_packet_id: string;
     }>>`
-      select id, voucher_number, status, accounting_method, voucher_fields,
+      SELECT id, voucher_number, status, accounting_method, voucher_fields,
              extracted_fields, created_at, created_by, evidence_packet_id
-      from ledger.vouchers
-      where organization_id = ${this.organizationId}
-        and workspace_id = ${this.workspaceId}
+      FROM ledger.vouchers
+      WHERE organization_id = ${this.defaults.organizationId}
+        AND workspace_id = ${this.defaults.workspaceId}
     `;
     const vouchers: Voucher[] = voucherRows.map((v) => ({
       id: v.id,
-      organizationId: this.organizationId,
-      workspaceId: this.workspaceId,
+      organizationId: this.defaults.organizationId,
+      workspaceId: this.defaults.workspaceId,
       evidencePacketId: v.evidence_packet_id,
       voucherNumber: v.voucher_number,
       status: v.status as Voucher["status"],
@@ -2403,7 +2497,8 @@ async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
       createdBy: v.created_by,
     }));
 
-    const detected = detectComplianceIssues(reviews, vouchers, today());
+    const todayStr = today();
+    const detected = detectComplianceIssues(reviews, vouchers, todayStr);
 
     if (detected.length > 0) {
       // Upsert via ON CONFLICT on (org, workspace, kind, target_id) — unique
@@ -2412,19 +2507,19 @@ async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
       // carry stale resolution metadata (CONVENTIONS Rule 18).
       for (const alert of detected) {
         await tx`
-          insert into ledger.compliance_alerts
+          INSERT INTO ledger.compliance_alerts
             (id, organization_id, workspace_id, title, source, detected_at,
              impact_summary, kind, severity, status, target_id, body,
              resolved_at, resolved_by)
-          values
-            (${alert.id}, ${this.organizationId}, ${this.workspaceId},
+          VALUES
+            (${alert.id}, ${this.defaults.organizationId}, ${this.defaults.workspaceId},
              ${alert.title}, ${alert.source}, ${alert.detectedAt},
              ${alert.impactSummary}, ${alert.kind}, ${alert.severity},
              ${alert.status}, ${alert.targetId ?? null}, ${alert.body ?? null},
              null, null)
-          on conflict (organization_id, workspace_id, kind, target_id) do update
-            set status = excluded.status,
-                detected_at = excluded.detected_at,
+          ON CONFLICT (organization_id, workspace_id, kind, target_id) DO UPDATE
+            SET status = EXCLUDED.status,
+                detected_at = EXCLUDED.detected_at,
                 resolved_at = null,
                 resolved_by = null
         `;
@@ -2436,22 +2531,22 @@ async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
     // for attribution, not ctx.userId (Rule 20).
     const detectedIds = new Set(detected.map((a) => a.id));
     const autoOpenRows = await tx<Array<{ id: string }>>`
-      select id from ledger.compliance_alerts
-      where organization_id = ${this.organizationId}
-        and workspace_id = ${this.workspaceId}
-        and status = 'open'
-        and kind = any(${["stale-blocked", "missing-supplier-vat"]})
+      SELECT id FROM ledger.compliance_alerts
+      WHERE organization_id = ${this.defaults.organizationId}
+        AND workspace_id = ${this.defaults.workspaceId}
+        AND status = 'open'
+        AND kind = ANY(${["stale-blocked", "missing-supplier-vat"]})
     `;
     const toResolve = autoOpenRows.filter((r) => !detectedIds.has(r.id)).map((r) => r.id);
     if (toResolve.length > 0) {
       await tx`
-        update ledger.compliance_alerts
-        set status = 'resolved',
+        UPDATE ledger.compliance_alerts
+        SET status = 'resolved',
             resolved_at = now(),
             resolved_by = 'system:auto-resolver'
-        where organization_id = ${this.organizationId}
-          and workspace_id = ${this.workspaceId}
-          and id = any(${toResolve})
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+          AND id = ANY(${toResolve})
       `;
     }
 
@@ -2467,12 +2562,12 @@ async refreshComplianceAlerts(): Promise<ComplianceAlert[]> {
       target_id: string | null;
       body: string | null;
     }>>`
-      select id, title, source, detected_at, impact_summary, kind, severity,
+      SELECT id, title, source, detected_at, impact_summary, kind, severity,
              status, target_id, body
-      from ledger.compliance_alerts
-      where organization_id = ${this.organizationId}
-        and workspace_id = ${this.workspaceId}
-      order by detected_at desc
+      FROM ledger.compliance_alerts
+      WHERE organization_id = ${this.defaults.organizationId}
+        AND workspace_id = ${this.defaults.workspaceId}
+      ORDER BY detected_at DESC
     `;
     return allRows.map((r) => ({
       id: r.id,
@@ -2554,15 +2649,17 @@ Clears resolved_at/resolved_by on upsert reopen (Rule 18).
 **Files:**
 - Modify: `packages/persistence-postgres/src/store.ts`
 
-- [ ] **Step 1: Replace the stubs**
+- [ ] **Step 1: Replace the stubs (PLAN CORRECTION — `this.defaults` and `tx.json` inside `begin`)**
+
+> **PLAN CORRECTION:** use `this.defaults.organizationId` (not `this.organizationId`) and wrap the upsert in `this.client.begin()` so `tx.json(...)` follows the main codebase pattern. Read is fine outside `begin` since it's a single SELECT.
 
 Find `async getCompanySettings` and `async putCompanySettings`. Replace with:
 
 ```ts
 async getCompanySettings(): Promise<CompanySettings | null> {
   const rows = await this.client<Array<{ settings: CompanySettings }>>`
-    select settings from ledger.organization_settings
-    where organization_id = ${this.organizationId}
+    SELECT settings FROM ledger.organization_settings
+    WHERE organization_id = ${this.defaults.organizationId}
   `;
   return rows[0]?.settings ?? null;
 }
@@ -2572,14 +2669,18 @@ async putCompanySettings(input: CompanySettings): Promise<CompanySettings> {
   // PostgresLedgerStore on main constructs without one, so use the org id as
   // the audit fallback. When ctx.userId is plumbed through (separate sprint),
   // swap this for ctx.userId.
-  await this.client`
-    insert into ledger.organization_settings (organization_id, settings, updated_by)
-    values (${this.organizationId}, ${this.client.json(input)}, ${this.organizationId})
-    on conflict (organization_id) do update
-      set settings = excluded.settings,
-          updated_at = now(),
-          updated_by = excluded.updated_by
-  `;
+  await this.client.begin(async (tx) => {
+    await tx`
+      INSERT INTO ledger.organization_settings (organization_id, settings, updated_by)
+      VALUES (${this.defaults.organizationId},
+              ${tx.json(input as unknown as Parameters<typeof tx.json>[0])},
+              ${this.defaults.organizationId})
+      ON CONFLICT (organization_id) DO UPDATE
+        SET settings = EXCLUDED.settings,
+            updated_at = now(),
+            updated_by = EXCLUDED.updated_by
+    `;
+  });
   return input;
 }
 ```
