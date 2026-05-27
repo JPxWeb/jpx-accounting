@@ -6,6 +6,7 @@ import type { ZodType } from "zod";
 import type {
   AssistantRequest,
   AssistantSession,
+  CompanySettings,
   EvidenceCreateInput,
   ReviewDecisionInput,
   ReviewTask,
@@ -179,6 +180,41 @@ export class AccountingApiClient {
     if (!response.ok) {
       throw new AccountingApiError(response.status, `Blob upload failed: ${response.status} ${response.statusText}`);
     }
+  }
+
+  async getCompanySettings(): Promise<CompanySettings | null> {
+    if (this.fallbackStore) return this.fallbackStore.getCompanySettings();
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const response = await fetch(`${this.baseUrl}/api/settings/company`, {
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) {
+      throw new AccountingApiError(
+        response.status,
+        `getCompanySettings failed: ${response.status}`,
+      );
+    }
+    return (await response.json()) as CompanySettings | null;
+  }
+
+  async saveCompanySettings(input: CompanySettings): Promise<CompanySettings> {
+    if (this.fallbackStore) return this.fallbackStore.putCompanySettings(input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const response = await fetch(`${this.baseUrl}/api/settings/company`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => undefined)) as
+        | { message?: string }
+        | undefined;
+      throw new AccountingApiError(
+        response.status,
+        payload?.message ?? `saveCompanySettings failed: ${response.status}`,
+      );
+    }
+    return (await response.json()) as CompanySettings;
   }
 
   /** Plain-text SIE export of the current workspace (matches `GET /api/exports/sie`). */

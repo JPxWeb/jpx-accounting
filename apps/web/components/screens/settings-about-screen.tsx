@@ -14,14 +14,14 @@ function ComingSoon({ title, body }: { title: string; body: string }) {
   );
 }
 
-export function SettingsScreen() {
+export function SettingsAboutScreen() {
   const today = new Date();
 
   return (
-    <div className="page-shell space-y-8">
+    <div className="space-y-8">
       <ScreenHeader
-        eyebrow="Control Plane"
-        title="Settings"
+        eyebrow="Settings / About"
+        title="About this build"
         description="This slice makes the platform posture legible: Sweden-hosted deployment, append-only accounting events, and clear separation between advisory intelligence and mutation authority."
         testId="settings-hero"
       />
