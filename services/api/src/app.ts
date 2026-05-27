@@ -10,6 +10,7 @@ import type { ZodType } from "zod";
 
 import {
   assistantRequestSchema,
+  companySettingsSchema,
   evidenceComposeInputSchema,
   evidenceCreateInputSchema,
   knowledgeQuerySchema,
@@ -25,7 +26,7 @@ import { AiRuntimeUnavailableError, type AiRuntime, isAiRuntimeOperational } fro
 import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import type { LedgerStore, ReviewAction } from "@jpx-accounting/domain";
-import { MemoryLedgerStore } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, ReviewNotFoundError } from "@jpx-accounting/domain";
 
 import type { BlobUploader } from "./blob";
 import { UploadValidationError } from "./blob";
@@ -252,6 +253,10 @@ export function createApp({
       return jsonError(c, error.message, runtimeMode, error.status);
     }
 
+    if (error instanceof ReviewNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 404, { code: "review_not_found" });
+    }
+
     if (error instanceof LedgerStoreUnavailableError || error instanceof AiRuntimeUnavailableError) {
       return jsonError(c, error.message, runtimeMode, 503);
     }
@@ -395,12 +400,15 @@ export function createApp({
 
   app.post("/api/knowledge/query", async (context) => {
     const input = await parseBody(context.req.raw, knowledgeQuerySchema);
-    const snapshot = await currentStore.getSnapshot();
+    // Knowledge query is a placeholder until the Azure AI Search index ships
+    // (foundation in migration 0003 + knowledge.documents table). Returning
+    // citations from any other flow's data is wrong provenance in an audit
+    // context (CONVENTIONS Rule 10). Return [] until real retrieval lands.
     return context.json({
       query: input.query,
-      citations: snapshot.assistantExamples[0]?.citations ?? [],
+      citations: [],
       answer:
-        "Knowledge queries are routed through the same grounded advisory stack; next step is indexing effective-dated internal and official documents into Azure AI Search.",
+        "Knowledge queries are routed through the same grounded advisory stack; next step is wiring the knowledge.documents table (0003 migration) to Azure AI Search.",
     });
   });
 
@@ -417,7 +425,27 @@ export function createApp({
     }),
   );
 
-  app.post("/api/compliance-watch/refresh", async (context) => context.json((await currentStore.getSnapshot()).alerts));
+  app.post("/api/compliance-watch/refresh", async (context) => {
+    // Default-exclude resolved/dismissed (CONVENTIONS Rule 26); ?includeResolved=true for all.
+    const includeResolved = context.req.query("includeResolved") === "true";
+    const all = await currentStore.refreshComplianceAlerts();
+    const visible = includeResolved
+      ? all
+      : all.filter((a) => a.status === "open" || a.status === "acknowledged");
+    return context.json(visible);
+  });
+
+  app.get("/api/settings/company", async (context) => {
+    const settings = await currentStore.getCompanySettings();
+    if (!settings) return context.json(null);
+    return context.json(settings);
+  });
+
+  app.put("/api/settings/company", async (context) => {
+    const input = await parseBody(context.req.raw, companySettingsSchema);
+    const saved = await currentStore.putCompanySettings(input);
+    return context.json(saved);
+  });
 
   app.post("/api/testing/reset", (context) => {
     if (!allowTestReset || runtimeMode !== "demo" || !(currentStore instanceof MemoryLedgerStore)) {
