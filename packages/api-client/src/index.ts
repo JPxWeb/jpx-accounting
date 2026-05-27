@@ -189,10 +189,7 @@ export class AccountingApiClient {
       headers: { accept: "application/json" },
     });
     if (!response.ok) {
-      throw new AccountingApiError(
-        response.status,
-        `getCompanySettings failed: ${response.status}`,
-      );
+      throw new AccountingApiError(response.status, `getCompanySettings failed: ${response.status}`);
     }
     return (await response.json()) as CompanySettings | null;
   }
@@ -206,9 +203,7 @@ export class AccountingApiClient {
       body: JSON.stringify(input),
     });
     if (!response.ok) {
-      const payload = (await response.json().catch(() => undefined)) as
-        | { message?: string }
-        | undefined;
+      const payload = (await response.json().catch(() => undefined)) as { message?: string } | undefined;
       throw new AccountingApiError(
         response.status,
         payload?.message ?? `saveCompanySettings failed: ${response.status}`,
