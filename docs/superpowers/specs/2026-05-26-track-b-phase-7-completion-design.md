@@ -10,7 +10,7 @@
 
 The two hardening series (`2026-05-19-supabase-hardening.md` 14 tasks + `2026-05-20-hardening-followups.md` 6 tasks) have all landed on `deploy`. `SupabaseLedgerStore` now matches `MemoryLedgerStore` for the core ledger loop (capture → review → approve → reports/SIE) with fail-closed auth, defense-in-depth workspace scoping, trigger-maintained projection aggregates, and an end-to-end Hono integration test.
 
-Four items from the parent plan's Phase 7 remain open. This spec closes the data-layer parity gap so that `SupabaseLedgerStore` no longer behaves *less* than `MemoryLedgerStore` on any interface method except `getCloseRun` (deferred by product) and `answerAssistantQuestion`'s answer-text quality (deferred to the Cmd-K Advisor sprint).
+Four items from the parent plan's Phase 7 remain open. This spec closes the data-layer parity gap so that `SupabaseLedgerStore` no longer behaves _less_ than `MemoryLedgerStore` on any interface method except `getCloseRun` (deferred by product) and `answerAssistantQuestion`'s answer-text quality (deferred to the Cmd-K Advisor sprint).
 
 ## Goal
 
@@ -26,29 +26,29 @@ Four items from the parent plan's Phase 7 remain open. This spec closes the data
 
 ## Scope — four pieces, in order
 
-| # | Piece | Why first |
-|---|-------|-----------|
-| 1 | Projection rebuild script | Pure infrastructure; no contract change; makes #3 easier to debug |
-| 2 | `supa_audit` migration | One-shot infrastructure; no contract change; complements #4 |
-| 3 | Real `runSimulation` (both stores) | Contract change; biggest design lift |
-| 4 | Assistant scaffold + compliance refresh | Contract-additive; benefits from #2's tracking |
+| #   | Piece                                   | Why first                                                         |
+| --- | --------------------------------------- | ----------------------------------------------------------------- |
+| 1   | Projection rebuild script               | Pure infrastructure; no contract change; makes #3 easier to debug |
+| 2   | `supa_audit` migration                  | One-shot infrastructure; no contract change; complements #4       |
+| 3   | Real `runSimulation` (both stores)      | Contract change; biggest design lift                              |
+| 4   | Assistant scaffold + compliance refresh | Contract-additive; benefits from #2's tracking                    |
 
 Each piece is independently shippable. Suite stays green between pieces.
 
 ## Architecture decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Rebuild script form | One-shot Node script under `scripts/` | Ops/recovery tool, not a runtime path. Doesn't need API integration. |
-| Rebuild script default | Dry-run; `--apply` required to write | Defensive; only ever writes to `projections.*`, never `ledger.*` |
-| supa_audit scope | `vouchers`, `review_tasks`, `compliance_alerts`, `assistant_sessions` | The four mutable tables. Append-only `events` doesn't need it (already immutable via trigger). |
-| Simulation scope shape | List of pending review IDs + uniform action | Concrete, maps to real UI affordance ("preview impact of approving these N items") |
-| Simulation persistence | Append `SimulationExecuted` event, write no journal lines | Audit-worthy ("someone asked what-if") without polluting the ledger |
-| Simulation pure core | `simulateApprovals(reviews, suggestions, vouchers, action)` in new `packages/domain/src/simulation.ts` | Shared by both stores; testable without DB |
-| Assistant scaffold | Lift Memory's scaffold response into `packages/domain/src/assistant.ts` | Both stores produce identical responses; AI wiring is a one-line swap later |
-| Compliance trigger | Manual `POST /api/compliance/refresh` only | Predictable, no scheduler infra |
-| Compliance rules v1 | Stale-blocked vouchers (>7d) + missing supplier VAT on approved vouchers | Two deterministic, testable rules. Bank-line rule deferred until bank import exists. |
-| Compliance idempotency | Upsert by `(organization_id, workspace_id, kind, target_id)` | Re-running refresh doesn't duplicate alerts; alert resolution clears the `target_id` |
+| Decision               | Choice                                                                                                 | Rationale                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Rebuild script form    | One-shot Node script under `scripts/`                                                                  | Ops/recovery tool, not a runtime path. Doesn't need API integration.                           |
+| Rebuild script default | Dry-run; `--apply` required to write                                                                   | Defensive; only ever writes to `projections.*`, never `ledger.*`                               |
+| supa_audit scope       | `vouchers`, `review_tasks`, `compliance_alerts`, `assistant_sessions`                                  | The four mutable tables. Append-only `events` doesn't need it (already immutable via trigger). |
+| Simulation scope shape | List of pending review IDs + uniform action                                                            | Concrete, maps to real UI affordance ("preview impact of approving these N items")             |
+| Simulation persistence | Append `SimulationExecuted` event, write no journal lines                                              | Audit-worthy ("someone asked what-if") without polluting the ledger                            |
+| Simulation pure core   | `simulateApprovals(reviews, suggestions, vouchers, action)` in new `packages/domain/src/simulation.ts` | Shared by both stores; testable without DB                                                     |
+| Assistant scaffold     | Lift Memory's scaffold response into `packages/domain/src/assistant.ts`                                | Both stores produce identical responses; AI wiring is a one-line swap later                    |
+| Compliance trigger     | Manual `POST /api/compliance/refresh` only                                                             | Predictable, no scheduler infra                                                                |
+| Compliance rules v1    | Stale-blocked vouchers (>7d) + missing supplier VAT on approved vouchers                               | Two deterministic, testable rules. Bank-line rule deferred until bank import exists.           |
+| Compliance idempotency | Upsert by `(organization_id, workspace_id, kind, target_id)`                                           | Re-running refresh doesn't duplicate alerts; alert resolution clears the `target_id`           |
 
 ---
 
@@ -59,6 +59,7 @@ Each piece is independently shippable. Suite stays green between pieces.
 **Inputs:** `SUPABASE_URL`, `SUPABASE_SECRET_KEY` from env. CLI flags: `--org <id>`, `--workspace <id>` (omit for all), `--apply` (default: dry-run print summary only).
 
 **Behavior:**
+
 1. Read every event from `ledger.events` ordered by `(organization_id, workspace_id, sequence_number)` ascending.
 2. For each `PostedToLedger` event: payload contains `{ action, suggestion }` plus the voucher reference. Re-fetch the voucher row (or thread it through; voucher is required for `buildPostingLines`). Reconstruct posting lines via the existing `buildPostingLines(action, suggestion, voucher)` from `packages/domain/src/posting.ts`.
 3. Group resulting lines by scope.
@@ -66,6 +67,7 @@ Each piece is independently shippable. Suite stays green between pieces.
 5. Without `--apply`: print row count comparison: existing rows vs. would-be rows, per scope.
 
 **Safety invariants:**
+
 - Never writes to `ledger.*`.
 - Refuses to run if `SUPABASE_SECRET_KEY` is missing (no anon-key footguns).
 - Prints scope summary before any write; non-interactive `--apply` skips the prompt.
@@ -149,11 +151,13 @@ export function simulateApprovals(
 ```
 
 For each (review, suggestion, voucher) tuple where the review is `needs-review` and not in a terminal state:
+
 1. Call existing `buildPostingLines(action, suggestion, voucher)`.
 2. Accumulate `{ accountNumber → (debit, credit) }` and `{ vatCode → (base, amount) }` deltas.
 3. Skip silently any review whose suggestion/voucher cannot be resolved (do not throw — simulations against partially-fetched data must still return a partial answer).
 
 Both stores' `runSimulation`:
+
 1. Load reviews/suggestions/vouchers for the requested `reviewIds` (org-scoped). Memory: in-memory map lookup. Supabase: parallel `.in("id", reviewIds)` queries.
 2. Call `simulateApprovals(...)`.
 3. Construct `SimulationRun` with deterministic `outcomeSummary` (e.g., `${reviewIds.length} reviews simulated; net debit ${total}, net credit ${total}`).
@@ -182,6 +186,7 @@ export function buildAssistantScaffold(question: string): AssistantSession;
 Returns a structured response with one hardcoded citation (`internal architecture policy: "AI may suggest and explain, but may not silently mutate accounting state."`). Matches the text Memory currently inlines.
 
 **Wire-up:**
+
 - `MemoryLedgerStore.answerAssistantQuestion(q)`: call `buildAssistantScaffold(q)`, push to `assistantExamples`, return. (Refactor — no behavior change.)
 - `SupabaseLedgerStore.answerAssistantQuestion(q)`: call `buildAssistantScaffold(q)`, insert into `ledger.assistant_sessions` (already does this), return. Stop returning `"Database-backed assistant sessions are not yet implemented."`.
 
@@ -201,7 +206,7 @@ refreshComplianceAlerts(): Promise<ComplianceAlert[]>;
 export function detectComplianceIssues(
   reviews: ReviewTask[],
   vouchers: Voucher[],
-  today: string,    // YYYY-MM-DD for deterministic testability
+  today: string, // YYYY-MM-DD for deterministic testability
 ): ComplianceAlert[];
 ```
 
@@ -213,6 +218,7 @@ export function detectComplianceIssues(
 Both rules are deterministic; the `today` parameter makes them testable.
 
 **Idempotency** in `refreshComplianceAlerts`:
+
 - Compute `ComplianceAlert[]` via `detectComplianceIssues`.
 - Upsert each alert keyed by `(organization_id, workspace_id, kind, target_id)`.
 - Return the persisted list.
@@ -232,11 +238,11 @@ A re-run does not duplicate; an alert whose underlying condition has been resolv
   detectedAt: string;
   impactSummary: string;
   // NEW (align with DB and v1 rules)
-  kind: string;                                       // e.g. "stale-blocked", "missing-supplier-vat"
+  kind: string; // e.g. "stale-blocked", "missing-supplier-vat"
   severity: z.enum(["info", "warning", "critical"]); // matches DB
-  status: z.enum(["open", "resolved"]);              // matches DB
-  targetId: z.string().optional();                   // voucher/review ID the alert points at
-  body: z.string().optional();                       // longer-form explanation
+  status: z.enum(["open", "resolved"]); // matches DB
+  targetId: z.string().optional(); // voucher/review ID the alert points at
+  body: z.string().optional(); // longer-form explanation
 }
 ```
 
@@ -253,6 +259,7 @@ create unique index ledger_alerts_dedup_uidx
 ```
 
 **API:** new route `POST /api/compliance/refresh` in `services/api/src/app.ts`:
+
 - Auth-gated (already true for `/api/*`).
 - Calls `c.get("store").refreshComplianceAlerts()`.
 - Returns `{ alerts: ComplianceAlert[] }`.
@@ -270,28 +277,28 @@ create unique index ledger_alerts_dedup_uidx
 
 ## File map
 
-| Path | Action | Piece |
-|------|--------|-------|
-| `scripts/rebuild-projections.mjs` | NEW | 1 |
-| `supabase/migrations/<ts>_enable_supa_audit.sql` | NEW | 2 |
-| `supabase/migrations/<ts>_compliance_alert_keys.sql` | NEW | 4 |
-| `supabase/migrations/20260324000000_schema_v2.sql` | DELETE commented `supa_audit` block | 2 |
-| `packages/contracts/src/index.ts` | MODIFY — extend `SimulationRequest`/`SimulationRun`; add `ComplianceAlert.kind`/`targetId` | 3, 4 |
-| `packages/domain/src/simulation.ts` | NEW | 3 |
-| `packages/domain/src/assistant.ts` | NEW | 4 |
-| `packages/domain/src/compliance.ts` | NEW | 4 |
-| `packages/domain/src/store.ts` | MODIFY — add `refreshComplianceAlerts`; rewrite `runSimulation`; use `buildAssistantScaffold` | 3, 4 |
-| `packages/domain/src/supabase-store.ts` | MODIFY — same surface as Memory; use shared helpers; new `refreshComplianceAlerts` | 3, 4 |
-| `packages/domain/src/supabase-mappers.ts` | MODIFY — add `mapComplianceAlertRow` if not present | 4 |
-| `packages/domain/src/index.ts` | MODIFY — export new modules | 3, 4 |
-| `services/api/src/store-factory.ts` | MODIFY — `UnavailableLedgerStore` gains the new method | 4 |
-| `services/api/src/app.ts` | MODIFY — `POST /api/compliance/refresh` | 4 |
-| `tests/unit/rebuild-projections.test.ts` | NEW | 1 |
-| `tests/unit/simulation.test.ts` | NEW | 3 |
-| `tests/unit/assistant.test.ts` | NEW | 4 |
-| `tests/unit/compliance.test.ts` | NEW | 4 |
-| `tests/unit/ledger-store.test.ts` | EXTEND | 3, 4 |
-| `tests/unit/supabase-store.test.ts` | EXTEND | 3, 4 |
+| Path                                                 | Action                                                                                        | Piece |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------- | ----- |
+| `scripts/rebuild-projections.mjs`                    | NEW                                                                                           | 1     |
+| `supabase/migrations/<ts>_enable_supa_audit.sql`     | NEW                                                                                           | 2     |
+| `supabase/migrations/<ts>_compliance_alert_keys.sql` | NEW                                                                                           | 4     |
+| `supabase/migrations/20260324000000_schema_v2.sql`   | DELETE commented `supa_audit` block                                                           | 2     |
+| `packages/contracts/src/index.ts`                    | MODIFY — extend `SimulationRequest`/`SimulationRun`; add `ComplianceAlert.kind`/`targetId`    | 3, 4  |
+| `packages/domain/src/simulation.ts`                  | NEW                                                                                           | 3     |
+| `packages/domain/src/assistant.ts`                   | NEW                                                                                           | 4     |
+| `packages/domain/src/compliance.ts`                  | NEW                                                                                           | 4     |
+| `packages/domain/src/store.ts`                       | MODIFY — add `refreshComplianceAlerts`; rewrite `runSimulation`; use `buildAssistantScaffold` | 3, 4  |
+| `packages/domain/src/supabase-store.ts`              | MODIFY — same surface as Memory; use shared helpers; new `refreshComplianceAlerts`            | 3, 4  |
+| `packages/domain/src/supabase-mappers.ts`            | MODIFY — add `mapComplianceAlertRow` if not present                                           | 4     |
+| `packages/domain/src/index.ts`                       | MODIFY — export new modules                                                                   | 3, 4  |
+| `services/api/src/store-factory.ts`                  | MODIFY — `UnavailableLedgerStore` gains the new method                                        | 4     |
+| `services/api/src/app.ts`                            | MODIFY — `POST /api/compliance/refresh`                                                       | 4     |
+| `tests/unit/rebuild-projections.test.ts`             | NEW                                                                                           | 1     |
+| `tests/unit/simulation.test.ts`                      | NEW                                                                                           | 3     |
+| `tests/unit/assistant.test.ts`                       | NEW                                                                                           | 4     |
+| `tests/unit/compliance.test.ts`                      | NEW                                                                                           | 4     |
+| `tests/unit/ledger-store.test.ts`                    | EXTEND                                                                                        | 3, 4  |
+| `tests/unit/supabase-store.test.ts`                  | EXTEND                                                                                        | 3, 4  |
 
 No web (`apps/web/*`) changes in this sprint — UI for compliance refresh and simulation preview is a Track A follow-up.
 
@@ -309,12 +316,12 @@ No web (`apps/web/*`) changes in this sprint — UI for compliance refresh and s
 
 ## Open questions (none blocking)
 
-- **Hosted supa_audit enablement:** verify pre-flight before merging the Piece-2 migration. If the extension is *not* on the hosted allowlist, fallback is to drop Piece 2 from this sprint (it does not block 1, 3, 4).
+- **Hosted supa_audit enablement:** verify pre-flight before merging the Piece-2 migration. If the extension is _not_ on the hosted allowlist, fallback is to drop Piece 2 from this sprint (it does not block 1, 3, 4).
 - **Future:** a `markAlertResolved(id)` method + dismissal UI is the natural next step for compliance; explicitly deferred from v1.
 
 ## Self-review
 
-- Every Phase 7 item from the parent plan that the user did *not* explicitly defer is covered.
+- Every Phase 7 item from the parent plan that the user did _not_ explicitly defer is covered.
 - No placeholders, no "TBD", no "similar to Task N" references. Every file path, function signature, SQL statement, and test name is concrete.
 - Type consistency: `SimulationRequest`/`SimulationRun` extensions match between contracts, simulation.ts, and store implementations. `refreshComplianceAlerts` signature is identical across `LedgerStore` interface, both implementing stores, and `UnavailableLedgerStore`.
 - Scope: four independently shippable pieces; sprint can stop after any of them with a green suite.

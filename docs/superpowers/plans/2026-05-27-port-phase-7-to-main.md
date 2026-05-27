@@ -8,23 +8,22 @@
 
 > ### Plan corrections applied 2026-05-27 (after pre-execution verification against `origin/main`)
 >
-> The original code blocks in this plan were authored against an assumed `main` shape that was *mostly* right but drifted in 6 places. Reading the verified state of `origin/main` (commit `bf43ba5`) before each task is still the safe move, but the deltas below are now patched in-line under the headers marked **PLAN CORRECTION**:
+> The original code blocks in this plan were authored against an assumed `main` shape that was _mostly_ right but drifted in 6 places. Reading the verified state of `origin/main` (commit `bf43ba5`) before each task is still the safe move, but the deltas below are now patched in-line under the headers marked **PLAN CORRECTION**:
 >
 > 1. **Task 3 (DEV_STATUS.md):** main does not have a `docs/DEV_STATUS.md` at all — original wording was "hand-merge the new section"; correction is "create the file from scratch".
 > 2. **Task 7 (complianceAlertSchema):** the seeded `alert_vat_1` literal at `packages/domain/src/store.ts:145` definitely exists and must gain `kind`/`severity`/`status` (the original "if exists" hedge was wrong).
 > 3. **Task 11 (simulation.ts):** `buildPostingLines` is confirmed **not exported** on main — the extraction step is mandatory, not conditional.
-> 4. **Task 13 Step 0 (NEW):** add `today()` helper to `packages/domain/src/ids.ts` *before* the Memory and Postgres `refreshComplianceAlerts` impls reference it. The original plan imported `today` from `./ids` but it did not exist there.
+> 4. **Task 13 Step 0 (NEW):** add `today()` helper to `packages/domain/src/ids.ts` _before_ the Memory and Postgres `refreshComplianceAlerts` impls reference it. The original plan imported `today` from `./ids` but it did not exist there.
 > 5. **Tasks 21, 22, 23, 24 (PostgresLedgerStore):** every `this.organizationId` / `this.workspaceId` becomes `this.defaults.organizationId` / `this.defaults.workspaceId` — main's `PostgresLedgerStore` constructor takes a `{ organizationId, workspaceId }` struct stored on `this.defaults`.
 > 6. **Task 21 (`runSimulation`):** must call `const tailHash = await this.lockWorkspaceTail(tx);` before writing and pass `tailHash` as the third argument to `this.appendEvent(tx, event, previousHash)`. The original block omitted both and would have type-errored AND broken the hash chain.
 > 7. **Task 22 (`answerAssistantQuestion`):** wrap the insert in `this.client.begin(async (tx) => …)` and use `tx.json(...)` rather than top-level `this.client.json(...)` — matches the rest of the codebase's pattern.
->
 > 8. **`pnpm typecheck:tests` script does not exist on main.** Every "Run the suite" step in this plan references `pnpm test:unit && pnpm typecheck && pnpm typecheck:tests` — the third command will fail. PR-B must add a `tests/tsconfig.json` and a root `typecheck:tests` script as a **prerequisite** before the new test files land. Treat this as a Task 5.5 (between PR-A merge and Task 6) when executing PR-B. Suggested script: `"typecheck:tests": "tsc --noEmit -p tests/tsconfig.json"` with a `tests/tsconfig.json` that extends the root and includes `tests/**/*.ts` plus references to the workspace packages.
 >
 > These corrections were committed in PR-A so the plan future readers see matches the code they'll write. No survey-doc changes were needed (the survey is intentionally high-level and doesn't prescribe code).
 
 **Goal:** Move Phase 7's data-layer features (real `runSimulation`, `refreshComplianceAlerts`, `buildAssistantScaffold`, `ReviewNotFoundError`, contract extensions, company settings) from the `deploy` branch's dead `SupabaseLedgerStore` architecture onto `main`'s canonical `PostgresLedgerStore` architecture, while preserving the 26 conventions, Phase 7 design spec, and UI follow-ups.
 
-**Architecture:** Main replaced `SupabaseLedgerStore` (supabase-js write path) with `PostgresLedgerStore` (postgres-js direct, `sql.begin` transactions, `lockWorkspaceTail` for hash-chain serialization). Main has a typed `ApiJsonErrorBody` envelope, JWKS-backed JWT verification on mutating routes, rate limiting, body limits, secure headers, and Azure Document Intelligence for OCR. The port keeps every piece of main's architecture and layers Phase 7's *features* on top — the pure-function helpers, contract extensions, Memory store work, and API routes all port cleanly; only PostgresLedgerStore extensions need real reimplementation.
+**Architecture:** Main replaced `SupabaseLedgerStore` (supabase-js write path) with `PostgresLedgerStore` (postgres-js direct, `sql.begin` transactions, `lockWorkspaceTail` for hash-chain serialization). Main has a typed `ApiJsonErrorBody` envelope, JWKS-backed JWT verification on mutating routes, rate limiting, body limits, secure headers, and Azure Document Intelligence for OCR. The port keeps every piece of main's architecture and layers Phase 7's _features_ on top — the pure-function helpers, contract extensions, Memory store work, and API routes all port cleanly; only PostgresLedgerStore extensions need real reimplementation.
 
 **Tech Stack:** TypeScript 5.9 strict, pnpm monorepo, Hono 4 (`hono-rate-limiter`, `hono/jwk`, `hono/body-limit`, `hono/secure-headers`), Zod v4 (`@jpx-accounting/contracts`), postgres-js (`packages/persistence-postgres`), `node:test` + `tsx`, Playwright 1.58. Migrations use sequential numbering in `infra/supabase/migrations/0NNN_<name>.sql` (NOT timestamps like deploy used).
 
@@ -52,7 +51,7 @@ A survey + strategy doc was written ([`2026-05-27-deploy-to-main-port-plan.md`](
 
 ### Critical rules (memorize before starting)
 
-1. **Never modify `deploy`.** All work happens on fresh branches off `origin/main`. The `deploy` branch is the source of truth for *what to port*, not a place to commit anything new.
+1. **Never modify `deploy`.** All work happens on fresh branches off `origin/main`. The `deploy` branch is the source of truth for _what to port_, not a place to commit anything new.
 2. **Read [`docs/CONVENTIONS.md`](../../CONVENTIONS.md) before each task.** It has 26 rules distilled from real incidents — Rules 1 (schema-contract sync), 11 (store parity), 15 (symmetric fixes), 17 (mutation discipline), 18 (PG pitfalls), 20 (system attribution), 23 (dedup at boundary) are directly relevant to this port.
 3. **PostgresLedgerStore uses `sql.begin(...)` transactions and `lockWorkspaceTail(tx)` for hash-chain serialization.** Do NOT port deploy's `appendEvent` retry loop — main's `SELECT ... FOR UPDATE` makes it unnecessary. Read `git show origin/main:packages/persistence-postgres/src/store.ts` (around the `applyReviewDecision` method) for the canonical pattern before writing any new method.
 4. **Migrations use sequential numbering.** Main has 0001, 0002, 0003 in `infra/supabase/migrations/`. Next is `0004_<name>.sql`. NOT timestamps.
@@ -81,42 +80,42 @@ This is what each PR touches. PRs are independent — completing PR-A does not b
 
 ### PR-A (docs cherry-pick — ~30 min, ZERO risk)
 
-| File | Action | Source |
-|------|--------|--------|
-| `docs/CONVENTIONS.md` | CREATE | Cherry-pick from deploy commits `19ca3fa` + `7fe05d4` |
-| `docs/superpowers/specs/2026-05-26-track-b-phase-7-completion-design.md` | CREATE | Cherry-pick from deploy commit `254a986` |
-| `docs/superpowers/plans/2026-05-26-track-b-phase-7-completion.md` | CREATE | Cherry-pick from deploy commits `f3f6134` + `cd425d1` |
-| `docs/superpowers/plans/2026-05-27-deploy-to-main-port-plan.md` | CREATE | Cherry-pick from deploy commit `99acc75` |
-| `docs/superpowers/plans/2026-05-27-port-phase-7-to-main.md` | CREATE | This file (also cherry-picked) |
-| `docs/DEV_STATUS.md` | MODIFY | Hand-edit to mark Phase 7 as "in-port (PR-B/PR-C)" + paste UI follow-ups section from deploy `c3cea90` |
-| `CLAUDE.md` | MODIFY | Add CONVENTIONS.md pointer (cherry-pick from `19ca3fa`'s CLAUDE.md hunk only) |
-| `apps/web/components/settings/company-form.tsx` | MODIFY | Cherry-pick zodResolver Zod v4 fix from `b50f5ea` (skip if file doesn't exist on main) |
-| `apps/web/app/api-proxy/[...path]/route.ts` | MODIFY | Cherry-pick proxy comment from `a6c0d04` (skip if file doesn't exist on main) |
+| File                                                                     | Action | Source                                                                                                 |
+| ------------------------------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------ |
+| `docs/CONVENTIONS.md`                                                    | CREATE | Cherry-pick from deploy commits `19ca3fa` + `7fe05d4`                                                  |
+| `docs/superpowers/specs/2026-05-26-track-b-phase-7-completion-design.md` | CREATE | Cherry-pick from deploy commit `254a986`                                                               |
+| `docs/superpowers/plans/2026-05-26-track-b-phase-7-completion.md`        | CREATE | Cherry-pick from deploy commits `f3f6134` + `cd425d1`                                                  |
+| `docs/superpowers/plans/2026-05-27-deploy-to-main-port-plan.md`          | CREATE | Cherry-pick from deploy commit `99acc75`                                                               |
+| `docs/superpowers/plans/2026-05-27-port-phase-7-to-main.md`              | CREATE | This file (also cherry-picked)                                                                         |
+| `docs/DEV_STATUS.md`                                                     | MODIFY | Hand-edit to mark Phase 7 as "in-port (PR-B/PR-C)" + paste UI follow-ups section from deploy `c3cea90` |
+| `CLAUDE.md`                                                              | MODIFY | Add CONVENTIONS.md pointer (cherry-pick from `19ca3fa`'s CLAUDE.md hunk only)                          |
+| `apps/web/components/settings/company-form.tsx`                          | MODIFY | Cherry-pick zodResolver Zod v4 fix from `b50f5ea` (skip if file doesn't exist on main)                 |
+| `apps/web/app/api-proxy/[...path]/route.ts`                              | MODIFY | Cherry-pick proxy comment from `a6c0d04` (skip if file doesn't exist on main)                          |
 
 ### PR-B (architecture-light port — ~5 hrs)
 
-| File | Action | Notes |
-|------|--------|-------|
-| `packages/contracts/src/index.ts` | MODIFY | Extend `simulationRequestSchema`, `simulationRunSchema`, `complianceAlertSchema`; add `companySettingsSchema` |
-| `packages/domain/src/assistant.ts` | CREATE | `buildAssistantScaffold` pure helper |
-| `packages/domain/src/compliance.ts` | CREATE | `detectComplianceIssues` + `detectComplianceIssuesDetailed` |
-| `packages/domain/src/simulation.ts` | CREATE | `simulateApprovals` pure function |
-| `packages/domain/src/store.ts` | MODIFY | Add `ReviewNotFoundError`; extend `LedgerStore` interface (+3 methods); extend `MemoryLedgerStore` |
-| `packages/domain/src/index.ts` | MODIFY | Re-export the 3 new modules |
-| `services/api/src/app.ts` | MODIFY | Replace `/api/compliance-watch/refresh` stub if exists, else add; add `GET/PUT /api/settings/company`; add `ReviewNotFoundError` branch in `onError`; fix `/api/knowledge/query` citation source |
-| `infra/supabase/migrations/0004_compliance_and_settings.sql` | CREATE | `compliance_alerts` + `assistant_sessions` + `organization_settings` tables, dedup index |
-| `tests/unit/assistant.test.ts` | CREATE | |
-| `tests/unit/compliance.test.ts` | CREATE | |
-| `tests/unit/simulation.test.ts` | CREATE | |
-| `tests/unit/contracts-simulation.test.ts` | CREATE | |
-| `tests/unit/ledger-store.test.ts` | MODIFY | Add Memory store coverage for new methods |
+| File                                                         | Action | Notes                                                                                                                                                                                            |
+| ------------------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/contracts/src/index.ts`                            | MODIFY | Extend `simulationRequestSchema`, `simulationRunSchema`, `complianceAlertSchema`; add `companySettingsSchema`                                                                                    |
+| `packages/domain/src/assistant.ts`                           | CREATE | `buildAssistantScaffold` pure helper                                                                                                                                                             |
+| `packages/domain/src/compliance.ts`                          | CREATE | `detectComplianceIssues` + `detectComplianceIssuesDetailed`                                                                                                                                      |
+| `packages/domain/src/simulation.ts`                          | CREATE | `simulateApprovals` pure function                                                                                                                                                                |
+| `packages/domain/src/store.ts`                               | MODIFY | Add `ReviewNotFoundError`; extend `LedgerStore` interface (+3 methods); extend `MemoryLedgerStore`                                                                                               |
+| `packages/domain/src/index.ts`                               | MODIFY | Re-export the 3 new modules                                                                                                                                                                      |
+| `services/api/src/app.ts`                                    | MODIFY | Replace `/api/compliance-watch/refresh` stub if exists, else add; add `GET/PUT /api/settings/company`; add `ReviewNotFoundError` branch in `onError`; fix `/api/knowledge/query` citation source |
+| `infra/supabase/migrations/0004_compliance_and_settings.sql` | CREATE | `compliance_alerts` + `assistant_sessions` + `organization_settings` tables, dedup index                                                                                                         |
+| `tests/unit/assistant.test.ts`                               | CREATE |                                                                                                                                                                                                  |
+| `tests/unit/compliance.test.ts`                              | CREATE |                                                                                                                                                                                                  |
+| `tests/unit/simulation.test.ts`                              | CREATE |                                                                                                                                                                                                  |
+| `tests/unit/contracts-simulation.test.ts`                    | CREATE |                                                                                                                                                                                                  |
+| `tests/unit/ledger-store.test.ts`                            | MODIFY | Add Memory store coverage for new methods                                                                                                                                                        |
 
 ### PR-C (PostgresLedgerStore extensions — ~4 hrs)
 
-| File | Action | Notes |
-|------|--------|-------|
+| File                                         | Action | Notes                                                                                                                                                                                            |
+| -------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `packages/persistence-postgres/src/store.ts` | MODIFY | Add `refreshComplianceAlerts`, replace `runSimulation` stub with real, replace `answerAssistantQuestion` with `buildAssistantScaffold` delegation, add `getCompanySettings`/`putCompanySettings` |
-| `tests/integration/postgres-ledger.test.ts` | MODIFY | Add integration coverage for the 4 new/changed methods |
+| `tests/integration/postgres-ledger.test.ts`  | MODIFY | Add integration coverage for the 4 new/changed methods                                                                                                                                           |
 
 ### PR-D (later sprint — Track A IA web cherry-picks)
 
@@ -144,6 +143,7 @@ Out of scope for this plan. See [`2026-05-27-deploy-to-main-port-plan.md`](./202
 ### Task 1: Create branch and cherry-pick CONVENTIONS.md
 
 **Files:**
+
 - Create: `docs/CONVENTIONS.md`
 
 - [ ] **Step 1: Branch off main**
@@ -192,6 +192,7 @@ Source: deploy commits 19ca3fa + 7fe05d4 (cherry-picked).
 ### Task 2: Cherry-pick Phase 7 design spec + plan + port plan
 
 **Files:**
+
 - Create: `docs/superpowers/specs/2026-05-26-track-b-phase-7-completion-design.md`
 - Create: `docs/superpowers/plans/2026-05-26-track-b-phase-7-completion.md`
 - Create: `docs/superpowers/plans/2026-05-27-deploy-to-main-port-plan.md`
@@ -227,6 +228,7 @@ Source: deploy commits 254a986, f3f6134, cd425d1, 99acc75 (cherry-picked).
 ### Task 3: Create DEV_STATUS.md on main (with UI follow-ups + port-status table)
 
 **Files:**
+
 - Create: `docs/DEV_STATUS.md`
 
 > **PLAN CORRECTION (2026-05-27):** Main does **not** currently carry a `docs/DEV_STATUS.md` file — the original task assumed there was one to hand-merge. The deploy branch's `DEV_STATUS.md` is 192 lines and carries phase-by-phase history that is partly obsoleted (it tracks `SupabaseLedgerStore` work that is dead on main). The correct action is to **create a fresh, minimal `DEV_STATUS.md`** that:
@@ -260,12 +262,12 @@ Create `docs/DEV_STATUS.md` with this structure (paste the UI follow-ups section
 Run before opening any PR:
 
 \`\`\`bash
-pnpm typecheck         # all workspace packages
-pnpm typecheck:tests   # tests typecheck gate
-pnpm test:unit         # node:test + tsx unit suite
-pnpm lint              # Biome
-pnpm build             # web + API
-pnpm test:e2e          # Playwright
+pnpm typecheck # all workspace packages
+pnpm typecheck:tests # tests typecheck gate
+pnpm test:unit # node:test + tsx unit suite
+pnpm lint # Biome
+pnpm build # web + API
+pnpm test:e2e # Playwright
 \`\`\`
 
 Integration tests against a real Postgres are gated on `SUPABASE_DB_URL`.
@@ -274,12 +276,12 @@ Integration tests against a real Postgres are gated on `SUPABASE_DB_URL`.
 
 ## Phase 7 port status
 
-| PR | Scope | Status |
-|----|-------|--------|
-| **PR-A** | Docs cherry-pick (CONVENTIONS, Phase 7 spec + plans, this DEV_STATUS) | **This PR** |
-| **PR-B** | Contracts, pure domain helpers, `MemoryLedgerStore` extensions, API routes, migration `0004` | Pending |
-| **PR-C** | `PostgresLedgerStore` real implementations | Pending |
-| **PR-D** | Track A IA web cherry-picks | Out of scope here |
+| PR       | Scope                                                                                        | Status            |
+| -------- | -------------------------------------------------------------------------------------------- | ----------------- |
+| **PR-A** | Docs cherry-pick (CONVENTIONS, Phase 7 spec + plans, this DEV_STATUS)                        | **This PR**       |
+| **PR-B** | Contracts, pure domain helpers, `MemoryLedgerStore` extensions, API routes, migration `0004` | Pending           |
+| **PR-C** | `PostgresLedgerStore` real implementations                                                   | Pending           |
+| **PR-D** | Track A IA web cherry-picks                                                                  | Out of scope here |
 
 ---
 
@@ -301,6 +303,7 @@ port-in-progress (PR-A docs landed; PR-B/PR-C pending).
 ### Task 4: Cherry-pick CLAUDE.md pointer + zodResolver fix
 
 **Files:**
+
 - Modify: `CLAUDE.md`
 - Modify: `apps/web/components/settings/company-form.tsx` (conditional)
 - Modify: `apps/web/app/api-proxy/[...path]/route.ts` (conditional)
@@ -450,6 +453,7 @@ Expected: comment posted on PR #14.
 ### Task 6: Extend simulationRequestSchema and simulationRunSchema
 
 **Files:**
+
 - Modify: `packages/contracts/src/index.ts` (the `simulationRequestSchema` and `simulationRunSchema` definitions)
 - Create: `tests/unit/contracts-simulation.test.ts`
 
@@ -627,6 +631,7 @@ Tasks 6–8 commit together at the end of Task 8 (atomic contract change per CON
 ### Task 7: Extend complianceAlertSchema
 
 **Files:**
+
 - Modify: `packages/contracts/src/index.ts` (`complianceAlertSchema`)
 - Test added in Task 11 (compliance pure-function test exercises the schema)
 
@@ -684,6 +689,7 @@ Then run `pnpm typecheck` to confirm green.
 ### Task 8: Add companySettingsSchema and commit Tasks 6–8
 
 **Files:**
+
 - Modify: `packages/contracts/src/index.ts` (add new schema)
 
 - [ ] **Step 1: Add the schema**
@@ -735,6 +741,7 @@ git commit -m "feat(contracts): extend simulation/compliance schemas; add compan
 ### Task 9: buildAssistantScaffold helper
 
 **Files:**
+
 - Create: `packages/domain/src/assistant.ts`
 - Modify: `packages/domain/src/index.ts`
 - Create: `tests/unit/assistant.test.ts`
@@ -829,6 +836,7 @@ will delegate to this in subsequent tasks (Rule 15: symmetric fix).
 ### Task 10: detectComplianceIssues + detectComplianceIssuesDetailed
 
 **Files:**
+
 - Create: `packages/domain/src/compliance.ts`
 - Modify: `packages/domain/src/index.ts`
 - Create: `tests/unit/compliance.test.ts`
@@ -1010,11 +1018,7 @@ export type ComplianceDetectionResult = {
   skipped: Array<{ kind: "review" | "voucher"; id: string; reason: string }>;
 };
 
-export function detectComplianceIssues(
-  reviews: ReviewTask[],
-  vouchers: Voucher[],
-  today: string,
-): ComplianceAlert[] {
+export function detectComplianceIssues(reviews: ReviewTask[], vouchers: Voucher[], today: string): ComplianceAlert[] {
   return detectComplianceIssuesDetailed(reviews, vouchers, today).alerts;
 }
 
@@ -1117,6 +1121,7 @@ Implementation notes:
 ### Task 11: simulateApprovals pure function
 
 **Files:**
+
 - Create: `packages/domain/src/simulation.ts`
 - Modify: `packages/domain/src/index.ts`
 - Create: `tests/unit/simulation.test.ts`
@@ -1200,12 +1205,7 @@ const reviewFixture = (voucherId: string): ReviewTask => ({
 });
 
 test("approve produces 3-line balance delta", () => {
-  const result = simulateApprovals(
-    [reviewFixture("v1")],
-    [suggestionFixture("v1")],
-    [voucherFixture("v1")],
-    "approve",
-  );
+  const result = simulateApprovals([reviewFixture("v1")], [suggestionFixture("v1")], [voucherFixture("v1")], "approve");
   assert.equal(result.balanceDelta.length, 3);
   assert.equal(result.balanceDelta.find((b) => b.accountNumber === "6540")?.deltaDebit, 999.2);
   assert.equal(result.balanceDelta.find((b) => b.accountNumber === "2641")?.deltaDebit, 249.8);
@@ -1334,6 +1334,7 @@ across runtime modes (CONVENTIONS Rule 11).
 ### Task 12: Add ReviewNotFoundError and extend LedgerStore interface
 
 **Files:**
+
 - Modify: `packages/domain/src/store.ts` (add error class + 3 interface methods)
 
 - [ ] **Step 1: Add ReviewNotFoundError class**
@@ -1414,6 +1415,7 @@ Run `pnpm typecheck` again — expected: green.
 ### Task 13: MemoryLedgerStore extensions
 
 **Files:**
+
 - Modify: `packages/domain/src/store.ts` (add 4 methods + the auto-detected-kinds constant + MEMORY_ALERT_CAP)
 
 Memory store now needs: `refreshComplianceAlerts`, `runSimulation` (real), `answerAssistantQuestion` (delegate to scaffold), `getCompanySettings`, `putCompanySettings`. Plus state for the alerts/settings.
@@ -1714,6 +1716,7 @@ MemoryLedgerStore implementations:
 ### Task 14: Write 0004_compliance_and_settings.sql
 
 **Files:**
+
 - Create: `infra/supabase/migrations/0004_compliance_and_settings.sql`
 
 This single migration adds the three tables Phase 7 needs that main doesn't have: `compliance_alerts`, `assistant_sessions`, `organization_settings`.
@@ -1833,6 +1836,7 @@ Schema design notes (CONVENTIONS.md):
 ### Task 15: Add ReviewNotFoundError onError branch + import
 
 **Files:**
+
 - Modify: `services/api/src/app.ts`
 
 - [ ] **Step 1: Add import for ReviewNotFoundError**
@@ -1856,9 +1860,9 @@ import { MemoryLedgerStore, ReviewNotFoundError } from "@jpx-accounting/domain";
 Find `app.onError((error, c) => {` block. Add a branch BEFORE the default 500 fallback (after `LedgerStoreUnavailableError`/`AiRuntimeUnavailableError`):
 
 ```ts
-    if (error instanceof ReviewNotFoundError) {
-      return jsonError(c, error.message, runtimeMode, 404, { code: "review_not_found" });
-    }
+if (error instanceof ReviewNotFoundError) {
+  return jsonError(c, error.message, runtimeMode, 404, { code: "review_not_found" });
+}
 ```
 
 - [ ] **Step 3: Run typecheck**
@@ -1880,6 +1884,7 @@ a client-correctable bad-input case (CONVENTIONS Rule 16).
 ### Task 16: /api/compliance-watch/refresh real implementation
 
 **Files:**
+
 - Modify: `services/api/src/app.ts`
 
 - [ ] **Step 1: Locate (or add) the route**
@@ -1893,13 +1898,13 @@ If the route exists, replace its body. If not, add a new route after `/api/assis
 Add or replace:
 
 ```ts
-  app.post("/api/compliance-watch/refresh", async (context) => {
-    // Default-exclude resolved/dismissed (CONVENTIONS Rule 26); ?includeResolved=true for all.
-    const includeResolved = context.req.query("includeResolved") === "true";
-    const all = await currentStore.refreshComplianceAlerts();
-    const visible = includeResolved ? all : all.filter((a) => a.status === "open" || a.status === "acknowledged");
-    return context.json(visible);
-  });
+app.post("/api/compliance-watch/refresh", async (context) => {
+  // Default-exclude resolved/dismissed (CONVENTIONS Rule 26); ?includeResolved=true for all.
+  const includeResolved = context.req.query("includeResolved") === "true";
+  const all = await currentStore.refreshComplianceAlerts();
+  const visible = includeResolved ? all : all.filter((a) => a.status === "open" || a.status === "acknowledged");
+  return context.json(visible);
+});
 ```
 
 - [ ] **Step 3: Commit**
@@ -1917,6 +1922,7 @@ for full history (Rule 26).
 ### Task 17: GET/PUT /api/settings/company routes
 
 **Files:**
+
 - Modify: `services/api/src/app.ts`
 
 - [ ] **Step 1: Update imports**
@@ -1935,17 +1941,17 @@ import {
 Add after `/api/compliance-watch/refresh`:
 
 ```ts
-  app.get("/api/settings/company", async (context) => {
-    const settings = await currentStore.getCompanySettings();
-    if (!settings) return context.json(null);
-    return context.json(settings);
-  });
+app.get("/api/settings/company", async (context) => {
+  const settings = await currentStore.getCompanySettings();
+  if (!settings) return context.json(null);
+  return context.json(settings);
+});
 
-  app.put("/api/settings/company", async (context) => {
-    const input = await parseBody(context.req.raw, companySettingsSchema);
-    const saved = await currentStore.putCompanySettings(input);
-    return context.json(saved);
-  });
+app.put("/api/settings/company", async (context) => {
+  const input = await parseBody(context.req.raw, companySettingsSchema);
+  const saved = await currentStore.putCompanySettings(input);
+  return context.json(saved);
+});
 ```
 
 - [ ] **Step 3: Commit**
@@ -1963,6 +1969,7 @@ number + postal format).
 ### Task 18: /api/knowledge/query citation isolation
 
 **Files:**
+
 - Modify: `services/api/src/app.ts`
 
 - [ ] **Step 1: Locate the route**
@@ -1990,19 +1997,19 @@ This leaks the latest review's suggestion citations as if they were knowledge-qu
 Read the existing route's full body. Replace the citations source with an empty array directly (the route is a stub until real Azure AI Search lands, per migration 0003 + the eventual Cmd-K Advisor sprint):
 
 ```ts
-  app.post("/api/knowledge/query", async (context) => {
-    const input = await parseBody(context.req.raw, knowledgeQuerySchema);
-    // Knowledge query is a placeholder until the Azure AI Search index ships
-    // (foundation in migration 0003 + knowledge.documents table). Returning
-    // citations from any other flow's data is wrong provenance in an audit
-    // context (CONVENTIONS Rule 10). Return [] until real retrieval lands.
-    return context.json({
-      query: input.query,
-      citations: [],
-      answer:
-        "Knowledge queries are routed through the same grounded advisory stack; next step is wiring the knowledge.documents table (0003 migration) to Azure AI Search.",
-    });
+app.post("/api/knowledge/query", async (context) => {
+  const input = await parseBody(context.req.raw, knowledgeQuerySchema);
+  // Knowledge query is a placeholder until the Azure AI Search index ships
+  // (foundation in migration 0003 + knowledge.documents table). Returning
+  // citations from any other flow's data is wrong provenance in an audit
+  // context (CONVENTIONS Rule 10). Return [] until real retrieval lands.
+  return context.json({
+    query: input.query,
+    citations: [],
+    answer:
+      "Knowledge queries are routed through the same grounded advisory stack; next step is wiring the knowledge.documents table (0003 migration) to Azure AI Search.",
   });
+});
 ```
 
 - [ ] **Step 3: Run the suite**
@@ -2114,6 +2121,7 @@ git show origin/main:packages/persistence-postgres/src/store.ts | sed -n '/async
 ```
 
 Note:
+
 - Uses `this.client.begin(async (tx) => { ... })` for transactional consistency
 - Calls `this.lockWorkspaceTail(tx)` before any writes (hash chain serialization via `SELECT ... FOR UPDATE`)
 - Calls `this.appendEvent(tx, ...)` to write events inside the transaction
@@ -2138,6 +2146,7 @@ Note the helper signatures. Reuse them.
 ### Task 21: Real runSimulation on PostgresLedgerStore
 
 **Files:**
+
 - Modify: `packages/persistence-postgres/src/store.ts` (`runSimulation`)
 - Test: extend `tests/integration/postgres-ledger.test.ts` (gated on `SUPABASE_DB_URL`)
 
@@ -2146,38 +2155,43 @@ Note the helper signatures. Reuse them.
 Append to `tests/integration/postgres-ledger.test.ts`:
 
 ```ts
-test("runSimulation returns real projection diff with balanceDelta + vatDelta", { skip: !process.env.SUPABASE_DB_URL }, async (t) => {
-  const store = await setupStore(t); // helper that builds a clean PostgresLedgerStore + seeds an org
-  const evidence = await store.createEvidence({
-    organizationId: "org_test",
-    workspaceId: "ws_test",
-    actorId: "user_test",
-    title: "Test invoice",
-    originalFilename: "t.pdf",
-    mimeType: "application/pdf",
-    modalities: ["pdf"],
-  });
-  const sim = await store.runSimulation({
-    actorId: "user_test",
-    title: "what-if",
-    scenario: "approve one",
-    reviewIds: [evidence.review.id],
-    action: "approve",
-  });
-  assert.ok(sim.balanceDelta.length > 0, "balance delta non-empty");
-  assert.ok(sim.affectedAccounts.includes("2641"), "input VAT in affected accounts");
-});
+test(
+  "runSimulation returns real projection diff with balanceDelta + vatDelta",
+  { skip: !process.env.SUPABASE_DB_URL },
+  async (t) => {
+    const store = await setupStore(t); // helper that builds a clean PostgresLedgerStore + seeds an org
+    const evidence = await store.createEvidence({
+      organizationId: "org_test",
+      workspaceId: "ws_test",
+      actorId: "user_test",
+      title: "Test invoice",
+      originalFilename: "t.pdf",
+      mimeType: "application/pdf",
+      modalities: ["pdf"],
+    });
+    const sim = await store.runSimulation({
+      actorId: "user_test",
+      title: "what-if",
+      scenario: "approve one",
+      reviewIds: [evidence.review.id],
+      action: "approve",
+    });
+    assert.ok(sim.balanceDelta.length > 0, "balance delta non-empty");
+    assert.ok(sim.affectedAccounts.includes("2641"), "input VAT in affected accounts");
+  },
+);
 
 test("runSimulation throws ReviewNotFoundError on missing IDs", { skip: !process.env.SUPABASE_DB_URL }, async (t) => {
   const store = await setupStore(t);
   await assert.rejects(
-    () => store.runSimulation({
-      actorId: "u",
-      title: "t",
-      scenario: "s",
-      reviewIds: ["review_does_not_exist"],
-      action: "approve",
-    }),
+    () =>
+      store.runSimulation({
+        actorId: "u",
+        title: "t",
+        scenario: "s",
+        reviewIds: ["review_does_not_exist"],
+        action: "approve",
+      }),
     /not found in this workspace/,
   );
 });
@@ -2350,6 +2364,7 @@ MemoryLedgerStore.
 ### Task 22: Replace answerAssistantQuestion stub with buildAssistantScaffold + DB insert
 
 **Files:**
+
 - Modify: `packages/persistence-postgres/src/store.ts`
 
 - [ ] **Step 1: Replace the method (PLAN CORRECTION — use `this.defaults` and `tx.json` inside `begin`)**
@@ -2388,19 +2403,23 @@ import { buildAssistantScaffold } from "@jpx-accounting/domain";
 Append to `tests/integration/postgres-ledger.test.ts`:
 
 ```ts
-test("answerAssistantQuestion delegates to buildAssistantScaffold + persists", { skip: !process.env.SUPABASE_DB_URL }, async (t) => {
-  const store = await setupStore(t);
-  const session = await store.answerAssistantQuestion("Can I deduct this?");
-  assert.equal(session.status, "grounded");
-  assert.equal(session.citations.length, 1);
-  assert.equal(session.question, "Can I deduct this?");
+test(
+  "answerAssistantQuestion delegates to buildAssistantScaffold + persists",
+  { skip: !process.env.SUPABASE_DB_URL },
+  async (t) => {
+    const store = await setupStore(t);
+    const session = await store.answerAssistantQuestion("Can I deduct this?");
+    assert.equal(session.status, "grounded");
+    assert.equal(session.citations.length, 1);
+    assert.equal(session.question, "Can I deduct this?");
 
-  // Verify persistence — read it back via raw SQL.
-  const row = await getRawClient(t)`
+    // Verify persistence — read it back via raw SQL.
+    const row = await getRawClient(t)`
     select question, status from ledger.assistant_sessions where id = ${session.id}
   `;
-  assert.equal(row[0]?.question, "Can I deduct this?");
-});
+    assert.equal(row[0]?.question, "Can I deduct this?");
+  },
+);
 ```
 
 - [ ] **Step 3: Run + commit**
@@ -2419,6 +2438,7 @@ an insert to ledger.assistant_sessions (table added in migration 0004).
 ### Task 23: refreshComplianceAlerts on PostgresLedgerStore
 
 **Files:**
+
 - Modify: `packages/persistence-postgres/src/store.ts`
 
 This is the longest method. Three logical phases inside one transaction:
@@ -2598,36 +2618,44 @@ import { detectComplianceIssues, today } from "@jpx-accounting/domain";
 Append to `tests/integration/postgres-ledger.test.ts`:
 
 ```ts
-test("refreshComplianceAlerts upserts detected and resolves stale", { skip: !process.env.SUPABASE_DB_URL }, async (t) => {
-  const store = await setupStore(t);
+test(
+  "refreshComplianceAlerts upserts detected and resolves stale",
+  { skip: !process.env.SUPABASE_DB_URL },
+  async (t) => {
+    const store = await setupStore(t);
 
-  // Seed: create an approved voucher missing supplier VAT — fires Rule 2.
-  // (Use the existing test helpers that approve a review and mutate the voucher
-  //  to clear supplierVatNumber. Implementation detail varies by helper API.)
-  await seedApprovedVoucherWithoutVat(store);
+    // Seed: create an approved voucher missing supplier VAT — fires Rule 2.
+    // (Use the existing test helpers that approve a review and mutate the voucher
+    //  to clear supplierVatNumber. Implementation detail varies by helper API.)
+    await seedApprovedVoucherWithoutVat(store);
 
-  const first = await store.refreshComplianceAlerts();
-  assert.ok(first.some((a) => a.kind === "missing-supplier-vat"));
+    const first = await store.refreshComplianceAlerts();
+    assert.ok(first.some((a) => a.kind === "missing-supplier-vat"));
 
-  // Now backfill the VAT number directly in the DB and refresh — alert resolves.
-  await getRawClient(t)`
+    // Now backfill the VAT number directly in the DB and refresh — alert resolves.
+    await getRawClient(t)`
     update ledger.vouchers
     set voucher_fields = jsonb_set(voucher_fields, '{supplierVatNumber}', '"SE556677889901"')
     where organization_id = 'org_test'
   `;
-  const second = await store.refreshComplianceAlerts();
-  const stillMissing = second.find((a) => a.kind === "missing-supplier-vat");
-  assert.equal(stillMissing?.status, "resolved");
-});
+    const second = await store.refreshComplianceAlerts();
+    const stillMissing = second.find((a) => a.kind === "missing-supplier-vat");
+    assert.equal(stillMissing?.status, "resolved");
+  },
+);
 
-test("refreshComplianceAlerts is idempotent (same input → same persisted set)", { skip: !process.env.SUPABASE_DB_URL }, async (t) => {
-  const store = await setupStore(t);
-  await seedApprovedVoucherWithoutVat(store);
-  const first = await store.refreshComplianceAlerts();
-  const second = await store.refreshComplianceAlerts();
-  assert.equal(first.length, second.length);
-  assert.deepEqual(first.map((a) => a.id).sort(), second.map((a) => a.id).sort());
-});
+test(
+  "refreshComplianceAlerts is idempotent (same input → same persisted set)",
+  { skip: !process.env.SUPABASE_DB_URL },
+  async (t) => {
+    const store = await setupStore(t);
+    await seedApprovedVoucherWithoutVat(store);
+    const first = await store.refreshComplianceAlerts();
+    const second = await store.refreshComplianceAlerts();
+    assert.equal(first.length, second.length);
+    assert.deepEqual(first.map((a) => a.id).sort(), second.map((a) => a.id).sort());
+  },
+);
 ```
 
 - [ ] **Step 3: Run + commit**
@@ -2649,6 +2677,7 @@ Clears resolved_at/resolved_by on upsert reopen (Rule 18).
 ### Task 24: getCompanySettings/putCompanySettings on PostgresLedgerStore
 
 **Files:**
+
 - Modify: `packages/persistence-postgres/src/store.ts`
 
 - [ ] **Step 1: Replace the stubs (PLAN CORRECTION — `this.defaults` and `tx.json` inside `begin`)**
@@ -2802,37 +2831,38 @@ Out of scope for this plan. See [`2026-05-27-deploy-to-main-port-plan.md`](./202
 
 **Spec coverage** — every gap surfaced in the port plan survey maps to a task:
 
-| Survey item | Plan task(s) |
-|---|---|
-| Cherry-pick CONVENTIONS.md | Task 1 |
-| Cherry-pick Phase 7 spec/plan | Task 2 |
-| Cherry-pick UI follow-ups | Task 3 |
-| Cherry-pick CLAUDE.md pointer + zodResolver fix | Task 4 |
-| Extend simulationRequestSchema | Task 6 |
-| Extend simulationRunSchema | Task 6 |
-| Extend complianceAlertSchema | Task 7 |
-| Add companySettingsSchema | Task 8 |
-| buildAssistantScaffold helper | Task 9 |
-| detectComplianceIssues | Task 10 |
-| simulateApprovals | Task 11 |
-| ReviewNotFoundError class | Task 12 |
-| Extend LedgerStore interface | Task 12 |
-| MemoryLedgerStore extensions | Task 13 |
-| Migration 0004 (compliance + assistant + settings tables) | Task 14 |
-| ReviewNotFoundError -> 404 mapping | Task 15 |
-| /api/compliance-watch/refresh real | Task 16 |
-| GET/PUT /api/settings/company | Task 17 |
-| /api/knowledge/query citation isolation | Task 18 |
-| PostgresLedgerStore.runSimulation real | Task 21 |
-| PostgresLedgerStore.answerAssistantQuestion | Task 22 |
-| PostgresLedgerStore.refreshComplianceAlerts | Task 23 |
-| PostgresLedgerStore.getCompanySettings/putCompanySettings | Task 24 |
+| Survey item                                               | Plan task(s) |
+| --------------------------------------------------------- | ------------ |
+| Cherry-pick CONVENTIONS.md                                | Task 1       |
+| Cherry-pick Phase 7 spec/plan                             | Task 2       |
+| Cherry-pick UI follow-ups                                 | Task 3       |
+| Cherry-pick CLAUDE.md pointer + zodResolver fix           | Task 4       |
+| Extend simulationRequestSchema                            | Task 6       |
+| Extend simulationRunSchema                                | Task 6       |
+| Extend complianceAlertSchema                              | Task 7       |
+| Add companySettingsSchema                                 | Task 8       |
+| buildAssistantScaffold helper                             | Task 9       |
+| detectComplianceIssues                                    | Task 10      |
+| simulateApprovals                                         | Task 11      |
+| ReviewNotFoundError class                                 | Task 12      |
+| Extend LedgerStore interface                              | Task 12      |
+| MemoryLedgerStore extensions                              | Task 13      |
+| Migration 0004 (compliance + assistant + settings tables) | Task 14      |
+| ReviewNotFoundError -> 404 mapping                        | Task 15      |
+| /api/compliance-watch/refresh real                        | Task 16      |
+| GET/PUT /api/settings/company                             | Task 17      |
+| /api/knowledge/query citation isolation                   | Task 18      |
+| PostgresLedgerStore.runSimulation real                    | Task 21      |
+| PostgresLedgerStore.answerAssistantQuestion               | Task 22      |
+| PostgresLedgerStore.refreshComplianceAlerts               | Task 23      |
+| PostgresLedgerStore.getCompanySettings/putCompanySettings | Task 24      |
 
 Out-of-scope (per port plan strategy doc): Track A IA web cherry-picks (PR-D, separate sprint), supa_audit migration (Supabase-specific, dropped per survey), rebuild-projections script (Supabase-specific, drop or rewrite later).
 
 **Placeholder scan:** every code block is complete and concrete; no "TBD", no "implement details here", no "similar to Task N" without repeating the code.
 
 **Type consistency:**
+
 - `ReviewNotFoundError(missingIds: string[])` constructor matches every throw site (Memory's runSimulation, Postgres's runSimulation).
 - `LedgerStore` interface signatures (`refreshComplianceAlerts`, `getCompanySettings`, `putCompanySettings`) match the implementations in MemoryLedgerStore, the stubs in PostgresLedgerStore (PR-B), and the real impls (PR-C).
 - `simulateApprovals(reviews, suggestions, vouchers, action)` signature matches both call sites (Memory's runSimulation, Postgres's runSimulation).
@@ -2841,6 +2871,7 @@ Out-of-scope (per port plan strategy doc): Track A IA web cherry-picks (PR-D, se
 - Migration 0004 columns match what `refreshComplianceAlerts` writes/reads.
 
 **Risks called out:**
+
 - Task 11 may need `buildPostingLines` extraction if main keeps it private — handled by Step 1 check.
 - Task 4 (zodResolver fix) is conditional on the file existing on main; instructions handle both cases.
 - Task 21 et seq require `SUPABASE_DB_URL` to actually run integration tests. The plan assumes the executing agent has access; if not, they need to flag and either provide credentials or merge based on type-checks alone.

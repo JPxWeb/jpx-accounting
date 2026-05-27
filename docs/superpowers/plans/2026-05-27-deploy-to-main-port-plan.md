@@ -22,42 +22,42 @@ This document captures the port strategy in tractable phases. Phase A (docs cher
 
 ## What lives where after the port
 
-| Concept | Lives on main today | Where deploy work lands |
-|---|---|---|
-| Canonical write store | `PostgresLedgerStore` (postgres-js direct, `sql.begin` transactions) | Extended with `refreshComplianceAlerts`, real `runSimulation`, `getCompanySettings`/`putCompanySettings`, `buildAssistantScaffold` delegation |
-| `LedgerStore` interface | Async, 14 methods | + `refreshComplianceAlerts`, + `getCompanySettings`, + `putCompanySettings` |
-| Migrations | NOT in `supabase/` (likely raw SQL in `packages/persistence-postgres/` — verify in Phase F) | New `compliance_alert_keys` and `projection_aggregates` migrations ported to main's runner |
-| Error handling | Typed envelope via `jsonError()` + branches in `onError` | `ReviewNotFoundError` added as domain class + onError branch returning the typed envelope |
-| Pure domain functions | `bas`, `rules`, `projections`, `hash-chain`, `ids` | + `assistant.ts`, `compliance.ts`, `simulation.ts` (architecture-neutral) |
-| Web app | Docker-deployed; ESLint stack; partial shadcn | + Track A IA shell, dock nav, Today/Books/Reports/Settings, zodResolver Zod-v4 fix |
-| Docs | DEV_STATUS, CLAUDE.md, architecture.md | + CONVENTIONS.md (26 rules), Phase 7 design spec + plan, UI follow-ups |
+| Concept                 | Lives on main today                                                                         | Where deploy work lands                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Canonical write store   | `PostgresLedgerStore` (postgres-js direct, `sql.begin` transactions)                        | Extended with `refreshComplianceAlerts`, real `runSimulation`, `getCompanySettings`/`putCompanySettings`, `buildAssistantScaffold` delegation |
+| `LedgerStore` interface | Async, 14 methods                                                                           | + `refreshComplianceAlerts`, + `getCompanySettings`, + `putCompanySettings`                                                                   |
+| Migrations              | NOT in `supabase/` (likely raw SQL in `packages/persistence-postgres/` — verify in Phase F) | New `compliance_alert_keys` and `projection_aggregates` migrations ported to main's runner                                                    |
+| Error handling          | Typed envelope via `jsonError()` + branches in `onError`                                    | `ReviewNotFoundError` added as domain class + onError branch returning the typed envelope                                                     |
+| Pure domain functions   | `bas`, `rules`, `projections`, `hash-chain`, `ids`                                          | + `assistant.ts`, `compliance.ts`, `simulation.ts` (architecture-neutral)                                                                     |
+| Web app                 | Docker-deployed; ESLint stack; partial shadcn                                               | + Track A IA shell, dock nav, Today/Books/Reports/Settings, zodResolver Zod-v4 fix                                                            |
+| Docs                    | DEV_STATUS, CLAUDE.md, architecture.md                                                      | + CONVENTIONS.md (26 rules), Phase 7 design spec + plan, UI follow-ups                                                                        |
 
 ---
 
 ## Cherry-pick classification (Phase 7 commits)
 
-| Commit | Subject | Class | Notes |
-|---|---|---|---|
-| `c3cea90` | docs(status): UI follow-ups | **CLEAN** | DEV_STATUS only |
-| `7fe05d4` | docs(conventions): 11 rules | **CLEAN** | CONVENTIONS Rules 15-26 |
-| `766cbc0` | fix: 15 second-pass review findings | **HEAVY** | Touches supabase-store; intent ports to PostgresLedgerStore |
-| `19ca3fa` | docs: CONVENTIONS.md 14 rules | **CLEAN** | CONVENTIONS Rules 1-14 |
-| `4da1883` | fix: 15 code-review findings | **HEAVY** | Touches supabase-store; intent ports |
-| `c98c7c3` | docs(status): Phase 7 landed | **CLEAN** | Rewrite for the port-aware status |
-| `072113a` | feat(api): /compliance-watch/refresh actually refreshes | **LIGHT** | Port to main's app.ts after refreshComplianceAlerts lands on PostgresLedgerStore |
-| `3daf7b2` | feat(domain): refreshComplianceAlerts on M+S+U | **LIGHT** Memory; **HEAVY** Postgres; **N/A** Supabase |
-| `69138f8` | feat(domain,supabase): alert schema + detection + dedup index | **LIGHT** (contracts + Memory + helper); **OBSOLETED** (Supabase migration → port to main's migration runner) |
-| `68a8f3b` | refactor(domain): shared buildAssistantScaffold | **LIGHT** | Add `assistant.ts` to main's domain |
-| `a3d318b` | feat(domain): real runSimulation in both stores | **LIGHT** Memory; **HEAVY** Postgres |
-| `6f080b3` | feat(supabase): enable supa_audit | **OBSOLETED** | No `supabase/` on main; main likely doesn't use supa_audit |
-| `b50f5ea` | fix(web): zodResolver Zod v4 overload bug | **CLEAN** | Web-only |
-| `4dec542` | feat(scripts): rebuild projections | **OBSOLETED** | Supabase-specific; rewrite as postgres-js script if needed |
-| `cd425d1` / `f3f6134` / `254a986` | docs(plan + spec) | **CLEAN** | Historical Phase 7 plan + spec |
-| `9c3f30c` | refactor(domain): date handling + audit attribution | **HEAVY** | Touches supabase-store |
-| `2f13b89` | fix(api,domain): NotImplemented→501; defense-in-depth scoping | **LIGHT** api; **HEAVY** supabase-store scoping → Postgres |
-| `a6c0d04` | docs(web): proxy rationale | **CLEAN** | Comment-only |
-| `d214e70` | refactor(api): LEDGER_STORE_UNAVAILABLE_REASON const | **LIGHT** | Small string-const dedup |
-| `0272f4c` | refactor(domain): shared today() helper | **LIGHT** | Clean port if main doesn't already have it |
+| Commit                            | Subject                                                       | Class                                                                                                         | Notes                                                                            |
+| --------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `c3cea90`                         | docs(status): UI follow-ups                                   | **CLEAN**                                                                                                     | DEV_STATUS only                                                                  |
+| `7fe05d4`                         | docs(conventions): 11 rules                                   | **CLEAN**                                                                                                     | CONVENTIONS Rules 15-26                                                          |
+| `766cbc0`                         | fix: 15 second-pass review findings                           | **HEAVY**                                                                                                     | Touches supabase-store; intent ports to PostgresLedgerStore                      |
+| `19ca3fa`                         | docs: CONVENTIONS.md 14 rules                                 | **CLEAN**                                                                                                     | CONVENTIONS Rules 1-14                                                           |
+| `4da1883`                         | fix: 15 code-review findings                                  | **HEAVY**                                                                                                     | Touches supabase-store; intent ports                                             |
+| `c98c7c3`                         | docs(status): Phase 7 landed                                  | **CLEAN**                                                                                                     | Rewrite for the port-aware status                                                |
+| `072113a`                         | feat(api): /compliance-watch/refresh actually refreshes       | **LIGHT**                                                                                                     | Port to main's app.ts after refreshComplianceAlerts lands on PostgresLedgerStore |
+| `3daf7b2`                         | feat(domain): refreshComplianceAlerts on M+S+U                | **LIGHT** Memory; **HEAVY** Postgres; **N/A** Supabase                                                        |
+| `69138f8`                         | feat(domain,supabase): alert schema + detection + dedup index | **LIGHT** (contracts + Memory + helper); **OBSOLETED** (Supabase migration → port to main's migration runner) |
+| `68a8f3b`                         | refactor(domain): shared buildAssistantScaffold               | **LIGHT**                                                                                                     | Add `assistant.ts` to main's domain                                              |
+| `a3d318b`                         | feat(domain): real runSimulation in both stores               | **LIGHT** Memory; **HEAVY** Postgres                                                                          |
+| `6f080b3`                         | feat(supabase): enable supa_audit                             | **OBSOLETED**                                                                                                 | No `supabase/` on main; main likely doesn't use supa_audit                       |
+| `b50f5ea`                         | fix(web): zodResolver Zod v4 overload bug                     | **CLEAN**                                                                                                     | Web-only                                                                         |
+| `4dec542`                         | feat(scripts): rebuild projections                            | **OBSOLETED**                                                                                                 | Supabase-specific; rewrite as postgres-js script if needed                       |
+| `cd425d1` / `f3f6134` / `254a986` | docs(plan + spec)                                             | **CLEAN**                                                                                                     | Historical Phase 7 plan + spec                                                   |
+| `9c3f30c`                         | refactor(domain): date handling + audit attribution           | **HEAVY**                                                                                                     | Touches supabase-store                                                           |
+| `2f13b89`                         | fix(api,domain): NotImplemented→501; defense-in-depth scoping | **LIGHT** api; **HEAVY** supabase-store scoping → Postgres                                                    |
+| `a6c0d04`                         | docs(web): proxy rationale                                    | **CLEAN**                                                                                                     | Comment-only                                                                     |
+| `d214e70`                         | refactor(api): LEDGER_STORE_UNAVAILABLE_REASON const          | **LIGHT**                                                                                                     | Small string-const dedup                                                         |
+| `0272f4c`                         | refactor(domain): shared today() helper                       | **LIGHT**                                                                                                     | Clean port if main doesn't already have it                                       |
 
 ### Earlier work (non-Phase-7)
 
@@ -65,7 +65,7 @@ This document captures the port strategy in tractable phases. Phase A (docs cher
 - **Supabase backend track** (commits like `efea3d0`, `736a5e6`, `9a1ba6c`, `fa5425f`): **OBSOLETED** — code is dead on main; CONCEPTS (per-request store, JWT claim scoping, defense-in-depth) need re-application against main's auth/store shape.
 - **a11y + tokens + radius** (~10 commits): **CLEAN** — web/tokens only.
 - **Chore (Husky, Biome, .editorconfig, Cursor rules)**: **LIGHT** — main has equivalents; may need conflict resolution.
-- **Auth claim hardening** (`f7fc5d6`, `c89c6be`): **HEAVY** — main rewrote `index.ts`; re-apply the *intent* (fail-closed on missing org/workspace, sentinel for `skipAuthVerification`) against main's auth shape.
+- **Auth claim hardening** (`f7fc5d6`, `c89c6be`): **HEAVY** — main rewrote `index.ts`; re-apply the _intent_ (fail-closed on missing org/workspace, sentinel for `skipAuthVerification`) against main's auth shape.
 
 ---
 
@@ -95,7 +95,7 @@ This document captures the port strategy in tractable phases. Phase A (docs cher
    - `254a986`, `f3f6134`, `cd425d1` — Phase 7 spec + plan + revision
    - `a6c0d04` — proxy rationale comment
    - `c98c7c3` — DEV_STATUS phase 7 marker (will need a tweak — see below)
-3. `c98c7c3` claims "Phase 7 Done" referencing the SupabaseLedgerStore impl that doesn't exist on main. Edit the DEV_STATUS update to instead reference: *"Phase 7 design + conventions landed via port; PostgresLedgerStore implementation tracked separately as the next sprint."*
+3. `c98c7c3` claims "Phase 7 Done" referencing the SupabaseLedgerStore impl that doesn't exist on main. Edit the DEV_STATUS update to instead reference: _"Phase 7 design + conventions landed via port; PostgresLedgerStore implementation tracked separately as the next sprint."_
 4. Open PR-1 → main. Should typecheck + lint clean.
 
 ### Phase B — Contracts (additive Zod fields)
@@ -197,48 +197,50 @@ This document captures the port strategy in tractable phases. Phase A (docs cher
 - `fa5425f` (Supabase config integration)
 - `6f080b3` (supa_audit migration)
 - `4dec542` (Supabase rebuild-projections script)
-- All `fix(domain,supabase): ...` commits — their *intent* lives on inside Phase D/E; the code is dead.
+- All `fix(domain,supabase): ...` commits — their _intent_ lives on inside Phase D/E; the code is dead.
 
 ---
 
 ## Risks and mitigations
 
-| Risk | Mitigation |
-|---|---|
-| Phase D port misses a subtle invariant from the original Supabase fixes | Cross-reference every PostgresLedgerStore method against deploy's `supabase-store.ts` line-by-line; use the per-commit diffs from `git log --oneline 9c3f30c..HEAD packages/domain/src/supabase-store.ts` as a checklist |
-| Migration runner mismatch (main may not have a tracked migration system at all) | Phase F starts with discovery; if main applies SQL ad-hoc, the port becomes a runbook entry instead of a migration file |
-| Track A IA cherry-picks conflict on Tailwind/shadcn versions | Cherry-pick web commits oldest-first and rebase Tailwind config changes manually; main may have absorbed equivalent migrations |
-| `complianceAlertSchema` widening breaks main's mock data | Defaults in `mapComplianceAlertRow ?? "info"`/`?? "open"` already handle this — port the mapper alongside the schema |
-| Test coverage regresses | Maintain a "tests must port" list per phase; don't merge a phase until its tests are green |
+| Risk                                                                            | Mitigation                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Phase D port misses a subtle invariant from the original Supabase fixes         | Cross-reference every PostgresLedgerStore method against deploy's `supabase-store.ts` line-by-line; use the per-commit diffs from `git log --oneline 9c3f30c..HEAD packages/domain/src/supabase-store.ts` as a checklist |
+| Migration runner mismatch (main may not have a tracked migration system at all) | Phase F starts with discovery; if main applies SQL ad-hoc, the port becomes a runbook entry instead of a migration file                                                                                                  |
+| Track A IA cherry-picks conflict on Tailwind/shadcn versions                    | Cherry-pick web commits oldest-first and rebase Tailwind config changes manually; main may have absorbed equivalent migrations                                                                                           |
+| `complianceAlertSchema` widening breaks main's mock data                        | Defaults in `mapComplianceAlertRow ?? "info"`/`?? "open"` already handle this — port the mapper alongside the schema                                                                                                     |
+| Test coverage regresses                                                         | Maintain a "tests must port" list per phase; don't merge a phase until its tests are green                                                                                                                               |
 
 ---
 
 ## Decision points for the user
 
 Before starting Phase B:
+
 - **Discovery:** confirm whether main's migration runner is `packages/persistence-postgres/migrations/` or something else (the survey couldn't tell)
 - **Auth shape:** check whether main's `services/api/src/index.ts` rewrite changed the `skipAuthVerification` sentinel pattern
 - **Track A IA status:** assess whether main already has a partial Today/Books/Reports shell or whether deploy's IA work fully ports
 - **Settings/company:** confirm if main has any company-settings work at all
 
 Before starting Phase D:
+
 - **Dedicated sprint or in-line execution?** Phase D alone is 3-4 hours of careful porting. A dedicated PR with its own design checkpoint is recommended.
 
 ---
 
 ## Total effort estimate
 
-| Phase | Effort | Risk |
-|---|---|---|
-| A (docs) | 30 min | None |
-| B (contracts) | 1 hr | Low |
-| C (domain pure + Memory) | 2 hr | Low |
-| D (PostgresLedgerStore) | 3-4 hr | **High** |
-| E (API routes) | 1 hr | Low |
-| F (migrations) | 1 hr | Medium |
-| G (web cherry-picks) | 2 hr | Medium |
-| H (tests) | 1 hr | Low |
-| **Total** | **~12 hr** | — |
+| Phase                    | Effort     | Risk     |
+| ------------------------ | ---------- | -------- |
+| A (docs)                 | 30 min     | None     |
+| B (contracts)            | 1 hr       | Low      |
+| C (domain pure + Memory) | 2 hr       | Low      |
+| D (PostgresLedgerStore)  | 3-4 hr     | **High** |
+| E (API routes)           | 1 hr       | Low      |
+| F (migrations)           | 1 hr       | Medium   |
+| G (web cherry-picks)     | 2 hr       | Medium   |
+| H (tests)                | 1 hr       | Low      |
+| **Total**                | **~12 hr** | —        |
 
 Phases A through C are landable as a single PR with low risk. Phase D should be its own PR with extra review. Phases E-H land together as a final PR that completes parity.
 

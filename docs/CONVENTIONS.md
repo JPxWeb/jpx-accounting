@@ -23,6 +23,7 @@ Each section names the rule, the failure pattern that motivates it, and the chec
 ## 2. Unit tests with mocked clients do not prove DB compatibility
 
 **Rule:** A unit test that uses a hand-rolled mock Supabase client cannot catch:
+
 - Missing columns in the target table
 - CHECK constraint mismatches
 - Index/conflict-target mismatches
@@ -164,6 +165,7 @@ $$;
 **Rule:** When implementing a `LedgerStore` method on both `MemoryLedgerStore` and `SupabaseLedgerStore`, the observable behavior (identity, ordering, idempotency, persistence semantics) must match. Add a parity test that calls the same method on both stores with the same input and asserts the responses are equivalent (modulo IDs that are inherently random).
 
 **The incident:** Initial Phase 7 implementations diverged:
+
 - `refreshComplianceAlerts`: Memory minted fresh `createId('alert')` IDs each refresh; Supabase preserved IDs via upsert
 - `refreshComplianceAlerts`: Memory wiped + re-detected; Supabase only inserted (never marked resolved)
 - `answerAssistantQuestion`: `getSnapshot().assistantExamples` ordering depends on insert-time precision in Supabase but is deterministic in Memory
@@ -225,13 +227,14 @@ Before requesting review on a PR that touches `packages/contracts/src/`, `supaba
 **The check:**
 
 - After fixing a function, grep for the same data-access pattern (`r.suggestion`, `voucher.createdAt`, etc.) elsewhere in the same file and across both store implementations.
-- The PR description's "what changed" section should explicitly call out: *"Applied to N call sites of this pattern; verified the remaining M sites do/do not need the same fix because <reason>."*
+- The PR description's "what changed" section should explicitly call out: _"Applied to N call sites of this pattern; verified the remaining M sites do/do not need the same fix because <reason>."_
 
 ---
 
 ## 16. Domain errors thrown from `LedgerStore` methods need explicit HTTP-status mapping
 
 **Rule:** A bare `throw new Error("...")` from a domain method that the API exposes will become a 500 with "Unexpected server error" from the catch-all in `services/api/src/app.ts`. For client-correctable failures (bad input, not-found, permission), throw either:
+
 - An `HTTPException(status, { message })` from Hono, OR
 - A dedicated error class with a matching branch in `app.onError` (pattern: see `LedgerStoreUnavailableError → 503`, `NotImplementedInSupabaseStore → 501`).
 
@@ -259,9 +262,7 @@ for (const alert of this.alerts) {
 }
 
 // RIGHT: replace in array with new objects (immutable update)
-this.alerts = this.alerts.map((alert) =>
-  shouldResolve(alert) ? { ...alert, status: "resolved" } : alert,
-);
+this.alerts = this.alerts.map((alert) => (shouldResolve(alert) ? { ...alert, status: "resolved" } : alert));
 ```
 
 **The check:**
@@ -397,6 +398,7 @@ const date = new Date(voucher.createdAt).toISOString().slice(0, 10);
 **Rule:** When an API method accepts an array of IDs, dedupe the input before length-checking or per-record processing. PostgreSQL's `.in(...)` operator deduplicates server-side; in-memory iteration in `MemoryLedgerStore` does not. Without explicit dedup at the boundary, the same input produces different results in demo vs normal mode.
 
 **The incident:** `runSimulation({ reviewIds: ["r1", "r1"], ... })`:
+
 - Memory: `this.reviews.get("r1")` returns the same review twice, `requestedReviews.length === input.reviewIds.length` passes the validation check, `simulateApprovals` iterates and doubles every debit/credit/vat delta.
 - Supabase: `.in("id", ["r1", "r1"])` returns one row, `reviews.length=1 !== input.reviewIds.length=2`, throws "not found".
 

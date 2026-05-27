@@ -29,29 +29,29 @@
 
 ## File Structure
 
-| File | Action | Tasks |
-|------|--------|-------|
-| `scripts/rebuild-projections.ts` | NEW — one-shot ops script | 1 |
-| `tests/unit/rebuild-projections.test.ts` | NEW | 1 |
-| `supabase/migrations/<ts>_enable_supa_audit.sql` | NEW | 2 |
-| `supabase/migrations/20260324000000_schema_v2.sql` | MODIFY — remove dead commented block | 2 |
-| `supabase/migrations/<ts>_compliance_alert_keys.sql` | NEW | 9 |
-| `packages/contracts/src/index.ts` | MODIFY — extend `SimulationRequest`, `SimulationRun`, `complianceAlertSchema` | 3, 8 |
-| `packages/domain/src/simulation.ts` | NEW — shared `simulateApprovals` pure function | 4 |
-| `packages/domain/src/assistant.ts` | NEW — shared `buildAssistantScaffold` pure function | 7 |
-| `packages/domain/src/compliance.ts` | NEW — shared `detectComplianceIssues` pure function | 8 |
-| `packages/domain/src/store.ts` | MODIFY — add `refreshComplianceAlerts` to interface; rewrite `runSimulation`; use `buildAssistantScaffold` | 4, 5, 7, 10 |
-| `packages/domain/src/supabase-store.ts` | MODIFY — rewrite `runSimulation`; use scaffold; new `refreshComplianceAlerts` | 6, 7, 11 |
-| `packages/domain/src/supabase-mappers.ts` | MODIFY — `mapComplianceAlertRow` reads the new columns | 9 |
-| `packages/domain/src/index.ts` | MODIFY — export `simulation`, `assistant`, `compliance` | 4, 7, 8 |
-| `services/api/src/store-factory.ts` | MODIFY — `UnavailableLedgerStore.refreshComplianceAlerts` | 10 |
-| `services/api/src/app.ts` | MODIFY — wire `POST /api/compliance-watch/refresh` to the real method | 12 |
-| `tests/unit/simulation.test.ts` | NEW | 4 |
-| `tests/unit/assistant.test.ts` | NEW | 7 |
-| `tests/unit/compliance.test.ts` | NEW | 8 |
-| `tests/unit/ledger-store.test.ts` | EXTEND | 5, 7, 10 |
-| `tests/unit/supabase-store.test.ts` | EXTEND | 6, 7, 11 |
-| `docs/DEV_STATUS.md` | MODIFY — mark Phase 7 items Done | 13 |
+| File                                                 | Action                                                                                                     | Tasks       |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------- |
+| `scripts/rebuild-projections.ts`                     | NEW — one-shot ops script                                                                                  | 1           |
+| `tests/unit/rebuild-projections.test.ts`             | NEW                                                                                                        | 1           |
+| `supabase/migrations/<ts>_enable_supa_audit.sql`     | NEW                                                                                                        | 2           |
+| `supabase/migrations/20260324000000_schema_v2.sql`   | MODIFY — remove dead commented block                                                                       | 2           |
+| `supabase/migrations/<ts>_compliance_alert_keys.sql` | NEW                                                                                                        | 9           |
+| `packages/contracts/src/index.ts`                    | MODIFY — extend `SimulationRequest`, `SimulationRun`, `complianceAlertSchema`                              | 3, 8        |
+| `packages/domain/src/simulation.ts`                  | NEW — shared `simulateApprovals` pure function                                                             | 4           |
+| `packages/domain/src/assistant.ts`                   | NEW — shared `buildAssistantScaffold` pure function                                                        | 7           |
+| `packages/domain/src/compliance.ts`                  | NEW — shared `detectComplianceIssues` pure function                                                        | 8           |
+| `packages/domain/src/store.ts`                       | MODIFY — add `refreshComplianceAlerts` to interface; rewrite `runSimulation`; use `buildAssistantScaffold` | 4, 5, 7, 10 |
+| `packages/domain/src/supabase-store.ts`              | MODIFY — rewrite `runSimulation`; use scaffold; new `refreshComplianceAlerts`                              | 6, 7, 11    |
+| `packages/domain/src/supabase-mappers.ts`            | MODIFY — `mapComplianceAlertRow` reads the new columns                                                     | 9           |
+| `packages/domain/src/index.ts`                       | MODIFY — export `simulation`, `assistant`, `compliance`                                                    | 4, 7, 8     |
+| `services/api/src/store-factory.ts`                  | MODIFY — `UnavailableLedgerStore.refreshComplianceAlerts`                                                  | 10          |
+| `services/api/src/app.ts`                            | MODIFY — wire `POST /api/compliance-watch/refresh` to the real method                                      | 12          |
+| `tests/unit/simulation.test.ts`                      | NEW                                                                                                        | 4           |
+| `tests/unit/assistant.test.ts`                       | NEW                                                                                                        | 7           |
+| `tests/unit/compliance.test.ts`                      | NEW                                                                                                        | 8           |
+| `tests/unit/ledger-store.test.ts`                    | EXTEND                                                                                                     | 5, 7, 10    |
+| `tests/unit/supabase-store.test.ts`                  | EXTEND                                                                                                     | 6, 7, 11    |
+| `docs/DEV_STATUS.md`                                 | MODIFY — mark Phase 7 items Done                                                                           | 13          |
 
 ---
 
@@ -62,6 +62,7 @@ The rebuild script is intentionally first: it touches no domain code, no contrac
 ### Task 1: One-shot rebuild script with dry-run default
 
 **Files:**
+
 - Create: `scripts/rebuild-projections.ts`
 - Create: `tests/unit/rebuild-projections.test.ts`
 
@@ -187,7 +188,12 @@ export function replayJournalLinesFromEvents(events: EventRow[], vouchersById: M
     if (!action || !suggestion || !event.aggregate_id) continue;
     const voucher = vouchersById.get(event.aggregate_id);
     if (!voucher) continue; // voucher hard-deleted (shouldn't happen but skip silently)
-    const postingLines = buildPostingLines(voucher as Parameters<typeof buildPostingLines>[0], suggestion, action, event.occurred_at);
+    const postingLines = buildPostingLines(
+      voucher as Parameters<typeof buildPostingLines>[0],
+      suggestion,
+      action,
+      event.occurred_at,
+    );
     for (const line of postingLines) {
       lines.push({
         organization_id: event.organization_id,
@@ -228,7 +234,11 @@ async function main() {
   const supabase = createClient(url, key, { auth: { persistSession: false } });
 
   // Pull events + vouchers, scoped if requested.
-  const eventsQuery = supabase.schema("ledger").from("events").select("*").order("sequence_number", { ascending: true });
+  const eventsQuery = supabase
+    .schema("ledger")
+    .from("events")
+    .select("*")
+    .order("sequence_number", { ascending: true });
   if (org) eventsQuery.eq("organization_id", org);
   if (workspace) eventsQuery.eq("workspace_id", workspace);
   const { data: events, error: eErr } = await eventsQuery;
@@ -245,9 +255,7 @@ async function main() {
     console.error(`Failed to read vouchers: ${vErr.message}`);
     process.exit(3);
   }
-  const vouchersById = new Map(
-    (vouchers ?? []).map((v) => [v.id, { id: v.id, voucherFields: v.voucher_fields }]),
-  );
+  const vouchersById = new Map((vouchers ?? []).map((v) => [v.id, { id: v.id, voucherFields: v.voucher_fields }]));
 
   const lines = replayJournalLinesFromEvents(events ?? [], vouchersById);
 
@@ -271,17 +279,32 @@ async function main() {
     const [orgId, wsId] = scope.split("/");
     // Truncate then re-insert. The aggregate trigger (hardening Task 9) only
     // fires on INSERT, so we must DELETE aggregates too and let inserts rebuild.
-    const del1 = await supabase.schema("projections").from("journal_entries").delete().eq("organization_id", orgId).eq("workspace_id", wsId);
+    const del1 = await supabase
+      .schema("projections")
+      .from("journal_entries")
+      .delete()
+      .eq("organization_id", orgId)
+      .eq("workspace_id", wsId);
     if (del1.error) {
       console.error(`Failed to clear journal_entries for ${scope}: ${del1.error.message}`);
       process.exit(4);
     }
-    const del2 = await supabase.schema("projections").from("account_balances").delete().eq("organization_id", orgId).eq("workspace_id", wsId);
+    const del2 = await supabase
+      .schema("projections")
+      .from("account_balances")
+      .delete()
+      .eq("organization_id", orgId)
+      .eq("workspace_id", wsId);
     if (del2.error) {
       console.error(`Failed to clear account_balances for ${scope}: ${del2.error.message}`);
       process.exit(4);
     }
-    const del3 = await supabase.schema("projections").from("vat_summary").delete().eq("organization_id", orgId).eq("workspace_id", wsId);
+    const del3 = await supabase
+      .schema("projections")
+      .from("vat_summary")
+      .delete()
+      .eq("organization_id", orgId)
+      .eq("workspace_id", wsId);
     if (del3.error) {
       console.error(`Failed to clear vat_summary for ${scope}: ${del3.error.message}`);
       process.exit(4);
@@ -335,6 +358,7 @@ git commit -m "feat(scripts): rebuild projections from ledger events (dry-run by
 ### Task 2: Enable supa_audit on the four mutable tables
 
 **Files:**
+
 - Create: `supabase/migrations/<ts>_enable_supa_audit.sql` (use `supabase migration new enable_supa_audit` to generate the timestamped filename)
 - Modify: `supabase/migrations/20260324000000_schema_v2.sql:374-378` (remove dead commented block)
 
@@ -393,7 +417,7 @@ Expected: all green (no code change; migration only).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/migrations/ 
+git add supabase/migrations/
 git commit -m "feat(supabase): enable supa_audit row-history on mutable ledger tables"
 ```
 
@@ -404,6 +428,7 @@ git commit -m "feat(supabase): enable supa_audit row-history on mutable ledger t
 ### Task 3: Extend SimulationRequest and SimulationRun contracts
 
 **Files:**
+
 - Modify: `packages/contracts/src/index.ts` (lines 204-210 for `simulationRunSchema`, 288-293 for `simulationRequestSchema`)
 - Test: `tests/unit/contracts-simulation.test.ts` (NEW)
 
@@ -428,21 +453,29 @@ test("simulationRequestSchema requires reviewIds and action", () => {
   assert.equal(ok.reviewIds.length, 2);
   assert.equal(ok.action, "approve");
 
-  assert.throws(() => simulationRequestSchema.parse({
-    actorId: "u",
-    title: "t",
-    scenario: "s",
-    reviewIds: [],
-    action: "approve",
-  }), /at least 1|min/i);
+  assert.throws(
+    () =>
+      simulationRequestSchema.parse({
+        actorId: "u",
+        title: "t",
+        scenario: "s",
+        reviewIds: [],
+        action: "approve",
+      }),
+    /at least 1|min/i,
+  );
 
-  assert.throws(() => simulationRequestSchema.parse({
-    actorId: "u",
-    title: "t",
-    scenario: "s",
-    reviewIds: ["r1"],
-    action: "delete",
-  }), /enum|invalid/i);
+  assert.throws(
+    () =>
+      simulationRequestSchema.parse({
+        actorId: "u",
+        title: "t",
+        scenario: "s",
+        reviewIds: ["r1"],
+        action: "delete",
+      }),
+    /enum|invalid/i,
+  );
 });
 
 test("simulationRunSchema requires balanceDelta and vatDelta", () => {
@@ -452,12 +485,8 @@ test("simulationRunSchema requires balanceDelta and vatDelta", () => {
     scenario: "s",
     outcomeSummary: "ok",
     affectedAccounts: ["6540", "2641", "1930"],
-    balanceDelta: [
-      { accountNumber: "6540", accountName: "IT", deltaDebit: 999.2, deltaCredit: 0 },
-    ],
-    vatDelta: [
-      { vatCode: "VAT25", deltaBase: 999.2, deltaAmount: 249.8 },
-    ],
+    balanceDelta: [{ accountNumber: "6540", accountName: "IT", deltaDebit: 999.2, deltaCredit: 0 }],
+    vatDelta: [{ vatCode: "VAT25", deltaBase: 999.2, deltaAmount: 249.8 }],
   });
   assert.equal(ok.balanceDelta.length, 1);
 });
@@ -518,17 +547,21 @@ export const simulationRunSchema = z.object({
   scenario: z.string(),
   outcomeSummary: z.string(),
   affectedAccounts: z.array(z.string()),
-  balanceDelta: z.array(z.object({
-    accountNumber: z.string(),
-    accountName: z.string(),
-    deltaDebit: z.number(),
-    deltaCredit: z.number(),
-  })),
-  vatDelta: z.array(z.object({
-    vatCode: z.string(),
-    deltaBase: z.number(),
-    deltaAmount: z.number(),
-  })),
+  balanceDelta: z.array(
+    z.object({
+      accountNumber: z.string(),
+      accountName: z.string(),
+      deltaDebit: z.number(),
+      deltaCredit: z.number(),
+    }),
+  ),
+  vatDelta: z.array(
+    z.object({
+      vatCode: z.string(),
+      deltaBase: z.number(),
+      deltaAmount: z.number(),
+    }),
+  ),
 });
 ```
 
@@ -555,6 +588,7 @@ Proceed to Task 4. The contract change commits together with the implementation 
 ### Task 4: simulateApprovals pure function
 
 **Files:**
+
 - Create: `packages/domain/src/simulation.ts`
 - Modify: `packages/domain/src/index.ts` (add export)
 - Test: `tests/unit/simulation.test.ts` (NEW)
@@ -617,12 +651,7 @@ const reviewFixture = (voucherId: string): ReviewTask => ({
 
 test("simulateApprovals computes balance delta and vat delta for approve", () => {
   const v = voucherFixture("v1");
-  const result = simulateApprovals(
-    [reviewFixture("v1")],
-    [suggestionFixture("v1")],
-    [v],
-    "approve",
-  );
+  const result = simulateApprovals([reviewFixture("v1")], [suggestionFixture("v1")], [v], "approve");
   // One voucher, approve → 3 posting lines aggregated by account:
   //   6540 debit 999.2, 2641 debit 249.8, 1930 credit 1249
   assert.equal(result.balanceDelta.length, 3);
@@ -638,12 +667,7 @@ test("simulateApprovals computes balance delta and vat delta for approve", () =>
 
 test("simulateApprovals book-without-vat zeroes the VAT line", () => {
   const v = voucherFixture("v1");
-  const result = simulateApprovals(
-    [reviewFixture("v1")],
-    [suggestionFixture("v1")],
-    [v],
-    "book-without-vat",
-  );
+  const result = simulateApprovals([reviewFixture("v1")], [suggestionFixture("v1")], [v], "book-without-vat");
   const vatLine = result.balanceDelta.find((b) => b.accountNumber === "2641");
   assert.equal(vatLine?.deltaDebit, 0);
 });
@@ -761,6 +785,7 @@ Continue to Task 5. The simulation work commits together at the end of Task 6.
 ### Task 5: MemoryLedgerStore.runSimulation uses simulateApprovals
 
 **Files:**
+
 - Modify: `packages/domain/src/store.ts` (the existing `runSimulation` method, around line 437)
 - Test: `tests/unit/ledger-store.test.ts` (append)
 
@@ -867,6 +892,7 @@ Proceed to Task 6.
 ### Task 6: SupabaseLedgerStore.runSimulation uses simulateApprovals
 
 **Files:**
+
 - Modify: `packages/domain/src/supabase-store.ts` (lines 740-742, the current `runSimulation` throw)
 - Test: `tests/unit/supabase-store.test.ts` (append)
 
@@ -1070,6 +1096,7 @@ git commit -m "feat(domain): real runSimulation projection diff in both stores"
 ### Task 7: buildAssistantScaffold shared helper
 
 **Files:**
+
 - Create: `packages/domain/src/assistant.ts`
 - Modify: `packages/domain/src/index.ts` (add export)
 - Modify: `packages/domain/src/store.ts` (`MemoryLedgerStore.answerAssistantQuestion`)
@@ -1234,6 +1261,7 @@ git commit -m "refactor(domain): shared buildAssistantScaffold; Supabase store s
 ### Task 8: Extend complianceAlertSchema; detectComplianceIssues pure function
 
 **Files:**
+
 - Modify: `packages/contracts/src/index.ts` (lines 225-231 for `complianceAlertSchema`)
 - Create: `packages/domain/src/compliance.ts`
 - Modify: `packages/domain/src/index.ts` (add export)
@@ -1321,7 +1349,10 @@ test("stale-blocked does NOT fire on day 7", () => {
 });
 
 test("missing-supplier-vat fires on approved voucher without supplierVatNumber", () => {
-  const v = voucherFixture({ status: "approved", voucherFields: { ...voucherFixture({}).voucherFields, supplierVatNumber: undefined } });
+  const v = voucherFixture({
+    status: "approved",
+    voucherFields: { ...voucherFixture({}).voucherFields, supplierVatNumber: undefined },
+  });
   const alerts = detectComplianceIssues([], [v], "2026-05-09");
   assert.equal(alerts.length, 1);
   assert.equal(alerts[0].kind, "missing-supplier-vat");
@@ -1329,7 +1360,10 @@ test("missing-supplier-vat fires on approved voucher without supplierVatNumber",
 });
 
 test("missing-supplier-vat does NOT fire on approved voucher WITH supplierVatNumber", () => {
-  const v = voucherFixture({ status: "approved", voucherFields: { ...voucherFixture({}).voucherFields, supplierVatNumber: "SE556677889901" } });
+  const v = voucherFixture({
+    status: "approved",
+    voucherFields: { ...voucherFixture({}).voucherFields, supplierVatNumber: "SE556677889901" },
+  });
   const alerts = detectComplianceIssues([], [v], "2026-05-09");
   assert.equal(alerts.length, 0);
 });
@@ -1428,7 +1462,8 @@ export function detectComplianceIssues(
       title: `Blocked voucher unresolved for >7 days (${voucher.voucherNumber})`,
       source: "internal/compliance",
       detectedAt,
-      impactSummary: "A voucher with mandatory missing data has been sitting in review for over a week. Resolve or book without VAT.",
+      impactSummary:
+        "A voucher with mandatory missing data has been sitting in review for over a week. Resolve or book without VAT.",
       kind: "stale-blocked",
       severity: "warning",
       status: "open",
@@ -1445,7 +1480,8 @@ export function detectComplianceIssues(
       title: `Approved voucher missing supplier VAT number (${voucher.voucherNumber})`,
       source: "Bokföringslagen / VAT requirement",
       detectedAt,
-      impactSummary: "Posted voucher has no supplier VAT number. Required for input-VAT deduction documentation under Skatteverket rules.",
+      impactSummary:
+        "Posted voucher has no supplier VAT number. Required for input-VAT deduction documentation under Skatteverket rules.",
       kind: "missing-supplier-vat",
       severity: "warning",
       status: "open",
@@ -1477,6 +1513,7 @@ The contract change in Step 3 leaves the existing `MemoryLedgerStore` seeded ale
 ### Task 9: Compliance alert dedup migration + mapper update
 
 **Files:**
+
 - Create: `supabase/migrations/<ts>_compliance_alert_keys.sql`
 - Modify: `packages/domain/src/supabase-mappers.ts` (`mapComplianceAlertRow`, lines 96-104)
 
@@ -1594,6 +1631,7 @@ git commit -m "feat(domain,supabase): compliance alert schema + detection rules 
 ### Task 10: Add refreshComplianceAlerts to LedgerStore interface + MemoryLedgerStore + UnavailableLedgerStore
 
 **Files:**
+
 - Modify: `packages/domain/src/store.ts` (`LedgerStore` interface; `MemoryLedgerStore.refreshComplianceAlerts`)
 - Modify: `services/api/src/store-factory.ts` (`UnavailableLedgerStore.refreshComplianceAlerts`)
 - Test: `tests/unit/ledger-store.test.ts` (append)
@@ -1685,6 +1723,7 @@ git commit -m "feat(domain): MemoryLedgerStore.refreshComplianceAlerts (idempote
 ### Task 11: SupabaseLedgerStore.refreshComplianceAlerts with upsert
 
 **Files:**
+
 - Modify: `packages/domain/src/supabase-store.ts` (add method)
 - Test: `tests/unit/supabase-store.test.ts` (append)
 
@@ -1755,7 +1794,10 @@ test("SupabaseLedgerStore.refreshComplianceAlerts upserts detected alerts and re
   const store = new SupabaseLedgerStore(client, { organizationId: "o", workspaceId: "w", userId: "u" });
 
   const alerts = await store.refreshComplianceAlerts();
-  assert.ok(alerts.some((a) => a.kind === "stale-blocked"), "stale-blocked alert produced");
+  assert.ok(
+    alerts.some((a) => a.kind === "stale-blocked"),
+    "stale-blocked alert produced",
+  );
   assert.equal(upserted.length, 1, "one alert upserted to DB");
   assert.equal(upserted[0].kind, "stale-blocked");
   assert.equal(upserted[0].target_id, "v1");
@@ -1854,6 +1896,7 @@ git commit -m "feat(domain): SupabaseLedgerStore.refreshComplianceAlerts (idempo
 ### Task 12: Wire `/api/compliance-watch/refresh` to call the real method
 
 **Files:**
+
 - Modify: `services/api/src/app.ts` (lines 251-253)
 
 The existing route returns `getSnapshot().alerts` (a passive read). Change it to call `refreshComplianceAlerts()` so the endpoint actually does what its name suggests.
@@ -1900,6 +1943,7 @@ git commit -m "feat(api): /api/compliance-watch/refresh actually refreshes (call
 ### Task 13: Update DEV_STATUS.md
 
 **Files:**
+
 - Modify: `docs/DEV_STATUS.md`
 
 - [ ] **Step 1: Update the Track B Phase 7 row**
@@ -1941,27 +1985,28 @@ After Task 13 commits, verify the sprint is shippable end-to-end:
 
 **Spec coverage** — every spec section maps to a task:
 
-| Spec section | Task(s) |
-|---|---|
-| Piece 1: Projection rebuild script | 1 |
-| Piece 2: supa_audit migration | 2 |
-| Piece 3: Real runSimulation (contract change) | 3 |
-| Piece 3: simulateApprovals pure function | 4 |
-| Piece 3: MemoryLedgerStore.runSimulation rewrite | 5 |
-| Piece 3: SupabaseLedgerStore.runSimulation rewrite | 6 |
-| Piece 4: buildAssistantScaffold shared helper | 7 |
-| Piece 4: Compliance contract extension + detectComplianceIssues | 8 |
-| Piece 4: Compliance alert keys migration + mapper | 9 |
-| Piece 4: refreshComplianceAlerts on Memory + Unavailable | 10 |
-| Piece 4: refreshComplianceAlerts on Supabase | 11 |
-| Piece 4: Route wiring | 12 |
-| Doc updates | 13 |
+| Spec section                                                    | Task(s) |
+| --------------------------------------------------------------- | ------- |
+| Piece 1: Projection rebuild script                              | 1       |
+| Piece 2: supa_audit migration                                   | 2       |
+| Piece 3: Real runSimulation (contract change)                   | 3       |
+| Piece 3: simulateApprovals pure function                        | 4       |
+| Piece 3: MemoryLedgerStore.runSimulation rewrite                | 5       |
+| Piece 3: SupabaseLedgerStore.runSimulation rewrite              | 6       |
+| Piece 4: buildAssistantScaffold shared helper                   | 7       |
+| Piece 4: Compliance contract extension + detectComplianceIssues | 8       |
+| Piece 4: Compliance alert keys migration + mapper               | 9       |
+| Piece 4: refreshComplianceAlerts on Memory + Unavailable        | 10      |
+| Piece 4: refreshComplianceAlerts on Supabase                    | 11      |
+| Piece 4: Route wiring                                           | 12      |
+| Doc updates                                                     | 13      |
 
 Spec items explicitly out of scope (`getCloseRun` real impl, real AI advisor, bank-line rule, server-side scheduling, web UI) are NOT included.
 
 **Placeholder scan:** no "TBD"/"add error handling"/"similar to Task N"/"fill in details" patterns. Every code block, command, and assertion is complete and concrete.
 
 **Type consistency:**
+
 - `simulateApprovals` signature (Task 4) matches its imports in Tasks 5 and 6 (`reviews, suggestions, vouchers, action`).
 - `buildAssistantScaffold(question)` signature (Task 7) matches both store call sites.
 - `detectComplianceIssues(reviews, vouchers, today)` signature (Task 8) matches Tasks 10 and 11 call sites.
@@ -1970,6 +2015,7 @@ Spec items explicitly out of scope (`getCloseRun` real impl, real AI advisor, ba
 - `SimulationRequest`/`SimulationRun` extension (Task 3) match both store implementations (Tasks 5, 6) and the simulation pure function's return type (Task 4).
 
 **Test count progression** (starting from ~39 after `pnpm install` resolves):
+
 - Task 1: +2 (rebuild-projections tests)
 - Task 3: +2 (contracts-simulation tests)
 - Task 4: +4 (simulation tests)
