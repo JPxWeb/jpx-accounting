@@ -29,6 +29,7 @@ import {
   buildEventHash,
   buildExtractedFields,
   buildJournal,
+  buildPostingLines,
   buildVat,
   createId,
   detectComplianceIssues,
@@ -85,57 +86,9 @@ type EventInput = {
   payload: Record<string, unknown>;
 };
 
-// `buildExtractedFields`, `guessSupplier`, `guessAccountingMethod`, and
-// `initialLedgerLines` are now imported from `@jpx-accounting/domain` so the
-// memory and postgres stores stay in lockstep. See CLAUDE.md note on store parity.
-
-function buildPostingLines(
-  voucher: Voucher,
-  suggestion: AccountingSuggestion,
-  action: "approve" | "book-without-vat",
-  occurredAt: string,
-): LedgerLine[] {
-  const amount = voucher.voucherFields.grossAmount ?? 0;
-  const netAmount = voucher.voucherFields.netAmount ?? amount;
-  const vatAmount = action === "book-without-vat" ? 0 : (voucher.voucherFields.vatAmount ?? 0);
-  const description = voucher.voucherFields.description ?? "Reviewed voucher";
-
-  return [
-    {
-      voucherId: voucher.id,
-      accountNumber: suggestion.accountNumber,
-      accountName: suggestion.accountName,
-      description,
-      debit: netAmount,
-      credit: 0,
-      vatCode: suggestion.vatCode,
-      bookedAt: occurredAt,
-      deductible: action !== "book-without-vat",
-    },
-    {
-      voucherId: voucher.id,
-      accountNumber: "2641",
-      accountName: "Debiterad ingående moms",
-      description: `${description} VAT`,
-      debit: vatAmount,
-      credit: 0,
-      vatCode: suggestion.vatCode,
-      bookedAt: occurredAt,
-      deductible: action !== "book-without-vat",
-    },
-    {
-      voucherId: voucher.id,
-      accountNumber: "1930",
-      accountName: "Företagskonto",
-      description,
-      debit: 0,
-      credit: amount,
-      vatCode: "NA",
-      bookedAt: occurredAt,
-      deductible: false,
-    },
-  ];
-}
+// `buildExtractedFields`, `guessSupplier`, `guessAccountingMethod`,
+// `initialLedgerLines`, and `buildPostingLines` are now imported from
+// `@jpx-accounting/domain` so the memory and postgres stores stay in lockstep.
 
 // ---------------------------------------------------------------------------
 // Row → domain mapping helpers

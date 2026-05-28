@@ -8,13 +8,13 @@ Each section names the rule, the failure pattern that motivates it, and the chec
 
 ## 1. Schema-contract sync: a Zod field that lands in the DB must have a DB column
 
-**Rule:** Whenever a field is added to a Zod schema that is read from or written to a `SupabaseLedgerStore` table, a migration must add (or already provide) the matching DB column with a compatible type. Confirm both directions: the column exists for writes, and the column matches the enum/CHECK/NOT NULL constraints the schema implies.
+**Rule:** Whenever a field is added to a Zod schema that is read from or written to a `PostgresLedgerStore` table, a migration must add (or already provide) the matching DB column with a compatible type. Confirm both directions: the column exists for writes, and the column matches the enum/CHECK/NOT NULL constraints the schema implies.
 
-**The incident:** Phase 7 extended `complianceAlertSchema` with `severity`, `body`, `status` enum, etc. The upsert payload included `severity` and `body` columns that no migration ever added. Unit tests passed because the mock Supabase client doesn't validate column existence. Only a real-DB call would have caught it — and `pnpm test:integration` only runs when `SUPABASE_URL` is set.
+**The incident:** Phase 7 extended `complianceAlertSchema` with `severity`, `body`, `status` enum, etc. The upsert payload included `severity` and `body` columns that no migration ever added. Unit tests passed because the in-memory store doesn't validate column existence. Only a real-DB call would have caught it — and `pnpm test:integration` only runs when `SUPABASE_DB_URL` is set.
 
 **The check:**
 
-- When adding/changing a Zod schema field, grep the codebase for the schema name and trace every write path. If a write touches a Supabase table, list the columns it writes; cross-reference against `supabase/migrations/*.sql`.
+- When adding/changing a Zod schema field, grep the codebase for the schema name and trace every write path. If a write touches a Postgres table, list the columns it writes; cross-reference against `infra/supabase/migrations/*.sql`.
 - For any contract enum that's also enforced by a DB CHECK constraint (e.g. `status`), the Zod enum members must be a subset of (or equal to) the CHECK members. **Pre-existing data can outlive a narrowing.** Widen the contract before deploying, narrow the DB CHECK in a separate migration only after the data is confirmed clean.
 - If you cannot run integration tests against a real DB, the schema-change PR description must state which columns/tables were touched and what manual SQL check was run.
 
@@ -22,7 +22,7 @@ Each section names the rule, the failure pattern that motivates it, and the chec
 
 ## 2. Unit tests with mocked clients do not prove DB compatibility
 
-**Rule:** A unit test that uses a hand-rolled mock Supabase client cannot catch:
+**Rule:** A unit test that exercises `MemoryLedgerStore` does not prove `PostgresLedgerStore` compatibility. The memory store accepts any shape and never touches the schema, so it cannot catch:
 
 - Missing columns in the target table
 - CHECK constraint mismatches
@@ -30,27 +30,27 @@ Each section names the rule, the failure pattern that motivates it, and the chec
 - Trigger interactions
 - RLS policy effects
 
-**The incident:** Three production-breaking bugs in Phase 7 (missing columns, narrowed enum, partial-index ON CONFLICT) all had passing unit tests because the mock client accepts any payload and returns whatever the test wires up.
+**The incident:** Three production-breaking bugs in Phase 7 (missing columns, narrowed enum, partial-index ON CONFLICT) all had passing unit tests because the in-memory store accepts any payload and returns whatever the test wires up.
 
 **The check:**
 
 - Any change that writes to a NEW column, uses a NEW conflict target, or relies on a NEW CHECK constraint MUST be backed by at least one of:
-  - An integration test in `tests/integration/` exercised against a local Supabase (`pnpm test:integration` with `SUPABASE_URL` set)
+  - An integration test in `tests/integration/` exercised against a real Postgres (`pnpm test:integration` with `SUPABASE_DB_URL` set)
   - A documented manual smoke test in the PR description (raw SQL or `node -e` snippet)
-- PR review checklist: for every modified Supabase write path, ask "does any test other than the mock-client one actually exercise this?"
+- PR review checklist: for every modified Postgres write path, ask "does any test other than the in-memory store actually exercise this?"
 
 ---
 
-## 3. Partial unique indexes cannot be `ON CONFLICT` targets via PostgREST
+## 3. Partial unique indexes cannot be `ON CONFLICT` targets
 
-**Rule:** Do not use `CREATE UNIQUE INDEX ... WHERE <predicate>` as the conflict target for a Supabase upsert. PostgREST's `onConflict` option only accepts column names; it cannot express the `WHERE` predicate that Postgres requires for partial-index inference. The upsert will fail with `42P10: no unique or exclusion constraint matching the ON CONFLICT specification`.
+**Rule:** Do not use `CREATE UNIQUE INDEX ... WHERE <predicate>` as the conflict target for an upsert. The `ON CONFLICT` clause requires column names that match a full unique index — partial indexes are not inferable. The upsert fails with `42P10: no unique or exclusion constraint matching the ON CONFLICT specification`. This applied originally under PostgREST (which only accepts column names) and still applies under direct `postgres-js` queries.
 
-**The incident:** Phase 7's `ledger_alerts_dedup_uidx` was created with `WHERE target_id IS NOT NULL`. The Supabase upsert specified `onConflict: "organization_id,workspace_id,kind,target_id"` and failed in real DB.
+**The incident:** Phase 7's `ledger_alerts_dedup_uidx` was created with `WHERE target_id IS NOT NULL`. The upsert specified the four columns as conflict target and failed in real DB.
 
 **The pattern that works:**
 
-- Use a FULL unique index (no `WHERE`). PostgreSQL's default `NULLS DISTINCT` means rows with a NULL column still don't collide, so you typically don't need the partial predicate at all.
-- If you genuinely need different uniqueness rules for NULL vs non-NULL, use a sentinel value or a separate column instead of a partial index.
+- Use a FULL unique index (no `WHERE`). With Postgres 15+ and `NULLS NOT DISTINCT`, rows with a NULL column DO collide — exactly the dedup behavior we want. Migration `0004` uses this.
+- If you need different uniqueness rules for NULL vs non-NULL on older Postgres, use a sentinel value or a separate column instead of a partial index.
 
 ---
 
@@ -93,7 +93,7 @@ const isMain = argv1 !== undefined && import.meta.url === pathToFileURL(argv1).h
 
 **The check:**
 
-- A plan task that changes `LedgerStore` interface lists every implementer (`MemoryLedgerStore`, `SupabaseLedgerStore`, `UnavailableLedgerStore`, any test fakes) and commits all of them together.
+- A plan task that changes `LedgerStore` interface lists every implementer (`MemoryLedgerStore`, `PostgresLedgerStore`, `UnavailableLedgerStore`, any test fakes) and commits all of them together.
 - Same for Zod schemas used by the API route validator: the route's `parseBody(...)` call site, the demo-mode behavior, and the production-mode behavior all need to land atomically.
 
 ---
@@ -152,7 +152,7 @@ $$;
 
 **Rule:** Routes that return citation/source metadata in a regulated-audit context (Bokföringslagen, GDPR provenance) must never substitute another flow's citations as a placeholder. Return `[]` honestly when no citations are available.
 
-**The incident:** `/api/knowledge/query` returned `snapshot.assistantExamples[0]?.citations ?? []`. While the SupabaseStore returned `citations: []`, the fallback evaluated to `[]` and the bug was invisible. After Phase 7's assistant scaffold landed a real citation, every subsequent `/api/knowledge/query` call attributed the scaffold's "Internal architecture policy" citation to arbitrary knowledge queries — wrong provenance in an audit-relevant code path.
+**The incident:** `/api/knowledge/query` returned `snapshot.assistantExamples[0]?.citations ?? []`. While the persistence store returned `citations: []`, the fallback evaluated to `[]` and the bug was invisible. After Phase 7's assistant scaffold landed a real citation, every subsequent `/api/knowledge/query` call attributed the scaffold's "Internal architecture policy" citation to arbitrary knowledge queries — wrong provenance in an audit-relevant code path.
 
 **The check:**
 
@@ -160,19 +160,19 @@ $$;
 
 ---
 
-## 11. Store parity: Memory and Supabase must behave the same for the same `LedgerStore` method
+## 11. Store parity: Memory and Postgres must behave the same for the same `LedgerStore` method
 
-**Rule:** When implementing a `LedgerStore` method on both `MemoryLedgerStore` and `SupabaseLedgerStore`, the observable behavior (identity, ordering, idempotency, persistence semantics) must match. Add a parity test that calls the same method on both stores with the same input and asserts the responses are equivalent (modulo IDs that are inherently random).
+**Rule:** When implementing a `LedgerStore` method on both `MemoryLedgerStore` and `PostgresLedgerStore`, the observable behavior (identity, ordering, idempotency, persistence semantics) must match. Add a parity test that calls the same method on both stores with the same input and asserts the responses are equivalent (modulo IDs that are inherently random).
 
 **The incident:** Initial Phase 7 implementations diverged:
 
-- `refreshComplianceAlerts`: Memory minted fresh `createId('alert')` IDs each refresh; Supabase preserved IDs via upsert
-- `refreshComplianceAlerts`: Memory wiped + re-detected; Supabase only inserted (never marked resolved)
-- `answerAssistantQuestion`: `getSnapshot().assistantExamples` ordering depends on insert-time precision in Supabase but is deterministic in Memory
+- `refreshComplianceAlerts`: Memory minted fresh `createId('alert')` IDs each refresh; Postgres preserved IDs via upsert
+- `refreshComplianceAlerts`: Memory wiped + re-detected; Postgres only inserted (never marked resolved)
+- `answerAssistantQuestion`: `getSnapshot().assistantExamples` ordering depends on insert-time precision in Postgres but is deterministic in Memory
 
 **The check:**
 
-- For each new `LedgerStore` method, the test suite should include at least one assertion that compares Memory and Supabase outputs for the same input (using the existing mock-client pattern for Supabase). If the outputs intentionally differ, document why.
+- For each new `LedgerStore` method, the test suite should include at least one assertion that compares Memory and Postgres outputs for the same input. The Postgres side is exercised by `pnpm test:integration` when `SUPABASE_DB_URL` is set; the Memory side runs in `pnpm test:unit`. If the outputs intentionally differ, document why.
 - Use deterministic IDs derived from the dedup key when the conceptual entity has a natural key (e.g. `alert_<kind>_<targetId>` for compliance alerts).
 
 ---
@@ -206,15 +206,15 @@ if (Number.isNaN(ms)) throw new Error(`unparseable timestamp ${JSON.stringify(s)
 
 ## 14. PR checklist before merging schema or contract changes
 
-Before requesting review on a PR that touches `packages/contracts/src/`, `supabase/migrations/`, or `packages/domain/src/{store,supabase-store}.ts`:
+Before requesting review on a PR that touches `packages/contracts/src/`, `infra/supabase/migrations/`, `packages/domain/src/store.ts`, or `packages/persistence-postgres/src/store.ts`:
 
 - [ ] `pnpm typecheck && pnpm typecheck:tests && pnpm test:unit` green
-- [ ] `pnpm test:integration` run (or noted as not-applicable) against a local Supabase if any write path changed
+- [ ] `pnpm test:integration` run (or noted as not-applicable) against a real Postgres if any write path changed
 - [ ] Every modified Zod schema's writers traced; columns/CHECKs confirmed compatible (Rule 1)
-- [ ] Every modified `LedgerStore` interface method implemented on Memory + Supabase + Unavailable (Rule 6) with parity test (Rule 11)
+- [ ] Every modified `LedgerStore` interface method implemented on Memory + Postgres + Unavailable (Rule 6) with parity test (Rule 11)
 - [ ] E2E spec updated for any API-route schema change (Rule 5)
 - [ ] Any new `CREATE EXTENSION` wrapped in `DO ... EXCEPTION` (Rule 9)
-- [ ] PR description states which migrations need pre-flight verification on hosted Supabase
+- [ ] PR description states which migrations need pre-flight verification on hosted Postgres
 
 ---
 
@@ -222,7 +222,7 @@ Before requesting review on a PR that touches `packages/contracts/src/`, `supaba
 
 **Rule:** When a bug is found in one code path, search the repo for the same anti-pattern in sibling paths and apply the fix symmetrically — or document in the commit why it doesn't apply. A targeted fix that leaves an identical bug in a parallel function is worse than no fix at all, because reviewers stop looking.
 
-**The incident:** The first review surfaced "Supabase `refreshComplianceAlerts` doesn't hydrate suggestions for reviews with null embedded suggestion". The fix added hydration to `refreshComplianceAlerts`. But `runSimulation` in the same file has the same `reviews.map(r => r.suggestion)` pattern and the same null-embed silent skip — the fix was not applied symmetrically. The second review caught it; it would have shipped otherwise.
+**The incident:** The first review surfaced "Postgres `refreshComplianceAlerts` doesn't hydrate suggestions for reviews with null embedded suggestion". The fix added hydration to `refreshComplianceAlerts`. But `runSimulation` in the same file has the same `reviews.map(r => r.suggestion)` pattern and the same null-embed silent skip — the fix was not applied symmetrically. The second review caught it; it would have shipped otherwise.
 
 **The check:**
 
@@ -236,7 +236,7 @@ Before requesting review on a PR that touches `packages/contracts/src/`, `supaba
 **Rule:** A bare `throw new Error("...")` from a domain method that the API exposes will become a 500 with "Unexpected server error" from the catch-all in `services/api/src/app.ts`. For client-correctable failures (bad input, not-found, permission), throw either:
 
 - An `HTTPException(status, { message })` from Hono, OR
-- A dedicated error class with a matching branch in `app.onError` (pattern: see `LedgerStoreUnavailableError → 503`, `NotImplementedInSupabaseStore → 501`).
+- A dedicated error class with a matching branch in `app.onError` (pattern: see `LedgerStoreUnavailableError → 503`, `ReviewNotFoundError → 404`).
 
 **The incident:** `runSimulation`'s new "review(s) not found in this workspace" check threw a vanilla Error. The route at `/api/simulations/run` has no try/catch, the global error handler doesn't recognize the error type, callers see opaque 500s for what is really a 404/422.
 
@@ -300,7 +300,7 @@ end $$;
 **The incidents:**
 
 - Fix attempt for finding #1 (the original review) added `severity text not null default 'info' check (severity in (...))` to an `add column if not exists`. CHECK silently skips on re-apply.
-- Fix attempt for finding #8 (Supabase resolve→reopen) doesn't clear `resolved_at`/`resolved_by` in the upsert payload, leaving rows status='open' with non-null resolution metadata.
+- Fix attempt for finding #8 (Postgres resolve→reopen) doesn't clear `resolved_at`/`resolved_by` in the upsert payload, leaving rows status='open' with non-null resolution metadata.
 - The dedup unique index without `NULLS NOT DISTINCT` works only because no current detector emits a null `target_id`.
 
 ---
@@ -336,7 +336,7 @@ end $$;
 
 **Rule:** When a method auto-mutates state in response to a system condition (refresh, scheduled task, projection rebuild), the audit attribution (`resolved_by`, `updated_by`, `actor_id`) must NOT use the API caller's `ctx.userId`. Use a sentinel like `"system:auto-resolver"` or a separate column flagging the action as automated. The caller triggered a refresh, not a resolution decision.
 
-**The incident:** `SupabaseLedgerStore.refreshComplianceAlerts` sets `resolved_by: this.ctx.userId` when auto-marking alerts as resolved. The DB records the human who called `POST /api/compliance-watch/refresh` as having resolved every alert that the refresh detected as no-longer-applicable. In 7-year Bokföringslagen audit replay, this looks like the user made N resolution decisions.
+**The incident:** `PostgresLedgerStore.refreshComplianceAlerts` sets `resolved_by: this.ctx.userId` when auto-marking alerts as resolved. The DB records the human who called `POST /api/compliance-watch/refresh` as having resolved every alert that the refresh detected as no-longer-applicable. In 7-year Bokföringslagen audit replay, this looks like the user made N resolution decisions.
 
 **The pattern:**
 
@@ -400,7 +400,7 @@ const date = new Date(voucher.createdAt).toISOString().slice(0, 10);
 **The incident:** `runSimulation({ reviewIds: ["r1", "r1"], ... })`:
 
 - Memory: `this.reviews.get("r1")` returns the same review twice, `requestedReviews.length === input.reviewIds.length` passes the validation check, `simulateApprovals` iterates and doubles every debit/credit/vat delta.
-- Supabase: `.in("id", ["r1", "r1"])` returns one row, `reviews.length=1 !== input.reviewIds.length=2`, throws "not found".
+- Postgres: `WHERE id IN ('r1','r1')` returns one row, `reviews.length=1 !== input.reviewIds.length=2`, throws "not found".
 
 Same input, different behavior across runtime modes. Either is correct; the divergence is the bug.
 

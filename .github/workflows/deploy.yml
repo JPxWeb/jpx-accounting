@@ -115,9 +115,12 @@ jobs:
             environmentName=dev
             runtimeMode=${{ inputs.runtimeMode || 'normal' }}
             webDockerImage=${{ env.WEB_IMAGE }}:${{ github.sha }}
-            supabaseUrl=${{ secrets.SUPABASE_URL }}
-            supabaseAnonKey=${{ secrets.SUPABASE_ANON_KEY }}
-            supabaseServiceRoleKey=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+            supabaseDbUrl=${{ secrets.SUPABASE_DB_URL }}
+            azureOpenaiEndpoint=${{ secrets.AZURE_OPENAI_ENDPOINT }}
+            azureOpenaiApiKey=${{ secrets.AZURE_OPENAI_API_KEY }}
+            azureOpenaiModel=${{ secrets.AZURE_OPENAI_MODEL }}
+            azureDocumentIntelligenceEndpoint=${{ secrets.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT }}
+            azureDocumentIntelligenceApiKey=${{ secrets.AZURE_DOCUMENT_INTELLIGENCE_API_KEY }}
           failOnStdErr: false
 
       # ---- Deploy API (zip deploy, unchanged) ----
