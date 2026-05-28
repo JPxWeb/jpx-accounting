@@ -15,11 +15,18 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ["finance", "productivity", "business"],
     share_target: {
       action: "/share",
-      method: "GET",
+      method: "POST",
+      enctype: "multipart/form-data",
       params: {
         title: "title",
         text: "text",
         url: "url",
+        files: [
+          {
+            name: "files",
+            accept: ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"],
+          },
+        ],
       },
     },
   };

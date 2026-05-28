@@ -27,11 +27,14 @@ import {
   buildBalances,
   buildDeterministicSuggestion,
   buildEventHash,
+  buildExtractedFields,
   buildJournal,
   buildVat,
   createId,
   detectComplianceIssues,
   evaluateVoucherRules,
+  guessAccountingMethod,
+  initialLedgerLines,
   nowIso,
   ReviewNotFoundError,
   simulateApprovals,
@@ -82,94 +85,9 @@ type EventInput = {
   payload: Record<string, unknown>;
 };
 
-// ---------------------------------------------------------------------------
-// Helpers copied verbatim from MemoryLedgerStore (packages/domain/src/store.ts).
-// They are not exported from `@jpx-accounting/domain`, so we duplicate them here
-// rather than fork the reference. The orchestrator will refactor to share these
-// later. KEEP THIS BLOCK IN SYNC with the memory store.
-// ---------------------------------------------------------------------------
-
-function guessSupplier(input: EvidenceCreateInput) {
-  const value = `${input.title} ${input.originalFilename} ${input.extractedText ?? ""}`.toLowerCase();
-  if (value.includes("microsoft")) return "Microsoft Ireland";
-  if (value.includes("openai")) return "OpenAI Ireland";
-  if (value.includes("ica")) return "ICA Maxi";
-  if (value.includes("sl")) return "Storstockholms Lokaltrafik";
-  return "Unclassified supplier";
-}
-
-function buildExtractedFields(input: EvidenceCreateInput): ExtractedField[] {
-  return [
-    { key: "supplierName", label: "Supplier", value: guessSupplier(input), confidence: 0.71, required: true },
-    {
-      key: "receiptDate",
-      label: "Receipt date",
-      value: new Date().toISOString().slice(0, 10),
-      confidence: 0.98,
-      required: true,
-    },
-    {
-      key: "transactionDate",
-      label: "Transaction date",
-      value: new Date().toISOString().slice(0, 10),
-      confidence: 0.85,
-      required: false,
-    },
-    { key: "grossAmount", label: "Gross amount", value: "1249.00", confidence: 0.84, required: true },
-    {
-      key: "invoiceNumber",
-      label: "Invoice number",
-      value: input.originalFilename.replace(/\W+/g, "-"),
-      confidence: 0.61,
-      required: false,
-    },
-    { key: "supplierVatNumber", label: "VAT number", value: "SE556677889901", confidence: 0.51, required: false },
-  ];
-}
-
-function guessAccountingMethod(input: EvidenceCreateInput): AccountingMethod {
-  const text = `${input.title} ${input.originalFilename}`.toLowerCase();
-  return text.includes("invoice") ? "invoice" : "cash";
-}
-
-function initialLedgerLines(): LedgerLine[] {
-  const bookedAt = nowIso();
-  return [
-    {
-      voucherId: "voucher_seed_1",
-      accountNumber: "6540",
-      accountName: "IT-tjänster",
-      description: "Seeded SaaS subscription",
-      debit: 1000,
-      credit: 0,
-      vatCode: "VAT25",
-      bookedAt,
-      deductible: true,
-    },
-    {
-      voucherId: "voucher_seed_1",
-      accountNumber: "2641",
-      accountName: "Debiterad ingående moms",
-      description: "Seeded input VAT",
-      debit: 250,
-      credit: 0,
-      vatCode: "VAT25",
-      bookedAt,
-      deductible: true,
-    },
-    {
-      voucherId: "voucher_seed_1",
-      accountNumber: "1930",
-      accountName: "Företagskonto",
-      description: "Seeded bank outflow",
-      debit: 0,
-      credit: 1250,
-      vatCode: "NA",
-      bookedAt,
-      deductible: false,
-    },
-  ];
-}
+// `buildExtractedFields`, `guessSupplier`, `guessAccountingMethod`, and
+// `initialLedgerLines` are now imported from `@jpx-accounting/domain` so the
+// memory and postgres stores stay in lockstep. See CLAUDE.md note on store parity.
 
 function buildPostingLines(
   voucher: Voucher,

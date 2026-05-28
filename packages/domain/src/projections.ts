@@ -1,6 +1,6 @@
 import type { AccountBalanceProjection, JournalEntryProjection, VatProjection } from "@jpx-accounting/contracts";
 
-type LedgerLine = {
+export type LedgerLine = {
   voucherId: string;
   accountNumber: string;
   accountName: string;

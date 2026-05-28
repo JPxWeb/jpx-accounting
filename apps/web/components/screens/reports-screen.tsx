@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { motion } from "motion/react";
+import { toast } from "sonner";
 
 import { getErrorMessage } from "../../lib/request-errors";
 import { formatMoney } from "../../lib/presentation";
@@ -61,7 +62,7 @@ export function ReportsScreen() {
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      console.error(error);
+      toast.error(getErrorMessage(error, "SIE export failed."));
     } finally {
       setExporting(false);
     }

@@ -17,6 +17,13 @@ import type { UploadInit, UploadInitResult } from "@jpx-accounting/contracts";
 
 export interface BlobUploader {
   initUpload(input: UploadInit): Promise<UploadInitResult>;
+  /**
+   * Mint a short-lived read-only SAS URL for an existing blob path. Used by
+   * Document Intelligence so the OCR service can fetch the receipt without
+   * storage account keys. The stub returns a placeholder URL so the call site
+   * can be wired before Azure Storage is available.
+   */
+  mintReadSas(blobPath: string): Promise<{ url: string; expiresInSeconds: number }>;
 }
 
 const DEFAULT_SAS_EXPIRY_SECONDS = 600;
@@ -68,6 +75,15 @@ export class StubBlobUploader implements BlobUploader {
       uploadUrl: `/api/uploads/${uploadId}`,
       requiredContentType: input.mimeType,
       requiredBlobType: "BlockBlob",
+      expiresInSeconds: DEFAULT_SAS_EXPIRY_SECONDS,
+    };
+  }
+
+  async mintReadSas(blobPath: string): Promise<{ url: string; expiresInSeconds: number }> {
+    // Placeholder URL — Document Intelligence cannot actually fetch this. Real OCR requires
+    // AzureBlobUploader configured with an account name and container.
+    return {
+      url: `https://stub-storage.invalid/${blobPath}`,
       expiresInSeconds: DEFAULT_SAS_EXPIRY_SECONDS,
     };
   }
@@ -138,6 +154,30 @@ export class AzureBlobUploader implements BlobUploader {
       uploadUrl: `${blobUrl}?${sas}`,
       requiredContentType: input.mimeType,
       requiredBlobType: "BlockBlob",
+      expiresInSeconds: this.sasExpirySeconds,
+    };
+  }
+
+  async mintReadSas(blobPath: string): Promise<{ url: string; expiresInSeconds: number }> {
+    // Read-only SAS for Document Intelligence to fetch the receipt blob. Same User-Delegation key
+    // flow as initUpload — never use account keys. Permissions are `r` only (no list/delete).
+    const expiresOn = new Date(Date.now() + this.sasExpirySeconds * 1000);
+    const userDelegationKey = await this.getUserDelegationKey();
+    const sas = generateBlobSASQueryParameters(
+      {
+        containerName: this.containerName,
+        blobName: blobPath,
+        permissions: BlobSASPermissions.parse("r"),
+        protocol: SASProtocol.Https,
+        expiresOn,
+      },
+      userDelegationKey,
+      this.accountName,
+    ).toString();
+
+    const blobUrl = `https://${this.accountName}.blob.core.windows.net/${this.containerName}/${blobPath}`;
+    return {
+      url: `${blobUrl}?${sas}`,
       expiresInSeconds: this.sasExpirySeconds,
     };
   }

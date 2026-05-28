@@ -1,6 +1,7 @@
 export * from "./assistant";
 export * from "./bas";
 export * from "./compliance";
+export * from "./evidence-defaults";
 export * from "./hash-chain";
 export * from "./ids";
 export * from "./projections";

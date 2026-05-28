@@ -131,13 +131,23 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
   );
 }
 
+const EMPTY_COMPANY_SETTINGS: CompanySettings = {
+  organizationId: "org_default",
+  organizationName: "",
+  organizationNumber: "",
+  addressLine1: "",
+  postalCode: "",
+  city: "",
+  contactEmail: "",
+};
+
 export function CompanyForm() {
   const settingsQuery = useQuery({
     queryKey: ["company-settings"],
     queryFn: () => apiClient.getCompanySettings(),
   });
 
-  if (!settingsQuery.data) return <ScreenSkeleton />;
+  if (settingsQuery.isLoading) return <ScreenSkeleton />;
 
-  return <CompanyFormFields defaultData={settingsQuery.data} />;
+  return <CompanyFormFields defaultData={settingsQuery.data ?? EMPTY_COMPANY_SETTINGS} />;
 }

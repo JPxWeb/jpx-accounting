@@ -24,9 +24,10 @@ test("navigation and share target flows stay reachable", async ({ page }) => {
   await expect(page.getByTestId("deployment-posture")).toContainText("Sweden Central");
   await expect(page.getByTestId("audit-spine")).toContainText("Append-only events");
 
+  // PWA share target is an intake-only endpoint that redirects to /capture so the user lands
+  // on the same surface whether content arrived via the in-app capture button or via the
+  // operating-system share sheet.
   await page.goto("/share?title=Taxi%20Receipt&text=Airport%20transfer&url=https%3A%2F%2Fexample.com%2Freceipt");
-  await expect(page.getByTestId("share-target-page")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Taxi Receipt" })).toBeVisible();
-  await expect(page.getByTestId("share-text")).toHaveText("Airport transfer");
-  await expect(page.getByTestId("share-url")).toHaveText("https://example.com/receipt");
+  await expect(page).toHaveURL(/\/capture/);
+  await expect(page.getByTestId("quick-add-grid")).toBeVisible();
 });

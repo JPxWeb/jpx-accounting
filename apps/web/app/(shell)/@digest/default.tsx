@@ -1,3 +1,5 @@
+import { DigestPanel } from "../../../components/digest/digest-panel";
+
 export default function DigestDefault() {
-  return null;
+  return <DigestPanel />;
 }

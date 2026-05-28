@@ -28,9 +28,15 @@ const ACTOR_ID = "user_founder";
 
 function applyOptimisticUpdate(current: WorkspaceSnapshot | undefined, review: ReviewTask | undefined) {
   if (!current || !review) return current;
+  // Shallow-clone the mutated review so React Query's structural sharing can't
+  // dedupe the new array element back to the previous reference. Without this,
+  // demo mode (MemoryLedgerStore mutates objects in place) leaves the reviews
+  // array reference unchanged after a status flip, which keeps useMemo-derived
+  // counts like `pendingReviews.length` stale.
+  const clonedReview = { ...review };
   return {
     ...current,
-    reviews: current.reviews.map((item) => (item.id === review.id ? review : item)),
+    reviews: current.reviews.map((item) => (item.id === review.id ? clonedReview : item)),
     vouchers: current.vouchers.map((voucher) =>
       voucher.id === review.voucherId ? { ...voucher, status: review.status } : voucher,
     ),
@@ -50,6 +56,10 @@ export function TodayScreen() {
   const workspaceQuery = useQuery({
     queryKey: ["workspace"],
     queryFn: () => apiClient.getSnapshot(),
+    // Disable structural sharing: the demo MemoryLedgerStore returns reviews by
+    // reference and mutates them in place, which collapses optimistic updates
+    // back to the previous array reference.
+    structuralSharing: false,
   });
   const { data } = workspaceQuery;
 

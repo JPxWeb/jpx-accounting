@@ -11,6 +11,7 @@ import { saveCaptureDraft } from "../lib/draft-queue";
 import type { DraftQueueSaveResult } from "../lib/draft-queue-core";
 import { formatRuntimeModeLabel } from "../lib/presentation";
 import { webRuntimeConfig } from "../lib/runtime-config";
+import { CommandPalette } from "./command-palette";
 import { CaptureIcon, ControlIcon, InboxIcon, ReportsIcon, SparkIcon } from "./ui/icons";
 import { StatusBadge } from "./ui/status-badge";
 
@@ -23,10 +24,10 @@ const navigation = [
 ];
 
 const draftModes = [
-  { key: "camera", label: "Camera" },
-  { key: "upload", label: "Upload" },
-  { key: "paste", label: "Paste" },
-  { key: "share", label: "Share" },
+  { key: "camera", label: "Camera", hint: "Snap a receipt with the device camera" },
+  { key: "upload", label: "Upload", hint: "Pick a PDF or image from disk" },
+  { key: "paste", label: "Paste", hint: "Paste an image from clipboard" },
+  { key: "share", label: "Share", hint: "Receive from another app via PWA share" },
 ];
 
 type CaptureStatus = {
@@ -78,6 +79,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
   const pathname = usePathname();
   const barsHidden = useScrollDirection();
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [captureStatus, setCaptureStatus] = useState<CaptureStatus | null>(null);
   const timestamp = useMemo(() => new Intl.DateTimeFormat("sv-SE").format(new Date()), []);
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -92,6 +94,17 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
   const closeCaptureSheet = useCallback(() => {
     setCaptureOpen(false);
     window.requestAnimationFrame(() => returnFocusRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    function handleGlobalKey(event: KeyboardEvent) {
+      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    }
+    document.addEventListener("keydown", handleGlobalKey);
+    return () => document.removeEventListener("keydown", handleGlobalKey);
   }, []);
 
   useEffect(() => {
@@ -439,9 +452,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                     className="glass-panel rounded-lg px-4 py-4 text-left"
                   >
                     <p className="text-sm font-semibold text-[var(--color-text)]">{mode.label}</p>
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                      Queue locally, then enrich with AI and rules.
-                    </p>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">{mode.hint}</p>
                   </button>
                 ))}
               </div>
@@ -449,6 +460,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
           </motion.div>
         ) : null}
       </AnimatePresence>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }

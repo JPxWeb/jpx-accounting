@@ -327,13 +327,14 @@ export function createApp({
           filename: extraction.evidence.originalFilename,
           mimeType: extraction.evidence.mimeType,
         });
-        // NOTE: passing the full blob URL requires either a read SAS or that DocIntel runs inside
-        // the storage account's network boundary. The integration is staged: this returns the
-        // adapter's stub (or live response if the URL is reachable) without persisting yet — the
-        // review queue remains the only path to a posted voucher.
+        // Mint a short-lived read SAS so Document Intelligence can fetch the blob without
+        // storage account keys. StubBlobUploader returns a placeholder URL DocIntel cannot
+        // fetch — that's intentional and harmless because the demo DocumentIntelligenceClient
+        // also returns a stub. Real OCR requires AzureBlobUploader + the live DocIntel client.
+        const sas = await blobUploader.mintReadSas(extraction.evidence.blobPath);
         liveExtraction = await documentIntelligence.extract({
           modelId,
-          urlSource: `https://placeholder/${extraction.evidence.blobPath}`,
+          urlSource: sas.url,
         });
       } catch (error) {
         // Fail-soft: surface the error in logs but keep returning the stored extraction so the
