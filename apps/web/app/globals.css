@@ -93,14 +93,15 @@
   --shadow-accent: var(--shadow-accent);
   --shadow-accent-lg: var(--shadow-accent-lg);
 
-  /* Radius scale (values live in ui-tokens) */
+  /* Radius scale (values live in ui-tokens). 3xl/4xl are retired — setting
+     them to initial removes the utilities from the build entirely. */
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
   --radius-xl: var(--radius-xl);
   --radius-2xl: var(--radius-2xl);
-  --radius-3xl: var(--radius-3xl);
-  --radius-4xl: var(--radius-4xl);
+  --radius-3xl: initial;
+  --radius-4xl: initial;
 }
 
 html,

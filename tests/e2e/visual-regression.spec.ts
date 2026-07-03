@@ -4,8 +4,8 @@ import { resetApiState } from "./test-helpers";
 
 /**
  * Screenshot regression net for the advisory-pivot consolidation
- * (master plan Task 0.3). Baselines are captured BEFORE any token work;
- * intentional visual changes re-baseline explicitly with --update-snapshots
+ * (master plan Task 0.3, dark variants added at the Phase 1 exit gate).
+ * Intentional visual changes re-baseline explicitly with --update-snapshots
  * after reviewing the diff images — never blindly.
  *
  * Dynamic regions (timestamps, generated ids) get masked via
@@ -23,15 +23,22 @@ test.beforeEach(async ({ request }) => {
   await resetApiState(request);
 });
 
-for (const screen of SCREENS) {
-  test(`visual: ${screen.name}`, async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(screen.path);
-    await page.waitForLoadState("networkidle");
-    await expect(page).toHaveScreenshot(`${screen.name}.png`, {
-      fullPage: true,
-      maxDiffPixelRatio: 0.02,
-      mask: [page.locator("[data-visual-mask]")],
+for (const theme of ["light", "dark"] as const) {
+  for (const screen of SCREENS) {
+    test(`visual: ${screen.name} (${theme})`, async ({ page }) => {
+      // next-themes reads the stored choice before paint; forcing it via
+      // localStorage avoids any flash and keeps the snapshot deterministic.
+      await page.addInitScript((storedTheme) => {
+        window.localStorage.setItem("theme", storedTheme);
+      }, theme);
+      await page.emulateMedia({ reducedMotion: "reduce", colorScheme: theme });
+      await page.goto(screen.path);
+      await page.waitForLoadState("networkidle");
+      await expect(page).toHaveScreenshot(`${screen.name}-${theme}.png`, {
+        fullPage: true,
+        maxDiffPixelRatio: 0.02,
+        mask: [page.locator("[data-visual-mask]")],
+      });
     });
-  });
+  }
 }

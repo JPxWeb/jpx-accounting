@@ -74,6 +74,20 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
               data-testid="command-palette-input"
             />
             <ul className="mt-3 max-h-72 overflow-y-auto" role="listbox" aria-label="Search results">
+              <li role="option" aria-selected={false}>
+                <button
+                  type="button"
+                  data-testid="palette-ask-advisor"
+                  className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-surface-muted"
+                  onClick={() => {
+                    router.push("/assistant");
+                    handleClose();
+                  }}
+                >
+                  <span className="font-medium text-foreground">Ask advisor</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">Ask about your numbers</span>
+                </button>
+              </li>
               {hits.length === 0 ? (
                 <li className="px-3 py-6 text-center text-sm text-muted-foreground">No matches</li>
               ) : (

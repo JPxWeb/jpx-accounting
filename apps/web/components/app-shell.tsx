@@ -9,19 +9,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useScrollDirection } from "../hooks/use-scroll-direction";
 import { saveCaptureDraft } from "../lib/draft-queue";
 import type { DraftQueueSaveResult } from "../lib/draft-queue-core";
+import { useDialogFocusTrap } from "../lib/focus-trap";
 import { formatRuntimeModeLabel } from "../lib/presentation";
 import { webRuntimeConfig } from "../lib/runtime-config";
 import { CommandPalette } from "./command-palette";
-import { CaptureIcon, ControlIcon, InboxIcon, ReportsIcon, SparkIcon } from "./ui/icons";
+import { ThemeToggle } from "./theme-toggle";
+import { AdvisorIcon, BooksIcon, CaptureIcon, ControlIcon, InboxIcon, ReportsIcon, SparkIcon } from "./ui/icons";
 import { StatusBadge } from "./ui/status-badge";
 
 const navigation = [
   { href: "/today", label: "Today", summary: "Today's review queue", icon: InboxIcon },
   { href: "/capture", label: "Capture", summary: "Evidence & drafts", icon: CaptureIcon },
-  { href: "/books", label: "Books", summary: "Journal, accounts, close", icon: ReportsIcon },
+  { href: "/books", label: "Books", summary: "Journal, accounts, close", icon: BooksIcon },
   { href: "/reports", label: "Reports", summary: "P&L, BS, VAT, exports", icon: ReportsIcon },
   { href: "/settings", label: "Settings", summary: "Company & integrations", icon: ControlIcon },
 ];
+
+// Rail-only: the Advisor entry lives in the desktop rail, not the 5-tab mobile dock.
+const advisorNavItem = { href: "/assistant", label: "Advisor", summary: "Ask about your numbers", icon: AdvisorIcon };
+const railNavigation = [...navigation, advisorNavItem];
 
 const draftModes = [
   { key: "camera", label: "Camera", hint: "Snap a receipt with the device camera" },
@@ -34,15 +40,6 @@ type CaptureStatus = {
   tone: "success" | "warning" | "error";
   message: string;
 };
-
-const focusableSelector = [
-  "button:not([disabled])",
-  "a[href]",
-  "input:not([disabled])",
-  "textarea:not([disabled])",
-  "select:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
-].join(", ");
 
 function buildCaptureStatusMessage(modeLabel: string, result: DraftQueueSaveResult): CaptureStatus {
   if (result.storage === "indexeddb") {
@@ -65,16 +62,6 @@ function buildCaptureStatusMessage(modeLabel: string, result: DraftQueueSaveResu
   };
 }
 
-function getFocusableElements(container: HTMLElement | null) {
-  if (!container) {
-    return [];
-  }
-
-  return [...container.querySelectorAll<HTMLElement>(focusableSelector)].filter(
-    (element) => !element.hasAttribute("disabled") && element.tabIndex !== -1,
-  );
-}
-
 export function AppShell({ children, digest }: { children: ReactNode; digest?: ReactNode }) {
   const pathname = usePathname();
   const barsHidden = useScrollDirection();
@@ -87,7 +74,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const runtimeModeLabel = formatRuntimeModeLabel(webRuntimeConfig.runtimeMode);
   const activeNavItem = useMemo(
-    () => navigation.find((item) => pathname.startsWith(item.href)) ?? navigation[0]!,
+    () => railNavigation.find((item) => pathname.startsWith(item.href)) ?? navigation[0]!,
     [pathname],
   );
 
@@ -95,6 +82,8 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
     setCaptureOpen(false);
     window.requestAnimationFrame(() => returnFocusRef.current?.focus());
   }, []);
+
+  useDialogFocusTrap(dialogRef, captureOpen, closeCaptureSheet, firstDraftActionRef);
 
   useEffect(() => {
     function handleGlobalKey(event: KeyboardEvent) {
@@ -115,49 +104,6 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
     const timeoutId = window.setTimeout(() => setCaptureStatus(null), 3200);
     return () => window.clearTimeout(timeoutId);
   }, [captureStatus]);
-
-  useEffect(() => {
-    if (!captureOpen) {
-      return undefined;
-    }
-
-    const dialog = dialogRef.current;
-    const focusableElements = getFocusableElements(dialog);
-    const initialFocusTarget = firstDraftActionRef.current ?? focusableElements[0];
-    initialFocusTarget?.focus();
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeCaptureSheet();
-        return;
-      }
-
-      if (event.key !== "Tab") {
-        return;
-      }
-
-      const currentFocusableElements = getFocusableElements(dialogRef.current);
-      if (currentFocusableElements.length === 0) {
-        event.preventDefault();
-        return;
-      }
-
-      const firstElement = currentFocusableElements[0]!;
-      const lastElement = currentFocusableElements[currentFocusableElements.length - 1]!;
-
-      if (event.shiftKey && document.activeElement === firstElement) {
-        event.preventDefault();
-        lastElement.focus();
-      } else if (!event.shiftKey && document.activeElement === lastElement) {
-        event.preventDefault();
-        firstElement.focus();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [captureOpen, closeCaptureSheet]);
 
   async function createDraft(mode: { key: string; label: string }) {
     try {
@@ -184,11 +130,14 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
 
   return (
     <div className="app-shell">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.42),_transparent_45%)]" />
+      <div
+        className="pointer-events-none fixed inset-0"
+        style={{ background: "radial-gradient(circle at top, var(--page-glow-light), transparent 45%)" }}
+      />
       <div className="shell-layout">
         <aside className="shell-rail" data-testid="desktop-navigation">
           <div className="shell-rail-inner">
-            <section className="glass-chrome rounded-2xl px-5 py-5">
+            <section className="glass-chrome rounded-xl px-5 py-5">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-eyebrow">JPX Accounting</p>
                 <StatusBadge
@@ -199,18 +148,18 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
               <h1 className="mt-3 text-2xl font-semibold leading-tight">
                 Trustworthy AI bookkeeping for Sweden-first teams.
               </h1>
-              <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 Compliance-critical flows stay deterministic. AI guides, cites, and accelerates the review surface.
               </p>
               {webRuntimeConfig.runtimeMode === "demo" ? (
-                <p className="mt-4 rounded-lg bg-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]">
+                <p className="mt-4 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">
                   Demo mode is intentionally using local scaffold behavior so it is never mistaken for live accounting.
                 </p>
               ) : null}
             </section>
 
-            <nav className="glass-panel rounded-2xl p-3" aria-label="Primary" data-testid="desktop-navigation-links">
-              {navigation.map((item) => {
+            <nav className="glass-panel rounded-xl p-3" aria-label="Primary" data-testid="desktop-navigation-links">
+              {railNavigation.map((item) => {
                 const Icon = item.icon;
                 const active = pathname.startsWith(item.href);
 
@@ -220,25 +169,19 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                     href={item.href}
                     aria-current={active ? "page" : undefined}
                     className={`flex items-start gap-3 rounded-lg px-4 py-4 transition ${
-                      active
-                        ? "bg-[var(--color-accent)] text-white shadow-[var(--shadow-sm)]"
-                        : "text-[var(--color-text)] hover:bg-[rgba(255,255,255,0.72)]"
+                      active ? "bg-primary text-white shadow-sm" : "text-foreground hover:bg-surface-muted"
                     }`}
                   >
                     <span
                       className={`mt-0.5 rounded-lg p-2 ${
-                        active
-                          ? "bg-white/16 text-white"
-                          : "bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]"
+                        active ? "bg-white/16 text-white" : "bg-surface-muted text-muted-foreground"
                       }`}
                     >
                       <Icon className="size-4" />
                     </span>
                     <span className="min-w-0">
                       <span className="block text-sm font-semibold">{item.label}</span>
-                      <span
-                        className={`mt-1 block text-xs ${active ? "text-white/90" : "text-[var(--color-text-muted)]"}`}
-                      >
+                      <span className={`mt-1 block text-xs ${active ? "text-white/90" : "text-muted-foreground"}`}>
                         {item.summary}
                       </span>
                     </span>
@@ -249,11 +192,11 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
 
             {digest ? <div className="hidden lg:block">{digest}</div> : null}
 
-            <section className="glass-panel rounded-2xl p-4">
+            <section className="glass-panel rounded-xl p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-eyebrow">Capture lane</p>
-                  <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                  <p className="mt-2 text-sm text-muted-foreground">
                     Camera, paste, upload, and share land in the same queue and show where the draft was stored.
                   </p>
                 </div>
@@ -263,19 +206,22 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                 type="button"
                 onClick={openCaptureSheet}
                 data-testid="capture-open-desktop"
-                className="capture-button-desktop mt-4 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-accent)] px-5 py-4 text-sm font-semibold text-white shadow-[var(--shadow-md)]"
+                className="capture-button-desktop mt-4 w-full items-center justify-center gap-2 rounded-md bg-primary px-5 py-4 text-sm font-semibold text-white shadow-md"
               >
                 <CaptureIcon className="size-4" />
                 Capture Evidence
               </button>
             </section>
 
-            <section className="glass-panel-soft mt-auto rounded-2xl p-4">
-              <div className="flex items-center gap-2 text-[var(--color-text-muted)]">
-                <SparkIcon className="size-4 text-[var(--color-accent)]" />
-                <span className="text-eyebrow">Innovation track</span>
+            <section className="glass-panel-soft mt-auto rounded-xl p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <SparkIcon className="size-4 text-primary" />
+                  <span className="text-eyebrow">Innovation track</span>
+                </div>
+                <ThemeToggle />
               </div>
-              <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 Voice capture, simulations, and close copilot are isolated from posting authority until they earn trust.
               </p>
             </section>
@@ -299,24 +245,25 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                   />
                 </div>
                 <div className="mt-1 flex min-w-0 items-center gap-2">
-                  <p className="truncate text-sm font-semibold text-[var(--color-text)]">{activeNavItem.label}</p>
-                  <span className="hidden h-1 w-1 rounded-full bg-[var(--color-text-soft)] sm:block" />
-                  <p className="hidden truncate text-sm text-[var(--color-text-muted)] sm:block">
-                    {activeNavItem.summary}
-                  </p>
+                  <p className="truncate text-sm font-semibold text-foreground">{activeNavItem.label}</p>
+                  <span className="hidden h-1 w-1 rounded-full bg-foreground-soft sm:block" />
+                  <p className="hidden truncate text-sm text-muted-foreground sm:block">{activeNavItem.summary}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="hidden rounded-lg glass-panel-soft px-3 py-2 text-right text-xs text-[var(--color-text-muted)] sm:block">
-                  <div className="font-medium text-[var(--color-text)]">Sweden Central / Stockholm</div>
+                <div className="hidden rounded-lg glass-panel-soft px-3 py-2 text-right text-xs text-muted-foreground sm:block">
+                  <div className="font-medium text-foreground">Sweden Central / Stockholm</div>
                   <div>{timestamp}</div>
+                </div>
+                <div className="lg:hidden">
+                  <ThemeToggle />
                 </div>
                 <button
                   type="button"
                   onClick={openCaptureSheet}
                   data-testid="capture-open-mobile"
                   aria-label="Capture evidence"
-                  className="flex size-10 items-center justify-center rounded-lg bg-[var(--color-accent)] text-white shadow-[var(--shadow-sm)] lg:hidden"
+                  className="flex size-10 items-center justify-center rounded-lg bg-primary text-white shadow-sm lg:hidden"
                 >
                   <CaptureIcon className="size-4" />
                 </button>
@@ -337,7 +284,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
             <div className="page-shell page-shell-compact">
               <div
                 data-testid="runtime-mode-banner"
-                className="glass-panel-soft rounded-lg border border-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]"
+                className="glass-panel-soft rounded-lg border border-warning-soft px-4 py-3 text-sm text-warning"
               >
                 Demo mode is active. Local demo data and local AI fallback are enabled intentionally.
               </div>
@@ -356,10 +303,10 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
           data-testid="draft-notice"
           className={`fixed left-1/2 top-24 z-40 w-[min(92vw,30rem)] -translate-x-1/2 rounded-lg px-4 py-3 text-center text-sm font-medium ${
             captureStatus.tone === "error"
-              ? "bg-[var(--color-danger-soft)] text-[var(--color-danger)] shadow-[var(--shadow-md)]"
+              ? "bg-danger-soft text-danger shadow-md"
               : captureStatus.tone === "warning"
-                ? "bg-[var(--color-warning-soft)] text-[var(--color-warning)] shadow-[var(--shadow-md)]"
-                : "glass-chrome text-[var(--color-text)]"
+                ? "bg-warning-soft text-warning shadow-md"
+                : "glass-chrome text-foreground"
           }`}
         >
           {captureStatus.message}
@@ -383,7 +330,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                 aria-label={`${item.label} — ${item.summary}`}
                 aria-current={active ? "page" : undefined}
                 className={`flex flex-col items-center justify-center gap-1 rounded-lg px-2 py-3 text-center text-caption font-medium transition ${
-                  active ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-muted)]"
+                  active ? "bg-primary text-white" : "text-muted-foreground"
                 }`}
               >
                 <Icon className="size-3.5" aria-hidden="true" />
@@ -397,7 +344,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
       <AnimatePresence>
         {captureOpen ? (
           <motion.div
-            className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(10,18,24,0.32)] p-3 backdrop-blur-sm sm:items-center"
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-3 backdrop-blur-sm sm:items-center"
             data-testid="capture-sheet-backdrop"
             onClick={() => closeCaptureSheet()}
             initial={{ opacity: 0 }}
@@ -412,7 +359,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
               aria-labelledby="capture-sheet-title"
               aria-describedby="capture-sheet-description"
               data-testid="capture-sheet"
-              className="glass-chrome w-full max-w-xl rounded-xl p-5"
+              className="glass-chrome w-full max-w-xl rounded-2xl p-5"
               onClick={(event) => event.stopPropagation()}
               initial={{ y: 40, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -421,7 +368,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="mb-5 h-1.5 w-16 rounded-full bg-[rgba(15,26,34,0.12)]" />
+                  <div className="mb-5 h-1.5 w-16 rounded-full bg-border-strong" />
                   <p className="text-eyebrow">Quick Intake</p>
                   <h2 id="capture-sheet-title" className="mt-2 text-2xl font-semibold">
                     Add business evidence
@@ -432,12 +379,12 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                   onClick={() => closeCaptureSheet()}
                   aria-label="Close capture sheet"
                   data-testid="capture-close"
-                  className="rounded-md bg-white/72 px-3 py-2 text-sm font-medium text-[var(--color-text-muted)]"
+                  className="rounded-md bg-surface px-3 py-2 text-sm font-medium text-muted-foreground"
                 >
                   Close
                 </button>
               </div>
-              <p id="capture-sheet-description" className="mt-2 text-sm text-[var(--color-text-muted)]">
+              <p id="capture-sheet-description" className="mt-2 text-sm text-muted-foreground">
                 Capture starts locally first so the UI stays responsive. The result tells you whether the draft was
                 stored persistently or only for this tab.
               </p>
@@ -451,8 +398,8 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                     onClick={() => void createDraft(mode)}
                     className="glass-panel rounded-lg px-4 py-4 text-left"
                   >
-                    <p className="text-sm font-semibold text-[var(--color-text)]">{mode.label}</p>
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">{mode.hint}</p>
+                    <p className="text-sm font-semibold text-foreground">{mode.label}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{mode.hint}</p>
                   </button>
                 ))}
               </div>

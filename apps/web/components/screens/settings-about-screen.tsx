@@ -2,6 +2,7 @@
 
 import { formatRuntimeModeLabel } from "../../lib/presentation";
 import { webRuntimeConfig } from "../../lib/runtime-config";
+import { ThemeToggle } from "../theme-toggle";
 import { ScreenHeader } from "../ui/screen-header";
 
 function ComingSoon({ title, body, testId }: { title: string; body: string; testId?: string }) {
@@ -80,6 +81,19 @@ export function SettingsAboutScreen() {
             </ul>
           </section>
         </div>
+      </div>
+
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold text-foreground">Appearance</h2>
+        <section className="glass-panel rounded-xl p-5" data-testid="appearance-settings">
+          <h3 className="text-lg font-semibold">Theme</h3>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Follow the system preference, or force light or dark for this device.
+          </p>
+          <div className="mt-4">
+            <ThemeToggle />
+          </div>
+        </section>
       </div>
 
       <div className="space-y-4">
