@@ -48,17 +48,17 @@ The existing spine is retained and surfaced as a feature: append-only hash-chain
 
 A widget canvas, rearrangeable via drag-&-drop (@dnd-kit or equivalent verified current lib; keyboard-sortable for EAA), layout persisted (localStorage per workspace now; settings-backed later). Widget library v1:
 
-| Widget | Content | Drill target |
-|---|---|---|
-| Cash position | balance + sparkline + runway phrase ("kassan räcker till oktober") | Books/GL 19xx |
-| Review queue | pending count, top item, one-tap approve, batch-approve high-confidence | inline + Today feed |
-| Tax timeline | next VAT/employer/F-skatt deadlines with computed amounts | Reports/VAT |
-| Observations | top-3 ranked generated insights, each with provenance chips | linked entity |
-| Result (P&L) | period result + delta + mini bar | Reports/P&L |
-| Cash bridge | mini waterfall (opening → drivers → closing) | Reports full waterfall |
-| VAT status | current period position, amount to set aside | Reports/VAT |
-| Recent activity | latest events (posted, imported, extracted) | Books/journal |
-| Integrity | hash-chain status, event count, last verification | Settings/compliance |
+| Widget          | Content                                                                 | Drill target           |
+| --------------- | ----------------------------------------------------------------------- | ---------------------- |
+| Cash position   | balance + sparkline + runway phrase ("kassan räcker till oktober")      | Books/GL 19xx          |
+| Review queue    | pending count, top item, one-tap approve, batch-approve high-confidence | inline + Today feed    |
+| Tax timeline    | next VAT/employer/F-skatt deadlines with computed amounts               | Reports/VAT            |
+| Observations    | top-3 ranked generated insights, each with provenance chips             | linked entity          |
+| Result (P&L)    | period result + delta + mini bar                                        | Reports/P&L            |
+| Cash bridge     | mini waterfall (opening → drivers → closing)                            | Reports full waterfall |
+| VAT status      | current period position, amount to set aside                            | Reports/VAT            |
+| Recent activity | latest events (posted, imported, extracted)                             | Books/journal          |
+| Integrity       | hash-chain status, event count, last verification                       | Settings/compliance    |
 
 Widget grammar: uniform card chrome (identical radius/padding/header/drag-handle), add/remove via a widget picker, reset-to-default. Drag on desktop + long-press on mobile; full keyboard reordering.
 
@@ -80,11 +80,11 @@ The @digest parallel route becomes the **observation engine's** delivery surface
 ### 4.1 Design system (Phase 1 — the one-shot cleanup)
 
 - **Single token source**: `packages/ui-tokens` emits one CSS file (OKLCH primitives → semantic aliases → Tailwind `@theme inline` bridge). All three legacy layers (glass utilities, ad-hoc shadcn vars, hex duplicates) collapse into it.
-- **Radius**: one `--radius` with calc-derived steps (`sm/md/lg/xl`), executing the approved 2026-04-01 radius spec. Codemod maps the current rounded-* soup onto the scale.
+- **Radius**: one `--radius` with calc-derived steps (`sm/md/lg/xl`), executing the approved 2026-04-01 radius spec. Codemod maps the current rounded-\* soup onto the scale.
 - **Dark mode**: mount ThemeProvider (class strategy), remove `colorScheme:'light'` pin, semantic remap only — no per-component `dark:` overrides. OS-respecting + manual override in Settings.
 - **Typography/identity**: Manrope + IBM Plex Mono kept; **tabular mono for all monetary values** enforced via a `Money` component (locale-aware, currency from workspace); semantic money colors (`--positive/--negative/--pending`) and confidence ramp tokens.
 - **Icons**: lucide everywhere (components.json already declares it); bespoke `icons.tsx` glyphs retired or redrawn as lucide-conformant; unique icons per nav item.
-- **Enforcement**: ESLint bans `bg-[#`, arbitrary `var(--color-*)` classes, and raw rounded-* outside the scale. CI-gated.
+- **Enforcement**: ESLint bans `bg-[#`, arbitrary `var(--color-*)` classes, and raw rounded-\* outside the scale. CI-gated.
 - **Brand/PWA assets**: proper logo mark, favicon set, apple-touch, maskable manifest icons (installability fixed), og-image, sw precache list corrected.
 - **Regression net**: Playwright `toHaveScreenshot` baselines for Today/Capture/Books/Reports/Settings, both projects (desktop + Pixel 7), both themes, captured BEFORE token changes; axe checks kept green.
 - **Dead weight**: delete unused shadcn primitives (sidebar.tsx et al.) or adopt them where screens hand-roll equivalents (dialogs, badges); capture sheet switches to `useDialogFocusTrap`.
@@ -143,14 +143,14 @@ Real login/auth UI · multi-workspace switching · bank feeds (PSD2) · Peppol t
 
 ## 7. Phase sequence (approach C — braided)
 
-| Phase | Name | Delivers |
-|---|---|---|
-| 0 | Green | axe fixes, E2E green, screenshot baselines captured, stale CLAUDE.md corrections |
-| 1 | One-shot cleanup | token freeze, radius, dark mode, icons, brand/PWA assets, dead-code deletion, broken-interaction fixes, lint enforcement |
-| 2 | Platform seams | workspace profile, i18n (en+sv), CoA registry, VAT-regime model, locale formatting |
-| 3 | Real capture | drag-&-drop/file/camera intake, extraction persisted, evidence preview, SIE import/export real |
-| 4 | Reports | P&L/BS/VAT boxes, charts, waterfall, narrative, unified periods, drill grammar, exports |
-| 5 | Advisory | drag-&-drop dashboard widgets, observation engine, tax timeline, advisor chat wired, RAG seeded, trust surfaces, confidence tiers |
-| 6 | Polish & journey | onboarding/empty states, copy sweep, final visual pass, full regression, docs refresh |
+| Phase | Name             | Delivers                                                                                                                          |
+| ----- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Green            | axe fixes, E2E green, screenshot baselines captured, stale CLAUDE.md corrections                                                  |
+| 1     | One-shot cleanup | token freeze, radius, dark mode, icons, brand/PWA assets, dead-code deletion, broken-interaction fixes, lint enforcement          |
+| 2     | Platform seams   | workspace profile, i18n (en+sv), CoA registry, VAT-regime model, locale formatting                                                |
+| 3     | Real capture     | drag-&-drop/file/camera intake, extraction persisted, evidence preview, SIE import/export real                                    |
+| 4     | Reports          | P&L/BS/VAT boxes, charts, waterfall, narrative, unified periods, drill grammar, exports                                           |
+| 5     | Advisory         | drag-&-drop dashboard widgets, observation engine, tax timeline, advisor chat wired, RAG seeded, trust surfaces, confidence tiers |
+| 6     | Polish & journey | onboarding/empty states, copy sweep, final visual pass, full regression, docs refresh                                             |
 
 Each phase = one or more commits on `feat/advisory-pivot`; app deployable after every phase.

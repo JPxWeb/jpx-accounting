@@ -8,9 +8,10 @@
 
 **Tech stack:** Next.js 16.2 / React 19.2 / Tailwind 4.2 / shadcn (base-nova, @base-ui/react) / next-themes (installed, unmounted) / TanStack Query 5 + Table 8 / nuqs / Motion 12 / Recharts (to add) / @dnd-kit (to add, verify latest) / next-intl (to add) / Hono / Zod v4 / postgres-js / pnpm 10 / Node 24.
 
-**Plan granularity note:** Phases 0–1 are fully detailed below. Phases 2–6 are scoped task lists whose first task is *expand this phase into a detailed plan against the then-current codebase*. This is deliberate: this repo's own 1,768-line Phase-7 plan went stale against a retired store and had to be re-baselined (see repo analysis 2026-07-03). Do not detail Phase 5 code against a Phase 1 codebase.
+**Plan granularity note:** Phases 0–1 are fully detailed below. Phases 2–6 are scoped task lists whose first task is _expand this phase into a detailed plan against the then-current codebase_. This is deliberate: this repo's own 1,768-line Phase-7 plan went stale against a retired store and had to be re-baselined (see repo analysis 2026-07-03). Do not detail Phase 5 code against a Phase 1 codebase.
 
 **Verification vocabulary used below:**
+
 - `CHECK` = `pnpm check` (lint + format:check + typecheck + typecheck:tests + unit + build) passes
 - `E2E` = `pnpm build && npx playwright test` passes (both projects)
 - `E2E:file` = `pnpm build && npx playwright test tests/e2e/<file>` passes
@@ -41,7 +42,7 @@
 
 **Files:** Create: `tests/e2e/visual-regression.spec.ts`; Modify: `playwright.config.ts` (expect.toHaveScreenshot config), `package.json` (script `test:e2e:visual`)
 
-- [ ] Add spec: for each route `/today`, `/capture`, `/books`, `/reports`, `/settings/company`: `await page.goto(route); await page.waitForLoadState('networkidle'); await expect(page).toHaveScreenshot(\`${name}.png\`, { fullPage: true, maxDiffPixelRatio: 0.02, mask: [page.locator('[data-visual-mask]')] });` Mask dynamic regions (timestamps, generated ids) by adding `data-visual-mask` attributes where needed.
+- [ ] Add spec: for each route `/today`, `/capture`, `/books`, `/reports`, `/settings/company`: `await page.goto(route); await page.waitForLoadState('networkidle'); await expect(page).toHaveScreenshot(\`${name}.png\`, { fullPage: true, maxDiffPixelRatio: 0.02, mask: [page.locator('[data-visual-mask]')] });`Mask dynamic regions (timestamps, generated ids) by adding`data-visual-mask` attributes where needed.
 - [ ] In `playwright.config.ts` add `expect: { toHaveScreenshot: { animations: 'disabled', caret: 'hide' } }` merged into existing expect block.
 - [ ] Capture baselines: `npx playwright test tests/e2e/visual-regression.spec.ts --update-snapshots` (both projects). Verify a second plain run passes deterministically (re-run twice).
 - [ ] Commit baselines: `test(visual): screenshot baselines for 5 core screens (pre-consolidation)`.
