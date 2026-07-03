@@ -32,6 +32,7 @@ export const eventTypeSchema = z.enum([
   "EvidenceReceived",
   "EvidenceClassified",
   "FieldsExtracted",
+  "ExtractionRefreshed",
   "VoucherCreated",
   "RuleSetApplied",
   "SuggestionGenerated",
@@ -100,6 +101,8 @@ export const evidenceObjectSchema = z.object({
   mimeType: z.string(),
   blobPath: z.string(),
   hash: z.string(),
+  /** File size in bytes. Optional so pre-Phase-3 rows/payloads keep parsing unchanged. */
+  sizeBytes: z.number().int().nonnegative().optional(),
   trustLevel: trustLevelSchema.default("user-upload"),
 });
 
@@ -267,6 +270,23 @@ export const evidenceCreateResultSchema = z.object({
   voucherId: z.string(),
 });
 
+/** Result of one Document Intelligence (or stub) extraction run, as persisted by `updateEvidenceExtraction`. */
+export const extractionResultSchema = z.object({
+  modelId: z.string(),
+  fields: z.array(extractedFieldSchema).min(1),
+  extractedAt: z.string(),
+});
+export type ExtractionResult = z.infer<typeof extractionResultSchema>;
+
+/** Evidence joined to its packet/voucher/review — shape of `GET /api/evidence/:id`. */
+export const evidenceContextSchema = z.object({
+  evidence: evidenceObjectSchema,
+  packet: evidencePacketSchema.optional(),
+  voucher: voucherSchema.optional(),
+  review: reviewTaskSchema.optional(),
+});
+export type EvidenceContext = z.infer<typeof evidenceContextSchema>;
+
 export const evidenceCreateInputSchema = z.object({
   organizationId: z.string(),
   workspaceId: z.string(),
@@ -277,6 +297,20 @@ export const evidenceCreateInputSchema = z.object({
   modalities: z.array(evidenceModalitySchema),
   note: z.string().optional(),
   extractedText: z.string().optional(),
+  /** Real file size in bytes. Presence gates deterministic file-seeded extraction (absent → legacy canned fields). */
+  sizeBytes: z.number().int().nonnegative().optional(),
+  /** Client-computed SHA-256 of the uploaded bytes (Web Crypto), lowercase hex. */
+  sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+  /** The uploadId minted by POST /api/uploads/init that this evidence registers. */
+  uploadId: z.string().optional(),
+  /** Canonical blob path echoed from uploadInitResult. Schema-level guard: clients cannot point at arbitrary paths. */
+  blobPath: z
+    .string()
+    .regex(/^evidence-uploads\/[A-Za-z0-9-]+\/[^/]{1,200}$/)
+    .optional(),
 });
 
 export const evidenceComposeInputSchema = z.object({
@@ -374,6 +408,8 @@ export const uploadInitSchema = z.object({
 export const uploadInitResultSchema = z.object({
   uploadId: z.string(),
   filename: z.string(),
+  /** Server-minted canonical path (`evidence-uploads/{uploadId}/{sanitizedFilename}`) the client echoes back at create time. */
+  blobPath: z.string(),
   /** Absolute URL for the PUT. In normal mode the SAS query string is already appended. */
   uploadUrl: z.string(),
   /** PUT request must echo this Content-Type to match what the SAS was minted for. */

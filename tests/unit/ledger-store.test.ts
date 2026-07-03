@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { LedgerStore } from "@jpx-accounting/domain";
-import { MemoryLedgerStore, ReviewNotFoundError } from "@jpx-accounting/domain";
+import { deriveDeterministicExtraction, MemoryLedgerStore, ReviewNotFoundError, today } from "@jpx-accounting/domain";
 
 test("MemoryLedgerStore satisfies the LedgerStore contract for create, review, and reports", async () => {
   const store: LedgerStore = new MemoryLedgerStore();
@@ -27,6 +27,64 @@ test("MemoryLedgerStore satisfies the LedgerStore contract for create, review, a
 
   assert.equal(approved?.status, "approved");
   assert.equal((await store.getReports()).journal.length, journalBefore + 3);
+});
+
+test("MemoryLedgerStore.createEvidence honors upload metadata and derives file-seeded voucher fields", async () => {
+  const store = new MemoryLedgerStore();
+  const sha256 = "ab".repeat(32);
+  const blobPath = "evidence-uploads/upload-test-1/uploaded-receipt.jpg";
+
+  const created = await store.createEvidence({
+    organizationId: "org_jpx",
+    workspaceId: "workspace_main",
+    actorId: "user_founder",
+    title: "Uploaded receipt",
+    originalFilename: "uploaded-receipt.jpg",
+    mimeType: "image/jpeg",
+    modalities: ["upload"],
+    sizeBytes: 48211,
+    sha256,
+    uploadId: "upload-test-1",
+    blobPath,
+  });
+
+  assert.equal(created.evidence.hash, sha256, "sha256 must become the evidence hash");
+  assert.equal(created.evidence.blobPath, blobPath, "client-echoed blobPath must be stored");
+  assert.equal(created.evidence.sizeBytes, 48211, "sizeBytes must round-trip");
+
+  const expectedFields = deriveDeterministicExtraction({ filename: "uploaded-receipt.jpg", sizeBytes: 48211 }, today());
+  const expectedGross = Number.parseFloat(expectedFields.find((field) => field.key === "grossAmount")!.value);
+  assert.notEqual(created.voucher.voucherFields.grossAmount, 1249, "file-seeded gross must not be the legacy 1249");
+  assert.equal(created.voucher.voucherFields.grossAmount, expectedGross);
+  assert.deepEqual(created.voucher.extractedFields, expectedFields);
+
+  const snapshot = await store.getSnapshot();
+  const roundTripped = snapshot.evidence.find((item) => item.id === created.evidence.id);
+  assert.equal(roundTripped?.sizeBytes, 48211);
+});
+
+test("MemoryLedgerStore.createEvidence without upload metadata keeps the legacy synthetic path and 1249 seed", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await store.createEvidence({
+    organizationId: "org_jpx",
+    workspaceId: "workspace_main",
+    actorId: "user_founder",
+    title: "Legacy receipt",
+    originalFilename: "legacy-receipt.jpg",
+    mimeType: "image/jpeg",
+    modalities: ["camera"],
+  });
+
+  assert.equal(created.evidence.blobPath, `evidence/${created.evidence.id}/legacy-receipt.jpg`);
+  assert.equal(created.evidence.sizeBytes, undefined);
+  assert.equal(created.voucher.voucherFields.grossAmount, 1249, "legacy path must keep the canned 1249 gross");
+  assert.equal(created.voucher.voucherFields.netAmount, 999.2);
+  assert.equal(created.voucher.voucherFields.vatAmount, 249.8);
+
+  // Seed stability: the constructor-seeded voucher also rides the legacy path.
+  const snapshot = await store.getSnapshot();
+  const seeded = snapshot.vouchers.find((voucher) => voucher.id !== created.voucher.id);
+  assert.equal(seeded?.voucherFields.grossAmount, 1249);
 });
 
 test("MemoryLedgerStore.runSimulation returns real deltas and writes no journal lines", async () => {

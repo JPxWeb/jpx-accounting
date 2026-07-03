@@ -198,6 +198,9 @@ importers:
       '@jpx-accounting/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@jpx-accounting/domain':
+        specifier: workspace:*
+        version: link:../domain
 
   packages/domain:
     dependencies:

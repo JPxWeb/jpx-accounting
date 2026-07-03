@@ -26,10 +26,10 @@ import { AiRuntimeUnavailableError, type AiRuntime, isAiRuntimeOperational } fro
 import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import type { LedgerStore, ReviewAction } from "@jpx-accounting/domain";
-import { MemoryLedgerStore, ReviewNotFoundError } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, nowIso, ReviewNotFoundError } from "@jpx-accounting/domain";
 
 import type { BlobUploader } from "./blob";
-import { UploadValidationError } from "./blob";
+import { MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
 import type { CorsRuntimePolicy } from "./config";
 import { isLedgerStoreOperational, LedgerStoreUnavailableError } from "./runtime";
 
@@ -182,6 +182,10 @@ export function createApp({
     onError: (c) => jsonError(c, "Request body too large.", runtimeMode, 413),
   });
 
+  // Stub blob uploads (PUT /api/uploads/:uploadId) carry file bytes, not JSON — they get their own
+  // limit below, matching MAX_UPLOAD_BYTES, instead of the 512 KiB JSON ceiling.
+  const isStubUploadPut = (c: Context<AppEnv>) => c.req.method === "PUT" && /^\/api\/uploads\/[^/]+$/.test(c.req.path);
+
   app.use("/api/*", async (c, next) => {
     if (!["POST", "PUT", "PATCH"].includes(c.req.method)) {
       return next();
@@ -189,8 +193,24 @@ export function createApp({
     if (c.req.path === "/api/imports/sie") {
       return next();
     }
+    if (isStubUploadPut(c)) {
+      return next();
+    }
     return defaultJsonBodyLimit(c, next);
   });
+
+  if (blobUploader.kind === "stub") {
+    const uploadBodyLimit = bodyLimit({
+      maxSize: MAX_UPLOAD_BYTES,
+      onError: (inner) => jsonError(inner, "Request body too large.", runtimeMode, 413),
+    });
+    app.use("/api/uploads/:uploadId", async (c, next) => {
+      if (!isStubUploadPut(c)) {
+        return next();
+      }
+      return uploadBodyLimit(c, next);
+    });
+  }
 
   // Rate-limit only the mutating surface so health/ready probes and read-only GETs are unaffected.
   // 60 mutations per minute per IP fits an interactive single-user pilot — bump when scale-out lands
@@ -208,6 +228,12 @@ export function createApp({
   });
   app.use("/api/*", async (c, next) => {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
+      return next();
+    }
+    // Test instances (ALLOW_TEST_RESET) are exempt: the sequential E2E suite
+    // legitimately exceeds 60 mutations/min from one IP and started flaking
+    // with 429s on /api/testing/reset once the capture pipeline became real.
+    if (allowTestReset) {
       return next();
     }
     return apiMutationLimiter(c, next);
@@ -312,8 +338,20 @@ export function createApp({
     return context.json(result);
   });
 
+  if (blobUploader.kind === "stub") {
+    // Accept-and-discard PUT target for stub uploadUrls. The bytes genuinely travel over the wire
+    // (so the client pipeline is exercised end-to-end) but storage is out of scope for stub mode —
+    // previews come from the client-side evidence blob cache instead. `x-ms-blob-type` is NOT
+    // required here: the web api-proxy strips it, and Azure PUTs go direct to the SAS URL anyway.
+    app.put("/api/uploads/:uploadId", async (context) => {
+      await context.req.arrayBuffer();
+      return context.json({ ok: true, uploadId: context.req.param("uploadId") }, 201);
+    });
+  }
+
   app.post("/api/evidence/:id/extract", async (context) => {
-    const extraction = await currentStore.getEvidenceContext(context.req.param("id"));
+    const evidenceId = context.req.param("id");
+    const extraction = await currentStore.getEvidenceContext(evidenceId);
     if (!extraction) throw new HTTPException(404, { message: "Evidence not found" });
 
     // Only run Document Intelligence on uploads that actually live in blob storage. Demo/seed
@@ -330,11 +368,16 @@ export function createApp({
         // Mint a short-lived read SAS so Document Intelligence can fetch the blob without
         // storage account keys. StubBlobUploader returns a placeholder URL DocIntel cannot
         // fetch — that's intentional and harmless because the demo DocumentIntelligenceClient
-        // also returns a stub. Real OCR requires AzureBlobUploader + the live DocIntel client.
+        // also returns a stub (seeded from the hints below). Real OCR requires
+        // AzureBlobUploader + the live DocIntel client.
         const sas = await blobUploader.mintReadSas(extraction.evidence.blobPath);
         liveExtraction = await documentIntelligence.extract({
           modelId,
           urlSource: sas.url,
+          hints: {
+            filename: extraction.evidence.originalFilename,
+            sizeBytes: extraction.evidence.sizeBytes,
+          },
         });
       } catch (error) {
         // Fail-soft: surface the error in logs but keep returning the stored extraction so the
@@ -351,11 +394,56 @@ export function createApp({
       }
     }
 
+    // Persist the refreshed extraction instead of discarding it (Phase 3). The response stays a
+    // superset of the pre-persistence shape ({extracted, evidence, packet?, voucher?, liveExtraction?})
+    // and now also carries the regenerated `review`.
+    if (liveExtraction && liveExtraction.fields.length > 0) {
+      const updated = await currentStore.updateEvidenceExtraction(evidenceId, {
+        modelId: liveExtraction.modelId,
+        fields: liveExtraction.fields,
+        extractedAt: nowIso(),
+      });
+      return context.json({
+        extracted: Boolean((updated ?? extraction).voucher),
+        ...(updated ?? extraction),
+        liveExtraction,
+      });
+    }
+
     return context.json({
       extracted: Boolean(extraction.voucher),
       ...extraction,
       ...(liveExtraction ? { liveExtraction } : {}),
     });
+  });
+
+  // Read-only evidence context (no extraction side-effect): evidence joined to packet/voucher/review.
+  app.get("/api/evidence/:id", async (context) => {
+    const evidenceContext = await currentStore.getEvidenceContext(context.req.param("id"));
+    if (!evidenceContext) throw new HTTPException(404, { message: "Evidence not found" });
+    const review = evidenceContext.voucher
+      ? await currentStore.findReviewByVoucher(evidenceContext.voucher.id)
+      : undefined;
+    return context.json({
+      ...evidenceContext,
+      ...(review ? { review } : {}),
+    });
+  });
+
+  // Short-lived read SAS for previews. Only real Azure blobs qualify: the stub uploader discards
+  // bytes (previews come from the client-side blob cache) and legacy/seed evidence has a synthetic
+  // blobPath, so both answer 404 preview_unavailable.
+  app.get("/api/evidence/:id/file-url", async (context) => {
+    const evidenceContext = await currentStore.getEvidenceContext(context.req.param("id"));
+    if (!evidenceContext) throw new HTTPException(404, { message: "Evidence not found" });
+    const { blobPath } = evidenceContext.evidence;
+    if (blobUploader.kind !== "azure" || !blobPath.startsWith("evidence-uploads/")) {
+      return jsonError(context, "No file preview is available for this evidence.", runtimeMode, 404, {
+        code: "preview_unavailable",
+      });
+    }
+    const sas = await blobUploader.mintReadSas(blobPath);
+    return context.json({ url: sas.url, expiresInSeconds: sas.expiresInSeconds });
   });
 
   app.post("/api/vouchers/:id/suggest", async (context) => {

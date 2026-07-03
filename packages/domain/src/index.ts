@@ -3,6 +3,7 @@ export * from "./coa/bas-2026";
 export * from "./coa/registry";
 export * from "./coa/types";
 export * from "./compliance";
+export * from "./deterministic-extraction";
 export * from "./evidence-defaults";
 export * from "./hash-chain";
 export * from "./ids";

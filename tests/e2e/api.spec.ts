@@ -56,9 +56,11 @@ test("evidence, extraction, suggestion, and review endpoints stay coherent and i
     },
   });
   expect(upload.ok()).toBeTruthy();
-  expect(await upload.json()).toMatchObject({
+  const uploadJson = await upload.json();
+  expect(uploadJson).toMatchObject({
     filename: "playwright-receipt.jpg",
   });
+  expect(uploadJson.blobPath).toMatch(/^evidence-uploads\/[A-Za-z0-9-]+\/playwright-receipt\.jpg$/);
 
   const created = await request.post(`${apiBaseUrl}/api/evidence`, {
     data: createEvidencePayload,
@@ -123,6 +125,82 @@ test("evidence, extraction, suggestion, and review endpoints stay coherent and i
   const feed = await request.get(`${apiBaseUrl}/api/reviews/feed`);
   expect(feed.ok()).toBeTruthy();
   expect((await feed.json()).length).toBeGreaterThan(0);
+});
+
+test("honest upload pipeline: init → PUT → create with metadata → persisted extraction → evidence context", async ({
+  request,
+}) => {
+  // init mints the canonical blobPath the client echoes back at create time.
+  const uploadInit = await request.post(`${apiBaseUrl}/api/uploads/init`, {
+    data: { filename: "uploaded-receipt.jpg", mimeType: "image/jpeg", size: 48211 },
+  });
+  expect(uploadInit.ok()).toBeTruthy();
+  const uploadInitJson = await uploadInit.json();
+  expect(uploadInitJson.blobPath).toMatch(/^evidence-uploads\/[A-Za-z0-9-]+\/uploaded-receipt\.jpg$/);
+
+  // Bytes really travel: the stub PUT route accepts (and discards) them.
+  const stubPut = await request.put(`${apiBaseUrl}${uploadInitJson.uploadUrl}`, {
+    headers: { "content-type": "image/jpeg" },
+    data: Buffer.alloc(48211, 7),
+  });
+  expect(stubPut.status()).toBe(201);
+
+  const sha256 = "ab".repeat(32);
+  const created = await request.post(`${apiBaseUrl}/api/evidence`, {
+    data: {
+      organizationId: "org_jpx",
+      workspaceId: "workspace_main",
+      actorId: "user_founder",
+      title: "Uploaded receipt",
+      originalFilename: "uploaded-receipt.jpg",
+      mimeType: "image/jpeg",
+      modalities: ["upload"],
+      sizeBytes: 48211,
+      sha256,
+      uploadId: uploadInitJson.uploadId,
+      blobPath: uploadInitJson.blobPath,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const createdPayload = await created.json();
+  expect(createdPayload.evidence.blobPath).toBe(uploadInitJson.blobPath);
+  expect(createdPayload.evidence.hash).toBe(sha256);
+  expect(createdPayload.evidence.sizeBytes).toBe(48211);
+  // File-seeded deterministic fields, not the legacy 1249 canned amount.
+  expect(createdPayload.voucher.voucherFields.grossAmount).not.toBe(1249);
+
+  // Extraction is persisted (not discarded): response is a superset of the legacy shape + review.
+  const extracted = await request.post(`${apiBaseUrl}/api/evidence/${createdPayload.evidence.id}/extract`);
+  expect(extracted.ok()).toBeTruthy();
+  const extraction = await extracted.json();
+  expect(extraction.extracted).toBe(true);
+  expect(extraction.liveExtraction).toBeTruthy();
+  expect(extraction.review).toBeTruthy();
+
+  // GET /api/evidence/:id (read-only) shows the stub supplier on the voucher + the review.
+  const contextResponse = await request.get(`${apiBaseUrl}/api/evidence/${createdPayload.evidence.id}`);
+  expect(contextResponse.ok()).toBeTruthy();
+  const contextJson = await contextResponse.json();
+  const supplierField = (contextJson.voucher.extractedFields as Array<{ key: string; value: string }>).find(
+    (field) => field.key === "supplierName",
+  );
+  expect(supplierField?.value).toBe(createdPayload.voucher.voucherFields.supplierName);
+  expect(contextJson.review).toBeTruthy();
+  expect(contextJson.review.suggestion.voucherId).toBe(createdPayload.voucher.id);
+
+  // Stub storage has no preview: file-url answers an honest 404.
+  const fileUrl = await request.get(`${apiBaseUrl}/api/evidence/${createdPayload.evidence.id}/file-url`);
+  expect(fileUrl.status()).toBe(404);
+  expect((await fileUrl.json()).code).toBe("preview_unavailable");
+
+  // Unknown evidence → 404.
+  const missing = await request.get(`${apiBaseUrl}/api/evidence/evidence_missing`);
+  expect(missing.status()).toBe(404);
+
+  // Seed stability: the legacy create path still produces the canned 1249 amounts.
+  const legacyCreate = await request.post(`${apiBaseUrl}/api/evidence`, { data: createEvidencePayload });
+  expect(legacyCreate.ok()).toBeTruthy();
+  expect((await legacyCreate.json()).voucher.voucherFields.grossAmount).toBe(1249);
 });
 
 test("assistant, knowledge, simulation, close, and import endpoints round-trip", async ({ request }) => {

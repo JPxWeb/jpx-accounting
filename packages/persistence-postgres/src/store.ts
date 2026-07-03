@@ -6,12 +6,14 @@ import type {
   CompanySettings,
   ComplianceAlert,
   EvidenceComposeInput,
+  EvidenceContext,
   EvidenceCreateInput,
   EvidenceCreateResult,
   EvidenceModality,
   EvidenceObject,
   EvidencePacket,
   ExtractedField,
+  ExtractionResult,
   LedgerEvent,
   ReportBundle,
   ReviewDecisionInput,
@@ -33,11 +35,14 @@ import {
   buildPostingLines,
   buildVat,
   createId,
+  deriveVoucherFields,
   detectComplianceIssues,
   evaluateVoucherRules,
   guessAccountingMethod,
   initialLedgerLines,
+  mergeExtractedFields,
   nowIso,
+  recomputeVoucherFields,
   ReviewNotFoundError,
   simulateApprovals,
   today,
@@ -107,6 +112,7 @@ type EvidenceRow = {
   blob_path: string;
   hash: string;
   trust_level: string;
+  metadata: { sizeBytes?: number } | null;
   modalities: string[];
 };
 
@@ -174,7 +180,7 @@ function toDateOnlyIso(value: Date | string): string {
 }
 
 function rowToEvidence(row: EvidenceRow): EvidenceObject {
-  return {
+  const evidence: EvidenceObject = {
     id: row.id,
     organizationId: row.organization_id,
     workspaceId: row.workspace_id,
@@ -188,6 +194,8 @@ function rowToEvidence(row: EvidenceRow): EvidenceObject {
     hash: row.hash,
     trustLevel: row.trust_level as EvidenceObject["trustLevel"],
   };
+  if (typeof row.metadata?.sizeBytes === "number") evidence.sizeBytes = row.metadata.sizeBytes;
+  return evidence;
 }
 
 function rowToPacket(row: PacketRow, evidenceIds: string[]): EvidencePacket {
@@ -358,10 +366,18 @@ export class PostgresLedgerStore implements LedgerStore {
         modalities: input.modalities,
         originalFilename: input.originalFilename,
         mimeType: input.mimeType,
-        blobPath: `evidence/${evidenceId}/${input.originalFilename}`,
-        hash: buildEventHash("file", `${input.originalFilename}:${input.title}:${createdAt}`),
+        // Honest upload metadata when the client went through init→PUT→create;
+        // legacy synthetic path + derived hash preserved when no upload happened.
+        blobPath: input.blobPath ?? `evidence/${evidenceId}/${input.originalFilename}`,
+        hash: input.sha256 ?? buildEventHash("file", `${input.originalFilename}:${input.title}:${createdAt}`),
+        sizeBytes: input.sizeBytes,
         trustLevel: "user-upload",
       };
+
+      // Evidence-level upload provenance lives in the existing metadata jsonb —
+      // no schema change (Phase 3 plan, finding 2).
+      const metadata: { sizeBytes?: number } = {};
+      if (input.sizeBytes !== undefined) metadata.sizeBytes = input.sizeBytes;
 
       await tx`
         INSERT INTO ledger.evidence_objects (
@@ -390,7 +406,7 @@ export class PostgresLedgerStore implements LedgerStore {
           ${evidence.blobPath},
           ${evidence.hash},
           ${evidence.trustLevel},
-          ${tx.json({})},
+          ${tx.json(metadata)},
           ${tx.array(evidence.modalities as unknown as string[])}
         )
       `;
@@ -446,19 +462,7 @@ export class PostgresLedgerStore implements LedgerStore {
         status: "needs-review",
         accountingMethod: guessAccountingMethod(input),
         extractedFields,
-        voucherFields: {
-          supplierName: extractedFields.find((field) => field.key === "supplierName")?.value,
-          supplierVatNumber: extractedFields.find((field) => field.key === "supplierVatNumber")?.value,
-          invoiceNumber: extractedFields.find((field) => field.key === "invoiceNumber")?.value,
-          receiptDate: extractedFields.find((field) => field.key === "receiptDate")?.value,
-          transactionDate: extractedFields.find((field) => field.key === "transactionDate")?.value,
-          description: input.title,
-          grossAmount: 1249,
-          netAmount: 999.2,
-          vatAmount: 249.8,
-          vatRate: 25,
-          currency: "SEK",
-        },
+        voucherFields: deriveVoucherFields(extractedFields, input),
         createdAt,
         createdBy: input.actorId,
       };
@@ -659,7 +663,7 @@ export class PostgresLedgerStore implements LedgerStore {
   ): Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined> {
     const evidenceRows = await this.client<EvidenceRow[]>`
       SELECT id, organization_id, workspace_id, title, created_by, created_at,
-             original_filename, mime_type, blob_path, hash, trust_level, modalities
+             original_filename, mime_type, blob_path, hash, trust_level, metadata, modalities
       FROM ledger.evidence_objects
       WHERE id = ${evidenceId}
         AND organization_id = ${this.defaults.organizationId}
@@ -714,6 +718,187 @@ export class PostgresLedgerStore implements LedgerStore {
     if (packet) result.packet = packet;
     if (voucher) result.voucher = voucher;
     return result;
+  }
+
+  async updateEvidenceExtraction(
+    evidenceId: string,
+    extraction: ExtractionResult,
+  ): Promise<EvidenceContext | undefined> {
+    // Mirrors MemoryLedgerStore.updateEvidenceExtraction step-for-step; one
+    // transaction with the workspace tail locked so both events chain atomically.
+    return this.client.begin(async (tx) => {
+      const tailHash = await this.lockWorkspaceTail(tx);
+
+      // 1. Resolve evidence→packet→voucher (same join as getEvidenceContext, on tx).
+      const evidenceRows = await tx<EvidenceRow[]>`
+        SELECT id, organization_id, workspace_id, title, created_by, created_at,
+               original_filename, mime_type, blob_path, hash, trust_level, metadata, modalities
+        FROM ledger.evidence_objects
+        WHERE id = ${evidenceId}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+        LIMIT 1
+      `;
+      const evidenceRow = evidenceRows[0];
+      if (!evidenceRow) return undefined;
+      const evidence = rowToEvidence(evidenceRow);
+
+      const packetRows = await tx<(PacketRow & { evidence_object_ids: string[] })[]>`
+        SELECT p.id, p.organization_id, p.workspace_id, p.note, p.voice_transcript, p.created_at,
+               COALESCE(
+                 (SELECT array_agg(i2.evidence_object_id ORDER BY i2.evidence_object_id)
+                  FROM ledger.evidence_packet_items i2
+                  WHERE i2.evidence_packet_id = p.id),
+                 '{}'::text[]
+               ) AS evidence_object_ids
+        FROM ledger.evidence_packets p
+        JOIN ledger.evidence_packet_items i ON i.evidence_packet_id = p.id
+        WHERE i.evidence_object_id = ${evidenceId}
+          AND p.organization_id = ${this.defaults.organizationId}
+          AND p.workspace_id = ${this.defaults.workspaceId}
+        ORDER BY p.created_at DESC
+        LIMIT 1
+      `;
+      const packetRow = packetRows[0];
+      const packet = packetRow ? rowToPacket(packetRow, packetRow.evidence_object_ids) : undefined;
+
+      let voucher: Voucher | undefined;
+      if (packetRow) {
+        const voucherRows = await tx<VoucherRow[]>`
+          SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
+                 accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+          FROM ledger.vouchers
+          WHERE evidence_packet_id = ${packetRow.id}
+            AND organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+          LIMIT 1
+        `;
+        if (voucherRows[0]) voucher = rowToVoucher(voucherRows[0]);
+      }
+
+      if (!voucher) {
+        const result: EvidenceContext = { evidence };
+        if (packet) result.packet = packet;
+        return result;
+      }
+
+      const reviewRows = await tx<ReviewRow[]>`
+        SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
+               suggested_action, suggestion, provenance_timeline, title, created_at
+        FROM ledger.review_tasks
+        WHERE voucher_id = ${voucher.id}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+        LIMIT 1
+      `;
+      const review = reviewRows[0] ? rowToReview(reviewRows[0]) : undefined;
+
+      // 2. Decided-voucher guard (append-only): no mutation, no event.
+      if (voucher.status !== "needs-review") {
+        const result: EvidenceContext = { evidence, voucher };
+        if (packet) result.packet = packet;
+        if (review) result.review = review;
+        return result;
+      }
+
+      const occurredAt = nowIso();
+
+      // 3. Merge by key; 4. recompute voucher fields preserving description/currency.
+      const mergedFields = mergeExtractedFields(voucher.extractedFields, extraction.fields);
+      const voucherFields = recomputeVoucherFields(mergedFields, voucher.voucherFields);
+      const updatedVoucher: Voucher = { ...voucher, extractedFields: mergedFields, voucherFields };
+
+      // 5. Update the voucher read model (events stay the source of truth).
+      await tx`
+        UPDATE ledger.vouchers
+        SET extracted_fields = ${tx.json(mergedFields as unknown as Parameters<typeof tx.json>[0])},
+            voucher_fields = ${tx.json(voucherFields as Parameters<typeof tx.json>[0])}
+        WHERE id = ${voucher.id}
+      `;
+
+      // 6. Re-run rules, regenerate the suggestion, update the review read model.
+      const ruleHits = evaluateVoucherRules(updatedVoucher);
+      const suggestion = buildDeterministicSuggestion(updatedVoucher, ruleHits);
+      const blocked = ruleHits.some((rule) => rule.severity === "blocking");
+      let updatedReview: ReviewTask | undefined;
+      if (review) {
+        updatedReview = {
+          ...review,
+          suggestion,
+          suggestedAction: blocked
+            ? "Request more evidence or post without VAT deduction."
+            : "Approve the proposed posting.",
+          provenanceTimeline: [
+            ...review.provenanceTimeline,
+            { id: createId("step"), label: "Fields re-extracted", timestamp: occurredAt, actor: "system-extractor" },
+            { id: createId("step"), label: "Suggestion regenerated", timestamp: occurredAt, actor: "system-ai" },
+          ],
+        };
+        if (blocked) {
+          updatedReview.blockedReason =
+            "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
+        } else {
+          delete updatedReview.blockedReason;
+        }
+
+        await tx`
+          UPDATE ledger.review_tasks
+          SET suggestion = ${tx.json(suggestion as unknown as Parameters<typeof tx.json>[0])},
+              blocked_reason = ${updatedReview.blockedReason ?? null},
+              suggested_action = ${updatedReview.suggestedAction},
+              provenance_timeline = ${tx.json(updatedReview.provenanceTimeline as unknown as Parameters<typeof tx.json>[0])}
+          WHERE id = ${review.id}
+        `;
+      }
+
+      // 7. Append the two hash-chained events (full snapshot payload, Rule 13).
+      let prev = tailHash;
+      const refreshedEvt = await this.appendEvent(
+        tx,
+        {
+          organizationId: updatedVoucher.organizationId,
+          workspaceId: updatedVoucher.workspaceId,
+          aggregateType: "voucher",
+          aggregateId: updatedVoucher.id,
+          eventType: "ExtractionRefreshed",
+          actorId: "system-extractor",
+          occurredAt,
+          payload: {
+            evidenceId,
+            voucherId: updatedVoucher.id,
+            modelId: extraction.modelId,
+            extractedAt: extraction.extractedAt,
+            fields: mergedFields,
+            voucherFields,
+          },
+        },
+        prev,
+      );
+      prev = refreshedEvt.eventHash;
+
+      if (updatedReview) {
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: updatedVoucher.organizationId,
+            workspaceId: updatedVoucher.workspaceId,
+            aggregateType: "review",
+            aggregateId: updatedReview.id,
+            eventType: "SuggestionGenerated",
+            actorId: "system-ai",
+            occurredAt,
+            payload: suggestion as unknown as Record<string, unknown>,
+          },
+          prev,
+        );
+      }
+
+      // 8. Fresh copies for the caller.
+      const result: EvidenceContext = { evidence, voucher: updatedVoucher };
+      if (packet) result.packet = packet;
+      if (updatedReview) result.review = updatedReview;
+      return result;
+    });
   }
 
   async findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined> {
@@ -776,7 +961,7 @@ export class PostgresLedgerStore implements LedgerStore {
   async getSnapshot(): Promise<WorkspaceSnapshot> {
     const evidenceRows = await this.client<EvidenceRow[]>`
       SELECT id, organization_id, workspace_id, title, created_by, created_at,
-             original_filename, mime_type, blob_path, hash, trust_level, modalities
+             original_filename, mime_type, blob_path, hash, trust_level, metadata, modalities
       FROM ledger.evidence_objects
       WHERE organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}

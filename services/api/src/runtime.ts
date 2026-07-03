@@ -34,6 +34,10 @@ export class UnavailableLedgerStore implements LedgerStore {
     return this.fail();
   }
 
+  async updateEvidenceExtraction() {
+    return this.fail();
+  }
+
   async findReviewByVoucher() {
     return this.fail();
   }

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ReviewNotFoundError } from "@jpx-accounting/domain";
+import type { ExtractionResult } from "@jpx-accounting/contracts";
+import { deriveDeterministicExtraction, MemoryLedgerStore, ReviewNotFoundError, today } from "@jpx-accounting/domain";
 import { closePostgresClient, createPostgresClient, PostgresLedgerStore } from "@jpx-accounting/persistence-postgres";
 
 // Integration test: gated on `SUPABASE_DB_URL`. Skips silently when not set so CI without a live DB
@@ -76,6 +77,158 @@ test("PostgresLedgerStore round-trips evidence creation, review approval, and re
     await closePostgresClient(client);
   }
 });
+
+test("PostgresLedgerStore.createEvidence upload metadata round-trip + Memory field parity", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+    const sha256 = "cd".repeat(32);
+    const blobPath = "evidence-uploads/integ-upload-1/uploaded-receipt.jpg";
+    const baseInput = {
+      actorId: "user_test",
+      title: "Uploaded receipt",
+      originalFilename: "uploaded-receipt.jpg",
+      mimeType: "image/jpeg",
+      modalities: ["upload" as const],
+      sizeBytes: 48211,
+      sha256,
+      uploadId: "integ-upload-1",
+      blobPath,
+    };
+
+    const created = await store.createEvidence({ ...baseInput, organizationId: orgId, workspaceId: wsId });
+    assert.equal(created.evidence.hash, sha256, "sha256 must become the evidence hash");
+    assert.equal(created.evidence.blobPath, blobPath, "client-echoed blobPath must be stored");
+    assert.equal(created.evidence.sizeBytes, 48211, "sizeBytes must round-trip");
+    assert.notEqual(created.voucher.voucherFields.grossAmount, 1249, "file-seeded gross must not be the legacy 1249");
+
+    // metadata jsonb read-back — both via the mapped read path and the raw row.
+    const context = await store.getEvidenceContext(created.evidence.id);
+    assert.equal(context?.evidence.sizeBytes, 48211, "sizeBytes must be read back from metadata jsonb");
+    const rows = await client<Array<{ metadata: { sizeBytes?: number } | null }>>`
+      SELECT metadata FROM ledger.evidence_objects WHERE id = ${created.evidence.id}
+    `;
+    assert.equal(rows[0]?.metadata?.sizeBytes, 48211, "metadata jsonb must carry sizeBytes");
+
+    // Memory/Postgres parity on the derived fields (CONVENTIONS Rule 11).
+    const memory = new MemoryLedgerStore();
+    const memCreated = await memory.createEvidence({
+      ...baseInput,
+      organizationId: "org_jpx",
+      workspaceId: "workspace_main",
+    });
+    assert.deepEqual(created.voucher.extractedFields, memCreated.voucher.extractedFields);
+    assert.deepEqual(created.voucher.voucherFields, memCreated.voucher.voucherFields);
+    assert.equal(created.evidence.hash, memCreated.evidence.hash);
+    assert.equal(created.evidence.blobPath, memCreated.evidence.blobPath);
+    assert.equal(created.evidence.sizeBytes, memCreated.evidence.sizeBytes);
+  } finally {
+    await client`delete from ledger.events where organization_id = ${orgId}`;
+    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+  }
+});
+
+test(
+  "PostgresLedgerStore.updateEvidenceExtraction persists refresh, chains events, guards decided vouchers + Memory parity",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+      const baseInput = {
+        actorId: "user_test",
+        title: "Extraction refresh receipt",
+        originalFilename: "refresh-me.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["camera" as const],
+      };
+      const created = await store.createEvidence({ ...baseInput, organizationId: orgId, workspaceId: wsId });
+      assert.equal(created.voucher.voucherFields.grossAmount, 1249, "legacy create precondition");
+
+      const refresh: ExtractionResult = {
+        modelId: "prebuilt-invoice",
+        fields: deriveDeterministicExtraction({ filename: "refresh-me.jpg", sizeBytes: 77777 }, today()),
+        extractedAt: new Date().toISOString(),
+      };
+
+      const eventsBefore = await store.getEvents();
+      const updated = await store.updateEvidenceExtraction(created.evidence.id, refresh);
+      assert.ok(updated?.voucher, "refresh must return the voucher context");
+
+      const refreshedGross = Number.parseFloat(refresh.fields.find((field) => field.key === "grossAmount")!.value);
+      assert.equal(updated.voucher.voucherFields.grossAmount, refreshedGross, "refreshed gross wins");
+      assert.equal(updated.voucher.voucherFields.description, baseInput.title, "description preserved");
+      assert.ok(updated.review, "review must ride along");
+      assert.notEqual(updated.review.suggestion?.id, created.review.suggestion?.id, "suggestion regenerated");
+
+      // Persisted on the read model, not just the returned copy.
+      const context = await store.getEvidenceContext(created.evidence.id);
+      assert.equal(context?.voucher?.voucherFields.grossAmount, refreshedGross);
+
+      // Exactly two hash-chained events with system actors.
+      const eventsAfter = await store.getEvents();
+      assert.equal(eventsAfter.length, eventsBefore.length + 2, "exactly two events appended");
+      const [refreshedEvt, suggestionEvt] = eventsAfter.slice(-2);
+      assert.equal(refreshedEvt?.eventType, "ExtractionRefreshed");
+      assert.equal(refreshedEvt?.actorId, "system-extractor");
+      assert.equal(suggestionEvt?.eventType, "SuggestionGenerated");
+      assert.equal(suggestionEvt?.actorId, "system-ai");
+      assert.equal(refreshedEvt?.previousHash, eventsBefore.at(-1)?.eventHash);
+      assert.equal(suggestionEvt?.previousHash, refreshedEvt?.eventHash);
+
+      // Decided-voucher guard: approve, refresh again → zero mutations/events.
+      const approved = await store.applyReviewDecision(created.review.id, "approve", { actorId: "user_test" });
+      assert.equal(approved?.status, "approved");
+      const eventsAfterApprove = await store.getEvents();
+      const guarded = await store.updateEvidenceExtraction(created.evidence.id, {
+        ...refresh,
+        fields: deriveDeterministicExtraction({ filename: "refresh-me.jpg", sizeBytes: 11111 }, today()),
+      });
+      assert.equal(guarded?.voucher?.status, "approved");
+      assert.equal(guarded?.voucher?.voucherFields.grossAmount, refreshedGross, "decided voucher untouched");
+      assert.equal((await store.getEvents()).length, eventsAfterApprove.length, "no events appended past decision");
+
+      // Memory/Postgres parity on the refreshed read model (CONVENTIONS Rule 11).
+      const memory = new MemoryLedgerStore();
+      const memCreated = await memory.createEvidence({
+        ...baseInput,
+        organizationId: "org_jpx",
+        workspaceId: "workspace_main",
+      });
+      const memUpdated = await memory.updateEvidenceExtraction(memCreated.evidence.id, refresh);
+      assert.ok(memUpdated?.voucher);
+      assert.deepEqual(updated.voucher.extractedFields, memUpdated.voucher.extractedFields);
+      assert.deepEqual(updated.voucher.voucherFields, memUpdated.voucher.voucherFields);
+      assert.equal(updated.review.suggestion?.accountNumber, memUpdated.review?.suggestion?.accountNumber);
+      assert.equal(updated.review.suggestion?.vatCode, memUpdated.review?.suggestion?.vatCode);
+      assert.equal(updated.review.blockedReason, memUpdated.review?.blockedReason);
+      assert.equal(updated.review.suggestedAction, memUpdated.review?.suggestedAction);
+    } finally {
+      await client`delete from ledger.events where organization_id = ${orgId}`;
+      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+      await closePostgresClient(client);
+    }
+  },
+);
 
 test("PostgresLedgerStore.runSimulation real diff + ReviewNotFoundError", { skip }, async () => {
   if (!databaseUrl) return;

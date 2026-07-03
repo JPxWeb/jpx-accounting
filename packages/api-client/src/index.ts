@@ -7,6 +7,7 @@ import type {
   AssistantRequest,
   AssistantSession,
   CompanySettings,
+  EvidenceContext,
   EvidenceCreateInput,
   ReviewDecisionInput,
   ReviewTask,
@@ -18,13 +19,14 @@ import type {
 } from "@jpx-accounting/contracts";
 import {
   assistantSessionSchema,
+  evidenceContextSchema,
   evidenceCreateResultSchema,
   reviewTaskSchema,
   simulationRunSchema,
   uploadInitResultSchema,
   workspaceSnapshotSchema,
 } from "@jpx-accounting/contracts";
-import { MemoryLedgerStore } from "@jpx-accounting/domain";
+import { deriveDeterministicExtraction, MemoryLedgerStore, nowIso, today } from "@jpx-accounting/domain";
 
 type RequestOptions = RequestInit & { json?: unknown };
 type AccountingApiClientOptions = {
@@ -167,6 +169,7 @@ export class AccountingApiClient {
       return {
         uploadId,
         filename: input.filename,
+        blobPath: `evidence-uploads/${uploadId}/${input.filename}`,
         uploadUrl: `/api/uploads/${uploadId}`,
         requiredContentType: input.mimeType,
         requiredBlobType: "BlockBlob",
@@ -187,7 +190,14 @@ export class AccountingApiClient {
       // No real network in demo — preserve the no-op shape so callers don't branch on runtime mode.
       return;
     }
-    const response = await fetch(uploadResult.uploadUrl, {
+    // Stub uploadUrls are API-relative (`/api/uploads/{id}`); resolve them against the API base so
+    // the PUT reaches the API (possibly via the web api-proxy) instead of 404ing on the web origin.
+    // Azure SAS URLs are absolute and pass through untouched.
+    const target =
+      uploadResult.uploadUrl.startsWith("/") && this.baseUrl
+        ? `${this.baseUrl}${uploadResult.uploadUrl}`
+        : uploadResult.uploadUrl;
+    const response = await fetch(target, {
       method: "PUT",
       headers: {
         "x-ms-blob-type": uploadResult.requiredBlobType,
@@ -198,6 +208,82 @@ export class AccountingApiClient {
     if (!response.ok) {
       throw new AccountingApiError(response.status, `Blob upload failed: ${response.status} ${response.statusText}`);
     }
+  }
+
+  /**
+   * Read-only evidence context: evidence joined to its packet/voucher/review.
+   * Returns `undefined` for unknown evidence (HTTP 404 or missing in the
+   * offline demo store).
+   */
+  async getEvidenceContext(evidenceId: string): Promise<EvidenceContext | undefined> {
+    if (this.fallbackStore) {
+      const context = await this.fallbackStore.getEvidenceContext(evidenceId);
+      if (!context) return undefined;
+      const review = context.voucher ? await this.fallbackStore.findReviewByVoucher(context.voucher.id) : undefined;
+      return { ...context, ...(review ? { review } : {}) };
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const response = await fetch(`${this.baseUrl}/api/evidence/${evidenceId}`, {
+      headers: { accept: "application/json" },
+    });
+    if (response.status === 404) return undefined;
+    if (!response.ok) {
+      throw new AccountingApiError(response.status, `getEvidenceContext failed: ${response.status}`);
+    }
+    return parseJsonBody(response, evidenceContextSchema);
+  }
+
+  /**
+   * Run (or re-run) extraction for an evidence object and persist the result.
+   * Offline demo derives the same deterministic fields the API stub would and
+   * feeds them through the in-memory store's `updateEvidenceExtraction`.
+   */
+  async extractEvidence(evidenceId: string): Promise<EvidenceContext | undefined> {
+    if (this.fallbackStore) {
+      const context = await this.fallbackStore.getEvidenceContext(evidenceId);
+      if (!context) return undefined;
+      const fields = deriveDeterministicExtraction(
+        { filename: context.evidence.originalFilename, sizeBytes: context.evidence.sizeBytes ?? 0 },
+        today(),
+      );
+      return this.fallbackStore.updateEvidenceExtraction(evidenceId, {
+        modelId: "prebuilt-invoice",
+        fields,
+        extractedAt: nowIso(),
+      });
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const response = await fetch(`${this.baseUrl}/api/evidence/${evidenceId}/extract`, {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    if (response.status === 404) return undefined;
+    if (!response.ok) {
+      throw new AccountingApiError(response.status, `extractEvidence failed: ${response.status}`);
+    }
+    // The extract response is a superset ({extracted, ...context, liveExtraction?}) — the schema
+    // strips the extras down to the shared EvidenceContext shape.
+    return parseJsonBody(response, evidenceContextSchema);
+  }
+
+  /**
+   * Short-lived read URL for the evidence file (Azure User-Delegation SAS).
+   * Returns `null` when no preview is available: stub storage, legacy synthetic
+   * blob paths, or the offline demo fallback.
+   */
+  async getEvidenceFileUrl(evidenceId: string): Promise<{ url: string } | null> {
+    if (this.fallbackStore) return null;
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const response = await fetch(`${this.baseUrl}/api/evidence/${evidenceId}/file-url`, {
+      headers: { accept: "application/json" },
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new AccountingApiError(response.status, `getEvidenceFileUrl failed: ${response.status}`);
+    }
+    const payload = (await response.json().catch(() => undefined)) as { url?: unknown } | undefined;
+    if (!payload || typeof payload.url !== "string") return null;
+    return { url: payload.url };
   }
 
   async getCompanySettings(): Promise<CompanySettings | null> {

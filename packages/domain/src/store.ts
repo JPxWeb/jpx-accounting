@@ -5,10 +5,13 @@ import type {
   ComplianceAlert,
   CloseRun,
   EvidenceComposeInput,
+  EvidenceContext,
   EvidenceCreateInput,
   EvidenceCreateResult,
   EvidenceObject,
   EvidencePacket,
+  ExtractedField,
+  ExtractionResult,
   LedgerEvent,
   ReportBundle,
   ReviewDecisionInput,
@@ -16,6 +19,7 @@ import type {
   SimulationRequest,
   SimulationRun,
   Voucher,
+  VoucherField,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
 import { companySettingsSchema } from "@jpx-accounting/contracts";
@@ -24,7 +28,12 @@ import { buildAssistantScaffold } from "./assistant";
 import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
 import { detectComplianceIssues } from "./compliance";
-import { buildExtractedFields, guessAccountingMethod, initialLedgerLines } from "./evidence-defaults";
+import {
+  buildExtractedFields,
+  deriveVoucherFields,
+  guessAccountingMethod,
+  initialLedgerLines,
+} from "./evidence-defaults";
 import { buildJournal, buildBalances, buildVat } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import { buildEventHash } from "./hash-chain";
@@ -52,6 +61,15 @@ export interface LedgerStore {
   getEvidenceContext(
     evidenceId: string,
   ): Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined>;
+  /**
+   * Persist a refreshed extraction (Document Intelligence or stub) against the
+   * voucher linked to `evidenceId`. Append-only: refreshes merge fields by key,
+   * regenerate the suggestion, and append `ExtractionRefreshed` +
+   * `SuggestionGenerated` events — they never rewrite evidence rows or touch a
+   * voucher whose review is already decided (guard returns the current context
+   * unchanged). Returns `undefined` for unknown evidence.
+   */
+  updateEvidenceExtraction(evidenceId: string, extraction: ExtractionResult): Promise<EvidenceContext | undefined>;
   findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined>;
   getReviewFeed(): Promise<ReviewTask[]>;
   getReports(): Promise<ReportBundle>;
@@ -126,6 +144,36 @@ export function buildPostingLines(
       deductible: false,
     },
   ];
+}
+
+/**
+ * Merge extraction fields by key: refreshed values win, existing keys absent
+ * from the refresh are retained (order-stable: existing order first, new keys
+ * appended). Shared by MemoryLedgerStore and PostgresLedgerStore so the two
+ * stay in lockstep (CONVENTIONS Rule 11).
+ */
+export function mergeExtractedFields(existing: ExtractedField[], refreshed: ExtractedField[]): ExtractedField[] {
+  const refreshedByKey = new Map(refreshed.map((field) => [field.key, field]));
+  const merged = existing.map((field) => refreshedByKey.get(field.key) ?? field);
+  const existingKeys = new Set(existing.map((field) => field.key));
+  for (const field of refreshed) {
+    if (!existingKeys.has(field.key)) merged.push(field);
+  }
+  return merged;
+}
+
+/**
+ * Recompute voucher-level fields from a merged extraction while preserving the
+ * human-facing `description` and `currency` of the current voucher (extraction
+ * refreshes must not rename what the user already sees). Shared across stores.
+ */
+export function recomputeVoucherFields(mergedFields: ExtractedField[], current: VoucherField): VoucherField {
+  const derived = deriveVoucherFields(mergedFields, { title: current.description ?? "" });
+  return {
+    ...derived,
+    description: current.description,
+    currency: current.currency,
+  };
 }
 
 export class MemoryLedgerStore implements LedgerStore {
@@ -220,8 +268,11 @@ export class MemoryLedgerStore implements LedgerStore {
       modalities: input.modalities,
       originalFilename: input.originalFilename,
       mimeType: input.mimeType,
-      blobPath: `evidence/${evidenceId}/${input.originalFilename}`,
-      hash: buildEventHash("file", `${input.originalFilename}:${input.title}:${createdAt}`),
+      // Honest upload metadata when the client went through init→PUT→create;
+      // legacy synthetic path + derived hash preserved when no upload happened.
+      blobPath: input.blobPath ?? `evidence/${evidenceId}/${input.originalFilename}`,
+      hash: input.sha256 ?? buildEventHash("file", `${input.originalFilename}:${input.title}:${createdAt}`),
+      sizeBytes: input.sizeBytes,
       trustLevel: "user-upload",
     };
 
@@ -242,19 +293,7 @@ export class MemoryLedgerStore implements LedgerStore {
       status: "needs-review",
       accountingMethod: guessAccountingMethod(input),
       extractedFields,
-      voucherFields: {
-        supplierName: extractedFields.find((field) => field.key === "supplierName")?.value,
-        supplierVatNumber: extractedFields.find((field) => field.key === "supplierVatNumber")?.value,
-        invoiceNumber: extractedFields.find((field) => field.key === "invoiceNumber")?.value,
-        receiptDate: extractedFields.find((field) => field.key === "receiptDate")?.value,
-        transactionDate: extractedFields.find((field) => field.key === "transactionDate")?.value,
-        description: input.title,
-        grossAmount: 1249,
-        netAmount: 999.2,
-        vatAmount: 249.8,
-        vatRate: 25,
-        currency: "SEK",
-      },
+      voucherFields: deriveVoucherFields(extractedFields, input),
       createdAt,
       createdBy: input.actorId,
     };
@@ -389,6 +428,111 @@ export class MemoryLedgerStore implements LedgerStore {
       evidence,
       ...(packet ? { packet } : {}),
       ...(voucher ? { voucher } : {}),
+    };
+  }
+
+  async updateEvidenceExtraction(
+    evidenceId: string,
+    extraction: ExtractionResult,
+  ): Promise<EvidenceContext | undefined> {
+    // 1. Resolve evidence→packet→voucher via the existing join.
+    const context = await this.getEvidenceContext(evidenceId);
+    if (!context) return undefined;
+    const { evidence, packet } = context;
+    const voucher = context.voucher;
+    if (!voucher) {
+      return { evidence: { ...evidence }, ...(packet ? { packet: { ...packet } } : {}) };
+    }
+
+    const reviewId = this.voucherIdToReviewId.get(voucher.id);
+    const review = reviewId ? this.reviews.get(reviewId) : undefined;
+
+    // 2. Decided-voucher guard (append-only): a reviewed voucher is history —
+    //    return the current context without any mutation or event.
+    if (voucher.status !== "needs-review") {
+      return {
+        evidence: { ...evidence },
+        ...(packet ? { packet: { ...packet } } : {}),
+        voucher: { ...voucher },
+        ...(review ? { review: { ...review } } : {}),
+      };
+    }
+
+    const occurredAt = nowIso();
+
+    // 3. Merge by key; 4. recompute voucher fields preserving description/currency.
+    const mergedFields = mergeExtractedFields(voucher.extractedFields, extraction.fields);
+    const voucherFields = recomputeVoucherFields(mergedFields, voucher.voucherFields);
+
+    // 5. Immutable replace of the voucher read model (CONVENTIONS Rule 17).
+    const updatedVoucher: Voucher = { ...voucher, extractedFields: mergedFields, voucherFields };
+    this.vouchers.set(updatedVoucher.id, updatedVoucher);
+
+    // 6. Re-run rules, regenerate the suggestion, update the review read model.
+    const ruleHits = evaluateVoucherRules(updatedVoucher);
+    const suggestion = buildDeterministicSuggestion(updatedVoucher, ruleHits);
+    const blocked = ruleHits.some((rule) => rule.severity === "blocking");
+    let updatedReview: ReviewTask | undefined;
+    if (review) {
+      updatedReview = {
+        ...review,
+        suggestion,
+        suggestedAction: blocked
+          ? "Request more evidence or post without VAT deduction."
+          : "Approve the proposed posting.",
+        provenanceTimeline: [
+          ...review.provenanceTimeline,
+          { id: createId("step"), label: "Fields re-extracted", timestamp: occurredAt, actor: "system-extractor" },
+          { id: createId("step"), label: "Suggestion regenerated", timestamp: occurredAt, actor: "system-ai" },
+        ],
+      };
+      if (blocked) {
+        updatedReview.blockedReason =
+          "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
+      } else {
+        delete updatedReview.blockedReason;
+      }
+      this.reviews.set(updatedReview.id, updatedReview);
+      this.suggestions.set(updatedVoucher.id, suggestion);
+    }
+
+    // 7. Append the two hash-chained events (full snapshot payload, Rule 13).
+    this.appendEvent({
+      organizationId: updatedVoucher.organizationId,
+      workspaceId: updatedVoucher.workspaceId,
+      aggregateType: "voucher",
+      aggregateId: updatedVoucher.id,
+      eventType: "ExtractionRefreshed",
+      actorId: "system-extractor",
+      occurredAt,
+      payload: {
+        evidenceId,
+        voucherId: updatedVoucher.id,
+        modelId: extraction.modelId,
+        extractedAt: extraction.extractedAt,
+        fields: mergedFields,
+        voucherFields,
+      },
+    });
+    if (updatedReview) {
+      this.appendEvent({
+        organizationId: updatedVoucher.organizationId,
+        workspaceId: updatedVoucher.workspaceId,
+        aggregateType: "review",
+        aggregateId: updatedReview.id,
+        eventType: "SuggestionGenerated",
+        actorId: "system-ai",
+        occurredAt,
+        payload: suggestion,
+      });
+    }
+
+    // 8. Fresh copies for the caller.
+    return {
+      evidence: { ...evidence },
+      ...(packet ? { packet: { ...packet } } : {}),
+      voucher: { ...updatedVoucher },
+      ...(updatedReview ? { review: { ...updatedReview } } : {}),
     };
   }
 
