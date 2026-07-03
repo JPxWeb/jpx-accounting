@@ -18,6 +18,7 @@ import type {
   Voucher,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
+import { companySettingsSchema } from "@jpx-accounting/contracts";
 
 import { buildAssistantScaffold } from "./assistant";
 import { detectComplianceIssues } from "./compliance";
@@ -575,7 +576,9 @@ export class MemoryLedgerStore implements LedgerStore {
   }
 
   async putCompanySettings(input: CompanySettings): Promise<CompanySettings> {
-    this.companySettings = { ...input };
+    // Normalize through the schema so legacy payloads (no profile) gain the
+    // Sweden defaults exactly like the Postgres read path does (store parity).
+    this.companySettings = companySettingsSchema.parse(input);
     return { ...this.companySettings };
   }
 

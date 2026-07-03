@@ -21,6 +21,7 @@ import type {
   Voucher,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
+import { companySettingsSchema } from "@jpx-accounting/contracts";
 
 import {
   buildAssistantScaffold,
@@ -1196,7 +1197,9 @@ export class PostgresLedgerStore implements LedgerStore {
       SELECT settings FROM ledger.organization_settings
       WHERE organization_id = ${this.defaults.organizationId}
     `;
-    return rows[0]?.settings ?? null;
+    // Normalize through the schema: pre-profile jsonb rows gain the Sweden
+    // defaults on read (append-only data is never rewritten in place).
+    return rows[0] ? companySettingsSchema.parse(rows[0].settings) : null;
   }
 
   async putCompanySettings(input: CompanySettings): Promise<CompanySettings> {
@@ -1204,11 +1207,12 @@ export class PostgresLedgerStore implements LedgerStore {
     // PostgresLedgerStore on main constructs without one, so use the org id as
     // the audit fallback. When ctx.userId is plumbed through (separate sprint),
     // swap this for ctx.userId.
+    const parsed = companySettingsSchema.parse(input);
     await this.client.begin(async (tx) => {
       await tx`
         INSERT INTO ledger.organization_settings (organization_id, settings, updated_by)
         VALUES (${this.defaults.organizationId},
-                ${tx.json(input as unknown as Parameters<typeof tx.json>[0])},
+                ${tx.json(parsed as unknown as Parameters<typeof tx.json>[0])},
                 ${this.defaults.organizationId})
         ON CONFLICT (organization_id) DO UPDATE
           SET settings = EXCLUDED.settings,
@@ -1216,6 +1220,6 @@ export class PostgresLedgerStore implements LedgerStore {
               updated_by = EXCLUDED.updated_by
       `;
     });
-    return input;
+    return parsed;
   }
 }

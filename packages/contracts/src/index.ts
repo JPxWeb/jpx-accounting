@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import { countryCodeSchema, countryValidationRegistry } from "./countries";
+
+export * from "./countries";
+
 export const roleSchema = z.enum(["Preparer", "Approver", "Accountant", "Admin", "Auditor", "Advisor"]);
 
 export const accountingMethodSchema = z.enum(["invoice", "cash"]);
@@ -312,19 +316,51 @@ export const simulationRequestSchema = z.object({
   action: z.enum(["approve", "book-without-vat"]),
 });
 
-export const companySettingsSchema = z.object({
-  organizationId: z.string(),
-  organizationName: z.string().min(1),
-  organizationNumber: z.string().regex(/^\d{6}-\d{4}$/, "Swedish org number format is XXXXXX-XXXX"),
-  addressLine1: z.string().min(1),
-  addressLine2: z.string().optional(),
-  postalCode: z.string().regex(/^\d{3}\s?\d{2}$/, "Swedish postal code format is XXX XX"),
-  city: z.string().min(1),
-  contactEmail: z.email(),
-  contactPhone: z.string().optional(),
-  bankIban: z.string().optional(),
-  bankBic: z.string().optional(),
+/**
+ * Workspace profile — country/locale/currency/fiscal-year seam for the
+ * European abstractions (advisory pivot Phase 2). Lives on the org-level
+ * company settings until multi-workspace lands.
+ */
+export const workspaceProfileSchema = z.object({
+  country: countryCodeSchema.default("SE"),
+  /** BCP-47; drives Intl formatting + the message catalog. */
+  locale: z.string().min(2).default("sv-SE"),
+  /** ISO-4217 display currency. Voucher-level multi-currency is out of scope. */
+  currency: z.string().length(3).default("SEK"),
+  /** MM-DD start of the fiscal year. */
+  fiscalYearStart: z
+    .string()
+    .regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/)
+    .default("01-01"),
 });
+export type WorkspaceProfile = z.infer<typeof workspaceProfileSchema>;
+export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = workspaceProfileSchema.parse({});
+
+export const companySettingsSchema = z
+  .object({
+    organizationId: z.string(),
+    organizationName: z.string().min(1),
+    organizationNumber: z.string().min(1),
+    addressLine1: z.string().min(1),
+    addressLine2: z.string().optional(),
+    postalCode: z.string().min(1),
+    city: z.string().min(1),
+    contactEmail: z.email(),
+    contactPhone: z.string().optional(),
+    bankIban: z.string().optional(),
+    bankBic: z.string().optional(),
+    profile: workspaceProfileSchema.default(DEFAULT_WORKSPACE_PROFILE),
+  })
+  .superRefine((value, ctx) => {
+    // Validation is looked up per country — Sweden is a registry entry, not a hardcode.
+    const rules = countryValidationRegistry[value.profile.country];
+    if (!rules.organizationNumber.pattern.test(value.organizationNumber)) {
+      ctx.addIssue({ code: "custom", message: rules.organizationNumber.message, path: ["organizationNumber"] });
+    }
+    if (!rules.postalCode.pattern.test(value.postalCode)) {
+      ctx.addIssue({ code: "custom", message: rules.postalCode.message, path: ["postalCode"] });
+    }
+  });
 
 export const uploadInitSchema = z.object({
   filename: z.string(),

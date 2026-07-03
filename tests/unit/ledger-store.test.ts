@@ -109,9 +109,27 @@ test("MemoryLedgerStore.getCompanySettings/putCompanySettings round-trip", async
     postalCode: "111 22",
     city: "Stockholm",
     contactEmail: "test@example.com",
+    profile: { country: "SE" as const, locale: "en-GB", currency: "EUR", fiscalYearStart: "07-01" },
   };
   const saved = await store.putCompanySettings(settings);
   assert.equal(saved.organizationName, "Test AB");
+  assert.equal(saved.profile.currency, "EUR");
   const loaded = await store.getCompanySettings();
   assert.equal(loaded?.organizationName, "Test AB");
+  assert.equal(loaded?.profile.locale, "en-GB");
+});
+
+test("MemoryLedgerStore.putCompanySettings normalizes legacy payloads without a profile", async () => {
+  const store = new MemoryLedgerStore();
+  const legacy = {
+    organizationId: "org_test",
+    organizationName: "Legacy AB",
+    organizationNumber: "556677-8899",
+    addressLine1: "Kungsgatan 1",
+    postalCode: "111 22",
+    city: "Stockholm",
+    contactEmail: "legacy@example.com",
+  } as Parameters<MemoryLedgerStore["putCompanySettings"]>[0];
+  const saved = await store.putCompanySettings(legacy);
+  assert.deepEqual(saved.profile, { country: "SE", locale: "sv-SE", currency: "SEK", fiscalYearStart: "01-01" });
 });

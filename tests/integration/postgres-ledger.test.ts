@@ -186,11 +186,42 @@ test("PostgresLedgerStore.getCompanySettings/putCompanySettings round-trip", { s
       postalCode: "111 22",
       city: "Stockholm",
       contactEmail: "test@example.com",
+      profile: { country: "SE" as const, locale: "en-GB", currency: "EUR", fiscalYearStart: "07-01" },
     };
     await store.putCompanySettings(settings);
     const loaded = await store.getCompanySettings();
     assert.equal(loaded?.organizationName, "Test AB");
     assert.equal(loaded?.organizationNumber, "556677-8899");
+    assert.equal(loaded?.profile.currency, "EUR");
+    assert.equal(loaded?.profile.fiscalYearStart, "07-01");
+  } finally {
+    await client`delete from ledger.organization_settings where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+  }
+});
+
+test("PostgresLedgerStore.getCompanySettings normalizes legacy jsonb rows without a profile", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+    const legacyJson = {
+      organizationId: orgId,
+      organizationName: "Legacy AB",
+      organizationNumber: "556677-8899",
+      addressLine1: "Kungsgatan 1",
+      postalCode: "111 22",
+      city: "Stockholm",
+      contactEmail: "legacy@example.com",
+    };
+    await client`
+      insert into ledger.organization_settings (organization_id, settings, updated_by)
+      values (${orgId}, ${client.json(legacyJson as never)}, ${orgId})
+    `;
+    const loaded = await store.getCompanySettings();
+    assert.deepEqual(loaded?.profile, { country: "SE", locale: "sv-SE", currency: "SEK", fiscalYearStart: "01-01" });
   } finally {
     await client`delete from ledger.organization_settings where organization_id = ${orgId}`;
     await closePostgresClient(client);

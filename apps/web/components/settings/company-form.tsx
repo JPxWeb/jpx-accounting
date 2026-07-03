@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { type CompanySettings, companySettingsSchema } from "@jpx-accounting/contracts";
+import { type CompanySettings, companySettingsSchema, DEFAULT_WORKSPACE_PROFILE } from "@jpx-accounting/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -139,6 +139,7 @@ const EMPTY_COMPANY_SETTINGS: CompanySettings = {
   postalCode: "",
   city: "",
   contactEmail: "",
+  profile: DEFAULT_WORKSPACE_PROFILE,
 };
 
 export function CompanyForm() {
