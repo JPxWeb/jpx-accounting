@@ -1,7 +1,9 @@
 # Development Status
 
-**Last reviewed:** 2026-05-27 (post-deploy-cleanup sweep)
+**Last reviewed:** 2026-07-03 (advisory-pivot kickoff)
 **Purpose:** Track phase completion, ported work, and open UI follow-ups. Update at the end of each phase.
+
+> **Advisory pivot in progress (2026-07-03, branch `feat/advisory-pivot`).** The product is being evolved into an AI advisory reporting app for European SMBs — drag-&-drop advisory dashboard, one-shot UI/token consolidation, real capture pipeline, deep reports, advisory layer. Where the Track A phase plans below conflict with it, the pivot wins. Spec: [`superpowers/specs/2026-07-03-advisory-pivot-design.md`](./superpowers/specs/2026-07-03-advisory-pivot-design.md) · Plan: [`superpowers/plans/2026-07-03-advisory-pivot-master-plan.md`](./superpowers/plans/2026-07-03-advisory-pivot-master-plan.md).
 
 > **Deploy → main port is complete (2026-05-27).** Eight PRs (A, B, C, D1, D2, D3, G, H1) drained the useful work from `origin/deploy` and reset `origin/deploy` to match `origin/main`. The Track A IA web layer (5-tab navigation, ambient digest, settings layout, Today per-card actions, Books) is on `main` with shadcn/ui primitives in place; the underlying data layer (`PostgresLedgerStore`) has the full Phase 7 contract surface. Future-work plans + design specs from the `deploy` lineage are preserved under [`docs/superpowers/plans/`](./superpowers/plans/) and [`docs/superpowers/specs/`](./superpowers/specs/).
 
