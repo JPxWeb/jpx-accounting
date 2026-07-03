@@ -237,7 +237,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                     <span className="min-w-0">
                       <span className="block text-sm font-semibold">{item.label}</span>
                       <span
-                        className={`mt-1 block text-xs ${active ? "text-white/78" : "text-[var(--color-text-muted)]"}`}
+                        className={`mt-1 block text-xs ${active ? "text-white/90" : "text-[var(--color-text-muted)]"}`}
                       >
                         {item.summary}
                       </span>

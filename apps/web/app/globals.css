@@ -145,10 +145,16 @@ button:disabled,
   }
 }
 
-a {
-  /* Inherit resolves to body text color; teal nav chips rely on Tailwind `text-*!` to override when active. */
-  color: inherit;
-  text-decoration: none;
+@layer base {
+  a {
+    /*
+     * Must live in @layer base: un-layered author CSS beats Tailwind's layered
+     * utilities regardless of specificity, which silently defeated `text-white`
+     * on teal nav chips (axe color-contrast 3.31:1 — the pre-pivot CI red).
+     */
+    color: inherit;
+    text-decoration: none;
+  }
 }
 
 .glass-chrome {

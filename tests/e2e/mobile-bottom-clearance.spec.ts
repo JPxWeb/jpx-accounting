@@ -9,7 +9,8 @@ test.beforeEach(async ({ request }) => {
 const screensWithLongContent = [
   { path: "/reports", lastCardTestId: "vat-preparation" },
   { path: "/assistant", lastCardTestId: "policy-rules-studio" },
-  { path: "/settings", lastCardTestId: "billing-card" },
+  // /settings redirects to /settings/company (PR-D2); the long About page keeps billing-card last.
+  { path: "/settings/about", lastCardTestId: "billing-card" },
 ];
 
 for (const { path, lastCardTestId } of screensWithLongContent) {

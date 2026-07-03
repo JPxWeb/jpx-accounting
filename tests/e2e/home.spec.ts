@@ -16,7 +16,7 @@ function captureButton(page: Page) {
 test("home screen can add a new review item from the browser", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: /Review queue/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Keep the next accounting decision obvious/i })).toBeVisible();
   await expect(page.getByTestId("runtime-mode-pill")).toContainText("Demo");
   await expect(page.getByTestId("review-card")).toHaveCount(1);
   if (test.info().project.name.includes("mobile")) {
@@ -27,8 +27,19 @@ test("home screen can add a new review item from the browser", async ({ page }) 
     await expect(page.getByTestId("mobile-dock")).toBeHidden();
   }
 
-  await page.getByTestId("queue-overflow-menu").locator("summary").click();
-  await page.getByTestId("simulate-upload").click();
+  // The way to add a review item from the browser is the capture journey:
+  // quick-add draft on /capture, promote it to evidence, which creates a
+  // voucher + review through the ledger (the review queue is the only
+  // path to a posted voucher).
+  await page.goto("/capture");
+  await page.getByTestId("quick-add-upload").click();
+  await expect(page.getByTestId("draft-row").first()).toBeVisible();
+  await page.getByTestId("draft-promote").first().click();
+  // Promote removes the local draft only after createEvidence succeeds, so an
+  // empty drafts table proves the evidence + review were created server-side.
+  await expect(page.getByTestId("draft-row")).toHaveCount(0);
+
+  await page.goto("/today");
   await expect(page.getByTestId("review-card")).toHaveCount(2);
 });
 
@@ -37,14 +48,13 @@ test("home screen supports approval and local draft capture", async ({ page }) =
 
   await expect(page.getByTestId("review-card")).toHaveCount(1);
 
-  await page.getByTestId("approve-review").first().click();
+  await page.getByTestId("review-accept").first().click();
   await expect(page.getByTestId("review-status").filter({ hasText: "approved" })).toHaveCount(1);
 
   await captureButton(page).click();
   await expect(page.getByTestId("capture-sheet")).toBeVisible();
-  await page.getByText("More capture options").click();
   await page.getByTestId("capture-mode-camera").click();
-  await expect(page.getByTestId("draft-notice")).toContainText("Camera draft saved locally");
+  await expect(page.getByTestId("draft-notice")).toContainText("Camera draft saved");
 });
 
 test("home screen passes WCAG 2.2 AA accessibility checks", async ({ page }) => {

@@ -19,7 +19,11 @@ test("navigation and share target flows stay reachable", async ({ page }) => {
   await expect(page).toHaveURL(/\/reports$/);
 
   await page.getByRole("link", { name: "Settings" }).click();
-  await expect(page).toHaveURL(/\/settings$/);
+  // /settings redirects to the first sub-page (PR-D2 settings layout).
+  await expect(page).toHaveURL(/\/settings\/company$/);
+
+  // The build/deployment posture moved to /settings/about in the PR-D2 split.
+  await page.goto("/settings/about");
   await expect(page.getByTestId("settings-hero")).toContainText("About this build");
   await expect(page.getByTestId("deployment-posture")).toContainText("Sweden Central");
   await expect(page.getByTestId("audit-spine")).toContainText("Append-only events");

@@ -32,8 +32,18 @@ function ToggleGroup({
     spacing?: number;
     orientation?: "horizontal" | "vertical";
   }) {
+  const groupRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Base UI renders aria-orientation on role="group", which ARIA does not
+  // allow (axe: aria-allowed-attr, critical). Strip it after every render;
+  // orientation stays exposed via data-orientation for styling.
+  React.useLayoutEffect(() => {
+    groupRef.current?.removeAttribute("aria-orientation");
+  });
+
   return (
     <ToggleGroupPrimitive
+      ref={groupRef}
       data-slot="toggle-group"
       data-variant={variant}
       data-size={size}
