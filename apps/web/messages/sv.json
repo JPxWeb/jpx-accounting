@@ -1,0 +1,163 @@
+{
+  "common": {
+    "skipToContent": "Hoppa till innehåll",
+    "theme": {
+      "groupLabel": "Tema",
+      "system": "Systemtema",
+      "light": "Ljust tema",
+      "dark": "Mörkt tema"
+    }
+  },
+  "shell": {
+    "brand": "JPX Accounting",
+    "nav": {
+      "today": { "label": "Idag", "summary": "Dagens granskningskö" },
+      "capture": { "label": "Fånga", "summary": "Underlag & utkast" },
+      "books": { "label": "Böcker", "summary": "Journal, konton, avslut" },
+      "reports": { "label": "Rapporter", "summary": "RR, BR, moms, exporter" },
+      "settings": { "label": "Inställningar", "summary": "Företag & integrationer" },
+      "advisor": { "label": "Rådgivare", "summary": "Fråga om dina siffror" }
+    },
+    "primaryNavAria": "Primär",
+    "mobileNavAria": "Mobil primär",
+    "marketing": {
+      "headline": "Pålitlig AI-bokföring för Sverige-först-team.",
+      "subheadline": "Compliance-kritiska flöden förblir deterministiska. AI vägleder, citerar och snabbar upp granskningsytan.",
+      "demoNotice": "Demoläget använder avsiktligt lokalt scaffold-beteende så att det aldrig misstas för skarp bokföring."
+    },
+    "captureLane": {
+      "eyebrow": "Insamlingsspår",
+      "description": "Kamera, inklistring, uppladdning och delning hamnar i samma kö och visar var utkastet sparades.",
+      "badge": "Lokalt först",
+      "action": "Fånga underlag"
+    },
+    "innovation": {
+      "eyebrow": "Innovationsspår",
+      "description": "Röstinmatning, simuleringar och avslutscopilot hålls isolerade från bokföringsbehörighet tills de förtjänat förtroende."
+    },
+    "topbar": {
+      "location": "Sweden Central / Stockholm",
+      "captureAria": "Fånga underlag"
+    },
+    "digest": {
+      "mobileSummary": "Dagens puls"
+    },
+    "demoBanner": "Demoläge är aktivt. Lokal demodata och lokal AI-fallback är avsiktligt aktiverade.",
+    "captureSheet": {
+      "eyebrow": "Snabbinmatning",
+      "title": "Lägg till affärsunderlag",
+      "close": "Stäng",
+      "closeAria": "Stäng insamlingspanelen",
+      "description": "Insamlingen börjar lokalt så att gränssnittet förblir responsivt. Resultatet visar om utkastet sparades varaktigt eller bara för den här fliken."
+    },
+    "draftModes": {
+      "camera": { "label": "Kamera", "hint": "Fota ett kvitto med enhetens kamera" },
+      "upload": { "label": "Ladda upp", "hint": "Välj en PDF eller bild från disk" },
+      "paste": { "label": "Klistra in", "hint": "Klistra in en bild från urklipp" },
+      "share": { "label": "Dela", "hint": "Ta emot från en annan app via PWA-delning" }
+    },
+    "draftTitle": "{mode}-utkast",
+    "captureStatus": {
+      "indexeddb": "{mode}-utkast sparat lokalt i IndexedDB.",
+      "session": "{mode}-utkast sparat endast för den här webbläsarfliken.",
+      "memory": "{mode}-utkast sparat i tillfälligt minne endast för den här fliken.",
+      "error": "{mode}-utkastet kunde inte sparas lokalt. Kontrollera webbläsarens lagringsbehörigheter och försök igen."
+    }
+  },
+  "palette": {
+    "dialogAria": "Sök i arbetsytan",
+    "placeholder": "Sök verifikat, granskningar, konton…",
+    "askAdvisor": "Fråga rådgivaren",
+    "askAdvisorHint": "Fråga om dina siffror",
+    "noMatches": "Inga träffar",
+    "resultsAria": "Sökresultat",
+    "escHint": "Esc för att stänga · {shortcut}"
+  },
+  "today": {
+    "eyebrow": "Idag / Behöver granskas",
+    "title": "Granskningsklar bokföring, formad för mobilen först.",
+    "description": "Underlag kommer in en gång, förslagen förblir förklarbara och kön håller det verkliga bokföringsarbetet ovanför vecket i stället för att gömma det under dashboardkrom.",
+    "metricPending": "Väntande granskningar",
+    "metricBlocked": "Blockerad moms",
+    "reviewQueue": "Granskningskö",
+    "queueTitle": "Håll nästa bokföringsbeslut självklart.",
+    "queueDescription": "Korten är kompakta på mobilen, expanderar på större skärmar och håller AI-resonemang bakom sekundär visning tills det behövs.",
+    "emptyFiltered": "Inga granskningar matchar de här filtren.",
+    "emptyQueue": "Inga granskningar i kön.",
+    "clearFilters": "Rensa filter",
+    "editToast": "Redigering blir tillgänglig i en kommande version.",
+    "card": {
+      "invoiceMethod": "Fakturametod",
+      "cashMethod": "Kontantmetod",
+      "pendingVoucher": "Väntande verifikat",
+      "date": "Datum",
+      "gross": "Brutto",
+      "vat": "Moms",
+      "aiSuggestion": "AI-förslag",
+      "ruleHits": "Regelträffar och proveniens",
+      "cited": "Citerad: {title}"
+    },
+    "actions": {
+      "legend": "Granskningsåtgärder",
+      "accept": "Godkänn",
+      "edit": "Redigera",
+      "bookWithoutVat": "Bokför utan moms",
+      "reject": "Avvisa"
+    },
+    "filters": {
+      "statusAria": "Filtrera efter status",
+      "all": "Alla",
+      "needsReview": "Behöver granskas",
+      "blocked": "Blockerade",
+      "approved": "Godkända",
+      "supplierPlaceholder": "Filtrera efter leverantör...",
+      "confidenceAria": "Filtrera efter konfidens",
+      "allConfidence": "All konfidens"
+    }
+  },
+  "capture": {
+    "eyebrow": "Fånga",
+    "title": "Lägg till underlag, se utkast, bläddra i arkivet.",
+    "description": "Det samlade hemmet för allt du har fångat — pågående utkast, nyss uppladdat, helt arkiverat.",
+    "quickAdd": {
+      "title": "Snabbtillägg",
+      "description": "Varje ruta skapar ett lokalt utkast som du kan lyfta till bokföringsunderlag.",
+      "tiles": {
+        "camera": { "label": "Kamera", "hint": "Fota ett kvitto med enhetens kamera" },
+        "upload": { "label": "Ladda upp", "hint": "Välj en PDF eller bild från disk" },
+        "paste": { "label": "Klistra in", "hint": "Klistra in en bild från urklipp" },
+        "share": { "label": "Dela", "hint": "Ta emot från en annan app via PWA-delning" }
+      },
+      "draftTitle": "{mode}-utkast",
+      "draftAdded": "{mode}-utkast tillagt.",
+      "draftError": "Kunde inte spara {mode}-utkastet lokalt.",
+      "importSie": "Importera SIE-fil",
+      "importing": "Importerar…",
+      "imported": "Importerade {count} transaktioner från SIE.",
+      "importError": "Kunde inte importera SIE-filen.",
+      "connectBank": "Anslut bankflöde"
+    },
+    "drafts": {
+      "title": "Utkast som pågår",
+      "empty": "Inga lokala utkast. Använd Snabbtillägg ovan eller fångstknappen.",
+      "headerMode": "Läge",
+      "headerTitle": "Titel",
+      "headerCreated": "Skapad",
+      "headerAction": "Åtgärd",
+      "promote": "Lyft till bokföring",
+      "promoted": "Utkast lyft till bokföringsunderlag.",
+      "promoteError": "Kunde inte lyfta utkastet."
+    },
+    "archive": {
+      "title": "Underlagsarkiv",
+      "searchPlaceholder": "Sök underlag…",
+      "empty": "Inget arkiverat underlag ännu. Lyft ett utkast ovan för att fylla arkivet.",
+      "headerTitle": "Titel",
+      "headerType": "Typ",
+      "headerHash": "Hash",
+      "headerUploaded": "Uppladdad",
+      "open": "Öppna",
+      "hashCopied": "Hash kopierad."
+    }
+  }
+}

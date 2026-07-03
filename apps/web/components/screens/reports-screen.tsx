@@ -6,10 +6,10 @@ import { motion } from "motion/react";
 import { toast } from "sonner";
 
 import { getErrorMessage } from "../../lib/request-errors";
-import { formatMoney } from "../../lib/presentation";
 import { summarizeBalances, summarizeJournal, summarizeVat } from "@jpx-accounting/reporting";
 import { apiClient } from "../../lib/client";
 import { getPeriodDayRange, journalEntryInPeriod, type ReportPeriodPreset } from "../../lib/report-period";
+import { Money } from "../ui/money";
 import { ScreenHeader } from "../ui/screen-header";
 import { UnavailableState } from "../ui/unavailable-state";
 import { SectionLabel } from "../ui/section-label";
@@ -141,8 +141,8 @@ export function ReportsScreen() {
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {[
               { label: "Entries", value: journalSummary.count },
-              { label: "Debit", value: formatMoney(journalSummary.totalDebit) },
-              { label: "Credit", value: formatMoney(journalSummary.totalCredit) },
+              { label: "Debit", value: <Money value={journalSummary.totalDebit} /> },
+              { label: "Credit", value: <Money value={journalSummary.totalCredit} /> },
             ].map((item) => (
               <div key={item.label} className="glass-panel-soft rounded-xl p-4">
                 <SectionLabel>{item.label}</SectionLabel>
@@ -162,16 +162,22 @@ export function ReportsScreen() {
                     <p className="font-medium text-foreground">{balance.accountName}</p>
                     <p className="text-mono text-xs text-muted-foreground">{balance.accountNumber}</p>
                   </div>
-                  <p className="text-sm font-semibold tabular-nums text-foreground">{formatMoney(balance.balance)}</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    <Money value={balance.balance} />
+                  </p>
                 </div>
                 <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="glass-panel-inset rounded-xl px-3 py-3">
                     <dt className="text-eyebrow">Debit</dt>
-                    <dd className="mt-2 font-semibold tabular-nums text-foreground">{formatMoney(balance.debit)}</dd>
+                    <dd className="mt-2 font-semibold text-foreground">
+                      <Money value={balance.debit} />
+                    </dd>
                   </div>
                   <div className="glass-panel-inset rounded-xl px-3 py-3">
                     <dt className="text-eyebrow">Credit</dt>
-                    <dd className="mt-2 font-semibold tabular-nums text-foreground">{formatMoney(balance.credit)}</dd>
+                    <dd className="mt-2 font-semibold text-foreground">
+                      <Money value={balance.credit} />
+                    </dd>
                   </div>
                 </dl>
               </article>
@@ -186,8 +192,12 @@ export function ReportsScreen() {
           {vatSummary.map((entry) => (
             <div key={entry.vatCode} className="glass-panel-soft rounded-xl p-4">
               <SectionLabel>{entry.label}</SectionLabel>
-              <p className="mt-3 text-2xl font-semibold tabular-nums">{formatMoney(entry.vatAmount)}</p>
-              <p className="mt-2 text-sm tabular-nums text-muted-foreground">Base {formatMoney(entry.baseAmount)}</p>
+              <p className="mt-3 text-2xl font-semibold">
+                <Money value={entry.vatAmount} />
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Base <Money value={entry.baseAmount} />
+              </p>
             </div>
           ))}
         </div>

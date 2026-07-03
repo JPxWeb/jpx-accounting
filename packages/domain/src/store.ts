@@ -21,6 +21,8 @@ import type {
 import { companySettingsSchema } from "@jpx-accounting/contracts";
 
 import { buildAssistantScaffold } from "./assistant";
+import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
+import type { CoaTemplate } from "./coa/types";
 import { detectComplianceIssues } from "./compliance";
 import { buildExtractedFields, guessAccountingMethod, initialLedgerLines } from "./evidence-defaults";
 import { buildJournal, buildBalances, buildVat } from "./projections";
@@ -80,11 +82,14 @@ export function buildPostingLines(
   suggestion: AccountingSuggestion,
   action: "approve" | "book-without-vat",
   occurredAt: string,
+  coa: CoaTemplate = defaultCoaTemplate,
 ): LedgerLine[] {
   const amount = voucher.voucherFields.grossAmount ?? 0;
   const netAmount = voucher.voucherFields.netAmount ?? amount;
   const vatAmount = action === "book-without-vat" ? 0 : (voucher.voucherFields.vatAmount ?? 0);
   const description = voucher.voucherFields.description ?? "Reviewed voucher";
+  const inputVatAccount = coa.roles.inputVat;
+  const bankAccount = coa.roles.bank;
 
   return [
     {
@@ -100,8 +105,8 @@ export function buildPostingLines(
     },
     {
       voucherId: voucher.id,
-      accountNumber: "2641",
-      accountName: "Debiterad ingående moms",
+      accountNumber: inputVatAccount,
+      accountName: findCoaAccount(coa, inputVatAccount)?.name ?? inputVatAccount,
       description: `${description} VAT`,
       debit: vatAmount,
       credit: 0,
@@ -111,8 +116,8 @@ export function buildPostingLines(
     },
     {
       voucherId: voucher.id,
-      accountNumber: "1930",
-      accountName: "Företagskonto",
+      accountNumber: bankAccount,
+      accountName: findCoaAccount(coa, bankAccount)?.name ?? bankAccount,
       description,
       debit: 0,
       credit: amount,

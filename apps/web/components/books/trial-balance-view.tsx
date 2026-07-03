@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
 
 import { apiClient } from "../../lib/client";
-import { formatMoney } from "../../lib/presentation";
+import { Money } from "../ui/money";
 
 const views = ["journal", "general-ledger", "trial-balance", "suppliers", "close"] as const;
 type View = (typeof views)[number];
@@ -52,16 +52,22 @@ export function TrialBalanceView() {
                 <p className="font-medium text-foreground">{balance.accountName}</p>
                 <p className="text-mono text-xs text-muted-foreground">{balance.accountNumber}</p>
               </div>
-              <p className="text-sm font-semibold tabular-nums text-foreground">{formatMoney(balance.balance)}</p>
+              <p className="text-sm font-semibold text-foreground">
+                <Money value={balance.balance} />
+              </p>
             </div>
             <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="glass-panel-inset rounded-lg px-3 py-3">
                 <dt className="text-eyebrow">Debit</dt>
-                <dd className="mt-2 font-semibold tabular-nums text-foreground">{formatMoney(balance.debit)}</dd>
+                <dd className="mt-2 font-semibold text-foreground">
+                  <Money value={balance.debit} />
+                </dd>
               </div>
               <div className="glass-panel-inset rounded-lg px-3 py-3">
                 <dt className="text-eyebrow">Credit</dt>
-                <dd className="mt-2 font-semibold tabular-nums text-foreground">{formatMoney(balance.credit)}</dd>
+                <dd className="mt-2 font-semibold text-foreground">
+                  <Money value={balance.credit} />
+                </dd>
               </div>
             </dl>
           </button>

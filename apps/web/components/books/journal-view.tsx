@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { parseAsString, useQueryState } from "nuqs";
 import { usePeriodScope } from "../../hooks/use-period-scope";
 import { apiClient } from "../../lib/client";
-import { formatMoney } from "../../lib/presentation";
+import { Money } from "../ui/money";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 
 export function JournalView() {
@@ -81,8 +81,12 @@ export function JournalView() {
                     {entry.accountNumber} {entry.accountName}
                   </TableCell>
                   <TableCell>{entry.description}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoney(entry.debit)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoney(entry.credit)}</TableCell>
+                  <TableCell className="text-right">
+                    <Money value={entry.debit} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Money value={entry.credit} />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

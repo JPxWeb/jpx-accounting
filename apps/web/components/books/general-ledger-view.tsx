@@ -5,7 +5,7 @@ import { parseAsString, useQueryState } from "nuqs";
 import { useMemo } from "react";
 import { usePeriodScope } from "../../hooks/use-period-scope";
 import { apiClient } from "../../lib/client";
-import { formatMoney } from "../../lib/presentation";
+import { Money } from "../ui/money";
 import { SectionLabel } from "../ui/section-label";
 
 export function GeneralLedgerView() {
@@ -69,7 +69,9 @@ export function GeneralLedgerView() {
                   <SectionLabel>{accountNumber}</SectionLabel>
                   <p className="text-sm font-semibold">{accountName}</p>
                 </span>
-                <span className="text-sm tabular-nums">Net {formatMoney(debit - credit)}</span>
+                <span className="text-sm">
+                  Net <Money value={debit - credit} />
+                </span>
               </summary>
               <ul className="mt-4 space-y-2 text-sm">
                 {entries.map((entry) => (
@@ -77,7 +79,7 @@ export function GeneralLedgerView() {
                     <span>
                       {entry.bookedAt.slice(0, 10)} · {entry.description}
                     </span>
-                    <span className="tabular-nums">{formatMoney(entry.debit - entry.credit)}</span>
+                    <Money value={entry.debit - entry.credit} />
                   </li>
                 ))}
               </ul>

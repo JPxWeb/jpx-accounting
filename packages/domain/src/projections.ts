@@ -1,5 +1,8 @@
 import type { AccountBalanceProjection, JournalEntryProjection, VatProjection } from "@jpx-accounting/contracts";
 
+import type { VatRegime } from "./vat/regime";
+import { swedishVatRegime } from "./vat/regime";
+
 export type LedgerLine = {
   voucherId: string;
   accountNumber: string;
@@ -46,7 +49,8 @@ export function buildBalances(lines: LedgerLine[]): AccountBalanceProjection[] {
   return [...map.values()].sort((left, right) => left.accountNumber.localeCompare(right.accountNumber));
 }
 
-export function buildVat(lines: LedgerLine[]): VatProjection[] {
+export function buildVat(lines: LedgerLine[], regime: VatRegime = swedishVatRegime): VatProjection[] {
+  const outputAccounts = new Set(Object.values(regime.accounts.outputByRate));
   const map = new Map<string, VatProjection>();
 
   for (const line of lines) {
@@ -58,8 +62,10 @@ export function buildVat(lines: LedgerLine[]): VatProjection[] {
     };
 
     current.baseAmount += line.debit || line.credit;
-    if (line.accountNumber === "2641") {
+    if (regime.accounts.input.includes(line.accountNumber)) {
       current.vatAmount += line.debit - line.credit;
+    } else if (outputAccounts.has(line.accountNumber)) {
+      current.vatAmount += line.credit - line.debit;
     }
     map.set(line.vatCode, current);
   }

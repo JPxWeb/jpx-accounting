@@ -1,5 +1,6 @@
 import type { AccountingMethod, EvidenceCreateInput, ExtractedField } from "@jpx-accounting/contracts";
 
+import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import { nowIso } from "./ids";
 import type { LedgerLine } from "./projections";
 
@@ -47,22 +48,26 @@ export function guessAccountingMethod(input: EvidenceCreateInput): AccountingMet
 
 export function initialLedgerLines(): LedgerLine[] {
   const bookedAt = nowIso();
+  const coa = defaultCoaTemplate;
+  const itServices = findCoaAccount(coa, "6540")!;
+  const inputVat = findCoaAccount(coa, coa.roles.inputVat)!;
+  const bank = findCoaAccount(coa, coa.roles.bank)!;
   return [
     {
       voucherId: "voucher_seed_1",
-      accountNumber: "6540",
-      accountName: "IT-tjänster",
+      accountNumber: itServices.number,
+      accountName: itServices.name,
       description: "Seeded SaaS subscription",
       debit: 1000,
       credit: 0,
-      vatCode: "VAT25",
+      vatCode: itServices.defaultVatCode,
       bookedAt,
       deductible: true,
     },
     {
       voucherId: "voucher_seed_1",
-      accountNumber: "2641",
-      accountName: "Debiterad ingående moms",
+      accountNumber: inputVat.number,
+      accountName: inputVat.name,
       description: "Seeded input VAT",
       debit: 250,
       credit: 0,
@@ -72,8 +77,8 @@ export function initialLedgerLines(): LedgerLine[] {
     },
     {
       voucherId: "voucher_seed_1",
-      accountNumber: "1930",
-      accountName: "Företagskonto",
+      accountNumber: bank.number,
+      accountName: bank.name,
       description: "Seeded bank outflow",
       debit: 0,
       credit: 1250,

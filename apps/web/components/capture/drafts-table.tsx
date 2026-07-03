@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
 import { apiClient } from "../../lib/client";
@@ -15,6 +16,7 @@ function modalityFromMode(mode: string): "camera" | "upload" | "paste" | "share"
 }
 
 export function DraftsTable() {
+  const t = useTranslations("capture.drafts");
   const queryClient = useQueryClient();
   const draftsQuery = useQuery({ queryKey: ["capture-drafts"], queryFn: () => listCaptureDrafts() });
 
@@ -34,28 +36,28 @@ export function DraftsTable() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["capture-drafts"] });
       queryClient.invalidateQueries({ queryKey: ["workspace"] });
-      toast.success("Draft promoted to ledger evidence.");
+      toast.success(t("promoted"));
     },
-    onError: () => toast.error("Could not promote the draft."),
+    onError: () => toast.error(t("promoteError")),
   });
 
   const drafts = draftsQuery.data ?? [];
 
   return (
     <section className="glass-panel rounded-xl p-5" data-testid="drafts-table">
-      <h2 className="text-lg font-semibold">Drafts in progress</h2>
+      <h2 className="text-lg font-semibold">{t("title")}</h2>
       {drafts.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground" data-testid="drafts-empty">
-          No local drafts. Use Quick add above or the capture button.
+          {t("empty")}
         </p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Mode</TableHead>
-              <TableHead>Title</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead className="text-right">Action</TableHead>
+              <TableHead>{t("headerMode")}</TableHead>
+              <TableHead>{t("headerTitle")}</TableHead>
+              <TableHead>{t("headerCreated")}</TableHead>
+              <TableHead className="text-right">{t("headerAction")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -70,7 +72,7 @@ export function DraftsTable() {
                     disabled={promote.isPending}
                     onClick={() => promote.mutate(draft)}
                   >
-                    Promote to ledger
+                    {t("promote")}
                   </Button>
                 </TableCell>
               </TableRow>

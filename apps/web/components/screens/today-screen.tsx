@@ -2,6 +2,7 @@
 
 import type { ReviewTask, Voucher, WorkspaceSnapshot } from "@jpx-accounting/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -50,6 +51,7 @@ function reviewMatchesStatus(review: ReviewTask, statusFilter: StatusFilter): bo
 }
 
 export function TodayScreen() {
+  const t = useTranslations("today");
   const queryClient = useQueryClient();
   const [manualFocusId, setManualFocusId] = useState<string | null>(null);
 
@@ -163,9 +165,9 @@ export function TodayScreen() {
       if (action === "accept") approveReview.mutate(id);
       else if (action === "reject") rejectReview.mutate(id);
       else if (action === "book-without-vat") bookWithoutVatReview.mutate(id);
-      else toast.info("Edit will be available in a future release.");
+      else toast.info(t("editToast"));
     },
-    [approveReview, rejectReview, bookWithoutVatReview],
+    [approveReview, rejectReview, bookWithoutVatReview, t],
   );
 
   const onAccept = useCallback((id: string) => handleAction(id, "accept"), [handleAction]);
@@ -203,13 +205,13 @@ export function TodayScreen() {
   return (
     <div className="page-shell space-y-6">
       <ScreenHeader
-        eyebrow="Today / Needs Review"
-        title="Review-ready bookkeeping, shaped for the phone first."
-        description="Evidence arrives once, suggestions stay explainable, and the queue keeps the real accounting work above the fold instead of hiding it under dashboard chrome."
+        eyebrow={t("eyebrow")}
+        title={t("title")}
+        description={t("description")}
         aside={
           <div className="grid grid-cols-2 gap-3">
-            <MetricCard label="Pending reviews" value={pendingReviews.length} />
-            <MetricCard label="Blocked VAT" value={blockedReviews.length} />
+            <MetricCard label={t("metricPending")} value={pendingReviews.length} />
+            <MetricCard label={t("metricBlocked")} value={blockedReviews.length} />
           </div>
         }
       />
@@ -218,12 +220,9 @@ export function TodayScreen() {
         <div className="glass-chrome rounded-xl px-4 py-4 sm:px-5">
           <div className="flex flex-col gap-4">
             <div>
-              <SectionLabel>Review queue</SectionLabel>
-              <h2 className="mt-2 text-2xl font-semibold">Keep the next accounting decision obvious.</h2>
-              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-                Cards stay compact on mobile, expand on larger screens, and keep AI reasoning behind secondary
-                disclosure until it is needed.
-              </p>
+              <SectionLabel>{t("reviewQueue")}</SectionLabel>
+              <h2 className="mt-2 text-2xl font-semibold">{t("queueTitle")}</h2>
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{t("queueDescription")}</p>
             </div>
             <ReviewFilters />
           </div>
@@ -235,16 +234,14 @@ export function TodayScreen() {
         <div className="space-y-4">
           {filteredReviews.length === 0 ? (
             <div className="glass-panel rounded-xl p-8 text-center">
-              <p className="text-sm text-muted-foreground">
-                {hasActiveFilters ? "No reviews match these filters." : "No reviews in the queue."}
-              </p>
+              <p className="text-sm text-muted-foreground">{hasActiveFilters ? t("emptyFiltered") : t("emptyQueue")}</p>
               {hasActiveFilters ? (
                 <button
                   type="button"
                   onClick={clearFilters}
                   className="mt-3 text-sm font-medium text-primary hover:underline"
                 >
-                  Clear filters
+                  {t("clearFilters")}
                 </button>
               ) : null}
             </div>

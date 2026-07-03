@@ -1,0 +1,163 @@
+{
+  "common": {
+    "skipToContent": "Skip to content",
+    "theme": {
+      "groupLabel": "Theme",
+      "system": "System theme",
+      "light": "Light theme",
+      "dark": "Dark theme"
+    }
+  },
+  "shell": {
+    "brand": "JPX Accounting",
+    "nav": {
+      "today": { "label": "Today", "summary": "Today's review queue" },
+      "capture": { "label": "Capture", "summary": "Evidence & drafts" },
+      "books": { "label": "Books", "summary": "Journal, accounts, close" },
+      "reports": { "label": "Reports", "summary": "P&L, BS, VAT, exports" },
+      "settings": { "label": "Settings", "summary": "Company & integrations" },
+      "advisor": { "label": "Advisor", "summary": "Ask about your numbers" }
+    },
+    "primaryNavAria": "Primary",
+    "mobileNavAria": "Mobile primary",
+    "marketing": {
+      "headline": "Trustworthy AI bookkeeping for Sweden-first teams.",
+      "subheadline": "Compliance-critical flows stay deterministic. AI guides, cites, and accelerates the review surface.",
+      "demoNotice": "Demo mode is intentionally using local scaffold behavior so it is never mistaken for live accounting."
+    },
+    "captureLane": {
+      "eyebrow": "Capture lane",
+      "description": "Camera, paste, upload, and share land in the same queue and show where the draft was stored.",
+      "badge": "Local-first",
+      "action": "Capture Evidence"
+    },
+    "innovation": {
+      "eyebrow": "Innovation track",
+      "description": "Voice capture, simulations, and close copilot are isolated from posting authority until they earn trust."
+    },
+    "topbar": {
+      "location": "Sweden Central / Stockholm",
+      "captureAria": "Capture evidence"
+    },
+    "digest": {
+      "mobileSummary": "Today's pulse"
+    },
+    "demoBanner": "Demo mode is active. Local demo data and local AI fallback are enabled intentionally.",
+    "captureSheet": {
+      "eyebrow": "Quick Intake",
+      "title": "Add business evidence",
+      "close": "Close",
+      "closeAria": "Close capture sheet",
+      "description": "Capture starts locally first so the UI stays responsive. The result tells you whether the draft was stored persistently or only for this tab."
+    },
+    "draftModes": {
+      "camera": { "label": "Camera", "hint": "Snap a receipt with the device camera" },
+      "upload": { "label": "Upload", "hint": "Pick a PDF or image from disk" },
+      "paste": { "label": "Paste", "hint": "Paste an image from clipboard" },
+      "share": { "label": "Share", "hint": "Receive from another app via PWA share" }
+    },
+    "draftTitle": "{mode} draft",
+    "captureStatus": {
+      "indexeddb": "{mode} draft saved locally in IndexedDB.",
+      "session": "{mode} draft saved for this browser tab only.",
+      "memory": "{mode} draft saved in temporary memory for this tab only.",
+      "error": "{mode} draft could not be saved locally. Check browser storage permissions and try again."
+    }
+  },
+  "palette": {
+    "dialogAria": "Search workspace",
+    "placeholder": "Search vouchers, reviews, accounts…",
+    "askAdvisor": "Ask advisor",
+    "askAdvisorHint": "Ask about your numbers",
+    "noMatches": "No matches",
+    "resultsAria": "Search results",
+    "escHint": "Esc to close · {shortcut}"
+  },
+  "today": {
+    "eyebrow": "Today / Needs Review",
+    "title": "Review-ready bookkeeping, shaped for the phone first.",
+    "description": "Evidence arrives once, suggestions stay explainable, and the queue keeps the real accounting work above the fold instead of hiding it under dashboard chrome.",
+    "metricPending": "Pending reviews",
+    "metricBlocked": "Blocked VAT",
+    "reviewQueue": "Review queue",
+    "queueTitle": "Keep the next accounting decision obvious.",
+    "queueDescription": "Cards stay compact on mobile, expand on larger screens, and keep AI reasoning behind secondary disclosure until it is needed.",
+    "emptyFiltered": "No reviews match these filters.",
+    "emptyQueue": "No reviews in the queue.",
+    "clearFilters": "Clear filters",
+    "editToast": "Edit will be available in a future release.",
+    "card": {
+      "invoiceMethod": "Invoice method",
+      "cashMethod": "Cash method",
+      "pendingVoucher": "Pending voucher",
+      "date": "Date",
+      "gross": "Gross",
+      "vat": "VAT",
+      "aiSuggestion": "AI suggestion",
+      "ruleHits": "Rule hits and provenance",
+      "cited": "Cited: {title}"
+    },
+    "actions": {
+      "legend": "Review actions",
+      "accept": "Accept",
+      "edit": "Edit",
+      "bookWithoutVat": "Book w/o VAT",
+      "reject": "Reject"
+    },
+    "filters": {
+      "statusAria": "Filter by status",
+      "all": "All",
+      "needsReview": "Needs review",
+      "blocked": "Blocked",
+      "approved": "Approved",
+      "supplierPlaceholder": "Filter by supplier...",
+      "confidenceAria": "Filter by confidence",
+      "allConfidence": "All confidence"
+    }
+  },
+  "capture": {
+    "eyebrow": "Capture",
+    "title": "Add evidence, see drafts, browse the archive.",
+    "description": "The single home for everything you've captured — drafts in progress, freshly uploaded, fully archived.",
+    "quickAdd": {
+      "title": "Quick add",
+      "description": "Each tile creates a local draft you can promote into ledger evidence.",
+      "tiles": {
+        "camera": { "label": "Camera", "hint": "Snap a receipt with the device camera" },
+        "upload": { "label": "Upload", "hint": "Pick a PDF or image from disk" },
+        "paste": { "label": "Paste", "hint": "Paste an image from clipboard" },
+        "share": { "label": "Share", "hint": "Receive from another app via PWA share" }
+      },
+      "draftTitle": "{mode} draft",
+      "draftAdded": "{mode} draft added.",
+      "draftError": "Could not save {mode} draft locally.",
+      "importSie": "Import SIE file",
+      "importing": "Importing…",
+      "imported": "Imported {count} transactions from SIE.",
+      "importError": "Could not import the SIE file.",
+      "connectBank": "Connect bank feed"
+    },
+    "drafts": {
+      "title": "Drafts in progress",
+      "empty": "No local drafts. Use Quick add above or the capture button.",
+      "headerMode": "Mode",
+      "headerTitle": "Title",
+      "headerCreated": "Created",
+      "headerAction": "Action",
+      "promote": "Promote to ledger",
+      "promoted": "Draft promoted to ledger evidence.",
+      "promoteError": "Could not promote the draft."
+    },
+    "archive": {
+      "title": "Evidence archive",
+      "searchPlaceholder": "Search evidence…",
+      "empty": "No archived evidence yet. Promote a draft above to populate the archive.",
+      "headerTitle": "Title",
+      "headerType": "Type",
+      "headerHash": "Hash",
+      "headerUploaded": "Uploaded",
+      "open": "Open",
+      "hashCopied": "Hash copied."
+    }
+  }
+}

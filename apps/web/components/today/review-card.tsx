@@ -2,8 +2,11 @@
 
 import type { ReviewTask, Voucher } from "@jpx-accounting/contracts";
 import { motion } from "motion/react";
+import { useTranslations } from "next-intl";
 import type { Ref } from "react";
-import { formatMoney, formatPercent, formatShortDate } from "../../lib/presentation";
+import { formatPercent, formatShortDate } from "../../lib/presentation";
+import { useWorkspaceProfile } from "../providers/workspace-profile-provider";
+import { Money } from "../ui/money";
 import { SectionLabel } from "../ui/section-label";
 import { StatusBadge } from "../ui/status-badge";
 import type { ReviewAction } from "./filter-types";
@@ -38,7 +41,9 @@ type ReviewCardProps = {
 };
 
 export function ReviewCard({ review, voucher, index, focused, onFocus, onAction, ref }: ReviewCardProps) {
-  const confidence = formatPercent(review.suggestion?.confidence ?? 0);
+  const t = useTranslations("today.card");
+  const { locale } = useWorkspaceProfile();
+  const confidence = formatPercent(review.suggestion?.confidence ?? 0, locale);
   const citation = review.suggestion?.citations[0];
   const supplier = voucher?.voucherFields.supplierName ?? review.title;
   const isActionable = review.status === "needs-review";
@@ -70,7 +75,7 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
               </div>
               <p className="mt-3 text-sm font-semibold text-foreground">{supplier}</p>
               <p className="text-eyebrow mt-1">
-                {voucher?.accountingMethod === "invoice" ? "Invoice method" : "Cash method"}
+                {voucher?.accountingMethod === "invoice" ? t("invoiceMethod") : t("cashMethod")}
               </p>
             </div>
           </div>
@@ -79,22 +84,26 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
         <div className="min-w-0">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
-              <SectionLabel>{voucher?.voucherNumber ?? "Pending voucher"}</SectionLabel>
+              <SectionLabel>{voucher?.voucherNumber ?? t("pendingVoucher")}</SectionLabel>
               <h3 className="mt-2 text-xl font-semibold text-foreground">{review.title}</h3>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{review.suggestedAction}</p>
             </div>
             <div className="grid grid-cols-3 gap-2 text-sm lg:w-[17rem]">
               <div className="glass-panel-inset rounded-lg px-3 py-3">
-                <div className="text-eyebrow">Date</div>
-                <div className="mt-2 font-semibold">{formatShortDate(voucher?.voucherFields.receiptDate)}</div>
+                <div className="text-eyebrow">{t("date")}</div>
+                <div className="mt-2 font-semibold">{formatShortDate(voucher?.voucherFields.receiptDate, locale)}</div>
               </div>
               <div className="glass-panel-inset rounded-lg px-3 py-3">
-                <div className="text-eyebrow">Gross</div>
-                <div className="mt-2 font-semibold tabular-nums">{formatMoney(voucher?.voucherFields.grossAmount)}</div>
+                <div className="text-eyebrow">{t("gross")}</div>
+                <div className="mt-2 font-semibold">
+                  <Money value={voucher?.voucherFields.grossAmount} />
+                </div>
               </div>
               <div className="glass-panel-inset rounded-lg px-3 py-3">
-                <div className="text-eyebrow">VAT</div>
-                <div className="mt-2 font-semibold tabular-nums">{formatMoney(voucher?.voucherFields.vatAmount)}</div>
+                <div className="text-eyebrow">{t("vat")}</div>
+                <div className="mt-2 font-semibold">
+                  <Money value={voucher?.voucherFields.vatAmount} />
+                </div>
               </div>
             </div>
           </div>
@@ -108,19 +117,19 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
             </span>
             {citation ? (
               <span className="rounded-md bg-info-soft px-3 py-2 text-sm font-medium text-info">
-                Cited: {citation.title}
+                {t("cited", { title: citation.title })}
               </span>
             ) : null}
           </div>
 
           <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)]">
             <div className="glass-panel-soft rounded-lg p-4">
-              <SectionLabel>AI suggestion</SectionLabel>
+              <SectionLabel>{t("aiSuggestion")}</SectionLabel>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">{review.suggestion?.reasoning}</p>
             </div>
 
             <details className="glass-panel-soft rounded-lg p-4">
-              <summary className="text-eyebrow cursor-pointer list-none">Rule hits and provenance</summary>
+              <summary className="text-eyebrow cursor-pointer list-none">{t("ruleHits")}</summary>
               <div className="mt-4 space-y-3">
                 {review.suggestion?.ruleHits.map((rule) => (
                   <div key={rule.id} className="glass-panel-inset rounded-lg px-3 py-3 text-sm">

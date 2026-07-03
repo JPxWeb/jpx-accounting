@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { MouseEvent, ReactNode } from "react";
@@ -13,62 +14,39 @@ import { useDialogFocusTrap } from "../lib/focus-trap";
 import { formatRuntimeModeLabel } from "../lib/presentation";
 import { webRuntimeConfig } from "../lib/runtime-config";
 import { CommandPalette } from "./command-palette";
+import { useWorkspaceProfile } from "./providers/workspace-profile-provider";
 import { ThemeToggle } from "./theme-toggle";
 import { AdvisorIcon, BooksIcon, CaptureIcon, ControlIcon, InboxIcon, ReportsIcon, SparkIcon } from "./ui/icons";
 import { StatusBadge } from "./ui/status-badge";
 
 const navigation = [
-  { href: "/today", label: "Today", summary: "Today's review queue", icon: InboxIcon },
-  { href: "/capture", label: "Capture", summary: "Evidence & drafts", icon: CaptureIcon },
-  { href: "/books", label: "Books", summary: "Journal, accounts, close", icon: BooksIcon },
-  { href: "/reports", label: "Reports", summary: "P&L, BS, VAT, exports", icon: ReportsIcon },
-  { href: "/settings", label: "Settings", summary: "Company & integrations", icon: ControlIcon },
-];
+  { href: "/today", key: "today", icon: InboxIcon },
+  { href: "/capture", key: "capture", icon: CaptureIcon },
+  { href: "/books", key: "books", icon: BooksIcon },
+  { href: "/reports", key: "reports", icon: ReportsIcon },
+  { href: "/settings", key: "settings", icon: ControlIcon },
+] as const;
 
 // Rail-only: the Advisor entry lives in the desktop rail, not the 5-tab mobile dock.
-const advisorNavItem = { href: "/assistant", label: "Advisor", summary: "Ask about your numbers", icon: AdvisorIcon };
-const railNavigation = [...navigation, advisorNavItem];
+const advisorNavItem = { href: "/assistant", key: "advisor", icon: AdvisorIcon } as const;
+const railNavigation = [...navigation, advisorNavItem] as const;
 
-const draftModes = [
-  { key: "camera", label: "Camera", hint: "Snap a receipt with the device camera" },
-  { key: "upload", label: "Upload", hint: "Pick a PDF or image from disk" },
-  { key: "paste", label: "Paste", hint: "Paste an image from clipboard" },
-  { key: "share", label: "Share", hint: "Receive from another app via PWA share" },
-];
+const draftModeKeys = ["camera", "upload", "paste", "share"] as const;
 
 type CaptureStatus = {
   tone: "success" | "warning" | "error";
   message: string;
 };
 
-function buildCaptureStatusMessage(modeLabel: string, result: DraftQueueSaveResult): CaptureStatus {
-  if (result.storage === "indexeddb") {
-    return {
-      tone: "success",
-      message: `${modeLabel} draft saved locally in IndexedDB.`,
-    };
-  }
-
-  if (result.storage === "session") {
-    return {
-      tone: "warning",
-      message: `${modeLabel} draft saved for this browser tab only.`,
-    };
-  }
-
-  return {
-    tone: "warning",
-    message: `${modeLabel} draft saved in temporary memory for this tab only.`,
-  };
-}
-
 export function AppShell({ children, digest }: { children: ReactNode; digest?: ReactNode }) {
+  const t = useTranslations("shell");
   const pathname = usePathname();
   const barsHidden = useScrollDirection();
   const [captureOpen, setCaptureOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [captureStatus, setCaptureStatus] = useState<CaptureStatus | null>(null);
-  const timestamp = useMemo(() => new Intl.DateTimeFormat("sv-SE").format(new Date()), []);
+  const { locale } = useWorkspaceProfile();
+  const timestamp = useMemo(() => new Intl.DateTimeFormat(locale).format(new Date()), [locale]);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const firstDraftActionRef = useRef<HTMLButtonElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -77,6 +55,24 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
     () => railNavigation.find((item) => pathname.startsWith(item.href)) ?? navigation[0]!,
     [pathname],
   );
+
+  const draftModes = draftModeKeys.map((key) => ({
+    key,
+    label: t(`draftModes.${key}.label`),
+    hint: t(`draftModes.${key}.hint`),
+  }));
+
+  function buildCaptureStatusMessage(modeLabel: string, result: DraftQueueSaveResult): CaptureStatus {
+    if (result.storage === "indexeddb") {
+      return { tone: "success", message: t("captureStatus.indexeddb", { mode: modeLabel }) };
+    }
+
+    if (result.storage === "session") {
+      return { tone: "warning", message: t("captureStatus.session", { mode: modeLabel }) };
+    }
+
+    return { tone: "warning", message: t("captureStatus.memory", { mode: modeLabel }) };
+  }
 
   const closeCaptureSheet = useCallback(() => {
     setCaptureOpen(false);
@@ -110,7 +106,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
       const result = await saveCaptureDraft({
         id: crypto.randomUUID(),
         mode: mode.key,
-        title: `${mode.label} draft`,
+        title: t("draftTitle", { mode: mode.label }),
         createdAt: new Date().toISOString(),
       });
       setCaptureStatus(buildCaptureStatusMessage(mode.label, result));
@@ -118,7 +114,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
     } catch {
       setCaptureStatus({
         tone: "error",
-        message: `${mode.label} draft could not be saved locally. Check browser storage permissions and try again.`,
+        message: t("captureStatus.error", { mode: mode.label }),
       });
     }
   }
@@ -139,26 +135,26 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
           <div className="shell-rail-inner">
             <section className="glass-chrome rounded-xl px-5 py-5">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-eyebrow">JPX Accounting</p>
+                <p className="text-eyebrow">{t("brand")}</p>
                 <StatusBadge
                   status={runtimeModeLabel}
                   variant={webRuntimeConfig.runtimeMode === "demo" ? "warning" : "accent"}
                 />
               </div>
-              <h1 className="mt-3 text-2xl font-semibold leading-tight">
-                Trustworthy AI bookkeeping for Sweden-first teams.
-              </h1>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                Compliance-critical flows stay deterministic. AI guides, cites, and accelerates the review surface.
-              </p>
+              <h1 className="mt-3 text-2xl font-semibold leading-tight">{t("marketing.headline")}</h1>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("marketing.subheadline")}</p>
               {webRuntimeConfig.runtimeMode === "demo" ? (
                 <p className="mt-4 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">
-                  Demo mode is intentionally using local scaffold behavior so it is never mistaken for live accounting.
+                  {t("marketing.demoNotice")}
                 </p>
               ) : null}
             </section>
 
-            <nav className="glass-panel rounded-xl p-3" aria-label="Primary" data-testid="desktop-navigation-links">
+            <nav
+              className="glass-panel rounded-xl p-3"
+              aria-label={t("primaryNavAria")}
+              data-testid="desktop-navigation-links"
+            >
               {railNavigation.map((item) => {
                 const Icon = item.icon;
                 const active = pathname.startsWith(item.href);
@@ -180,9 +176,9 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                       <Icon className="size-4" />
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold">{item.label}</span>
+                      <span className="block text-sm font-semibold">{t(`nav.${item.key}.label`)}</span>
                       <span className={`mt-1 block text-xs ${active ? "text-white/90" : "text-muted-foreground"}`}>
-                        {item.summary}
+                        {t(`nav.${item.key}.summary`)}
                       </span>
                     </span>
                   </Link>
@@ -195,12 +191,10 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
             <section className="glass-panel rounded-xl p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-eyebrow">Capture lane</p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Camera, paste, upload, and share land in the same queue and show where the draft was stored.
-                  </p>
+                  <p className="text-eyebrow">{t("captureLane.eyebrow")}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{t("captureLane.description")}</p>
                 </div>
-                <StatusBadge status="Local-first" variant="accent" />
+                <StatusBadge status={t("captureLane.badge")} variant="accent" />
               </div>
               <button
                 type="button"
@@ -209,7 +203,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                 className="capture-button-desktop mt-4 w-full items-center justify-center gap-2 rounded-md bg-primary px-5 py-4 text-sm font-semibold text-white shadow-md"
               >
                 <CaptureIcon className="size-4" />
-                Capture Evidence
+                {t("captureLane.action")}
               </button>
             </section>
 
@@ -217,13 +211,11 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <SparkIcon className="size-4 text-primary" />
-                  <span className="text-eyebrow">Innovation track</span>
+                  <span className="text-eyebrow">{t("innovation.eyebrow")}</span>
                 </div>
                 <ThemeToggle />
               </div>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                Voice capture, simulations, and close copilot are isolated from posting authority until they earn trust.
-              </p>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("innovation.description")}</p>
             </section>
           </div>
         </aside>
@@ -237,7 +229,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
             <div className="glass-chrome flex items-center justify-between gap-4 rounded-2xl px-4 py-3 sm:px-5">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-eyebrow">JPX Accounting</p>
+                  <p className="text-eyebrow">{t("brand")}</p>
                   <StatusBadge
                     status={runtimeModeLabel}
                     variant={webRuntimeConfig.runtimeMode === "demo" ? "warning" : "accent"}
@@ -245,14 +237,18 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                   />
                 </div>
                 <div className="mt-1 flex min-w-0 items-center gap-2">
-                  <p className="truncate text-sm font-semibold text-foreground">{activeNavItem.label}</p>
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {t(`nav.${activeNavItem.key}.label`)}
+                  </p>
                   <span className="hidden h-1 w-1 rounded-full bg-foreground-soft sm:block" />
-                  <p className="hidden truncate text-sm text-muted-foreground sm:block">{activeNavItem.summary}</p>
+                  <p className="hidden truncate text-sm text-muted-foreground sm:block">
+                    {t(`nav.${activeNavItem.key}.summary`)}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <div className="hidden rounded-lg glass-panel-soft px-3 py-2 text-right text-xs text-muted-foreground sm:block">
-                  <div className="font-medium text-foreground">Sweden Central / Stockholm</div>
+                  <div className="font-medium text-foreground">{t("topbar.location")}</div>
                   <div>{timestamp}</div>
                 </div>
                 <div className="lg:hidden">
@@ -262,7 +258,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                   type="button"
                   onClick={openCaptureSheet}
                   data-testid="capture-open-mobile"
-                  aria-label="Capture evidence"
+                  aria-label={t("topbar.captureAria")}
                   className="flex size-10 items-center justify-center rounded-lg bg-primary text-white shadow-sm lg:hidden"
                 >
                   <CaptureIcon className="size-4" />
@@ -274,7 +270,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
           {digest ? (
             <details className="page-shell page-shell-compact lg:hidden" data-testid="digest-mobile">
               <summary className="glass-panel-soft cursor-pointer rounded-md px-4 py-3 text-sm font-medium">
-                Today&apos;s pulse
+                {t("digest.mobileSummary")}
               </summary>
               <div className="mt-2">{digest}</div>
             </details>
@@ -286,7 +282,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                 data-testid="runtime-mode-banner"
                 className="glass-panel-soft rounded-lg border border-warning-soft px-4 py-3 text-sm text-warning"
               >
-                Demo mode is active. Local demo data and local AI fallback are enabled intentionally.
+                {t("demoBanner")}
               </div>
             </div>
           ) : null}
@@ -314,7 +310,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
       ) : null}
 
       <nav
-        aria-label="Mobile primary"
+        aria-label={t("mobileNavAria")}
         data-testid="mobile-dock"
         className="mobile-dock glass-chrome rounded-2xl px-2 py-2 lg:hidden"
         data-hidden={barsHidden}
@@ -327,14 +323,14 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
               <Link
                 key={item.href}
                 href={item.href}
-                aria-label={`${item.label} — ${item.summary}`}
+                aria-label={`${t(`nav.${item.key}.label`)} — ${t(`nav.${item.key}.summary`)}`}
                 aria-current={active ? "page" : undefined}
                 className={`flex flex-col items-center justify-center gap-1 rounded-lg px-2 py-3 text-center text-caption font-medium transition ${
                   active ? "bg-primary text-white" : "text-muted-foreground"
                 }`}
               >
                 <Icon className="size-3.5" aria-hidden="true" />
-                {item.label}
+                {t(`nav.${item.key}.label`)}
               </Link>
             );
           })}
@@ -369,24 +365,23 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="mb-5 h-1.5 w-16 rounded-full bg-border-strong" />
-                  <p className="text-eyebrow">Quick Intake</p>
+                  <p className="text-eyebrow">{t("captureSheet.eyebrow")}</p>
                   <h2 id="capture-sheet-title" className="mt-2 text-2xl font-semibold">
-                    Add business evidence
+                    {t("captureSheet.title")}
                   </h2>
                 </div>
                 <button
                   type="button"
                   onClick={() => closeCaptureSheet()}
-                  aria-label="Close capture sheet"
+                  aria-label={t("captureSheet.closeAria")}
                   data-testid="capture-close"
                   className="rounded-md bg-surface px-3 py-2 text-sm font-medium text-muted-foreground"
                 >
-                  Close
+                  {t("captureSheet.close")}
                 </button>
               </div>
               <p id="capture-sheet-description" className="mt-2 text-sm text-muted-foreground">
-                Capture starts locally first so the UI stays responsive. The result tells you whether the draft was
-                stored persistently or only for this tab.
+                {t("captureSheet.description")}
               </p>
               <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {draftModes.map((mode, index) => (

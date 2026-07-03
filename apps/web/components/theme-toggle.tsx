@@ -1,15 +1,16 @@
 "use client";
 
 import { Monitor, Moon, Sun } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
 const THEME_OPTIONS = [
-  { value: "system", label: "System theme", icon: Monitor },
-  { value: "light", label: "Light theme", icon: Sun },
-  { value: "dark", label: "Dark theme", icon: Moon },
+  { value: "system", icon: Monitor },
+  { value: "light", icon: Sun },
+  { value: "dark", icon: Moon },
 ] as const;
 
 function subscribe() {
@@ -31,6 +32,7 @@ function useMounted() {
 }
 
 export function ThemeToggle() {
+  const t = useTranslations("common.theme");
   const { theme, setTheme } = useTheme();
   const mounted = useMounted();
   const activeTheme = mounted ? (theme ?? "system") : undefined;
@@ -38,12 +40,13 @@ export function ThemeToggle() {
   return (
     <div
       role="group"
-      aria-label="Theme"
+      aria-label={t("groupLabel")}
       data-testid="theme-toggle"
       className="glass-panel-soft inline-flex items-center gap-1 rounded-lg p-1"
     >
-      {THEME_OPTIONS.map(({ value, label, icon: Icon }) => {
+      {THEME_OPTIONS.map(({ value, icon: Icon }) => {
         const active = activeTheme === value;
+        const label = t(value);
 
         return (
           <button

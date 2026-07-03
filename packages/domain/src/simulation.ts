@@ -1,7 +1,11 @@
 import type { AccountingSuggestion, ReviewTask, SimulationRun, Voucher } from "@jpx-accounting/contracts";
 
+import { defaultCoaTemplate } from "./coa/registry";
+import type { CoaTemplate } from "./coa/types";
 import { buildPostingLines } from "./store";
 import type { ReviewAction } from "./store";
+import type { VatRegime } from "./vat/regime";
+import { swedishVatRegime } from "./vat/regime";
 
 type BalanceDelta = SimulationRun["balanceDelta"];
 type VatDelta = SimulationRun["vatDelta"];
@@ -11,6 +15,8 @@ export function simulateApprovals(
   suggestions: AccountingSuggestion[],
   vouchers: Voucher[],
   action: ReviewAction,
+  coa: CoaTemplate = defaultCoaTemplate,
+  regime: VatRegime = swedishVatRegime,
 ): {
   balanceDelta: BalanceDelta;
   vatDelta: VatDelta;
@@ -27,14 +33,14 @@ export function simulateApprovals(
     const suggestion = suggestionsByVoucher.get(review.voucherId) ?? review.suggestion;
     if (!voucher || !suggestion) continue;
     const effectiveAction: "approve" | "book-without-vat" = action === "reject" ? "approve" : action;
-    const lines = buildPostingLines(voucher, suggestion, effectiveAction, voucher.createdAt);
+    const lines = buildPostingLines(voucher, suggestion, effectiveAction, voucher.createdAt, coa);
     for (const line of lines) {
       const entry = balanceAcc.get(line.accountNumber) ?? { name: line.accountName, debit: 0, credit: 0 };
       entry.debit += line.debit;
       entry.credit += line.credit;
       balanceAcc.set(line.accountNumber, entry);
       const base = line.debit !== 0 ? line.debit : line.credit;
-      const isVatLine = line.accountNumber === "2641";
+      const isVatLine = regime.accounts.input.includes(line.accountNumber);
       const v = vatAcc.get(line.vatCode) ?? { base: 0, amount: 0 };
       v.base += base;
       if (isVatLine) v.amount += line.debit - line.credit;

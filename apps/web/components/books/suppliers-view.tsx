@@ -5,7 +5,7 @@ import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
 import { useMemo } from "react";
 
 import { apiClient } from "../../lib/client";
-import { formatMoney } from "../../lib/presentation";
+import { Money } from "../ui/money";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 
 const views = ["journal", "general-ledger", "trial-balance", "suppliers", "close"] as const;
@@ -67,7 +67,9 @@ export function SuppliersView() {
             <TableRow key={supplier.name}>
               <TableCell className="font-medium">{supplier.name}</TableCell>
               <TableCell className="text-right tabular-nums">{supplier.count}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatMoney(supplier.totalGross)}</TableCell>
+              <TableCell className="text-right">
+                <Money value={supplier.totalGross} />
+              </TableCell>
               <TableCell>
                 <button
                   type="button"

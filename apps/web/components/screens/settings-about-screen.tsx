@@ -2,6 +2,7 @@
 
 import { formatRuntimeModeLabel } from "../../lib/presentation";
 import { webRuntimeConfig } from "../../lib/runtime-config";
+import { useWorkspaceProfile } from "../providers/workspace-profile-provider";
 import { ThemeToggle } from "../theme-toggle";
 import { ScreenHeader } from "../ui/screen-header";
 
@@ -16,6 +17,7 @@ function ComingSoon({ title, body, testId }: { title: string; body: string; test
 }
 
 export function SettingsAboutScreen() {
+  const { locale } = useWorkspaceProfile();
   const today = new Date();
 
   return (
@@ -66,7 +68,7 @@ export function SettingsAboutScreen() {
             <p className="mt-2 text-sm text-muted-foreground">
               Today is{" "}
               <time dateTime={today.toISOString().slice(0, 10)} suppressHydrationWarning>
-                {new Intl.DateTimeFormat("sv-SE").format(today)}
+                {new Intl.DateTimeFormat(locale).format(today)}
               </time>
               .
             </p>

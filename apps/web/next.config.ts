@@ -1,7 +1,10 @@
 import path from "path";
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
 
 const monorepoRoot = path.join(__dirname, "../../");
+
+const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
 
 function buildContentSecurityPolicy(isDev: boolean): string {
   const base = [
@@ -62,4 +65,4 @@ const nextConfig: NextConfig = {
   ],
 };
 
-export default nextConfig;
+export default withNextIntl(nextConfig);

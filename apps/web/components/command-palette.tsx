@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
+import { useTranslations } from "next-intl";
+import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { WorkspaceSnapshot } from "@jpx-accounting/contracts";
 
@@ -20,6 +21,7 @@ const isMacPlatform = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/
 const shortcutHint = isMacPlatform ? "⌘K" : "Ctrl K";
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useTranslations("palette");
   const router = useRouter();
   const [query, setQuery] = useState("");
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -56,7 +58,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
-            aria-label="Search workspace"
+            aria-label={t("dialogAria")}
             data-testid="command-palette"
             className="glass-chrome w-full max-w-lg rounded-2xl border border-border p-4 shadow-md"
             initial={{ y: -16, opacity: 0 }}
@@ -69,11 +71,11 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
               ref={inputRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search vouchers, reviews, accounts…"
+              placeholder={t("placeholder")}
               className="glass-panel-inset w-full rounded-xl px-4 py-3 text-sm outline-none"
               data-testid="command-palette-input"
             />
-            <ul className="mt-3 max-h-72 overflow-y-auto" role="listbox" aria-label="Search results">
+            <ul className="mt-3 max-h-72 overflow-y-auto" role="listbox" aria-label={t("resultsAria")}>
               <li role="option" aria-selected={false}>
                 <button
                   type="button"
@@ -84,12 +86,12 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                     handleClose();
                   }}
                 >
-                  <span className="font-medium text-foreground">Ask advisor</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">Ask about your numbers</span>
+                  <span className="font-medium text-foreground">{t("askAdvisor")}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{t("askAdvisorHint")}</span>
                 </button>
               </li>
               {hits.length === 0 ? (
-                <li className="px-3 py-6 text-center text-sm text-muted-foreground">No matches</li>
+                <li className="px-3 py-6 text-center text-sm text-muted-foreground">{t("noMatches")}</li>
               ) : (
                 hits.map((hit) => (
                   <li key={hit.id} role="option" aria-selected={false}>
@@ -108,7 +110,9 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                 ))
               )}
             </ul>
-            <p className="text-eyebrow mt-3 text-center text-muted-foreground">Esc to close · {shortcutHint}</p>
+            <p className="text-eyebrow mt-3 text-center text-muted-foreground">
+              {t("escHint", { shortcut: shortcutHint })}
+            </p>
           </motion.div>
         </motion.div>
       ) : null}

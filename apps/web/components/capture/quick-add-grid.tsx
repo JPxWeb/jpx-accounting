@@ -1,34 +1,37 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { saveCaptureDraft } from "../../lib/draft-queue";
 
-const TILES: { mode: string; label: string; hint: string }[] = [
-  { mode: "camera", label: "Camera", hint: "Snap a receipt with the device camera" },
-  { mode: "upload", label: "Upload", hint: "Pick a PDF or image from disk" },
-  { mode: "paste", label: "Paste", hint: "Paste an image from clipboard" },
-  { mode: "share", label: "Share", hint: "Receive from another app via PWA share" },
-];
+const TILE_MODES = ["camera", "upload", "paste", "share"] as const;
 
 export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
+  const t = useTranslations("capture.quickAdd");
   const sieInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+
+  const tiles = TILE_MODES.map((mode) => ({
+    mode,
+    label: t(`tiles.${mode}.label`),
+    hint: t(`tiles.${mode}.hint`),
+  }));
 
   async function addDraft(mode: string, label: string) {
     try {
       await saveCaptureDraft({
         id: crypto.randomUUID(),
         mode,
-        title: `${label} draft`,
+        title: t("draftTitle", { mode: label }),
         createdAt: new Date().toISOString(),
       });
-      toast.success(`${label} draft added.`);
+      toast.success(t("draftAdded", { mode: label }));
       onDraftSaved?.();
     } catch {
-      toast.error(`Could not save ${label.toLowerCase()} draft locally.`);
+      toast.error(t("draftError", { mode: label.toLowerCase() }));
     }
   }
 
@@ -45,9 +48,9 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
         throw new Error(`HTTP ${response.status}`);
       }
       const result = (await response.json()) as { importedTransactions: number };
-      toast.success(`Imported ${result.importedTransactions} transactions from SIE.`);
+      toast.success(t("imported", { count: result.importedTransactions }));
     } catch {
-      toast.error("Could not import the SIE file.");
+      toast.error(t("importError"));
     } finally {
       setImporting(false);
     }
@@ -55,12 +58,10 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
 
   return (
     <section className="glass-panel rounded-xl p-5" data-testid="quick-add-grid">
-      <h2 className="text-lg font-semibold">Quick add</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Each tile creates a local draft you can promote into ledger evidence.
-      </p>
+      <h2 className="text-lg font-semibold">{t("title")}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{t("description")}</p>
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {TILES.map((tile) => (
+        {tiles.map((tile) => (
           <button
             key={tile.mode}
             type="button"
@@ -81,7 +82,7 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
           onClick={() => sieInputRef.current?.click()}
           className="rounded-lg border border-border px-4 py-2 text-sm font-medium disabled:opacity-60"
         >
-          {importing ? "Importing…" : "Import SIE file"}
+          {importing ? t("importing") : t("importSie")}
         </button>
         <input
           ref={sieInputRef}
@@ -95,7 +96,7 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
           }}
         />
         <Link href="/settings/integrations" className="text-sm underline" data-testid="quick-add-bank">
-          Connect bank feed
+          {t("connectBank")}
         </Link>
       </div>
     </section>

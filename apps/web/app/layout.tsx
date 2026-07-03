@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale, getTranslations } from "next-intl/server";
 import { ThemeProvider } from "next-themes";
 import { IBM_Plex_Mono, Manrope } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
@@ -6,6 +8,7 @@ import type { ReactNode } from "react";
 
 import { Toaster } from "@/components/ui/sonner";
 import { QueryProvider } from "../components/providers/query-provider";
+import { WorkspaceProfileProvider } from "../components/providers/workspace-profile-provider";
 import { ServiceWorkerRegistrar } from "../components/pwa/service-worker-registrar";
 import { cn } from "../lib/utils";
 import "./globals.css";
@@ -62,24 +65,31 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const locale = await getLocale();
+  const t = await getTranslations("common");
+
   return (
-    <html lang="sv" suppressHydrationWarning className={cn(manrope.variable, plexMono.variable, "font-sans")}>
+    <html lang={locale} suppressHydrationWarning className={cn(manrope.variable, plexMono.variable, "font-sans")}>
       <body>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <a
-            href="#main-content"
-            className="fixed left-2 top-2 z-[100] -translate-y-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition focus:translate-y-0"
-          >
-            Skip to content
-          </a>
-          <QueryProvider>
-            <NuqsAdapter>
-              <ServiceWorkerRegistrar />
-              {children}
-            </NuqsAdapter>
-          </QueryProvider>
-          <Toaster />
+          <NextIntlClientProvider>
+            <a
+              href="#main-content"
+              className="fixed left-2 top-2 z-[100] -translate-y-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition focus:translate-y-0"
+            >
+              {t("skipToContent")}
+            </a>
+            <QueryProvider>
+              <WorkspaceProfileProvider>
+                <NuqsAdapter>
+                  <ServiceWorkerRegistrar />
+                  {children}
+                </NuqsAdapter>
+              </WorkspaceProfileProvider>
+            </QueryProvider>
+            <Toaster />
+          </NextIntlClientProvider>
         </ThemeProvider>
       </body>
     </html>

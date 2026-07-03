@@ -1,5 +1,7 @@
 export * from "./assistant";
-export * from "./bas";
+export * from "./coa/bas-2026";
+export * from "./coa/registry";
+export * from "./coa/types";
 export * from "./compliance";
 export * from "./evidence-defaults";
 export * from "./hash-chain";
@@ -8,3 +10,5 @@ export * from "./projections";
 export * from "./rules";
 export * from "./simulation";
 export * from "./store";
+export * from "./vat/boxes";
+export * from "./vat/regime";
