@@ -5,93 +5,111 @@
 
 @custom-variant dark (&:is(.dark *));
 
-@theme {
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 22px;
-  --radius-3xl: 28px;
-  --radius-4xl: 32px;
-}
+/*
+ * Tailwind bridge — turns the canonical tokens (packages/ui-tokens/styles.css)
+ * into utilities (bg-card, text-muted-foreground, text-positive, rounded-lg…).
+ * This block was missing pre-pivot: bg-primary/bg-card etc. generated NO CSS
+ * and shadcn primitives rendered unstyled. Keep every semantic token mapped.
+ */
+@theme inline {
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 
-:root {
-  color-scheme: light;
-  --background: oklch(0.95 0.006 264);
-  --foreground: oklch(0.145 0.014 265);
-  --card: oklch(0.995 0.001 264);
-  --card-foreground: oklch(0.145 0.014 265);
-  --popover: oklch(0.995 0.001 264);
-  --popover-foreground: oklch(0.145 0.014 265);
-  --primary: oklch(0.486 0.096 175.8);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.968 0.005 264);
-  --secondary-foreground: oklch(0.205 0.012 265);
-  --muted: oklch(0.968 0.005 264);
-  --muted-foreground: oklch(0.556 0.01 264);
-  --accent: oklch(0.968 0.005 264);
-  --accent-foreground: oklch(0.205 0.012 265);
-  --destructive: oklch(0.45 0.18 25);
-  --border: oklch(0.91 0.006 264);
-  --input: oklch(0.91 0.006 264);
-  --ring: oklch(0.486 0.096 175.8);
-  --chart-1: oklch(0.486 0.096 175.8);
-  --chart-2: oklch(0.6 0.08 175);
-  --chart-3: oklch(0.4 0.07 265);
-  --chart-4: oklch(0.7 0.06 175);
-  --chart-5: oklch(0.3 0.05 265);
-  --radius: 0.75rem;
-  --sidebar: oklch(0.985 0.002 264);
-  --sidebar-foreground: oklch(0.145 0.014 265);
-  --sidebar-primary: oklch(0.486 0.096 175.8);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.968 0.005 264);
-  --sidebar-accent-foreground: oklch(0.205 0.012 265);
-  --sidebar-border: oklch(0.91 0.006 264);
-  --sidebar-ring: oklch(0.486 0.096 175.8);
-}
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 
-.dark {
-  --background: oklch(0.16 0.014 265);
-  --foreground: oklch(0.985 0.002 264);
-  --card: oklch(0.22 0.012 265);
-  --card-foreground: oklch(0.985 0.002 264);
-  --popover: oklch(0.22 0.012 265);
-  --popover-foreground: oklch(0.985 0.002 264);
-  --primary: oklch(0.65 0.12 175.8);
-  --primary-foreground: oklch(0.16 0.014 265);
-  --secondary: oklch(0.27 0.01 265);
-  --secondary-foreground: oklch(0.985 0.002 264);
-  --muted: oklch(0.27 0.01 265);
-  --muted-foreground: oklch(0.708 0.008 264);
-  --accent: oklch(0.27 0.01 265);
-  --accent-foreground: oklch(0.985 0.002 264);
-  --destructive: oklch(0.65 0.2 25);
-  --border: oklch(0.27 0.01 265);
-  --input: oklch(0.32 0.01 265);
-  --ring: oklch(0.65 0.12 175.8);
-  --chart-1: oklch(0.65 0.12 175.8);
-  --chart-2: oklch(0.55 0.09 175);
-  --chart-3: oklch(0.5 0.07 265);
-  --chart-4: oklch(0.7 0.08 175);
-  --chart-5: oklch(0.4 0.06 265);
-  --sidebar: oklch(0.22 0.012 265);
-  --sidebar-foreground: oklch(0.985 0.002 264);
-  --sidebar-primary: oklch(0.65 0.12 175.8);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.27 0.01 265);
-  --sidebar-accent-foreground: oklch(0.985 0.002 264);
-  --sidebar-border: oklch(0.27 0.01 265);
-  --sidebar-ring: oklch(0.65 0.12 175.8);
+  /* Product semantics */
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-negative: var(--negative);
+  --color-negative-soft: var(--negative-soft);
+  --color-pending: var(--pending);
+  --color-pending-soft: var(--pending-soft);
+  --color-confidence-high: var(--confidence-high);
+  --color-confidence-medium: var(--confidence-medium);
+  --color-confidence-low: var(--confidence-low);
+
+  /* Status + surface utilities (values resolve at runtime from ui-tokens;
+     @theme inline emits no custom property, so same-name mapping is safe).
+     These give the consolidation sweep real utilities: text-info, bg-danger-soft,
+     bg-surface-muted, text-foreground-soft, bg-primary-soft, … */
+  --color-foreground-soft: var(--color-text-soft);
+  --color-primary-strong: var(--color-accent-strong);
+  --color-primary-soft: var(--color-accent-soft);
+  --color-success: var(--color-success);
+  --color-success-soft: var(--color-success-soft);
+  --color-success-bg: var(--color-success-bg);
+  --color-info: var(--color-info);
+  --color-info-soft: var(--color-info-soft);
+  --color-info-bg: var(--color-info-bg);
+  --color-danger: var(--color-danger);
+  --color-danger-soft: var(--color-danger-soft);
+  --color-danger-bg: var(--color-danger-bg);
+  --color-warning: var(--color-warning);
+  --color-warning-soft: var(--color-warning-soft);
+  --color-warning-bg: var(--color-warning-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-strong: var(--color-surface-strong);
+  --color-surface-muted: var(--color-surface-muted);
+  --color-surface-inset: var(--color-surface-inset);
+  --color-border-strong: var(--color-border-strong);
+
+  /* Shadow recipes as utilities: shadow-sm, shadow-panel, shadow-chrome… */
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-panel: var(--shadow-panel);
+  --shadow-chrome: var(--shadow-chrome);
+  --shadow-accent: var(--shadow-accent);
+  --shadow-accent-lg: var(--shadow-accent-lg);
+
+  /* Radius scale (values live in ui-tokens) */
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-2xl: var(--radius-2xl);
+  --radius-3xl: var(--radius-3xl);
+  --radius-4xl: var(--radius-4xl);
 }
 
 html,
 body {
   min-height: 100%;
   background:
-    radial-gradient(circle at 10% 0%, rgba(15, 118, 110, 0.22), transparent 32%),
-    radial-gradient(circle at 100% 10%, rgba(30, 64, 175, 0.14), transparent 28%),
-    radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.68), transparent 34%),
+    radial-gradient(circle at 10% 0%, var(--page-glow-accent), transparent 32%),
+    radial-gradient(circle at 100% 10%, var(--page-glow-info), transparent 28%),
+    radial-gradient(circle at 50% 100%, var(--page-glow-light), transparent 34%),
     linear-gradient(180deg, var(--color-bg-alt), var(--color-bg));
   color: var(--color-text);
   font-family: var(--font-sans);
@@ -158,15 +176,15 @@ button:disabled,
 }
 
 .glass-chrome {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(245, 249, 251, 0.58));
+  background: linear-gradient(180deg, var(--surface-glass-strong), var(--surface-glass-soft));
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid rgba(255, 255, 255, 0.62);
+  border: 1px solid var(--surface-glass-border);
   box-shadow: var(--shadow-chrome);
 }
 
 .glass-panel {
-  background: linear-gradient(180deg, var(--color-surface-strong), rgba(248, 250, 252, 0.92));
+  background: linear-gradient(180deg, var(--color-surface-strong), var(--surface-panel-tint));
   border: 1px solid var(--color-border-strong);
   box-shadow: var(--shadow-panel);
 }
@@ -178,7 +196,7 @@ button:disabled,
 
 .glass-panel-inset {
   background: var(--color-surface-inset);
-  border: 1px solid rgba(24, 36, 44, 0.06);
+  border: 1px solid var(--color-border-faint);
 }
 
 .text-mono {
@@ -271,8 +289,8 @@ button:disabled,
 
 .accent-ring {
   box-shadow:
-    0 0 0 1px rgba(15, 118, 110, 0.12),
-    0 18px 42px rgba(15, 118, 110, 0.22);
+    0 0 0 1px var(--color-accent-soft),
+    var(--shadow-accent-ring);
 }
 
 /* Typography utilities */
