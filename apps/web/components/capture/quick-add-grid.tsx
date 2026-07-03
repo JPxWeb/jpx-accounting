@@ -56,7 +56,7 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
   return (
     <section className="glass-panel rounded-xl p-5" data-testid="quick-add-grid">
       <h2 className="text-lg font-semibold">Quick add</h2>
-      <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+      <p className="mt-1 text-sm text-muted-foreground">
         Each tile creates a local draft you can promote into ledger evidence.
       </p>
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -68,8 +68,8 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
             onClick={() => void addDraft(tile.mode, tile.label)}
             className="glass-panel-soft rounded-lg p-4 text-left"
           >
-            <p className="text-sm font-semibold text-[var(--color-text)]">{tile.label}</p>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">{tile.hint}</p>
+            <p className="text-sm font-semibold text-foreground">{tile.label}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tile.hint}</p>
           </button>
         ))}
       </div>
@@ -79,7 +79,7 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
           data-testid="quick-add-sie"
           disabled={importing}
           onClick={() => sieInputRef.current?.click()}
-          className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium disabled:opacity-60"
+          className="rounded-lg border border-border px-4 py-2 text-sm font-medium disabled:opacity-60"
         >
           {importing ? "Importing…" : "Import SIE file"}
         </button>

@@ -41,29 +41,29 @@ export function EvidenceDetailScreen() {
       <section className="glass-panel rounded-xl p-5" data-testid="evidence-detail">
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <dt className="text-sm text-[var(--color-text-muted)]">Hash</dt>
+            <dt className="text-sm text-muted-foreground">Hash</dt>
             <dd className="text-mono text-sm" data-testid="evidence-hash">
               {evidence.hash}
             </dd>
           </div>
           <div>
-            <dt className="text-sm text-[var(--color-text-muted)]">Original filename</dt>
+            <dt className="text-sm text-muted-foreground">Original filename</dt>
             <dd className="text-sm">{evidence.originalFilename}</dd>
           </div>
           <div>
-            <dt className="text-sm text-[var(--color-text-muted)]">MIME type</dt>
+            <dt className="text-sm text-muted-foreground">MIME type</dt>
             <dd className="text-sm">{evidence.mimeType}</dd>
           </div>
           <div>
-            <dt className="text-sm text-[var(--color-text-muted)]">Uploaded</dt>
+            <dt className="text-sm text-muted-foreground">Uploaded</dt>
             <dd className="text-sm">{evidence.createdAt.slice(0, 10)}</dd>
           </div>
           <div>
-            <dt className="text-sm text-[var(--color-text-muted)]">Trust level</dt>
+            <dt className="text-sm text-muted-foreground">Trust level</dt>
             <dd className="text-sm">{evidence.trustLevel}</dd>
           </div>
           <div>
-            <dt className="text-sm text-[var(--color-text-muted)]">Blob path</dt>
+            <dt className="text-sm text-muted-foreground">Blob path</dt>
             <dd className="text-mono text-xs">{evidence.blobPath}</dd>
           </div>
         </dl>

@@ -45,7 +45,7 @@ export function DraftsTable() {
     <section className="glass-panel rounded-xl p-5" data-testid="drafts-table">
       <h2 className="text-lg font-semibold">Drafts in progress</h2>
       {drafts.length === 0 ? (
-        <p className="mt-3 text-sm text-[var(--color-text-muted)]" data-testid="drafts-empty">
+        <p className="mt-3 text-sm text-muted-foreground" data-testid="drafts-empty">
           No local drafts. Use Quick add above or the capture button.
         </p>
       ) : (

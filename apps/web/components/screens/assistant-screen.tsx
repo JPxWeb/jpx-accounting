@@ -20,17 +20,15 @@ import { ScreenSkeleton } from "../ui/skeleton";
 
 function ThreadList({ threads }: { threads: StoredAssistantThread[] }) {
   if (threads.length === 0) {
-    return (
-      <p className="text-sm text-[var(--color-text-muted)]">Run an advisory pass to build history on this device.</p>
-    );
+    return <p className="text-sm text-muted-foreground">Run an advisory pass to build history on this device.</p>;
   }
 
   return (
     <ul className="space-y-3">
       {threads.map((thread) => (
-        <li key={thread.id} className="glass-panel-soft rounded-2xl px-3 py-3">
-          <p className="text-xs font-semibold text-[var(--color-text)] line-clamp-2">{thread.question}</p>
-          <p className="mt-2 text-xs leading-5 text-[var(--color-text-muted)] line-clamp-3">{thread.answer}</p>
+        <li key={thread.id} className="glass-panel-soft rounded-xl px-3 py-3">
+          <p className="text-xs font-semibold text-foreground line-clamp-2">{thread.question}</p>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground line-clamp-3">{thread.answer}</p>
           <p className="text-eyebrow mt-2">{thread.status}</p>
         </li>
       ))}
@@ -87,9 +85,9 @@ export function AssistantScreen() {
         title="Ask AI"
         description="The advisory plane stays clearly separate from posting authority. It explains, recommends, cites, and creates review tasks, but it does not silently change the ledger."
         aside={
-          <div className="glass-panel-soft rounded-2xl p-4">
+          <div className="glass-panel-soft rounded-xl p-4">
             <SectionLabel>{formatRuntimeModeLabel(webRuntimeConfig.runtimeMode)}</SectionLabel>
-            <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
               {webRuntimeConfig.runtimeMode === "demo"
                 ? "Demo mode keeps the assistant local and explicit about scaffold behavior."
                 : "Normal mode requires real provider configuration and fails closed when it is missing."}
@@ -98,23 +96,23 @@ export function AssistantScreen() {
         }
       />
 
-      <details className="glass-panel rounded-3xl p-4 lg:hidden">
-        <summary className="cursor-pointer text-sm font-semibold text-[var(--color-text)]">Thread history</summary>
+      <details className="glass-panel rounded-xl p-4 lg:hidden">
+        <summary className="cursor-pointer text-sm font-semibold text-foreground">Thread history</summary>
         <div className="mt-4 max-h-60 overflow-y-auto">
           <ThreadList threads={threads} />
         </div>
       </details>
 
       <div className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <section className="glass-panel hidden rounded-3xl p-4 lg:block" data-testid="assistant-thread-list">
-          <h2 className="text-sm font-semibold text-[var(--color-text)]">Thread history</h2>
-          <p className="mt-1 text-xs text-[var(--color-text-muted)]">Stored locally in this browser.</p>
+        <section className="glass-panel hidden rounded-xl p-4 lg:block" data-testid="assistant-thread-list">
+          <h2 className="text-sm font-semibold text-foreground">Thread history</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Stored locally in this browser.</p>
           <div className="mt-4 max-h-[min(28rem,60vh)] overflow-y-auto">
             <ThreadList threads={threads} />
           </div>
         </section>
 
-        <section className="glass-panel rounded-3xl p-5" data-testid="assistant-panel">
+        <section className="glass-panel rounded-xl p-5" data-testid="assistant-panel">
           <SectionLabel as="label" htmlFor="assistant-question">
             Ask a grounded question
           </SectionLabel>
@@ -126,7 +124,7 @@ export function AssistantScreen() {
             className="glass-panel-inset mt-3 min-h-36 w-full rounded-xl px-4 py-4 text-sm outline-none"
             aria-describedby="assistant-question-hint"
           />
-          <p id="assistant-question-hint" className="mt-2 text-xs text-[var(--color-text-muted)]">
+          <p id="assistant-question-hint" className="mt-2 text-xs text-muted-foreground">
             The advisor cites Swedish tax law and internal policy. Responses never change the ledger.
           </p>
           <button
@@ -134,28 +132,28 @@ export function AssistantScreen() {
             onClick={() => assistant.mutate(question)}
             disabled={assistant.isPending || !question.trim()}
             data-testid="assistant-submit"
-            className="mt-4 w-full rounded-xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
+            className="mt-4 w-full rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
           >
             {assistant.isPending ? "Running…" : "Run advisory pass"}
           </button>
 
           {assistant.error ? (
-            <p className="mt-4 rounded-2xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
+            <p className="mt-4 rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">
               {getErrorMessage(assistant.error, "The advisory request could not be completed.")}
             </p>
           ) : null}
 
           <div className="mt-6 space-y-4">
             {assistantItems.map((item) => (
-              <article key={item.id} data-testid="assistant-response" className="glass-panel-soft rounded-2xl p-4">
+              <article key={item.id} data-testid="assistant-response" className="glass-panel-soft rounded-xl p-4">
                 <SectionLabel>{item.status}</SectionLabel>
                 <h2 className="mt-2 text-lg font-semibold">{item.question}</h2>
-                <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">{item.answer}</p>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.answer}</p>
                 <div className="mt-4 space-y-2">
                   {item.citations.map((citation) => (
                     <div key={citation.id} className="glass-panel-inset rounded-xl px-3 py-3 text-sm">
                       <p className="font-medium">{citation.title}</p>
-                      <p className="mt-1 text-[var(--color-text-muted)]">{citation.excerpt}</p>
+                      <p className="mt-1 text-muted-foreground">{citation.excerpt}</p>
                     </div>
                   ))}
                 </div>
@@ -164,7 +162,7 @@ export function AssistantScreen() {
           </div>
         </section>
 
-        <section className="glass-panel rounded-3xl p-5" data-testid="policy-rules-studio">
+        <section className="glass-panel rounded-xl p-5" data-testid="policy-rules-studio">
           <h2 className="text-lg font-semibold">Policy and rules studio</h2>
           <div className="mt-4 space-y-3">
             {[
@@ -172,7 +170,7 @@ export function AssistantScreen() {
               "Official, internal, and user-uploaded knowledge separated by trust level.",
               "Compliance watch can flag changes in public rules before advisory logic drifts.",
             ].map((item) => (
-              <div key={item} className="glass-panel-soft rounded-xl px-4 py-3 text-sm text-[var(--color-text-muted)]">
+              <div key={item} className="glass-panel-soft rounded-xl px-4 py-3 text-sm text-muted-foreground">
                 {item}
               </div>
             ))}

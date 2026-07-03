@@ -22,16 +22,7 @@ export function CloseView() {
 
   return (
     <div className="space-y-4" data-testid="close-view">
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          disabled={true}
-          title="Coming soon"
-          className="rounded-lg bg-[var(--color-accent-soft)] px-4 py-2 text-sm font-medium text-[var(--color-accent)] opacity-50 cursor-not-allowed"
-        >
-          Refresh close run
-        </button>
-      </div>
+      <p className="text-sm text-muted-foreground">Close runs are read-only in this build.</p>
 
       <section className="glass-panel rounded-xl p-5" data-testid="close-copilot-panel">
         <div className="flex items-center justify-between gap-3">
@@ -45,7 +36,7 @@ export function CloseView() {
           {closeRun?.checklist.map((item) => (
             <div key={item.id} className="glass-panel-soft rounded-lg px-4 py-4">
               <div className="flex items-center justify-between gap-4">
-                <p className="text-sm font-medium text-[var(--color-text)]">{item.label}</p>
+                <p className="text-sm font-medium text-foreground">{item.label}</p>
                 <StatusBadge status={item.status} variant={closeItemVariant(item.status)} />
               </div>
             </div>

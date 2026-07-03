@@ -2,6 +2,7 @@
 
 import type { ReviewTask, Voucher } from "@jpx-accounting/contracts";
 import { motion } from "motion/react";
+import type { Ref } from "react";
 import { formatMoney, formatPercent, formatShortDate } from "../../lib/presentation";
 import { SectionLabel } from "../ui/section-label";
 import { StatusBadge } from "../ui/status-badge";
@@ -32,9 +33,11 @@ type ReviewCardProps = {
   focused: boolean;
   onFocus: () => void;
   onAction: (action: ReviewAction) => void;
+  /** Attached by TodayScreen to scroll a deep-linked (?review=<id>) card into view. */
+  ref?: Ref<HTMLElement | null> | undefined;
 };
 
-export function ReviewCard({ review, voucher, index, focused, onFocus, onAction }: ReviewCardProps) {
+export function ReviewCard({ review, voucher, index, focused, onFocus, onAction, ref }: ReviewCardProps) {
   const confidence = formatPercent(review.suggestion?.confidence ?? 0);
   const citation = review.suggestion?.citations[0];
   const supplier = voucher?.voucherFields.supplierName ?? review.title;
@@ -42,6 +45,7 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction 
 
   return (
     <motion.article
+      ref={ref}
       data-testid="review-card"
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
@@ -49,10 +53,7 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction 
       tabIndex={0}
       onClick={onFocus}
       onFocus={onFocus}
-      className={[
-        "glass-panel rounded-xl p-4 sm:p-5 outline-none cursor-default",
-        focused ? "ring-2 ring-[var(--color-accent)]" : "",
-      ]
+      className={["glass-panel rounded-xl p-4 sm:p-5 outline-none cursor-default", focused ? "ring-2 ring-primary" : ""]
         .filter(Boolean)
         .join(" ")}
     >
@@ -61,13 +62,13 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction 
           <div className="flex h-full flex-col justify-between gap-4">
             <div className="flex items-center justify-between gap-3">
               <StatusBadge status={review.status} variant={reviewStatusVariant(review.status)} testId="review-status" />
-              <span className="text-sm font-semibold tabular-nums text-[var(--color-text-muted)]">{confidence}</span>
+              <span className="text-sm font-semibold tabular-nums text-muted-foreground">{confidence}</span>
             </div>
             <div>
-              <div className="inline-flex rounded-lg bg-[var(--color-accent-soft)] px-4 py-3 text-xl font-semibold tracking-[0.08em] text-[var(--color-text)]">
+              <div className="inline-flex rounded-lg bg-primary-soft px-4 py-3 text-xl font-semibold tracking-[0.08em] text-foreground">
                 {initialsFromTitle(supplier)}
               </div>
-              <p className="mt-3 text-sm font-semibold text-[var(--color-text)]">{supplier}</p>
+              <p className="mt-3 text-sm font-semibold text-foreground">{supplier}</p>
               <p className="text-eyebrow mt-1">
                 {voucher?.accountingMethod === "invoice" ? "Invoice method" : "Cash method"}
               </p>
@@ -79,10 +80,8 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction 
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <SectionLabel>{voucher?.voucherNumber ?? "Pending voucher"}</SectionLabel>
-              <h3 className="mt-2 text-xl font-semibold text-[var(--color-text)]">{review.title}</h3>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-muted)]">
-                {review.suggestedAction}
-              </p>
+              <h3 className="mt-2 text-xl font-semibold text-foreground">{review.title}</h3>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{review.suggestedAction}</p>
             </div>
             <div className="grid grid-cols-3 gap-2 text-sm lg:w-[17rem]">
               <div className="glass-panel-inset rounded-lg px-3 py-3">
@@ -101,14 +100,14 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction 
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-md bg-[var(--color-surface-muted)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
+            <span className="rounded-md bg-surface-muted px-3 py-2 text-sm font-semibold text-foreground">
               {review.suggestion?.accountNumber} {review.suggestion?.accountName}
             </span>
-            <span className="rounded-md bg-[var(--color-accent-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-accent)]">
+            <span className="rounded-md bg-primary-soft px-3 py-2 text-sm font-semibold text-primary">
               {review.suggestion?.vatCode}
             </span>
             {citation ? (
-              <span className="rounded-md bg-[var(--color-info-soft)] px-3 py-2 text-sm font-medium text-[var(--color-info)]">
+              <span className="rounded-md bg-info-soft px-3 py-2 text-sm font-medium text-info">
                 Cited: {citation.title}
               </span>
             ) : null}
@@ -117,7 +116,7 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction 
           <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)]">
             <div className="glass-panel-soft rounded-lg p-4">
               <SectionLabel>AI suggestion</SectionLabel>
-              <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">{review.suggestion?.reasoning}</p>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{review.suggestion?.reasoning}</p>
             </div>
 
             <details className="glass-panel-soft rounded-lg p-4">
@@ -125,15 +124,15 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction 
               <div className="mt-4 space-y-3">
                 {review.suggestion?.ruleHits.map((rule) => (
                   <div key={rule.id} className="glass-panel-inset rounded-lg px-3 py-3 text-sm">
-                    <p className="font-semibold text-[var(--color-text)]">{rule.title}</p>
-                    <p className="mt-1 text-[var(--color-text-muted)]">{rule.message}</p>
+                    <p className="font-semibold text-foreground">{rule.title}</p>
+                    <p className="mt-1 text-muted-foreground">{rule.message}</p>
                   </div>
                 ))}
                 <div className="grid gap-2">
                   {review.provenanceTimeline.map((item) => (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between gap-4 text-sm text-[var(--color-text-muted)]"
+                      className="flex items-center justify-between gap-4 text-sm text-muted-foreground"
                     >
                       <span>{item.label}</span>
                       <span className="text-eyebrow">{item.actor}</span>
@@ -145,9 +144,7 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction 
           </div>
 
           {review.blockedReason ? (
-            <p className="mt-4 rounded-lg bg-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]">
-              {review.blockedReason}
-            </p>
+            <p className="mt-4 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">{review.blockedReason}</p>
           ) : null}
 
           <ReviewCardActions onAction={onAction} disabled={!isActionable} />

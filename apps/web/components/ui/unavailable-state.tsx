@@ -7,10 +7,10 @@ type UnavailableStateProps = {
 export function UnavailableState({ title, message, testId }: UnavailableStateProps) {
   return (
     <div className="page-shell">
-      <section className="glass-panel rounded-3xl p-6 sm:p-7" data-testid={testId}>
+      <section className="glass-panel rounded-xl p-6 sm:p-7" data-testid={testId}>
         <p className="text-eyebrow">Unavailable</p>
-        <h1 className="mt-3 text-2xl font-semibold text-[var(--color-text)]">{title}</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--color-text-muted)]">{message}</p>
+        <h1 className="mt-3 text-2xl font-semibold text-foreground">{title}</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{message}</p>
       </section>
     </div>
   );

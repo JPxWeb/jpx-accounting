@@ -29,16 +29,10 @@ export function DigestPanel() {
       <div>
         <SectionLabel>Today&apos;s pulse</SectionLabel>
         <div className="mt-3 flex flex-wrap gap-2 text-sm">
-          <Link
-            href="/today"
-            className="rounded-md bg-[var(--color-accent-soft)] px-3 py-2 font-medium text-[var(--color-accent)]"
-          >
+          <Link href="/today" className="rounded-md bg-primary-soft px-3 py-2 font-medium text-primary">
             {pendingCount} pending
           </Link>
-          <Link
-            href="/books?view=close"
-            className="rounded-md bg-[var(--color-info-soft)] px-3 py-2 font-medium text-[var(--color-info)]"
-          >
+          <Link href="/books?view=close" className="rounded-md bg-info-soft px-3 py-2 font-medium text-info">
             {closeReady} ready · {closeBlocked} blocked
           </Link>
         </div>

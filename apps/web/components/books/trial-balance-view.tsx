@@ -26,6 +26,14 @@ export function TrialBalanceView() {
     await setView("general-ledger");
   }
 
+  if (balanceSummary.length === 0) {
+    return (
+      <div className="glass-panel rounded-xl p-8 text-center" data-testid="trial-balance-view">
+        <p className="text-sm text-muted-foreground">No balances yet. Post a voucher to populate the trial balance.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="glass-panel rounded-xl p-5" data-testid="trial-balance-view">
       <h2 className="text-lg font-semibold">Trial balance</h2>
@@ -34,31 +42,26 @@ export function TrialBalanceView() {
           <button
             key={balance.accountNumber}
             type="button"
-            className="w-full text-left glass-panel-soft rounded-lg p-4 text-sm hover:ring-1 hover:ring-[var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] transition-all"
+            data-testid="trial-balance-row"
+            className="w-full text-left glass-panel-soft rounded-lg p-4 text-sm hover:ring-1 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all"
             onClick={() => handleRowClick(balance.accountNumber)}
             title={`View ${balance.accountNumber} in general ledger`}
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="font-medium text-[var(--color-text)]">{balance.accountName}</p>
-                <p className="text-mono text-xs text-[var(--color-text-muted)]">{balance.accountNumber}</p>
+                <p className="font-medium text-foreground">{balance.accountName}</p>
+                <p className="text-mono text-xs text-muted-foreground">{balance.accountNumber}</p>
               </div>
-              <p className="text-sm font-semibold tabular-nums text-[var(--color-text)]">
-                {formatMoney(balance.balance)}
-              </p>
+              <p className="text-sm font-semibold tabular-nums text-foreground">{formatMoney(balance.balance)}</p>
             </div>
             <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="glass-panel-inset rounded-lg px-3 py-3">
                 <dt className="text-eyebrow">Debit</dt>
-                <dd className="mt-2 font-semibold tabular-nums text-[var(--color-text)]">
-                  {formatMoney(balance.debit)}
-                </dd>
+                <dd className="mt-2 font-semibold tabular-nums text-foreground">{formatMoney(balance.debit)}</dd>
               </div>
               <div className="glass-panel-inset rounded-lg px-3 py-3">
                 <dt className="text-eyebrow">Credit</dt>
-                <dd className="mt-2 font-semibold tabular-nums text-[var(--color-text)]">
-                  {formatMoney(balance.credit)}
-                </dd>
+                <dd className="mt-2 font-semibold tabular-nums text-foreground">{formatMoney(balance.credit)}</dd>
               </div>
             </dl>
           </button>

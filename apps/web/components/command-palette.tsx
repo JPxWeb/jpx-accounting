@@ -45,7 +45,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     <AnimatePresence>
       {open ? (
         <motion.div
-          className="fixed inset-0 z-[80] flex items-start justify-center bg-[rgba(10,18,24,0.36)] p-4 pt-[12vh] backdrop-blur-sm"
+          className="fixed inset-0 z-[80] flex items-start justify-center bg-black/35 p-4 pt-[12vh] backdrop-blur-sm"
           data-testid="command-palette-backdrop"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -58,7 +58,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             aria-modal="true"
             aria-label="Search workspace"
             data-testid="command-palette"
-            className="glass-chrome w-full max-w-lg rounded-3xl border border-[var(--color-border)] p-4 shadow-[var(--shadow-md)]"
+            className="glass-chrome w-full max-w-lg rounded-2xl border border-border p-4 shadow-md"
             initial={{ y: -16, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -12, opacity: 0 }}
@@ -75,28 +75,26 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             />
             <ul className="mt-3 max-h-72 overflow-y-auto" role="listbox" aria-label="Search results">
               {hits.length === 0 ? (
-                <li className="px-3 py-6 text-center text-sm text-[var(--color-text-muted)]">No matches</li>
+                <li className="px-3 py-6 text-center text-sm text-muted-foreground">No matches</li>
               ) : (
                 hits.map((hit) => (
                   <li key={hit.id} role="option" aria-selected={false}>
                     <button
                       type="button"
-                      className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-[var(--color-surface-muted)]"
+                      className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-surface-muted"
                       onClick={() => {
                         router.push(hit.href);
                         handleClose();
                       }}
                     >
-                      <span className="font-medium text-[var(--color-text)]">{hit.label}</span>
-                      <span className="mt-1 block text-xs text-[var(--color-text-muted)]">{hit.description}</span>
+                      <span className="font-medium text-foreground">{hit.label}</span>
+                      <span className="mt-1 block text-xs text-muted-foreground">{hit.description}</span>
                     </button>
                   </li>
                 ))
               )}
             </ul>
-            <p className="text-eyebrow mt-3 text-center text-[var(--color-text-muted)]">
-              Esc to close · {shortcutHint}
-            </p>
+            <p className="text-eyebrow mt-3 text-center text-muted-foreground">Esc to close · {shortcutHint}</p>
           </motion.div>
         </motion.div>
       ) : null}
@@ -131,7 +129,7 @@ function buildHits(data: WorkspaceSnapshot | undefined, raw: string): Hit[] {
         id: `v-${v.id}`,
         label: v.voucherNumber,
         description: supplier || "Voucher",
-        href: review ? `/#review-${review.id}` : "/",
+        href: review ? `/today?review=${review.id}` : "/books?view=journal",
       });
     }
   }
@@ -143,7 +141,7 @@ function buildHits(data: WorkspaceSnapshot | undefined, raw: string): Hit[] {
         id: `r-${r.id}`,
         label: r.title,
         description: `Review · ${r.status}`,
-        href: `/#review-${r.id}`,
+        href: `/today?review=${r.id}`,
       });
     }
   }

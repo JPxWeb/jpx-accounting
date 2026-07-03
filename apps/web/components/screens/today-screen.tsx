@@ -3,7 +3,7 @@
 import type { ReviewTask, Voucher, WorkspaceSnapshot } from "@jpx-accounting/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useReviewKeyboard } from "../../hooks/use-review-keyboard";
 import { apiClient } from "../../lib/client";
@@ -51,7 +51,7 @@ function reviewMatchesStatus(review: ReviewTask, statusFilter: StatusFilter): bo
 
 export function TodayScreen() {
   const queryClient = useQueryClient();
-  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [manualFocusId, setManualFocusId] = useState<string | null>(null);
 
   const workspaceQuery = useQuery({
     queryKey: ["workspace"],
@@ -72,6 +72,7 @@ export function TodayScreen() {
     "confidence",
     parseAsStringEnum<ConfidenceFilter>([...confidenceFilters]).withDefault("all"),
   );
+  const [reviewParam, setReviewParam] = useQueryState("review", parseAsString);
 
   const onMutationSuccess = useCallback(
     (review: ReviewTask | undefined) => {
@@ -95,6 +96,27 @@ export function TodayScreen() {
 
   const reviews = useMemo(() => data?.reviews ?? [], [data?.reviews]);
   const vouchers = useMemo(() => data?.vouchers ?? [], [data?.vouchers]);
+
+  // Deep links (/today?review=<id>, e.g. from the command palette) drive focus while
+  // the param is present; manual focus takes over once the user picks another card.
+  // Focus is derived from the param instead of set in an effect (react-hooks/set-state-in-effect).
+  const paramFocusId = reviewParam && reviews.some((review) => review.id === reviewParam) ? reviewParam : null;
+  const focusedId = paramFocusId ?? manualFocusId;
+
+  const setFocusedId = useCallback(
+    (id: string | null) => {
+      setManualFocusId(id);
+      // Keep the URL truthful: drop the deep-link param when focus moves elsewhere.
+      if (reviewParam && id !== reviewParam) void setReviewParam(null);
+    },
+    [reviewParam, setReviewParam],
+  );
+
+  const focusedCardRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!paramFocusId) return;
+    focusedCardRef.current?.scrollIntoView({ block: "center" });
+  }, [paramFocusId]);
 
   const voucherById = useMemo(() => {
     const map = new Map<string, Voucher>();
@@ -198,7 +220,7 @@ export function TodayScreen() {
             <div>
               <SectionLabel>Review queue</SectionLabel>
               <h2 className="mt-2 text-2xl font-semibold">Keep the next accounting decision obvious.</h2>
-              <p className="mt-2 max-w-2xl text-sm text-[var(--color-text-muted)]">
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
                 Cards stay compact on mobile, expand on larger screens, and keep AI reasoning behind secondary
                 disclosure until it is needed.
               </p>
@@ -206,23 +228,21 @@ export function TodayScreen() {
             <ReviewFilters />
           </div>
           {actionError ? (
-            <p className="mt-4 rounded-lg bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
-              {actionError}
-            </p>
+            <p className="mt-4 rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">{actionError}</p>
           ) : null}
         </div>
 
         <div className="space-y-4">
           {filteredReviews.length === 0 ? (
             <div className="glass-panel rounded-xl p-8 text-center">
-              <p className="text-sm text-[var(--color-text-muted)]">
+              <p className="text-sm text-muted-foreground">
                 {hasActiveFilters ? "No reviews match these filters." : "No reviews in the queue."}
               </p>
               {hasActiveFilters ? (
                 <button
                   type="button"
                   onClick={clearFilters}
-                  className="mt-3 text-sm font-medium text-[var(--color-accent)] hover:underline"
+                  className="mt-3 text-sm font-medium text-primary hover:underline"
                 >
                   Clear filters
                 </button>
@@ -236,6 +256,7 @@ export function TodayScreen() {
                 voucher={voucherById.get(review.voucherId)}
                 index={index}
                 focused={focusedId === review.id}
+                ref={review.id === paramFocusId ? focusedCardRef : undefined}
                 onFocus={() => setFocusedId(review.id)}
                 onAction={(action) => handleAction(review.id, action)}
               />

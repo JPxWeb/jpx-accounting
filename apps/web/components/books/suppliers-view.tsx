@@ -43,6 +43,14 @@ export function SuppliersView() {
     await setView("journal");
   }
 
+  if (suppliers.length === 0) {
+    return (
+      <div className="glass-panel rounded-xl p-8 text-center" data-testid="suppliers-view">
+        <p className="text-sm text-muted-foreground">No suppliers yet. Vouchers with a supplier name appear here.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="glass-panel rounded-xl p-5" data-testid="suppliers-view">
       <Table>
@@ -63,7 +71,8 @@ export function SuppliersView() {
               <TableCell>
                 <button
                   type="button"
-                  className="text-xs text-[var(--color-accent)] hover:underline focus-visible:outline-none focus-visible:underline"
+                  data-testid="supplier-open-journal"
+                  className="text-xs text-primary hover:underline focus-visible:outline-none focus-visible:underline"
                   onClick={() => handleViewInJournal(supplier.name)}
                 >
                   View in journal

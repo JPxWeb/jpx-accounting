@@ -85,7 +85,7 @@ export function EvidenceArchiveTable() {
         />
       </div>
       {evidence.length === 0 ? (
-        <p className="mt-3 text-sm text-[var(--color-text-muted)]" data-testid="evidence-empty">
+        <p className="mt-3 text-sm text-muted-foreground" data-testid="evidence-empty">
           No archived evidence yet. Promote a draft above to populate the archive.
         </p>
       ) : (
