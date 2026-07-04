@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { parseAsString, useQueryState } from "nuqs";
 import { useMemo } from "react";
 import { usePeriodScope } from "../../hooks/use-period-scope";
@@ -9,16 +10,19 @@ import { Money } from "../ui/money";
 import { SectionLabel } from "../ui/section-label";
 
 export function GeneralLedgerView() {
-  const { period } = usePeriodScope();
+  const t = useTranslations("books.generalLedger");
+  const { from, to } = usePeriodScope();
   const [account, setAccount] = useQueryState("account", parseAsString);
-  const { data } = useQuery({ queryKey: ["workspace"], queryFn: () => apiClient.getSnapshot() });
+
+  // Server-filtered (Phase 4): the period window is applied by the API; the
+  // client only groups the returned lines by account.
+  const journalQuery = useQuery({
+    queryKey: ["reports", "journal", from, to],
+    queryFn: () => apiClient.getJournal({ from, to }),
+  });
 
   const grouped = useMemo(() => {
-    const journal = (data?.reports.journal ?? []).filter((entry) => {
-      if (!period.start || !period.end) return true;
-      const date = entry.bookedAt.slice(0, 10);
-      return date >= period.start && date <= period.end;
-    });
+    const journal = journalQuery.data ?? [];
     const map = new Map<string, typeof journal>();
     for (const entry of journal) {
       const list = map.get(entry.accountNumber) ?? [];
@@ -26,7 +30,7 @@ export function GeneralLedgerView() {
       map.set(entry.accountNumber, list);
     }
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [data, period]);
+  }, [journalQuery.data]);
 
   const visible = account ? grouped.filter(([accountNumber]) => accountNumber === account) : grouped;
 
@@ -38,11 +42,11 @@ export function GeneralLedgerView() {
             data-testid="ledger-account-filter"
             className="inline-flex items-center gap-2 rounded-full bg-primary-soft px-3 py-1 text-xs font-medium text-primary"
           >
-            Account {account}
+            {t("accountChip", { account })}
             <button
               type="button"
               data-testid="ledger-account-filter-clear"
-              aria-label="Clear account filter"
+              aria-label={t("clearAccountAria")}
               className="rounded-full leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               onClick={() => void setAccount(null)}
             >
@@ -53,9 +57,7 @@ export function GeneralLedgerView() {
       ) : null}
       {visible.length === 0 ? (
         <div className="glass-panel rounded-xl p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            {account ? `No ledger entries for account ${account} in this period.` : "No ledger entries in this period."}
-          </p>
+          <p className="text-sm text-muted-foreground">{account ? t("emptyForAccount", { account }) : t("empty")}</p>
         </div>
       ) : (
         visible.map(([accountNumber, entries]) => {
@@ -70,7 +72,7 @@ export function GeneralLedgerView() {
                   <p className="text-sm font-semibold">{accountName}</p>
                 </span>
                 <span className="text-sm">
-                  Net <Money value={debit - credit} />
+                  {t("net")} <Money value={debit - credit} />
                 </span>
               </summary>
               <ul className="mt-4 space-y-2 text-sm">

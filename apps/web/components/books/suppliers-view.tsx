@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
 import { useMemo } from "react";
 
@@ -11,7 +12,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 const views = ["journal", "general-ledger", "trial-balance", "suppliers", "close"] as const;
 type View = (typeof views)[number];
 
+/**
+ * Deliberately NOT period-scoped (plan 4.5): suppliers aggregate over snapshot
+ * vouchers, which carry no journal window — a documented limitation until
+ * vouchers are period-addressable.
+ */
 export function SuppliersView() {
+  const t = useTranslations("books.suppliers");
+  const tBooks = useTranslations("books");
   const [, setView] = useQueryState("view", parseAsStringEnum<View>([...views]).withDefault("journal"));
   const [, setSupplier] = useQueryState("supplier", parseAsString);
 
@@ -20,12 +28,13 @@ export function SuppliersView() {
     queryFn: () => apiClient.getSnapshot(),
   });
 
+  const unknownSupplier = tBooks("unknownSupplier");
   const suppliers = useMemo(() => {
     const vouchers = data?.vouchers ?? [];
     const map = new Map<string, { count: number; totalGross: number }>();
 
     for (const voucher of vouchers) {
-      const name = voucher.voucherFields.supplierName ?? "(Unknown supplier)";
+      const name = voucher.voucherFields.supplierName ?? unknownSupplier;
       const existing = map.get(name) ?? { count: 0, totalGross: 0 };
       map.set(name, {
         count: existing.count + 1,
@@ -36,7 +45,7 @@ export function SuppliersView() {
     return Array.from(map.entries())
       .map(([name, stats]) => ({ name, ...stats }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [data]);
+  }, [data, unknownSupplier]);
 
   async function handleViewInJournal(supplierName: string) {
     await setSupplier(supplierName);
@@ -46,7 +55,7 @@ export function SuppliersView() {
   if (suppliers.length === 0) {
     return (
       <div className="glass-panel rounded-xl p-8 text-center" data-testid="suppliers-view">
-        <p className="text-sm text-muted-foreground">No suppliers yet. Vouchers with a supplier name appear here.</p>
+        <p className="text-sm text-muted-foreground">{t("empty")}</p>
       </div>
     );
   }
@@ -56,9 +65,9 @@ export function SuppliersView() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Supplier</TableHead>
-            <TableHead className="text-right">Vouchers</TableHead>
-            <TableHead className="text-right">Total spent</TableHead>
+            <TableHead>{t("headerSupplier")}</TableHead>
+            <TableHead className="text-right">{t("headerVouchers")}</TableHead>
+            <TableHead className="text-right">{t("headerTotal")}</TableHead>
             <TableHead />
           </TableRow>
         </TableHeader>
@@ -77,7 +86,7 @@ export function SuppliersView() {
                   className="text-xs text-primary hover:underline focus-visible:outline-none focus-visible:underline"
                   onClick={() => handleViewInJournal(supplier.name)}
                 >
-                  View in journal
+                  {t("viewInJournal")}
                 </button>
               </TableCell>
             </TableRow>

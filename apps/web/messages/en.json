@@ -6,6 +6,18 @@
       "system": "System theme",
       "light": "Light theme",
       "dark": "Dark theme"
+    },
+    "period": {
+      "selectorAria": "Reporting period",
+      "groups": {
+        "months": "Months",
+        "quarters": "Quarters",
+        "year": "Year"
+      },
+      "ytd": "Year to date",
+      "all": "All periods",
+      "fiscalYear": "FY {year}",
+      "quarter": "Q{quarter} {year}"
     }
   },
   "shell": {
@@ -244,6 +256,157 @@
       "headerUploaded": "Uploaded",
       "open": "Open",
       "hashCopied": "Hash copied."
+    }
+  },
+  "books": {
+    "eyebrow": "Books",
+    "title": "The ledger, drillable.",
+    "description": "Journal, general ledger, trial balance, suppliers, and close — all scoped to a period.",
+    "unknownSupplier": "(Unknown supplier)",
+    "tabs": {
+      "journal": "Journal",
+      "generalLedger": "General ledger",
+      "trialBalance": "Trial balance",
+      "suppliers": "Suppliers",
+      "close": "Close"
+    },
+    "journal": {
+      "supplierChip": "Supplier {supplier}",
+      "clearSupplierAria": "Clear supplier filter",
+      "emptyForSupplier": "No journal entries for {supplier} in this period.",
+      "empty": "No journal entries in this period.",
+      "headerDate": "Date",
+      "headerVoucher": "Voucher",
+      "headerAccount": "Account",
+      "headerDescription": "Description",
+      "headerDebit": "Debit",
+      "headerCredit": "Credit"
+    },
+    "generalLedger": {
+      "accountChip": "Account {account}",
+      "clearAccountAria": "Clear account filter",
+      "emptyForAccount": "No ledger entries for account {account} in this period.",
+      "empty": "No ledger entries in this period.",
+      "net": "Net"
+    },
+    "trialBalance": {
+      "title": "Trial balance",
+      "empty": "No balances yet. Post a voucher to populate the trial balance.",
+      "rowTitle": "View {account} in general ledger",
+      "debit": "Debit",
+      "credit": "Credit"
+    },
+    "suppliers": {
+      "empty": "No suppliers yet. Vouchers with a supplier name appear here.",
+      "headerSupplier": "Supplier",
+      "headerVouchers": "Vouchers",
+      "headerTotal": "Total spent",
+      "viewInJournal": "View in journal"
+    },
+    "close": {
+      "readOnly": "Close runs are read-only in this build.",
+      "copilotLabel": "Close Copilot",
+      "copilotTitle": "Month-end stays visible while the queue moves.",
+      "advisoryBadge": "Advisory only"
+    }
+  },
+  "reports": {
+    "eyebrow": "Reports",
+    "title": "Reports",
+    "description": "Every number on this screen renders from one report pack per period — prose, KPIs, and statements can never drift apart.",
+    "export": {
+      "button": "Export SIE",
+      "exporting": "Exporting…",
+      "hint": "Downloads the workspace SIE file from the API.",
+      "error": "SIE export failed."
+    },
+    "unavailable": {
+      "title": "Reports unavailable",
+      "message": "Reports could not be loaded. Check the runtime configuration and API availability."
+    },
+    "kpis": {
+      "result": "Result",
+      "cash": "Cash",
+      "revenue": "Revenue",
+      "vat": "Net VAT (box 49)"
+    },
+    "narrative": {
+      "title": "This period in words",
+      "computedFrom": "Computed from your ledger — every number above matches the statements below.",
+      "empty": "Nothing has been booked in this period yet.",
+      "periodResult": "The period closed at <value></value>.",
+      "periodResultWithDelta": "The period closed at <value></value>, <delta></delta> versus the previous period.",
+      "biggestMover": "Biggest cost mover: {accountNumber} {accountName} at <value></value> (<delta></delta> vs previous period).",
+      "cashDelta": "Cash went from <opening></opening> to <closing></closing>, a change of <delta></delta>.",
+      "vatToPay": "Net VAT position (box 49): <value></value> to pay.",
+      "vatToRefund": "Net VAT position (box 49): <value></value> to get back.",
+      "chips": {
+        "period-result": "Income statement",
+        "biggest-mover": "Income statement",
+        "cash-delta": "Cash bridge",
+        "vat-position": "VAT return"
+      }
+    },
+    "pnl": {
+      "title": "Income statement",
+      "groups": {
+        "revenue": "Operating income",
+        "materials": "Materials and goods",
+        "externalCost": "Other external costs",
+        "personnel": "Personnel costs",
+        "financial": "Financial items"
+      },
+      "subtotal": "Subtotal",
+      "operatingResult": "Operating result",
+      "financialNet": "Financial net",
+      "periodResult": "Result for the period"
+    },
+    "balanceSheet": {
+      "title": "Balance sheet",
+      "asOf": "As of {date}",
+      "groups": {
+        "assets": "Assets",
+        "equityAndLiabilities": "Equity and liabilities"
+      },
+      "computedResult": "Computed period result (not yet closed)",
+      "totalAssets": "Total assets",
+      "totalEquityAndLiabilities": "Total equity and liabilities",
+      "balanced": "Balanced",
+      "notBalanced": "Out of balance"
+    },
+    "vat": {
+      "title": "VAT return",
+      "description": "Momsdeklaration boxes computed over the selected period.",
+      "headerBox": "Box",
+      "headerLabel": "Description",
+      "headerAmount": "Amount",
+      "toPay": "VAT to pay",
+      "toRefund": "VAT to get back"
+    },
+    "alerts": {
+      "label": "Compliance watch",
+      "title": "Deadlines and regulatory signals",
+      "description": "Pulled from the same compliance feed as the inbox notifications surface."
+    },
+    "charts": {
+      "monthly": {
+        "title": "Cash in / out per month",
+        "aria": "Bar chart of monthly cash in and cash out"
+      },
+      "cashBridge": {
+        "title": "Cash bridge",
+        "aria": "Waterfall chart of the period's cash movement drivers"
+      },
+      "showTable": "Show data table",
+      "hideTable": "Hide data table",
+      "loading": "Loading chart…"
+    },
+    "drill": {
+      "title": "Account {account}",
+      "close": "Close",
+      "openLedger": "Open in general ledger",
+      "importedBadge": "Imported",
+      "empty": "No lines for this account in the period."
     }
   }
 }

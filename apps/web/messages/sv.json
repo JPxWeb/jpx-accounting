@@ -6,6 +6,18 @@
       "system": "Systemtema",
       "light": "Ljust tema",
       "dark": "Mörkt tema"
+    },
+    "period": {
+      "selectorAria": "Rapportperiod",
+      "groups": {
+        "months": "Månader",
+        "quarters": "Kvartal",
+        "year": "År"
+      },
+      "ytd": "Hittills i år",
+      "all": "Alla perioder",
+      "fiscalYear": "Räkenskapsår {year}",
+      "quarter": "Kv {quarter} {year}"
     }
   },
   "shell": {
@@ -244,6 +256,157 @@
       "headerUploaded": "Uppladdad",
       "open": "Öppna",
       "hashCopied": "Hash kopierad."
+    }
+  },
+  "books": {
+    "eyebrow": "Böcker",
+    "title": "Huvudboken, borrbar.",
+    "description": "Journal, huvudbok, råbalans, leverantörer och avslut — allt avgränsat till en period.",
+    "unknownSupplier": "(Okänd leverantör)",
+    "tabs": {
+      "journal": "Journal",
+      "generalLedger": "Huvudbok",
+      "trialBalance": "Råbalans",
+      "suppliers": "Leverantörer",
+      "close": "Avslut"
+    },
+    "journal": {
+      "supplierChip": "Leverantör {supplier}",
+      "clearSupplierAria": "Rensa leverantörsfiltret",
+      "emptyForSupplier": "Inga journalposter för {supplier} under den här perioden.",
+      "empty": "Inga journalposter under den här perioden.",
+      "headerDate": "Datum",
+      "headerVoucher": "Verifikat",
+      "headerAccount": "Konto",
+      "headerDescription": "Beskrivning",
+      "headerDebit": "Debet",
+      "headerCredit": "Kredit"
+    },
+    "generalLedger": {
+      "accountChip": "Konto {account}",
+      "clearAccountAria": "Rensa kontofiltret",
+      "emptyForAccount": "Inga huvudboksposter för konto {account} under den här perioden.",
+      "empty": "Inga huvudboksposter under den här perioden.",
+      "net": "Netto"
+    },
+    "trialBalance": {
+      "title": "Råbalans",
+      "empty": "Inga saldon ännu. Bokför ett verifikat för att fylla råbalansen.",
+      "rowTitle": "Visa {account} i huvudboken",
+      "debit": "Debet",
+      "credit": "Kredit"
+    },
+    "suppliers": {
+      "empty": "Inga leverantörer ännu. Verifikat med leverantörsnamn visas här.",
+      "headerSupplier": "Leverantör",
+      "headerVouchers": "Verifikat",
+      "headerTotal": "Totalt spenderat",
+      "viewInJournal": "Visa i journalen"
+    },
+    "close": {
+      "readOnly": "Avslutskörningar är skrivskyddade i den här versionen.",
+      "copilotLabel": "Avslutscopilot",
+      "copilotTitle": "Månadsavslutet förblir synligt medan kön rör sig.",
+      "advisoryBadge": "Endast rådgivande"
+    }
+  },
+  "reports": {
+    "eyebrow": "Rapporter",
+    "title": "Rapporter",
+    "description": "Varje siffra på den här skärmen renderas från ett och samma rapportpaket per period — prosa, nyckeltal och rapporter kan aldrig glida isär.",
+    "export": {
+      "button": "Exportera SIE",
+      "exporting": "Exporterar…",
+      "hint": "Laddar ner arbetsytans SIE-fil från API:et.",
+      "error": "SIE-exporten misslyckades."
+    },
+    "unavailable": {
+      "title": "Rapporter otillgängliga",
+      "message": "Rapporterna kunde inte läsas in. Kontrollera runtime-konfigurationen och API-tillgängligheten."
+    },
+    "kpis": {
+      "result": "Resultat",
+      "cash": "Kassa",
+      "revenue": "Intäkter",
+      "vat": "Moms netto (ruta 49)"
+    },
+    "narrative": {
+      "title": "Perioden i ord",
+      "computedFrom": "Beräknat från din bokföring — varje siffra ovan stämmer med rapporterna nedan.",
+      "empty": "Inget har bokförts under den här perioden ännu.",
+      "periodResult": "Perioden stängde på <value></value>.",
+      "periodResultWithDelta": "Perioden stängde på <value></value>, <delta></delta> jämfört med föregående period.",
+      "biggestMover": "Största kostnadsrörelsen: {accountNumber} {accountName} på <value></value> (<delta></delta> mot föregående period).",
+      "cashDelta": "Kassan gick från <opening></opening> till <closing></closing>, en förändring på <delta></delta>.",
+      "vatToPay": "Momsposition netto (ruta 49): <value></value> att betala.",
+      "vatToRefund": "Momsposition netto (ruta 49): <value></value> att få tillbaka.",
+      "chips": {
+        "period-result": "Resultatrapport",
+        "biggest-mover": "Resultatrapport",
+        "cash-delta": "Kassabrygga",
+        "vat-position": "Momsdeklaration"
+      }
+    },
+    "pnl": {
+      "title": "Resultatrapport",
+      "groups": {
+        "revenue": "Rörelsens intäkter",
+        "materials": "Råvaror och förnödenheter",
+        "externalCost": "Övriga externa kostnader",
+        "personnel": "Personalkostnader",
+        "financial": "Finansiella poster"
+      },
+      "subtotal": "Delsumma",
+      "operatingResult": "Rörelseresultat",
+      "financialNet": "Finansnetto",
+      "periodResult": "Periodens resultat"
+    },
+    "balanceSheet": {
+      "title": "Balansrapport",
+      "asOf": "Per {date}",
+      "groups": {
+        "assets": "Tillgångar",
+        "equityAndLiabilities": "Eget kapital och skulder"
+      },
+      "computedResult": "Beräknat periodresultat (ej bokslutfört)",
+      "totalAssets": "Summa tillgångar",
+      "totalEquityAndLiabilities": "Summa eget kapital och skulder",
+      "balanced": "I balans",
+      "notBalanced": "Obalans"
+    },
+    "vat": {
+      "title": "Momsdeklaration",
+      "description": "Momsdeklarationens rutor beräknade över den valda perioden.",
+      "headerBox": "Ruta",
+      "headerLabel": "Beskrivning",
+      "headerAmount": "Belopp",
+      "toPay": "Moms att betala",
+      "toRefund": "Moms att få tillbaka"
+    },
+    "alerts": {
+      "label": "Regelbevakning",
+      "title": "Deadlines och regulatoriska signaler",
+      "description": "Hämtat från samma compliance-flöde som inkorgens notiser."
+    },
+    "charts": {
+      "monthly": {
+        "title": "Kassa in / ut per månad",
+        "aria": "Stapeldiagram över månatliga in- och utbetalningar"
+      },
+      "cashBridge": {
+        "title": "Kassabrygga",
+        "aria": "Vattenfallsdiagram över periodens kassadrivare"
+      },
+      "showTable": "Visa datatabell",
+      "hideTable": "Dölj datatabell",
+      "loading": "Läser in diagram…"
+    },
+    "drill": {
+      "title": "Konto {account}",
+      "close": "Stäng",
+      "openLedger": "Öppna i huvudboken",
+      "importedBadge": "Importerad",
+      "empty": "Inga rader för det här kontot under perioden."
     }
   }
 }

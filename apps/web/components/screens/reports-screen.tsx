@@ -1,53 +1,49 @@
 "use client";
 
+import { buildKpis, buildReportNarrative } from "@jpx-accounting/reporting";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { motion } from "motion/react";
+import { useTranslations } from "next-intl";
+import { useState } from "react";
 import { toast } from "sonner";
 
-import { getErrorMessage } from "../../lib/request-errors";
-import { summarizeBalances, summarizeJournal, summarizeVat } from "@jpx-accounting/reporting";
+import { usePeriodScope } from "../../hooks/use-period-scope";
 import { apiClient } from "../../lib/client";
-import { getPeriodDayRange, journalEntryInPeriod, type ReportPeriodPreset } from "../../lib/report-period";
-import { Money } from "../ui/money";
+import { getErrorMessage } from "../../lib/request-errors";
+import { PeriodSelector } from "../period/period-selector";
+import { BalanceSheetStatement } from "../reports/balance-sheet-statement";
+import { KpiRow } from "../reports/kpi-row";
+import { NarrativeCard } from "../reports/narrative-card";
+import { PnlStatement } from "../reports/pnl-statement";
+import { VatReturnTable } from "../reports/vat-return-table";
 import { ScreenHeader } from "../ui/screen-header";
-import { UnavailableState } from "../ui/unavailable-state";
 import { SectionLabel } from "../ui/section-label";
 import { ScreenSkeleton } from "../ui/skeleton";
 import { StatusBadge } from "../ui/status-badge";
+import { UnavailableState } from "../ui/unavailable-state";
 
-const periodOptions: { value: ReportPeriodPreset; label: string }[] = [
-  { value: "this-month", label: "This month" },
-  { value: "last-month", label: "Last month" },
-  { value: "q1", label: "Q1" },
-  { value: "q2", label: "Q2" },
-  { value: "q3", label: "Q3" },
-  { value: "q4", label: "Q4" },
-  { value: "ytd", label: "Year to date" },
-  { value: "all", label: "All periods" },
-];
-
+/**
+ * Reports v2 (advisory-pivot Phase 4): narrative-first, ONE `ReportPack` per
+ * period is the single source object — prose, KPIs, (soon) charts, and the
+ * statements all render from the same fetched values, so they can never
+ * disagree. Charts land in Task 4.7, the account drill drawer in Task 4.8.
+ */
 export function ReportsScreen() {
-  const [period, setPeriod] = useState<ReportPeriodPreset>("this-month");
+  const t = useTranslations("reports");
+  const { raw } = usePeriodScope();
   const [exporting, setExporting] = useState(false);
 
+  const packQuery = useQuery({
+    queryKey: ["reports", "pack", raw],
+    queryFn: () => apiClient.getReportPack(raw),
+  });
+  // The snapshot only feeds the compliance alerts panel; the pack carries
+  // every reporting number.
   const workspaceQuery = useQuery({
     queryKey: ["workspace"],
     queryFn: () => apiClient.getSnapshot(),
   });
-  const { data } = workspaceQuery;
 
-  const { startDay, endDay } = useMemo(() => getPeriodDayRange(period), [period]);
-
-  const filteredJournal = useMemo(() => {
-    const journal = data?.reports.journal ?? [];
-    if (period === "all") return journal;
-    return journal.filter((entry) => journalEntryInPeriod(entry.bookedAt, startDay, endDay));
-  }, [data?.reports.journal, period, startDay, endDay]);
-
-  const journalSummary = summarizeJournal(filteredJournal);
-  const balanceSummary = summarizeBalances(data?.reports.balances ?? []);
-  const vatSummary = summarizeVat(data?.reports.vat ?? []);
+  const pack = packQuery.data;
 
   async function exportSie() {
     setExporting(true);
@@ -63,35 +59,36 @@ export function ReportsScreen() {
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      toast.error(getErrorMessage(error, "SIE export failed."));
+      toast.error(getErrorMessage(error, t("export.error")));
     } finally {
       setExporting(false);
     }
   }
 
-  if (workspaceQuery.error && !data) {
+  if (packQuery.error && !pack) {
     return (
       <UnavailableState
         testId="reports-unavailable"
-        title="Reports unavailable"
-        message={getErrorMessage(
-          workspaceQuery.error,
-          "Reports could not be loaded. Check the runtime configuration and API availability.",
-        )}
+        title={t("unavailable.title")}
+        message={getErrorMessage(packQuery.error, t("unavailable.message"))}
       />
     );
   }
 
-  if (!data) {
+  if (!pack) {
     return <ScreenSkeleton />;
   }
+
+  const kpis = buildKpis(pack);
+  const facts = buildReportNarrative(pack);
+  const alerts = workspaceQuery.data?.alerts ?? [];
 
   return (
     <div className="page-shell space-y-6">
       <ScreenHeader
-        eyebrow="Reports"
-        title="Reports"
-        description="Journal, balances, and VAT views all project from the same append-only event history, so the polished UI never drifts away from the audit spine."
+        eyebrow={t("eyebrow")}
+        title={t("title")}
+        description={t("description")}
         aside={
           <div className="flex w-full flex-col gap-3 sm:items-end">
             <button
@@ -101,117 +98,36 @@ export function ReportsScreen() {
               onClick={() => void exportSie()}
               className="rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white shadow-md disabled:opacity-60"
             >
-              {exporting ? "Exporting…" : "Export SIE"}
+              {exporting ? t("export.exporting") : t("export.button")}
             </button>
-            <p className="text-xs text-muted-foreground">Downloads the workspace SIE file from the API.</p>
+            <p className="text-xs text-muted-foreground">{t("export.hint")}</p>
           </div>
         }
       />
 
-      <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-background/90 px-3 py-2 shadow-sm backdrop-blur-md sm:gap-3">
-        <span className="text-eyebrow">Reporting period</span>
-        <label className="sr-only" htmlFor="report-period">
-          Reporting period
-        </label>
-        <select
-          id="report-period"
-          data-testid="report-period"
-          value={period}
-          onChange={(event) => setPeriod(event.target.value as ReportPeriodPreset)}
-          className="glass-panel-inset max-w-[14rem] rounded-lg px-3 py-2 text-sm outline-none"
-        >
-          {periodOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <span className="text-xs text-muted-foreground">
-          Journal metrics respect this range. Balances and VAT remain full snapshot.
-        </span>
+      <div className="flex flex-wrap items-center gap-3">
+        <PeriodSelector />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          data-testid="journal-summary"
-          className="glass-panel rounded-xl p-5"
-        >
-          <h2 className="text-lg font-semibold">Journal summary</h2>
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {[
-              { label: "Entries", value: journalSummary.count },
-              { label: "Debit", value: <Money value={journalSummary.totalDebit} /> },
-              { label: "Credit", value: <Money value={journalSummary.totalCredit} /> },
-            ].map((item) => (
-              <div key={item.label} className="glass-panel-soft rounded-xl p-4">
-                <SectionLabel>{item.label}</SectionLabel>
-                <p className="mt-3 text-xl font-semibold tabular-nums">{item.value}</p>
-              </div>
-            ))}
-          </div>
-        </motion.section>
+      <KpiRow kpis={kpis} />
 
-        <section className="glass-panel rounded-xl p-5" data-testid="trial-balance">
-          <h2 className="text-lg font-semibold">Trial balance view</h2>
-          <div className="mt-4 space-y-3">
-            {balanceSummary.map((balance) => (
-              <article key={balance.accountNumber} className="glass-panel-soft rounded-xl p-4 text-sm">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="font-medium text-foreground">{balance.accountName}</p>
-                    <p className="text-mono text-xs text-muted-foreground">{balance.accountNumber}</p>
-                  </div>
-                  <p className="text-sm font-semibold text-foreground">
-                    <Money value={balance.balance} />
-                  </p>
-                </div>
-                <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="glass-panel-inset rounded-xl px-3 py-3">
-                    <dt className="text-eyebrow">Debit</dt>
-                    <dd className="mt-2 font-semibold text-foreground">
-                      <Money value={balance.debit} />
-                    </dd>
-                  </div>
-                  <div className="glass-panel-inset rounded-xl px-3 py-3">
-                    <dt className="text-eyebrow">Credit</dt>
-                    <dd className="mt-2 font-semibold text-foreground">
-                      <Money value={balance.credit} />
-                    </dd>
-                  </div>
-                </dl>
-              </article>
-            ))}
-          </div>
-        </section>
-      </div>
+      <NarrativeCard facts={facts} />
 
-      <section className="glass-panel rounded-xl p-5" data-testid="vat-preparation">
-        <h2 className="text-lg font-semibold">VAT preparation</h2>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {vatSummary.map((entry) => (
-            <div key={entry.vatCode} className="glass-panel-soft rounded-xl p-4">
-              <SectionLabel>{entry.label}</SectionLabel>
-              <p className="mt-3 text-2xl font-semibold">
-                <Money value={entry.vatAmount} />
-              </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Base <Money value={entry.baseAmount} />
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* Chart slots (Task 4.7): monthly in/out bars + cash-bridge waterfall
+          mount here, fed by the SAME pack (pack.monthly / pack.cashBridge). */}
+
+      <PnlStatement statement={pack.profitLoss} />
+
+      <BalanceSheetStatement statement={pack.balanceSheet} />
+
+      <VatReturnTable boxes={pack.vatReturn} />
 
       <section id="compliance-watch" className="glass-panel rounded-xl p-5" data-testid="alerts-panel">
-        <SectionLabel>Compliance watch</SectionLabel>
-        <h2 className="mt-2 text-lg font-semibold">Deadlines and regulatory signals</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Pulled from the same compliance feed as the inbox notifications surface.
-        </p>
+        <SectionLabel>{t("alerts.label")}</SectionLabel>
+        <h2 className="mt-2 text-lg font-semibold">{t("alerts.title")}</h2>
+        <p className="mt-2 text-sm text-muted-foreground">{t("alerts.description")}</p>
         <div className="mt-4 space-y-3">
-          {data.alerts.map((alert) => (
+          {alerts.map((alert) => (
             <div key={alert.id} className="glass-panel-soft rounded-xl px-4 py-4">
               <div className="flex items-center justify-between gap-4">
                 <p className="text-sm font-semibold text-foreground">{alert.title}</p>

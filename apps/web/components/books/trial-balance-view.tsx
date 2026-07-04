@@ -2,8 +2,10 @@
 
 import { summarizeBalances } from "@jpx-accounting/reporting";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
 
+import { usePeriodScope } from "../../hooks/use-period-scope";
 import { apiClient } from "../../lib/client";
 import { Money } from "../ui/money";
 
@@ -11,15 +13,19 @@ const views = ["journal", "general-ledger", "trial-balance", "suppliers", "close
 type View = (typeof views)[number];
 
 export function TrialBalanceView() {
+  const t = useTranslations("books.trialBalance");
+  const { from, to } = usePeriodScope();
   const [, setView] = useQueryState("view", parseAsStringEnum<View>([...views]).withDefault("journal"));
   const [, setAccount] = useQueryState("account", parseAsString);
 
+  // Server-filtered (Phase 4): with a range this is deliberately the PERIOD
+  // MOVEMENT (only lines booked inside the window), not cumulative balances.
   const { data } = useQuery({
-    queryKey: ["workspace"],
-    queryFn: () => apiClient.getSnapshot(),
+    queryKey: ["reports", "trial-balance", from, to],
+    queryFn: () => apiClient.getTrialBalance({ from, to }),
   });
 
-  const balanceSummary = summarizeBalances(data?.reports.balances ?? []);
+  const balanceSummary = summarizeBalances(data ?? []);
 
   async function handleRowClick(accountNumber: string) {
     await setAccount(accountNumber);
@@ -29,14 +35,14 @@ export function TrialBalanceView() {
   if (balanceSummary.length === 0) {
     return (
       <div className="glass-panel rounded-xl p-8 text-center" data-testid="trial-balance-view">
-        <p className="text-sm text-muted-foreground">No balances yet. Post a voucher to populate the trial balance.</p>
+        <p className="text-sm text-muted-foreground">{t("empty")}</p>
       </div>
     );
   }
 
   return (
     <div className="glass-panel rounded-xl p-5" data-testid="trial-balance-view">
-      <h2 className="text-lg font-semibold">Trial balance</h2>
+      <h2 className="text-lg font-semibold">{t("title")}</h2>
       <div className="mt-4 space-y-3">
         {balanceSummary.map((balance) => (
           <button
@@ -45,7 +51,7 @@ export function TrialBalanceView() {
             data-testid="trial-balance-row"
             className="w-full text-left glass-panel-soft rounded-lg p-4 text-sm hover:ring-1 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all"
             onClick={() => handleRowClick(balance.accountNumber)}
-            title={`View ${balance.accountNumber} in general ledger`}
+            title={t("rowTitle", { account: balance.accountNumber })}
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -58,13 +64,13 @@ export function TrialBalanceView() {
             </div>
             <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="glass-panel-inset rounded-lg px-3 py-3">
-                <dt className="text-eyebrow">Debit</dt>
+                <dt className="text-eyebrow">{t("debit")}</dt>
                 <dd className="mt-2 font-semibold text-foreground">
                   <Money value={balance.debit} />
                 </dd>
               </div>
               <div className="glass-panel-inset rounded-lg px-3 py-3">
-                <dt className="text-eyebrow">Credit</dt>
+                <dt className="text-eyebrow">{t("credit")}</dt>
                 <dd className="mt-2 font-semibold text-foreground">
                   <Money value={balance.credit} />
                 </dd>
