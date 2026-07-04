@@ -39,6 +39,7 @@ export const eventTypeSchema = z.enum([
   "ReviewApproved",
   "ReviewRejected",
   "PostedToLedger",
+  "VoucherImported",
   "CorrectionPosted",
   "PeriodLocked",
   "PolicyVersionActivated",
@@ -326,9 +327,28 @@ export const suggestionRequestSchema = z.object({
   actorId: z.string(),
 });
 
+/**
+ * Reviewer corrections applied at decision time (advisory pivot Phase 3).
+ * Append-only: the stored voucher/suggestion rows are never rewritten — the
+ * edit only shapes the posted lines and the review read model. Amounts are
+ * all-or-nothing: when any of gross/net/VAT is given, all three must be
+ * present and net + VAT must equal gross (±0.01) — enforced by the stores via
+ * `InvalidReviewEditError` (HTTP 422).
+ */
+export const reviewDecisionEditSchema = z.object({
+  accountNumber: z.string().min(1),
+  accountName: z.string().min(1),
+  vatCode: z.string().min(1),
+  grossAmount: z.number().positive().optional(),
+  netAmount: z.number().nonnegative().optional(),
+  vatAmount: z.number().nonnegative().optional(),
+});
+export type ReviewDecisionEdit = z.infer<typeof reviewDecisionEditSchema>;
+
 export const reviewDecisionInputSchema = z.object({
   actorId: z.string(),
   notes: z.string().optional(),
+  edited: reviewDecisionEditSchema.optional(),
 });
 
 export const assistantRequestSchema = z.object({
@@ -395,6 +415,19 @@ export const companySettingsSchema = z
       ctx.addIssue({ code: "custom", message: rules.postalCode.message, path: ["postalCode"] });
     }
   });
+
+/**
+ * Result of `POST /api/imports/sie` / `LedgerStore.importSie`. Per-voucher
+ * isolation: invalid vouchers land in `skipped` with a reason instead of
+ * failing the whole import; re-imports skip duplicates as `"duplicate"`.
+ */
+export const sieImportResultSchema = z.object({
+  accepted: z.boolean(),
+  importedVouchers: z.number().int().nonnegative(),
+  importedTransactions: z.number().int().nonnegative(),
+  skipped: z.array(z.object({ reference: z.string(), reason: z.string() })).default([]),
+});
+export type SieImportResult = z.infer<typeof sieImportResultSchema>;
 
 export const uploadInitSchema = z.object({
   filename: z.string(),

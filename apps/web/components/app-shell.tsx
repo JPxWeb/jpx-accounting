@@ -1,16 +1,18 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { MouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { useScrollDirection } from "../hooks/use-scroll-direction";
-import { saveCaptureDraft } from "../lib/draft-queue";
 import type { DraftQueueSaveResult } from "../lib/draft-queue-core";
 import { useDialogFocusTrap } from "../lib/focus-trap";
+import { CAPTURE_ACCEPT, captureFiles } from "../lib/promotion";
 import { formatRuntimeModeLabel } from "../lib/presentation";
 import { webRuntimeConfig } from "../lib/runtime-config";
 import { CommandPalette } from "./command-palette";
@@ -40,6 +42,8 @@ type CaptureStatus = {
 
 export function AppShell({ children, digest }: { children: ReactNode; digest?: ReactNode }) {
   const t = useTranslations("shell");
+  const tPromotion = useTranslations("capture.promotion");
+  const queryClient = useQueryClient();
   const pathname = usePathname();
   const barsHidden = useScrollDirection();
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -50,6 +54,8 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const firstDraftActionRef = useRef<HTMLButtonElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const sheetCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const sheetFileInputRef = useRef<HTMLInputElement | null>(null);
   const runtimeModeLabel = formatRuntimeModeLabel(webRuntimeConfig.runtimeMode);
   const activeNavItem = useMemo(
     () => railNavigation.find((item) => pathname.startsWith(item.href)) ?? navigation[0]!,
@@ -101,16 +107,50 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
     return () => window.clearTimeout(timeoutId);
   }, [captureStatus]);
 
-  async function createDraft(mode: { key: string; label: string }) {
+  function handleCaptureMode(mode: { key: (typeof draftModeKeys)[number]; label: string }) {
+    if (mode.key === "camera") {
+      sheetCameraInputRef.current?.click();
+      return;
+    }
+    if (mode.key === "upload") {
+      sheetFileInputRef.current?.click();
+      return;
+    }
+    // Paste and share cannot be initiated from a button: paste needs Ctrl+V/Cmd+V on the
+    // capture page, share arrives through the OS share menu. The sheet points at them.
+    setCaptureStatus({
+      tone: "success",
+      message: mode.key === "paste" ? t("captureSheet.pasteHint") : t("captureSheet.shareHint"),
+    });
+    closeCaptureSheet();
+  }
+
+  async function handleSheetFiles(mode: { key: string; label: string }, list: FileList | null) {
+    const files = [...(list ?? [])];
+    if (files.length === 0) {
+      return;
+    }
+
     try {
-      const result = await saveCaptureDraft({
-        id: crypto.randomUUID(),
-        mode: mode.key,
-        title: t("draftTitle", { mode: mode.label }),
-        createdAt: new Date().toISOString(),
+      // Same pipeline as the capture page: local draft first (status message tells the
+      // storage tier), then fire-and-forget promotion into ledger evidence.
+      const outcome = await captureFiles(files, mode.key, {
+        queryClient,
+        onPromoted: (draft) => toast.success(tPromotion("promoted", { name: draft.title })),
+        onPromoteError: (draft) => toast.error(tPromotion("promoteError", { name: draft.title })),
       });
-      setCaptureStatus(buildCaptureStatusMessage(mode.label, result));
-      closeCaptureSheet();
+
+      for (const rejection of outcome.rejected) {
+        toast.error(
+          tPromotion(rejection.reason === "size" ? "rejectedSize" : "rejectedType", { name: rejection.file.name }),
+        );
+      }
+
+      const lastSaved = outcome.saved.at(-1);
+      if (lastSaved) {
+        setCaptureStatus(buildCaptureStatusMessage(mode.label, lastSaved.save));
+        closeCaptureSheet();
+      }
     } catch {
       setCaptureStatus({
         tone: "error",
@@ -390,7 +430,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                     ref={index === 0 ? firstDraftActionRef : undefined}
                     type="button"
                     data-testid={`capture-mode-${mode.key}`}
-                    onClick={() => void createDraft(mode)}
+                    onClick={() => handleCaptureMode(mode)}
                     className="glass-panel rounded-lg px-4 py-4 text-left"
                   >
                     <p className="text-sm font-semibold text-foreground">{mode.label}</p>
@@ -398,6 +438,32 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                   </button>
                 ))}
               </div>
+              <input
+                ref={sheetCameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                data-testid="capture-sheet-camera-input"
+                onChange={(event) => {
+                  const mode = draftModes.find((entry) => entry.key === "camera");
+                  if (mode) void handleSheetFiles(mode, event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <input
+                ref={sheetFileInputRef}
+                type="file"
+                multiple
+                accept={CAPTURE_ACCEPT}
+                className="hidden"
+                data-testid="capture-sheet-file-input"
+                onChange={(event) => {
+                  const mode = draftModes.find((entry) => entry.key === "upload");
+                  if (mode) void handleSheetFiles(mode, event.target.files);
+                  event.target.value = "";
+                }}
+              />
             </motion.div>
           </motion.div>
         ) : null}

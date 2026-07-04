@@ -48,7 +48,9 @@
       "title": "Add business evidence",
       "close": "Close",
       "closeAria": "Close capture sheet",
-      "description": "Capture starts locally first so the UI stays responsive. The result tells you whether the draft was stored persistently or only for this tab."
+      "description": "Capture starts locally first so the UI stays responsive. The result tells you whether the draft was stored persistently or only for this tab.",
+      "pasteHint": "Paste works on the Capture page — press Ctrl+V (or Cmd+V) there to capture a copied image.",
+      "shareHint": "Use your device's share menu and pick JPX Accounting to send evidence here."
     },
     "draftModes": {
       "camera": { "label": "Camera", "hint": "Snap a receipt with the device camera" },
@@ -131,15 +133,31 @@
       "draftTitle": "{mode} draft",
       "draftAdded": "{mode} draft added.",
       "draftError": "Could not save {mode} draft locally.",
+      "pasteEmpty": "No image found in the clipboard.",
+      "pasteUnavailable": "Clipboard access is unavailable here — press Ctrl+V (or Cmd+V) on this page instead.",
+      "shareHint": "Open your device's share menu and choose JPX Accounting to send files here.",
       "importSie": "Import SIE file",
       "importing": "Importing…",
       "imported": "Imported {count} transactions from SIE.",
       "importError": "Could not import the SIE file.",
       "connectBank": "Connect bank feed"
     },
+    "dropzone": {
+      "aria": "Add evidence files by browsing or dropping them here",
+      "title": "Drop receipts or invoices here",
+      "hint": "Images and PDFs up to 16 MB — click, press Enter, or drag files in."
+    },
+    "promotion": {
+      "promoted": "{name} promoted to ledger evidence.",
+      "promoteError": "Could not promote {name}. Retry from the drafts table.",
+      "rejectedType": "{name} was skipped — only images and PDFs are supported.",
+      "rejectedSize": "{name} was skipped — files must be 16 MB or smaller."
+    },
     "drafts": {
       "title": "Drafts in progress",
       "empty": "No local drafts. Use Quick add above or the capture button.",
+      "headerPreview": "Preview",
+      "thumbAlt": "Preview of {name}",
       "headerMode": "Mode",
       "headerTitle": "Title",
       "headerCreated": "Created",

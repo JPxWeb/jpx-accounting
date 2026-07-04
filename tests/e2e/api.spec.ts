@@ -256,15 +256,54 @@ test("assistant, knowledge, simulation, close, and import endpoints round-trip",
   expect(closeRunById.ok()).toBeTruthy();
   expect((await closeRunById.json()).id).toBe("playwright-close");
 
+  // SIE import: a real #VER block (the parser ignores bare #TRANS lines — the
+  // old placeholder fixture posted those and would import nothing).
+  const sieFixture = [
+    "#FLAGGA 0",
+    "#SIETYP 4",
+    '#KONTO 6110 "Kontorsmateriel"',
+    '#VER A 77 20260315 "SIE import via Playwright"',
+    "{",
+    "#TRANS 6110 {} 100.00",
+    "#TRANS 1930 {} -100.00",
+    "}",
+  ].join("\n");
   const sieImport = await request.post(`${apiBaseUrl}/api/imports/sie`, {
     headers: {
       "content-type": "text/plain",
     },
-    data: "#FLAGGA 0\n#TRANS 1930 {} -100\n#TRANS 6540 {} 100",
+    data: sieFixture,
   });
   expect(sieImport.ok()).toBeTruthy();
   expect(await sieImport.json()).toMatchObject({
     accepted: true,
+    importedVouchers: 1,
     importedTransactions: 2,
+    skipped: [],
   });
+
+  // Re-posting the same file is idempotent: the voucher is skipped as a duplicate.
+  const sieReimport = await request.post(`${apiBaseUrl}/api/imports/sie`, {
+    headers: {
+      "content-type": "text/plain",
+    },
+    data: sieFixture,
+  });
+  expect(sieReimport.ok()).toBeTruthy();
+  expect(await sieReimport.json()).toMatchObject({
+    accepted: true,
+    importedVouchers: 0,
+    importedTransactions: 0,
+    skipped: [{ reference: "A 77", reason: "duplicate" }],
+  });
+
+  // Export is spec-valid SIE 4 in PC8: the byte-identical #PROGRAM pin, the
+  // #SIETYP 4 header, and the imported voucher's lines all present.
+  const sieExport = await request.get(`${apiBaseUrl}/api/exports/sie`);
+  expect(sieExport.ok()).toBeTruthy();
+  expect(sieExport.headers()["content-type"]).toContain("ibm437");
+  const sieExportText = await sieExport.text();
+  expect(sieExportText).toContain('#PROGRAM "JPX Accounting" "0.1.0"');
+  expect(sieExportText).toContain("#SIETYP 4");
+  expect(sieExportText).toContain("#TRANS 6110 {} 100.00");
 });

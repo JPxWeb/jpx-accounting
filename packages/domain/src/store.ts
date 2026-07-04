@@ -14,8 +14,10 @@ import type {
   ExtractionResult,
   LedgerEvent,
   ReportBundle,
+  ReviewDecisionEdit,
   ReviewDecisionInput,
   ReviewTask,
+  SieImportResult,
   SimulationRequest,
   SimulationRun,
   Voucher,
@@ -38,6 +40,7 @@ import { buildJournal, buildBalances, buildVat } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
+import type { ParsedSieFile } from "./sie/parse";
 import { simulateApprovals } from "./simulation";
 
 type LedgerLine = Parameters<typeof buildJournal>[0][number];
@@ -55,6 +58,195 @@ export class ReviewNotFoundError extends Error {
   }
 }
 
+/**
+ * Thrown when a review decision carries an `edited` payload that fails the
+ * amount-consistency validation. Mapped to HTTP 422 in `app.onError`
+ * (CONVENTIONS Rule 16). Thrown before any mutation, so a rejected edit
+ * leaves the store untouched.
+ */
+export class InvalidReviewEditError extends Error {
+  readonly issues: string[];
+
+  constructor(issues: string[]) {
+    super(`Invalid review edit: ${issues.join(" ")}`);
+    this.name = "InvalidReviewEditError";
+    this.issues = issues;
+  }
+}
+
+/**
+ * Validate a decision-time edit and derive the effective posting inputs.
+ * Append-only by construction: the returned `effectiveVoucher` /
+ * `effectiveSuggestion` are decision-time derivations for `buildPostingLines`
+ * and the review read model — the stored voucher row is never rewritten.
+ * Shared by MemoryLedgerStore and PostgresLedgerStore (CONVENTIONS Rule 11).
+ */
+export function resolveReviewDecisionEdit(
+  voucher: Voucher,
+  suggestion: AccountingSuggestion | undefined,
+  edited: ReviewDecisionEdit,
+): { effectiveSuggestion: AccountingSuggestion | undefined; effectiveVoucher: Voucher } {
+  const issues: string[] = [];
+  const anyAmountGiven =
+    edited.grossAmount !== undefined || edited.netAmount !== undefined || edited.vatAmount !== undefined;
+  if (anyAmountGiven) {
+    if (edited.grossAmount === undefined || edited.netAmount === undefined || edited.vatAmount === undefined) {
+      issues.push("Amount edits must provide grossAmount, netAmount, and vatAmount together.");
+    } else if (Math.abs(edited.netAmount + edited.vatAmount - edited.grossAmount) > 0.01) {
+      issues.push(
+        `Edited amounts do not add up: net (${edited.netAmount}) + VAT (${edited.vatAmount}) must equal gross (${edited.grossAmount}) within 0.01.`,
+      );
+    }
+  }
+  if (issues.length > 0) {
+    throw new InvalidReviewEditError(issues);
+  }
+
+  const effectiveSuggestion = suggestion
+    ? {
+        ...suggestion,
+        accountNumber: edited.accountNumber,
+        accountName: edited.accountName,
+        vatCode: edited.vatCode,
+      }
+    : undefined;
+
+  const amountOverrides: Partial<VoucherField> =
+    edited.grossAmount !== undefined
+      ? { grossAmount: edited.grossAmount, netAmount: edited.netAmount, vatAmount: edited.vatAmount }
+      : {};
+  const effectiveVoucher: Voucher = {
+    ...voucher,
+    voucherFields: { ...voucher.voucherFields, ...amountOverrides },
+  };
+
+  return { effectiveSuggestion, effectiveVoucher };
+}
+
+/**
+ * Thrown when an SIE import exceeds the hard bounds (whole-file rejection).
+ * Per-voucher problems (unbalanced, bad date) do NOT throw — they land in the
+ * result's `skipped` list (CONVENTIONS Rule 21). Mapped to HTTP 422 in
+ * `app.onError` (Rule 16).
+ */
+export class SieImportError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SieImportError";
+  }
+}
+
+export const SIE_IMPORT_MAX_VOUCHERS = 500;
+export const SIE_IMPORT_MAX_LINES_PER_VOUCHER = 100;
+
+export type SieImportInput = { actorId: string; file: ParsedSieFile };
+
+export type SiePlannedVoucher = {
+  /** Idempotency key: `sie_<series>_<number>` checked against prior `VoucherImported` events. */
+  aggregateId: string;
+  /** Human-readable `"<series> <number>"` used in `skipped` entries. */
+  reference: string;
+  series: string;
+  number: string;
+  date: string;
+  text: string | undefined;
+  lines: LedgerLine[];
+};
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Turn a parsed SIE file into per-voucher ledger-line plans. Shared by
+ * MemoryLedgerStore and PostgresLedgerStore so validation, skipping, and line
+ * derivation stay in lockstep (CONVENTIONS Rule 11). Bounds violations throw
+ * `SieImportError`; per-voucher problems fill `skipped` and processing
+ * continues (Rule 21). Duplicate detection against ALREADY-IMPORTED vouchers
+ * is store-specific (event lookup) and happens in the caller.
+ */
+export function planSieImport(
+  file: ParsedSieFile,
+  coa: CoaTemplate = defaultCoaTemplate,
+): { vouchers: SiePlannedVoucher[]; skipped: Array<{ reference: string; reason: string }> } {
+  if (file.vouchers.length > SIE_IMPORT_MAX_VOUCHERS) {
+    throw new SieImportError(
+      `SIE import exceeds the ${SIE_IMPORT_MAX_VOUCHERS}-voucher bound (${file.vouchers.length} vouchers).`,
+    );
+  }
+  const oversized = file.vouchers.find((voucher) => voucher.transactions.length > SIE_IMPORT_MAX_LINES_PER_VOUCHER);
+  if (oversized) {
+    throw new SieImportError(
+      `SIE voucher ${oversized.series} ${oversized.number ?? ""} exceeds the ${SIE_IMPORT_MAX_LINES_PER_VOUCHER}-line bound (${oversized.transactions.length} lines).`,
+    );
+  }
+
+  const vouchers: SiePlannedVoucher[] = [];
+  const skipped: Array<{ reference: string; reason: string }> = [];
+  const seenInFile = new Set<string>();
+
+  file.vouchers.forEach((voucher, index) => {
+    // Number is optional per spec; fall back to the file position so the
+    // idempotency key stays deterministic across re-imports of the same file.
+    const number = voucher.number ?? `pos${index + 1}`;
+    const reference = `${voucher.series} ${number}`;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(voucher.date) || Number.isNaN(Date.parse(voucher.date))) {
+      skipped.push({ reference, reason: "invalid date" });
+      return;
+    }
+    if (voucher.transactions.length === 0) {
+      skipped.push({ reference, reason: "no transactions" });
+      return;
+    }
+    if (voucher.transactions.some((transaction) => !Number.isFinite(transaction.amount))) {
+      skipped.push({ reference, reason: "invalid amount" });
+      return;
+    }
+    const sum = voucher.transactions.reduce((acc, transaction) => acc + transaction.amount, 0);
+    if (Math.abs(sum) > 0.005) {
+      skipped.push({ reference, reason: "unbalanced" });
+      return;
+    }
+
+    const aggregateId = `sie_${voucher.series}_${number}`;
+    if (seenInFile.has(aggregateId)) {
+      skipped.push({ reference, reason: "duplicate" });
+      return;
+    }
+    seenInFile.add(aggregateId);
+
+    const lines: LedgerLine[] = voucher.transactions.map((transaction) => ({
+      voucherId: aggregateId,
+      accountNumber: transaction.account,
+      accountName:
+        file.accounts[transaction.account] ??
+        findCoaAccount(coa, transaction.account)?.name ??
+        `Konto ${transaction.account}`,
+      description: transaction.text ?? voucher.text ?? `SIE ${reference}`,
+      debit: transaction.amount > 0 ? round2(transaction.amount) : 0,
+      credit: transaction.amount < 0 ? round2(-transaction.amount) : 0,
+      // v1 limitation (documented): the SIE 4 subset carries no VAT semantics,
+      // so imported lines are VAT-neutral.
+      vatCode: "NA",
+      bookedAt: voucher.date,
+      deductible: false,
+    }));
+
+    vouchers.push({
+      aggregateId,
+      reference,
+      series: voucher.series,
+      number,
+      date: voucher.date,
+      text: voucher.text,
+      lines,
+    });
+  });
+
+  return { vouchers, skipped };
+}
+
 export interface LedgerStore {
   createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult>;
   composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket>;
@@ -70,6 +262,14 @@ export interface LedgerStore {
    * unchanged). Returns `undefined` for unknown evidence.
    */
   updateEvidenceExtraction(evidenceId: string, extraction: ExtractionResult): Promise<EvidenceContext | undefined>;
+  /**
+   * Import a parsed SIE 4 file. Append-only: one `VoucherImported` event per
+   * accepted voucher (payload carries the derived `lines` — replay truth);
+   * re-imports skip duplicates via the `sie_<series>_<number>` aggregate id.
+   * Imported vouchers are already booked, so no voucher/review rows are
+   * created (documented v1 scope). Bounds violations throw `SieImportError`.
+   */
+  importSie(input: SieImportInput): Promise<SieImportResult>;
   findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined>;
   getReviewFeed(): Promise<ReviewTask[]>;
   getReports(): Promise<ReportBundle>;
@@ -536,6 +736,53 @@ export class MemoryLedgerStore implements LedgerStore {
     };
   }
 
+  async importSie(input: SieImportInput): Promise<SieImportResult> {
+    const { vouchers, skipped } = planSieImport(input.file);
+    const result: SieImportResult = {
+      accepted: true,
+      importedVouchers: 0,
+      importedTransactions: 0,
+      skipped: [...skipped],
+    };
+
+    // Idempotency: skip vouchers whose aggregate id was already imported.
+    const alreadyImported = new Set(
+      this.events.filter((event) => event.eventType === "VoucherImported").map((event) => event.aggregateId),
+    );
+
+    const occurredAt = nowIso();
+    for (const planned of vouchers) {
+      if (alreadyImported.has(planned.aggregateId)) {
+        result.skipped.push({ reference: planned.reference, reason: "duplicate" });
+        continue;
+      }
+
+      this.ledgerLines.push(...planned.lines);
+      this.appendEvent({
+        organizationId: defaultOrganizationId,
+        workspaceId: defaultWorkspaceId,
+        aggregateType: "ledger",
+        aggregateId: planned.aggregateId,
+        eventType: "VoucherImported",
+        actorId: input.actorId,
+        occurredAt,
+        payload: {
+          source: "sie",
+          series: planned.series,
+          number: planned.number,
+          date: planned.date,
+          text: planned.text,
+          lines: planned.lines,
+        },
+      });
+
+      result.importedVouchers += 1;
+      result.importedTransactions += planned.lines.length;
+    }
+
+    return result;
+  }
+
   async findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined> {
     const reviewId = this.voucherIdToReviewId.get(voucherId);
     return reviewId ? this.reviews.get(reviewId) : undefined;
@@ -592,6 +839,18 @@ export class MemoryLedgerStore implements LedgerStore {
     // Review decisions are single-use mutations; replayed requests should not post duplicate ledger lines.
     if (review.status !== "needs-review") return review;
 
+    // Decision-time derivation for edited approvals: validates (throwing
+    // InvalidReviewEditError BEFORE any mutation) and derives the effective
+    // posting inputs. Append-only: the stored voucher row is NOT rewritten.
+    const edited = action !== "reject" ? input.edited : undefined;
+    let postingSuggestion = review.suggestion;
+    let postingVoucher = voucher;
+    if (edited) {
+      const resolved = resolveReviewDecisionEdit(voucher, review.suggestion, edited);
+      postingSuggestion = resolved.effectiveSuggestion;
+      postingVoucher = resolved.effectiveVoucher;
+    }
+
     const occurredAt = nowIso();
     review.status = action === "approve" ? "approved" : action === "reject" ? "rejected" : "booked-without-vat";
     voucher.status = review.status;
@@ -599,13 +858,22 @@ export class MemoryLedgerStore implements LedgerStore {
       id: createId("step"),
       label:
         action === "approve"
-          ? "Review approved"
+          ? edited
+            ? "Approved with edits"
+            : "Review approved"
           : action === "reject"
             ? "Review rejected"
-            : "Booked without VAT deduction",
+            : edited
+              ? "Booked without VAT deduction (edited)"
+              : "Booked without VAT deduction",
       timestamp: occurredAt,
       actor: input.actorId,
     });
+    if (edited && postingSuggestion) {
+      // Review read model reflects what was actually posted.
+      review.suggestion = postingSuggestion;
+      this.suggestions.set(voucher.id, postingSuggestion);
+    }
 
     this.appendEvent({
       organizationId: voucher.organizationId,
@@ -615,11 +883,12 @@ export class MemoryLedgerStore implements LedgerStore {
       eventType: action === "approve" ? "ReviewApproved" : "ReviewRejected",
       actorId: input.actorId,
       occurredAt,
-      payload: { action, notes: input.notes },
+      payload: { action, notes: input.notes, ...(edited ? { edited } : {}) },
     });
 
-    if (action !== "reject" && review.suggestion) {
-      this.ledgerLines.push(...buildPostingLines(voucher, review.suggestion, action, occurredAt));
+    if (action !== "reject" && postingSuggestion) {
+      const lines = buildPostingLines(postingVoucher, postingSuggestion, action, occurredAt);
+      this.ledgerLines.push(...lines);
 
       this.appendEvent({
         organizationId: voucher.organizationId,
@@ -629,7 +898,9 @@ export class MemoryLedgerStore implements LedgerStore {
         eventType: "PostedToLedger",
         actorId: input.actorId,
         occurredAt,
-        payload: { action, suggestion: review.suggestion },
+        // `lines` in the payload keeps event-payload replay the truth in both
+        // stores (fixes the Memory/Postgres parity gap — Phase 3 finding 13).
+        payload: { action, suggestion: postingSuggestion, lines },
       });
     }
 

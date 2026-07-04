@@ -22,6 +22,9 @@ pw-debug*.log
 !apps/web/public/**/*.png
 !tests/e2e/*-snapshots/*.png
 
+# …and the E2E capture fixtures (tiny real files driven via setInputFiles).
+!tests/fixtures/*.jpg
+
 # Playwright MCP
 .playwright-mcp/
 

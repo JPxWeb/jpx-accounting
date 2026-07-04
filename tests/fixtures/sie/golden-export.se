@@ -1,0 +1,23 @@
+#FLAGGA 0
+#PROGRAM "JPX Accounting" "0.1.0"
+#FORMAT PC8
+#GEN 20260704
+#SIETYP 4
+#ORGNR 556677-8899
+#FNAMN "Guldexport AB"
+#RAR 0 20260101 20261231
+#KONTO 1930 "F”retagskonto"
+#KONTO 2641 "Debiterad ing†ende moms"
+#KONTO 6110 "Kontorsmateriel"
+#KONTO 6540 "IT-tj„nster"
+#VER A 1 20260305 "Programvara mars"
+{
+#TRANS 6540 {} 1000.00
+#TRANS 2641 {} 250.00
+#TRANS 1930 {} -1250.00
+}
+#VER A 2 20260312 "P„rmar och \"kvitton\""
+{
+#TRANS 6110 {} 200.00
+#TRANS 1930 {} -200.00
+}

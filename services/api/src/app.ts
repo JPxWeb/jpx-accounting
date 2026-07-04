@@ -26,7 +26,18 @@ import { AiRuntimeUnavailableError, type AiRuntime, isAiRuntimeOperational } fro
 import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import type { LedgerStore, ReviewAction } from "@jpx-accounting/domain";
-import { MemoryLedgerStore, nowIso, ReviewNotFoundError } from "@jpx-accounting/domain";
+import {
+  buildSieExport,
+  decodeSieBuffer,
+  encodePc8,
+  InvalidReviewEditError,
+  MemoryLedgerStore,
+  nowIso,
+  parseSie,
+  ReviewNotFoundError,
+  SieImportError,
+  today,
+} from "@jpx-accounting/domain";
 
 import type { BlobUploader } from "./blob";
 import { MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
@@ -88,18 +99,6 @@ async function parseBody<T>(request: Request, schema: ZodType<T>): Promise<T> {
   }
 
   return parsed.data;
-}
-
-async function buildSIEExport(store: LedgerStore) {
-  const reports = await store.getReports();
-  const lines = ["#FLAGGA 0", '#PROGRAM "JPX Accounting" "0.1.0"', "#FORMAT PC8"];
-
-  for (const entry of reports.journal) {
-    lines.push(`#VER A "${entry.voucherId}" "${entry.bookedAt.slice(0, 10)}" "${entry.description}"`);
-    lines.push(`#TRANS ${entry.accountNumber} {} ${entry.debit - entry.credit}`);
-  }
-
-  return lines.join("\n");
 }
 
 type JsonErrorExtras = Partial<Pick<ApiJsonErrorBody, "code" | "issues">>;
@@ -283,6 +282,20 @@ export function createApp({
       return jsonError(c, error.message, runtimeMode, 404, { code: "review_not_found" });
     }
 
+    if (error instanceof InvalidReviewEditError) {
+      // Well-formed JSON but semantically unprocessable amounts → 422 (Rule 16).
+      return jsonError(c, error.message, runtimeMode, 422, {
+        code: "invalid_review_edit",
+        issues: error.issues.map((message) => ({ path: ["edited"], message })),
+      });
+    }
+
+    if (error instanceof SieImportError) {
+      // Whole-file bound violations → 422; per-voucher problems never throw
+      // (they land in the result's `skipped` list instead — Rule 21).
+      return jsonError(c, error.message, runtimeMode, 422, { code: "sie_import_error" });
+    }
+
     if (error instanceof LedgerStoreUnavailableError || error instanceof AiRuntimeUnavailableError) {
       return jsonError(c, error.message, runtimeMode, 503);
     }
@@ -460,16 +473,25 @@ export function createApp({
   app.post("/api/reviews/:id/book-without-vat", (c) => postReviewDecision(c, c.req.param("id"), "book-without-vat"));
 
   app.post("/api/imports/sie", async (context) => {
-    const body = await context.req.text();
-    return context.json({
-      accepted: true,
-      importedTransactions: body.split("\n").filter((line) => line.startsWith("#TRANS")).length,
-    });
+    // Raw file bytes, not JSON: decode (strict UTF-8 → CP437 fallback), parse
+    // the SIE 4 subset, and let the store append VoucherImported events.
+    // Deferred-auth identity matches the rest of the demo pipeline; override
+    // via ?actorId= until real auth attribution lands.
+    const bytes = new Uint8Array(await context.req.arrayBuffer());
+    const parsed = parseSie(decodeSieBuffer(bytes));
+    const actorId = context.req.query("actorId") ?? "user_founder";
+    const result = await currentStore.importSie({ actorId, file: parsed });
+    return context.json(result);
   });
 
   app.get("/api/exports/sie", async (context) => {
-    context.header("content-type", "text/plain; charset=utf-8");
-    return context.body(await buildSIEExport(currentStore));
+    const [reports, settings] = await Promise.all([currentStore.getReports(), currentStore.getCompanySettings()]);
+    const text = buildSieExport({ journal: reports.journal, settings, generatedAt: nowIso() });
+    // Spec-valid PC8 (CP437) bytes — NOT UTF-8. `charset=ibm437` is the IANA
+    // name browsers/tools recognize for CP437.
+    context.header("content-type", "text/plain; charset=ibm437");
+    context.header("content-disposition", `attachment; filename="jpx-export-${today()}.se"`);
+    return context.body(encodePc8(text));
   });
 
   app.post("/api/assistant/sessions", async (context) => {

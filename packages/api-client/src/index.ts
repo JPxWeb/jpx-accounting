@@ -12,6 +12,7 @@ import type {
   ReviewDecisionInput,
   ReviewTask,
   RuntimeMode,
+  SieImportResult,
   SimulationRequest,
   SimulationRun,
   UploadInit,
@@ -22,11 +23,21 @@ import {
   evidenceContextSchema,
   evidenceCreateResultSchema,
   reviewTaskSchema,
+  sieImportResultSchema,
   simulationRunSchema,
   uploadInitResultSchema,
   workspaceSnapshotSchema,
 } from "@jpx-accounting/contracts";
-import { deriveDeterministicExtraction, MemoryLedgerStore, nowIso, today } from "@jpx-accounting/domain";
+import {
+  buildSieExport,
+  decodeSieBuffer,
+  deriveDeterministicExtraction,
+  encodePc8,
+  MemoryLedgerStore,
+  nowIso,
+  parseSie,
+  today,
+} from "@jpx-accounting/domain";
 
 type RequestOptions = RequestInit & { json?: unknown };
 type AccountingApiClientOptions = {
@@ -316,13 +327,18 @@ export class AccountingApiClient {
     return (await response.json()) as CompanySettings;
   }
 
-  /** Plain-text SIE export of the current workspace (matches `GET /api/exports/sie`). */
-  async fetchSieExport(): Promise<string> {
+  /**
+   * SIE 4 export of the current workspace as PC8/CP437 bytes (matches
+   * `GET /api/exports/sie`). Offline demo builds the same bytes locally via
+   * the domain serializer instead of failing with a 503.
+   */
+  async fetchSieExport(): Promise<Uint8Array<ArrayBuffer>> {
     if (this.fallbackStore) {
-      throw new AccountingApiError(
-        503,
-        "SIE export is not available in offline demo client mode. Use the API proxy with a running API.",
-      );
+      const [reports, settings] = await Promise.all([
+        this.fallbackStore.getReports(),
+        this.fallbackStore.getCompanySettings(),
+      ]);
+      return encodePc8(buildSieExport({ journal: reports.journal, settings, generatedAt: nowIso() }));
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     const response = await fetch(`${this.baseUrl}/api/exports/sie`, {
@@ -335,7 +351,33 @@ export class AccountingApiClient {
         payload?.message ?? `SIE export failed: ${response.status} ${response.statusText}`,
       );
     }
-    return response.text();
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  /**
+   * Import an SIE 4 file (raw bytes; UTF-8 or PC8/CP437). Matches
+   * `POST /api/imports/sie`; the offline demo decodes/parses locally and
+   * feeds the in-memory store's `importSie`.
+   */
+  async importSie(bytes: Uint8Array | ArrayBuffer): Promise<SieImportResult> {
+    const asBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    if (this.fallbackStore) {
+      return this.fallbackStore.importSie({ actorId: "user_founder", file: parseSie(decodeSieBuffer(asBytes)) });
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const response = await fetch(`${this.baseUrl}/api/imports/sie`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream", accept: "application/json" },
+      body: asBytes as unknown as BodyInit,
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => undefined as { error?: string; message?: string } | undefined);
+      throw new AccountingApiError(
+        response.status,
+        payload?.error ?? payload?.message ?? `SIE import failed: ${response.status} ${response.statusText}`,
+      );
+    }
+    return parseJsonBody(response, sieImportResultSchema);
   }
 }
 

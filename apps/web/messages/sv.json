@@ -48,7 +48,9 @@
       "title": "Lägg till affärsunderlag",
       "close": "Stäng",
       "closeAria": "Stäng insamlingspanelen",
-      "description": "Insamlingen börjar lokalt så att gränssnittet förblir responsivt. Resultatet visar om utkastet sparades varaktigt eller bara för den här fliken."
+      "description": "Insamlingen börjar lokalt så att gränssnittet förblir responsivt. Resultatet visar om utkastet sparades varaktigt eller bara för den här fliken.",
+      "pasteHint": "Inklistring fungerar på Fånga-sidan — tryck Ctrl+V (eller Cmd+V) där för att fånga en kopierad bild.",
+      "shareHint": "Använd enhetens delningsmeny och välj JPX Accounting för att skicka underlag hit."
     },
     "draftModes": {
       "camera": { "label": "Kamera", "hint": "Fota ett kvitto med enhetens kamera" },
@@ -131,15 +133,31 @@
       "draftTitle": "{mode}-utkast",
       "draftAdded": "{mode}-utkast tillagt.",
       "draftError": "Kunde inte spara {mode}-utkastet lokalt.",
+      "pasteEmpty": "Ingen bild hittades i urklipp.",
+      "pasteUnavailable": "Urklippsåtkomst är inte tillgänglig här — tryck Ctrl+V (eller Cmd+V) på den här sidan i stället.",
+      "shareHint": "Öppna enhetens delningsmeny och välj JPX Accounting för att skicka filer hit.",
       "importSie": "Importera SIE-fil",
       "importing": "Importerar…",
       "imported": "Importerade {count} transaktioner från SIE.",
       "importError": "Kunde inte importera SIE-filen.",
       "connectBank": "Anslut bankflöde"
     },
+    "dropzone": {
+      "aria": "Lägg till underlagsfiler genom att bläddra eller släppa dem här",
+      "title": "Släpp kvitton eller fakturor här",
+      "hint": "Bilder och PDF:er upp till 16 MB — klicka, tryck Enter eller dra in filer."
+    },
+    "promotion": {
+      "promoted": "{name} lyft till bokföringsunderlag.",
+      "promoteError": "Kunde inte lyfta {name}. Försök igen från utkasttabellen.",
+      "rejectedType": "{name} hoppades över — endast bilder och PDF:er stöds.",
+      "rejectedSize": "{name} hoppades över — filer måste vara högst 16 MB."
+    },
     "drafts": {
       "title": "Utkast som pågår",
       "empty": "Inga lokala utkast. Använd Snabbtillägg ovan eller fångstknappen.",
+      "headerPreview": "Förhandsvisning",
+      "thumbAlt": "Förhandsvisning av {name}",
       "headerMode": "Läge",
       "headerTitle": "Titel",
       "headerCreated": "Skapad",

@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ExtractionResult } from "@jpx-accounting/contracts";
-import { deriveDeterministicExtraction, MemoryLedgerStore, ReviewNotFoundError, today } from "@jpx-accounting/domain";
+import {
+  deriveDeterministicExtraction,
+  InvalidReviewEditError,
+  MemoryLedgerStore,
+  parseSie,
+  ReviewNotFoundError,
+  today,
+} from "@jpx-accounting/domain";
 import { closePostgresClient, createPostgresClient, PostgresLedgerStore } from "@jpx-accounting/persistence-postgres";
 
 // Integration test: gated on `SUPABASE_DB_URL`. Skips silently when not set so CI without a live DB
@@ -230,6 +237,123 @@ test(
   },
 );
 
+test(
+  "PostgresLedgerStore.applyReviewDecision honors edits append-only + PostedToLedger lines parity",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+      const baseInput = {
+        actorId: "user_test",
+        title: "Edited approval receipt",
+        originalFilename: "edited-approval.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["camera" as const],
+      };
+      const created = await store.createEvidence({ ...baseInput, organizationId: orgId, workspaceId: wsId });
+      assert.equal(created.voucher.voucherFields.grossAmount, 1249, "legacy create precondition");
+
+      // Inconsistent amounts → InvalidReviewEditError, transaction rolled back.
+      await assert.rejects(
+        () =>
+          store.applyReviewDecision(created.review.id, "approve", {
+            actorId: "user_test",
+            edited: {
+              accountNumber: "6110",
+              accountName: "Kontorsmateriel",
+              vatCode: "VAT25",
+              grossAmount: 500,
+              netAmount: 400,
+              vatAmount: 50,
+            },
+          }),
+        (error) => error instanceof InvalidReviewEditError,
+      );
+      const stillPending = await store.findReviewByVoucher(created.voucher.id);
+      assert.equal(stillPending?.status, "needs-review", "failed edit must leave the review decidable");
+
+      const journalBefore = (await store.getReports()).journal.length;
+      const edited = {
+        accountNumber: "6110",
+        accountName: "Kontorsmateriel",
+        vatCode: "VAT25",
+        grossAmount: 500,
+        netAmount: 400,
+        vatAmount: 100,
+      };
+      const decided = await store.applyReviewDecision(created.review.id, "approve", {
+        actorId: "user_test",
+        edited,
+      });
+      assert.equal(decided?.status, "approved");
+      assert.equal(decided.suggestion?.accountNumber, "6110", "review read model carries the edited suggestion");
+      assert.equal(decided.provenanceTimeline.at(-1)?.label, "Approved with edits");
+
+      // Posted lines use the edited account/amounts; replayed through getReports.
+      const journal = (await store.getReports()).journal;
+      assert.equal(journal.length, journalBefore + 3);
+      const [expense, vat, bank] = journal.slice(-3);
+      assert.equal(expense?.accountNumber, "6110");
+      assert.equal(expense?.debit, 400);
+      assert.equal(vat?.debit, 100);
+      assert.equal(bank?.credit, 500);
+
+      // Append-only: the stored voucher row keeps its original amounts.
+      const voucherRows = await client<Array<{ voucher_fields: { grossAmount?: number } }>>`
+        SELECT voucher_fields FROM ledger.vouchers WHERE id = ${created.voucher.id}
+      `;
+      assert.equal(voucherRows[0]?.voucher_fields.grossAmount, 1249, "voucher row not rewritten by the edit");
+
+      // Events: ReviewApproved carries the edit; PostedToLedger carries lines.
+      const events = await store.getEvents();
+      const approvedEvt = events.find((event) => event.eventType === "ReviewApproved");
+      assert.deepEqual(approvedEvt?.payload.edited, edited);
+      const postedEvt = events.find((event) => event.eventType === "PostedToLedger");
+      const postedLines = postedEvt?.payload.lines as Array<{ accountNumber: string; debit: number; credit: number }>;
+      assert.ok(Array.isArray(postedLines) && postedLines.length === 3, "PostedToLedger payload must include lines");
+
+      // Memory/Postgres parity (CONVENTIONS Rule 11): same decision on Memory
+      // produces identical posted-line economics and event payload shape.
+      const memory = new MemoryLedgerStore();
+      const memCreated = await memory.createEvidence({
+        ...baseInput,
+        organizationId: "org_jpx",
+        workspaceId: "workspace_main",
+      });
+      const memDecided = await memory.applyReviewDecision(memCreated.review.id, "approve", {
+        actorId: "user_test",
+        edited,
+      });
+      assert.equal(memDecided?.suggestion?.accountNumber, decided.suggestion?.accountNumber);
+      assert.equal(memDecided?.provenanceTimeline.at(-1)?.label, decided.provenanceTimeline.at(-1)?.label);
+      const memPostedEvt = (await memory.getEvents()).find((event) => event.eventType === "PostedToLedger");
+      const memLines = memPostedEvt?.payload.lines as Array<Record<string, unknown>>;
+      assert.ok(Array.isArray(memLines) && memLines.length === 3, "Memory PostedToLedger payload must include lines");
+      const stable = (lines: Array<Record<string, unknown>>) =>
+        lines.map((line) => [line.accountNumber, line.debit, line.credit, line.vatCode, line.deductible]);
+      assert.deepEqual(
+        stable(postedLines as unknown as Array<Record<string, unknown>>),
+        stable(memLines),
+        "PostedToLedger payload lines parity",
+      );
+    } finally {
+      await client`delete from ledger.events where organization_id = ${orgId}`;
+      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+      await closePostgresClient(client);
+    }
+  },
+);
+
 test("PostgresLedgerStore.runSimulation real diff + ReviewNotFoundError", { skip }, async () => {
   if (!databaseUrl) return;
   const orgId = `org_test_${Date.now().toString(36)}`;
@@ -280,6 +404,84 @@ test("PostgresLedgerStore.runSimulation real diff + ReviewNotFoundError", { skip
     await closePostgresClient(client);
   }
 });
+
+test(
+  "PostgresLedgerStore.importSie appends VoucherImported events, replays into reports + Memory parity",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+      const sieText = [
+        "#SIETYP 4",
+        '#KONTO 6110 "Kontorsmateriel"',
+        '#VER A 42 20260315 "Inköpta pärmar"',
+        "{",
+        "#TRANS 6110 {} 100.00",
+        "#TRANS 1930 {} -100.00",
+        "}",
+        '#VER A 43 20260316 "Obalanserad"',
+        "{",
+        "#TRANS 6110 {} 50.00",
+        "#TRANS 1930 {} -49.00",
+        "}",
+      ].join("\n");
+      const file = parseSie(sieText);
+
+      const journalBefore = (await store.getReports()).journal.length;
+      const result = await store.importSie({ actorId: "user_test", file });
+      assert.deepEqual(result, {
+        accepted: true,
+        importedVouchers: 1,
+        importedTransactions: 2,
+        skipped: [{ reference: "A 43", reason: "unbalanced" }],
+      });
+
+      // getReports replay widened to VoucherImported: the lines appear in the journal.
+      const journal = (await store.getReports()).journal;
+      assert.equal(journal.length, journalBefore + 2);
+      const [expense, bank] = journal.slice(-2);
+      assert.equal(expense?.accountNumber, "6110");
+      assert.equal(expense?.debit, 100);
+      assert.equal(bank?.accountNumber, "1930");
+      assert.equal(bank?.credit, 100);
+
+      // One hash-chained VoucherImported event with the replay lines in the payload.
+      const events = await store.getEvents();
+      const importedEvt = events.at(-1);
+      assert.equal(importedEvt?.eventType, "VoucherImported");
+      assert.equal(importedEvt?.aggregateId, "sie_A_42");
+      assert.equal(importedEvt?.actorId, "user_test");
+      const payloadLines = (importedEvt?.payload as { lines?: unknown[] }).lines;
+      assert.ok(Array.isArray(payloadLines) && payloadLines.length === 2);
+
+      // Idempotency: re-import skips both vouchers (duplicate + unbalanced).
+      const replay = await store.importSie({ actorId: "user_test", file });
+      assert.equal(replay.importedVouchers, 0);
+      assert.equal(replay.importedTransactions, 0);
+      assert.ok(replay.skipped.some((entry) => entry.reference === "A 42" && entry.reason === "duplicate"));
+      assert.equal((await store.getReports()).journal.length, journalBefore + 2, "no duplicate lines");
+
+      // Memory/Postgres parity (CONVENTIONS Rule 11): identical result + tail lines.
+      const memory = new MemoryLedgerStore();
+      const memResult = await memory.importSie({ actorId: "user_test", file });
+      assert.deepEqual(memResult, result);
+      const memJournal = (await memory.getReports()).journal;
+      const stable = (entries: typeof journal) =>
+        entries
+          .slice(-2)
+          .map((entry) => [entry.accountNumber, entry.accountName, entry.debit, entry.credit, entry.bookedAt]);
+      assert.deepEqual(stable(journal), stable(memJournal));
+    } finally {
+      await client`delete from ledger.events where organization_id = ${orgId}`;
+      await closePostgresClient(client);
+    }
+  },
+);
 
 test("PostgresLedgerStore.answerAssistantQuestion delegates + persists", { skip }, async () => {
   if (!databaseUrl) return;

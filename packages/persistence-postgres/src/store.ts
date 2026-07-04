@@ -18,6 +18,7 @@ import type {
   ReportBundle,
   ReviewDecisionInput,
   ReviewTask,
+  SieImportResult,
   SimulationRequest,
   SimulationRun,
   Voucher,
@@ -42,12 +43,15 @@ import {
   initialLedgerLines,
   mergeExtractedFields,
   nowIso,
+  planSieImport,
   recomputeVoucherFields,
+  resolveReviewDecisionEdit,
   ReviewNotFoundError,
   simulateApprovals,
   today,
   type LedgerStore,
   type ReviewAction,
+  type SieImportInput,
 } from "@jpx-accounting/domain";
 
 import type { PostgresClient } from "./client";
@@ -901,6 +905,75 @@ export class PostgresLedgerStore implements LedgerStore {
     });
   }
 
+  async importSie(input: SieImportInput): Promise<SieImportResult> {
+    // Shared per-voucher planning (bounds → SieImportError, per-voucher
+    // isolation into `skipped`) keeps Memory and Postgres in lockstep.
+    const { vouchers, skipped } = planSieImport(input.file);
+
+    return this.client.begin(async (tx) => {
+      const tailHash = await this.lockWorkspaceTail(tx);
+
+      const result: SieImportResult = {
+        accepted: true,
+        importedVouchers: 0,
+        importedTransactions: 0,
+        skipped: [...skipped],
+      };
+
+      // Idempotency: skip vouchers whose aggregate id was already imported.
+      const candidateIds = vouchers.map((planned) => planned.aggregateId);
+      const existingRows =
+        candidateIds.length === 0
+          ? []
+          : await tx<{ aggregate_id: string }[]>`
+        SELECT aggregate_id
+        FROM ledger.events
+        WHERE event_type = 'VoucherImported'
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+          AND aggregate_id = ANY(${candidateIds})
+      `;
+      const alreadyImported = new Set(existingRows.map((row) => row.aggregate_id));
+
+      const occurredAt = nowIso();
+      let prev = tailHash;
+      for (const planned of vouchers) {
+        if (alreadyImported.has(planned.aggregateId)) {
+          result.skipped.push({ reference: planned.reference, reason: "duplicate" });
+          continue;
+        }
+
+        const evt = await this.appendEvent(
+          tx,
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: planned.aggregateId,
+            eventType: "VoucherImported",
+            actorId: input.actorId,
+            occurredAt,
+            payload: {
+              source: "sie",
+              series: planned.series,
+              number: planned.number,
+              date: planned.date,
+              text: planned.text,
+              lines: planned.lines as unknown as Record<string, unknown>[],
+            },
+          },
+          prev,
+        );
+        prev = evt.eventHash;
+
+        result.importedVouchers += 1;
+        result.importedTransactions += planned.lines.length;
+      }
+
+      return result;
+    });
+  }
+
   async findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined> {
     const rows = await this.client<ReviewRow[]>`
       SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
@@ -930,13 +1003,14 @@ export class PostgresLedgerStore implements LedgerStore {
   async getReports(): Promise<ReportBundle> {
     // Always prepend the seeded ledger lines so projection output matches the
     // MemoryLedgerStore baseline. Anything posted via approved/booked-without-VAT
-    // reviews is replayed from the PostedToLedger event payloads.
+    // reviews or imported from SIE is replayed from event payload `lines`
+    // (PostedToLedger + VoucherImported both carry them — Rule 13).
     const lines: LedgerLine[] = [...initialLedgerLines()];
 
     const rows = await this.client<{ payload: Record<string, unknown> }[]>`
       SELECT payload
       FROM ledger.events
-      WHERE event_type = 'PostedToLedger'
+      WHERE event_type = ANY(${["PostedToLedger", "VoucherImported"]})
         AND organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
       ORDER BY occurred_at ASC, created_at ASC
@@ -1075,16 +1149,34 @@ export class PostgresLedgerStore implements LedgerStore {
       // Idempotency: replays should not re-post lines.
       if (review.status !== "needs-review") return review;
 
+      // Decision-time derivation for edited approvals: validates (throwing
+      // InvalidReviewEditError BEFORE any mutation — the transaction would
+      // roll back anyway, but ordering keeps the two stores step-identical)
+      // and derives the effective posting inputs. Append-only: the stored
+      // voucher row is NOT rewritten.
+      const edited = action !== "reject" ? input.edited : undefined;
+      let postingSuggestion = review.suggestion;
+      let postingVoucher = voucher;
+      if (edited) {
+        const resolved = resolveReviewDecisionEdit(voucher, review.suggestion, edited);
+        postingSuggestion = resolved.effectiveSuggestion;
+        postingVoucher = resolved.effectiveVoucher;
+      }
+
       const occurredAt = nowIso();
       const newStatus: ReviewTask["status"] =
         action === "approve" ? "approved" : action === "reject" ? "rejected" : "booked-without-vat";
 
       const stepLabel =
         action === "approve"
-          ? "Review approved"
+          ? edited
+            ? "Approved with edits"
+            : "Review approved"
           : action === "reject"
             ? "Review rejected"
-            : "Booked without VAT deduction";
+            : edited
+              ? "Booked without VAT deduction (edited)"
+              : "Booked without VAT deduction";
 
       const updatedTimeline: ReviewTask["provenanceTimeline"] = [
         ...review.provenanceTimeline,
@@ -1099,11 +1191,16 @@ export class PostgresLedgerStore implements LedgerStore {
       review.status = newStatus;
       review.provenanceTimeline = updatedTimeline;
       voucher.status = newStatus;
+      if (edited && postingSuggestion) {
+        // Review read model reflects what was actually posted.
+        review.suggestion = postingSuggestion;
+      }
 
       await tx`
         UPDATE ledger.review_tasks
         SET status = ${newStatus},
-            provenance_timeline = ${tx.json(updatedTimeline as unknown as Parameters<typeof tx.json>[0])}
+            provenance_timeline = ${tx.json(updatedTimeline as unknown as Parameters<typeof tx.json>[0])},
+            suggestion = ${review.suggestion ? tx.json(review.suggestion as unknown as Parameters<typeof tx.json>[0]) : null}
         WHERE id = ${review.id}
       `;
 
@@ -1117,6 +1214,7 @@ export class PostgresLedgerStore implements LedgerStore {
       const decisionEventType: EventTypeName = action === "approve" ? "ReviewApproved" : "ReviewRejected";
       const decisionPayload: Record<string, unknown> = { action };
       if (input.notes !== undefined) decisionPayload.notes = input.notes;
+      if (edited) decisionPayload.edited = edited;
 
       const decisionEvt = await this.appendEvent(
         tx,
@@ -1134,8 +1232,8 @@ export class PostgresLedgerStore implements LedgerStore {
       );
       prev = decisionEvt.eventHash;
 
-      if (action !== "reject" && review.suggestion) {
-        const lines = buildPostingLines(voucher, review.suggestion, action, occurredAt);
+      if (action !== "reject" && postingSuggestion) {
+        const lines = buildPostingLines(postingVoucher, postingSuggestion, action, occurredAt);
         await this.appendEvent(
           tx,
           {
@@ -1148,7 +1246,7 @@ export class PostgresLedgerStore implements LedgerStore {
             occurredAt,
             payload: {
               action,
-              suggestion: review.suggestion as unknown as Record<string, unknown>,
+              suggestion: postingSuggestion as unknown as Record<string, unknown>,
               lines: lines as unknown as Record<string, unknown>[],
             },
           },
