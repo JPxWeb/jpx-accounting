@@ -68,6 +68,9 @@ importers:
       '@jpx-accounting/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@jpx-accounting/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@jpx-accounting/reporting':
         specifier: workspace:*
         version: link:../../packages/reporting

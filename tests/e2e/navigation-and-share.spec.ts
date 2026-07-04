@@ -1,6 +1,11 @@
+import fs from "node:fs";
+import path from "node:path";
+
 import { expect, test } from "@playwright/test";
 
 import { resetApiState } from "./test-helpers";
+
+const receiptFixture = path.join(__dirname, "..", "fixtures", "receipt.jpg");
 
 test.beforeEach(async ({ request }) => {
   await resetApiState(request);
@@ -34,4 +39,41 @@ test("navigation and share target flows stay reachable", async ({ page }) => {
   await page.goto("/share?title=Taxi%20Receipt&text=Airport%20transfer&url=https%3A%2F%2Fexample.com%2Freceipt");
   await expect(page).toHaveURL(/\/capture/);
   await expect(page.getByTestId("quick-add-grid")).toBeVisible();
+
+  // Param-only shares are consumed for real: ONE share-mode draft with the shared title
+  // appears in the drafts table, and the params are cleared so a refresh cannot duplicate it.
+  await expect(page.getByTestId("draft-row").filter({ hasText: "Taxi Receipt" })).toBeVisible();
+});
+
+test("shared files are promoted server-side through the real pipeline", async ({ page, request }) => {
+  // The forwarding runs server-side in the share route handler — device-independent,
+  // so one desktop run covers it.
+  test.skip(test.info().project.name.includes("mobile"), "server-side forwarding is device-independent");
+
+  await page.goto("/capture");
+  await expect(page.getByTestId("evidence-archive")).toBeVisible();
+  // Wait for the archive to hydrate (the reset seed always has exactly one
+  // evidence row) before taking the baseline — a bare count() races hydration.
+  await expect(page.getByTestId("evidence-row")).toHaveCount(1);
+  const rowsBefore = 1;
+
+  // POST multipart to /share exactly like an OS share sheet would; Playwright follows the
+  // 303 redirect, so the final URL carries the promoted count.
+  const response = await request.post("/share", {
+    multipart: {
+      title: "Shared lunch receipt",
+      files: {
+        name: "receipt.jpg",
+        mimeType: "image/jpeg",
+        buffer: fs.readFileSync(receiptFixture),
+      },
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  expect(response.url()).toContain("promoted=1");
+
+  // The shared file went through initUpload → PUT → createEvidence server-side, so the
+  // archive gains a row.
+  await page.reload();
+  await expect(page.getByTestId("evidence-row")).toHaveCount(rowsBefore + 1);
 });

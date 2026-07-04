@@ -87,7 +87,23 @@
     "emptyFiltered": "Inga granskningar matchar de här filtren.",
     "emptyQueue": "Inga granskningar i kön.",
     "clearFilters": "Rensa filter",
-    "editToast": "Redigering blir tillgänglig i en kommande version.",
+    "editSheet": {
+      "eyebrow": "Redigera granskning",
+      "title": "Redigera före godkännande",
+      "description": "Justera konto, momskod eller belopp — godkännandet bokför de korrigerade raderna.",
+      "closeAria": "Stäng redigeringsarket",
+      "accountLabel": "Konto",
+      "vatCodeLabel": "Momskod",
+      "grossLabel": "Bruttobelopp",
+      "netLabel": "Nettobelopp",
+      "vatAmountLabel": "Momsbelopp",
+      "amountError": "Netto + moms måste bli brutto (inom 0,01); alla tre beloppen krävs när något av dem ändras.",
+      "submit": "Godkänn med ändringar",
+      "submitting": "Godkänner…",
+      "cancel": "Avbryt",
+      "submitError": "Det redigerade godkännandet kunde inte genomföras.",
+      "appendOnlyNote": "Godkännandet bokför nya huvudboksrader med dina korrigeringar — ursprungligt underlag, förslag och händelsehistorik är append-only och skrivs aldrig om."
+    },
     "card": {
       "invoiceMethod": "Fakturametod",
       "cashMethod": "Kontantmetod",
@@ -117,7 +133,56 @@
       "allConfidence": "All konfidens"
     }
   },
+  "evidence": {
+    "eyebrow": "Underlag",
+    "description": "Oföränderlig filpost, hashkedja och proveniens.",
+    "back": "Tillbaka till Fånga",
+    "notFound": {
+      "title": "Underlaget hittades inte",
+      "message": "Detta underlags-id finns inte i den aktuella arbetsytans ögonblicksbild."
+    },
+    "meta": {
+      "hash": "Hash",
+      "originalFilename": "Ursprungligt filnamn",
+      "mimeType": "MIME-typ",
+      "size": "Storlek",
+      "uploaded": "Uppladdad",
+      "trustLevel": "Tillitsnivå",
+      "blobPath": "Blob-sökväg"
+    },
+    "preview": {
+      "title": "Förhandsvisning",
+      "imageAlt": "Förhandsvisning av {title}",
+      "frameTitle": "Förhandsvisning av {title}",
+      "loading": "Läser in förhandsvisning…",
+      "unavailable": "Ingen förhandsvisning är tillgänglig på den här enheten.",
+      "unavailableHint": "Filen fångades på en annan enhet eller så levererar lagringsbackenden inga förhandsvisningar."
+    },
+    "fields": {
+      "title": "Extraherade fält",
+      "empty": "Inga extraherade fält ännu — kör extraktion för att fylla i dem.",
+      "headerField": "Fält",
+      "headerValue": "Värde",
+      "headerConfidence": "Konfidens"
+    },
+    "links": {
+      "title": "Granskning",
+      "voucher": "Verifikat {number}",
+      "openReview": "Öppna granskning",
+      "extract": "Kör extraktion igen",
+      "extracting": "Extraherar…",
+      "extractLocked": "Verifikatet är redan beslutat — extraktionen förblir låst så att bokföringen förblir append-only.",
+      "extractSuccess": "Extraktionen uppdaterad.",
+      "extractError": "Extraktionen misslyckades. Försök igen.",
+      "noVoucher": "Inget verifikat är kopplat till det här underlaget ännu."
+    }
+  },
   "capture": {
+    "shared": {
+      "draftSaved": "Delat innehåll sparat som utkast.",
+      "promoted": "{count, plural, one {Delad fil lyft till bokföringsunderlag.} other {# delade filer lyfta till bokföringsunderlag.}}",
+      "pendingBanner": "{count, plural, one {En delad fil} other {# delade filer}} kunde inte läggas in som underlag. Lägg till {count, plural, one {den} other {dem}} igen från Snabbtillägg."
+    },
     "eyebrow": "Fånga",
     "title": "Lägg till underlag, se utkast, bläddra i arkivet.",
     "description": "Det samlade hemmet för allt du har fångat — pågående utkast, nyss uppladdat, helt arkiverat.",
@@ -138,9 +203,12 @@
       "shareHint": "Öppna enhetens delningsmeny och välj JPX Accounting för att skicka filer hit.",
       "importSie": "Importera SIE-fil",
       "importing": "Importerar…",
-      "imported": "Importerade {count} transaktioner från SIE.",
-      "importError": "Kunde inte importera SIE-filen.",
       "connectBank": "Anslut bankflöde"
+    },
+    "sieResult": {
+      "imported": "Importerade {vouchers} verifikat från SIE-filen.",
+      "importedWithSkipped": "Importerade {vouchers} verifikat från SIE-filen — {skipped} hoppades över.",
+      "error": "Kunde inte importera SIE-filen."
     },
     "dropzone": {
       "aria": "Lägg till underlagsfiler genom att bläddra eller släppa dem här",

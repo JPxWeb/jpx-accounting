@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import { useReviewKeyboard } from "../../hooks/use-review-keyboard";
 import { apiClient } from "../../lib/client";
 import { getErrorMessage } from "../../lib/request-errors";
@@ -18,6 +17,7 @@ import {
   statusFilters,
 } from "../today/filter-types";
 import { ReviewCard } from "../today/review-card";
+import { ReviewEditSheet } from "../today/review-edit-sheet";
 import { ReviewFilters } from "../today/review-filters";
 import { MetricCard } from "../ui/metric-card";
 import { ScreenHeader } from "../ui/screen-header";
@@ -54,6 +54,7 @@ export function TodayScreen() {
   const t = useTranslations("today");
   const queryClient = useQueryClient();
   const [manualFocusId, setManualFocusId] = useState<string | null>(null);
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
 
   const workspaceQuery = useQuery({
     queryKey: ["workspace"],
@@ -129,6 +130,8 @@ export function TodayScreen() {
   const pendingReviews = useMemo(() => reviews.filter((r) => r.status === "needs-review"), [reviews]);
   const blockedReviews = useMemo(() => reviews.filter((r) => r.blockedReason), [reviews]);
 
+  const editingReview = editingReviewId ? (reviews.find((review) => review.id === editingReviewId) ?? null) : null;
+
   const filteredReviews = useMemo(() => {
     const supplierNeedle = supplierFilter.toLowerCase();
     return reviews.filter((review) => {
@@ -162,12 +165,16 @@ export function TodayScreen() {
 
   const handleAction = useCallback(
     (id: string, action: ReviewAction) => {
+      // The edit sheet is modal: while it is open the review hotkeys (Y/N/E/B/Enter)
+      // must not fire competing decisions underneath it.
+      if (editingReviewId) return;
       if (action === "accept") approveReview.mutate(id);
       else if (action === "reject") rejectReview.mutate(id);
       else if (action === "book-without-vat") bookWithoutVatReview.mutate(id);
-      else toast.info(t("editToast"));
+      // "edit" opens the editor sheet (button click or hotkey E — both route here).
+      else setEditingReviewId(id);
     },
-    [approveReview, rejectReview, bookWithoutVatReview, t],
+    [approveReview, rejectReview, bookWithoutVatReview, editingReviewId],
   );
 
   const onAccept = useCallback((id: string) => handleAction(id, "accept"), [handleAction]);
@@ -261,6 +268,19 @@ export function TodayScreen() {
           )}
         </div>
       </section>
+
+      {editingReview ? (
+        <ReviewEditSheet
+          key={editingReview.id}
+          review={editingReview}
+          voucher={voucherById.get(editingReview.voucherId)}
+          onClose={() => setEditingReviewId(null)}
+          onSuccess={(review) => {
+            onMutationSuccess(review);
+            setEditingReviewId(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

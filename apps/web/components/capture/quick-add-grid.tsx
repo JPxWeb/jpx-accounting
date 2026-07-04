@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { apiClient } from "../../lib/client";
 import { captureFiles } from "../../lib/promotion";
 import { DropZone } from "./drop-zone";
 
@@ -14,6 +15,7 @@ const TILE_MODES = ["camera", "upload", "paste", "share"] as const;
 export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
   const t = useTranslations("capture.quickAdd");
   const tPromotion = useTranslations("capture.promotion");
+  const tSie = useTranslations("capture.sieResult");
   const queryClient = useQueryClient();
   const sieInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -95,22 +97,21 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
     toast.info(t("shareHint"));
   }
 
-  async function importSie(file: File) {
+  async function importSieFile(file: File) {
     setImporting(true);
     try {
-      const text = await file.text();
-      const response = await fetch("/api-proxy/api/imports/sie", {
-        method: "POST",
-        headers: { "content-type": "text/plain" },
-        body: text,
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const result = (await response.json()) as { importedTransactions: number };
-      toast.success(t("imported", { count: result.importedTransactions }));
+      // Raw bytes, not text: the file may be PC8/CP437-encoded — the API (or the
+      // offline demo parser) handles decoding.
+      const result = await apiClient.importSie(await file.arrayBuffer());
+      toast.success(
+        result.skipped.length > 0
+          ? tSie("importedWithSkipped", { vouchers: result.importedVouchers, skipped: result.skipped.length })
+          : tSie("imported", { vouchers: result.importedVouchers }),
+      );
+      // Imported vouchers land directly in the journal — refresh the snapshot-backed views.
+      void queryClient.invalidateQueries({ queryKey: ["workspace"] });
     } catch {
-      toast.error(t("importError"));
+      toast.error(tSie("error"));
     } finally {
       setImporting(false);
     }
@@ -169,7 +170,7 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
           className="hidden"
           onChange={(event) => {
             const file = event.target.files?.[0];
-            if (file) void importSie(file);
+            if (file) void importSieFile(file);
             event.target.value = "";
           }}
         />

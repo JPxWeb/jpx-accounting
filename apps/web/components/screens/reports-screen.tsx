@@ -52,13 +52,14 @@ export function ReportsScreen() {
   async function exportSie() {
     setExporting(true);
     try {
-      const text = await apiClient.fetchSieExport();
-      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      // PC8/CP437 bytes from the real domain serializer — never re-encode as UTF-8.
+      const bytes = await apiClient.fetchSieExport();
+      const blob = new Blob([bytes], { type: "text/plain;charset=ibm437" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       const day = new Date().toISOString().slice(0, 10);
       anchor.href = url;
-      anchor.download = `jpx-export-${day}.si`;
+      anchor.download = `jpx-export-${day}.se`;
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {

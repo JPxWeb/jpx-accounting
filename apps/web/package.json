@@ -14,6 +14,7 @@
     "@hookform/resolvers": "^5.2.2",
     "@jpx-accounting/api-client": "workspace:*",
     "@jpx-accounting/contracts": "workspace:*",
+    "@jpx-accounting/domain": "workspace:*",
     "@jpx-accounting/reporting": "workspace:*",
     "@jpx-accounting/ui-tokens": "workspace:*",
     "@radix-ui/react-slot": "^1.2.4",

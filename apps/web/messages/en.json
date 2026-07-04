@@ -87,7 +87,23 @@
     "emptyFiltered": "No reviews match these filters.",
     "emptyQueue": "No reviews in the queue.",
     "clearFilters": "Clear filters",
-    "editToast": "Edit will be available in a future release.",
+    "editSheet": {
+      "eyebrow": "Review edit",
+      "title": "Edit before approval",
+      "description": "Correct the account, VAT code, or amounts — approving posts the corrected lines.",
+      "closeAria": "Close the edit sheet",
+      "accountLabel": "Account",
+      "vatCodeLabel": "VAT code",
+      "grossLabel": "Gross amount",
+      "netLabel": "Net amount",
+      "vatAmountLabel": "VAT amount",
+      "amountError": "Net + VAT must equal gross (within 0.01); all three amounts are required when any of them changes.",
+      "submit": "Approve with edits",
+      "submitting": "Approving…",
+      "cancel": "Cancel",
+      "submitError": "The edited approval could not be completed.",
+      "appendOnlyNote": "Approving posts new ledger lines with your corrections — the original evidence, suggestion, and event history stay append-only and are never rewritten."
+    },
     "card": {
       "invoiceMethod": "Invoice method",
       "cashMethod": "Cash method",
@@ -117,7 +133,56 @@
       "allConfidence": "All confidence"
     }
   },
+  "evidence": {
+    "eyebrow": "Evidence",
+    "description": "Immutable file record, hash chain, and provenance.",
+    "back": "Back to Capture",
+    "notFound": {
+      "title": "Evidence not found",
+      "message": "This evidence id is not present in the current workspace snapshot."
+    },
+    "meta": {
+      "hash": "Hash",
+      "originalFilename": "Original filename",
+      "mimeType": "MIME type",
+      "size": "Size",
+      "uploaded": "Uploaded",
+      "trustLevel": "Trust level",
+      "blobPath": "Blob path"
+    },
+    "preview": {
+      "title": "Preview",
+      "imageAlt": "Preview of {title}",
+      "frameTitle": "Preview of {title}",
+      "loading": "Loading preview…",
+      "unavailable": "No preview is available on this device.",
+      "unavailableHint": "The file was captured on another device or the storage backend does not serve previews."
+    },
+    "fields": {
+      "title": "Extracted fields",
+      "empty": "No extracted fields yet — run extraction to populate them.",
+      "headerField": "Field",
+      "headerValue": "Value",
+      "headerConfidence": "Confidence"
+    },
+    "links": {
+      "title": "Review",
+      "voucher": "Voucher {number}",
+      "openReview": "Open review",
+      "extract": "Re-run extraction",
+      "extracting": "Extracting…",
+      "extractLocked": "This voucher is already decided — extraction stays locked so the ledger remains append-only.",
+      "extractSuccess": "Extraction refreshed.",
+      "extractError": "Extraction failed. Try again.",
+      "noVoucher": "No voucher is linked to this evidence yet."
+    }
+  },
   "capture": {
+    "shared": {
+      "draftSaved": "Shared content saved as a draft.",
+      "promoted": "{count, plural, one {Shared file promoted to ledger evidence.} other {# shared files promoted to ledger evidence.}}",
+      "pendingBanner": "{count, plural, one {One shared file} other {# shared files}} could not be staged into evidence. Add {count, plural, one {it} other {them}} again from Quick add."
+    },
     "eyebrow": "Capture",
     "title": "Add evidence, see drafts, browse the archive.",
     "description": "The single home for everything you've captured — drafts in progress, freshly uploaded, fully archived.",
@@ -138,9 +203,12 @@
       "shareHint": "Open your device's share menu and choose JPX Accounting to send files here.",
       "importSie": "Import SIE file",
       "importing": "Importing…",
-      "imported": "Imported {count} transactions from SIE.",
-      "importError": "Could not import the SIE file.",
       "connectBank": "Connect bank feed"
+    },
+    "sieResult": {
+      "imported": "Imported {vouchers} vouchers from the SIE file.",
+      "importedWithSkipped": "Imported {vouchers} vouchers from the SIE file — {skipped} skipped.",
+      "error": "Could not import the SIE file."
     },
     "dropzone": {
       "aria": "Add evidence files by browsing or dropping them here",
