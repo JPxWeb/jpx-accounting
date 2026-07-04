@@ -82,6 +82,24 @@ test("?period= filters the statements server-side", async ({ page, request }) =>
   await expect(page.locator('[data-testid="pnl-line"][data-account="6110"]')).toBeVisible();
 });
 
+test("statutory tax timeline renders dated, source-cited deadlines", async ({ page }) => {
+  await page.goto("/reports");
+
+  // Placed after the VAT return table (Task 5.10); also the anchor target of
+  // the deadline-proximity observation (/reports#tax-timeline).
+  const timeline = page.getByTestId("tax-timeline");
+  await expect(timeline).toBeVisible();
+
+  // The default profile (quarterly VAT, calendar fiscal year) always has
+  // upcoming statutory deadlines inside the 120-day horizon.
+  const rows = timeline.getByTestId("tax-timeline-row");
+  expect(await rows.count()).toBeGreaterThan(0);
+  await expect(rows.first()).toHaveAttribute("data-due", /^\d{4}-\d{2}-\d{2}$/);
+
+  // Every deadline cites its verbatim statutory source.
+  await expect(timeline.getByTestId("tax-timeline-source").first()).toContainText(/Skatteverket|Årsredovisningslagen/);
+});
+
 test("print media strips chrome and swaps chart SVGs for their data tables", async ({ page }) => {
   await page.goto("/reports");
   // Let the lazy chart chunks mount before switching media.
@@ -98,8 +116,10 @@ test("print media strips chrome and swaps chart SVGs for their data tables", asy
   await expect(page.getByTestId("export-sie")).toBeHidden();
   await expect(page.getByTestId("print-report")).toBeHidden();
 
-  // The print header appears; chart SVGs yield to their data-table twins.
+  // The print header appears (with the hash-chain verdict chip — Task 5.10);
+  // chart SVGs yield to their data-table twins.
   await expect(page.getByTestId("report-print-header")).toBeVisible();
+  await expect(page.getByTestId("report-print-header").getByTestId("integrity-chip")).toBeVisible();
   await expect(page.getByTestId("monthly-bars").locator("svg").first()).toBeHidden();
   await expect(page.getByTestId("cash-bridge").locator("svg").first()).toBeHidden();
   await expect(page.getByTestId("chart-table-monthly-bars")).toBeVisible();

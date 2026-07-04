@@ -10,6 +10,10 @@ import { type ConfidenceFilter, confidenceFilters, type StatusFilter, statusFilt
 
 export function ReviewFilters() {
   const t = useTranslations("today.filters");
+  // Same H/M/L vocabulary as the review-card chip and the dashboard widget —
+  // the bands come from the shared `confidenceBand()` (0.85/0.6), so the old
+  // hardcoded ≥95%/80–94%/<80% labels would lie about the cut-offs.
+  const tBand = useTranslations("today.card.band");
   const [status, setStatus] = useQueryState(
     "status",
     parseAsStringEnum<StatusFilter>([...statusFilters]).withDefault("all"),
@@ -67,9 +71,9 @@ export function ReviewFilters() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">{t("allConfidence")}</SelectItem>
-          <SelectItem value="high">≥95%</SelectItem>
-          <SelectItem value="medium">80–94%</SelectItem>
-          <SelectItem value="low">&lt;80%</SelectItem>
+          <SelectItem value="high">{tBand("high")}</SelectItem>
+          <SelectItem value="medium">{tBand("medium")}</SelectItem>
+          <SelectItem value="low">{tBand("low")}</SelectItem>
         </SelectContent>
       </Select>
     </div>

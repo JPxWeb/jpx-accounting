@@ -126,7 +126,14 @@
       "vat": "VAT",
       "aiSuggestion": "AI suggestion",
       "ruleHits": "Rule hits and provenance",
-      "cited": "Cited: {title}"
+      "cited": "Cited: {title}",
+      "band": {
+        "high": "High confidence",
+        "medium": "Medium confidence",
+        "low": "Low confidence"
+      },
+      "suggestionsOff": "AI suggestions are turned off for this workspace under AI posture. The evidence, rule hits, and every review action below keep working — decide manually.",
+      "suggestionsOffCta": "Open AI posture settings"
     },
     "actions": {
       "legend": "Review actions",
@@ -384,6 +391,18 @@
       "toPay": "VAT to pay",
       "toRefund": "VAT to get back"
     },
+    "taxTimeline": {
+      "title": "Statutory tax timeline",
+      "description": "Upcoming Skatteverket and Bolagsverket deadlines for this workspace's VAT period and fiscal year. Only VAT deadlines carry an amount — the others are date-only on purpose.",
+      "empty": "No statutory deadlines in the next 120 days.",
+      "sourcesLabel": "Sources",
+      "kinds": {
+        "vat-return": "VAT return",
+        "employer-declaration": "Employer declaration",
+        "f-skatt": "F-tax prepayment",
+        "annual-report": "Annual report"
+      }
+    },
     "alerts": {
       "label": "Compliance watch",
       "title": "Deadlines and regulatory signals",
@@ -620,6 +639,49 @@
       "cashPosition": "How is our cash position right now?",
       "vatDeadline": "When is our next VAT return due?",
       "representationRules": "What are the rules for deducting representation?"
+    }
+  },
+  "settings": {
+    "aiPosture": {
+      "about": {
+        "label": "About this AI",
+        "title": "What runs here, and under whose authority",
+        "runtimeMode": "Runtime mode",
+        "provider": "AI provider",
+        "model": "Model",
+        "host": "Endpoint host",
+        "status": "Status",
+        "operational": "Operational",
+        "notOperational": "Not operational",
+        "modes": {
+          "demo": "Demo",
+          "normal": "Normal"
+        },
+        "providers": {
+          "azure-openai": "Azure OpenAI",
+          "local-demo": "Local demo runtime (deterministic, no external AI service)",
+          "unavailable": "Unavailable — no AI provider is configured"
+        },
+        "approvalStatement": "The AI suggests and drafts — it never posts. Every AI proposal becomes a ledger entry only after your explicit approval in the review queue.",
+        "loading": "Loading runtime information…",
+        "unavailable": "Runtime information could not be loaded."
+      },
+      "article50": "Transparency notice (EU AI Act, Article 50): you are always told when you interact with an AI system here, and AI-generated content is labeled as such.",
+      "toggles": {
+        "label": "AI surfaces",
+        "advisor": {
+          "title": "AI advisor chat",
+          "description": "The grounded advisor on the Advisor screen. Turning it off hides the chat — bookkeeping, capture, and the review queue keep working without it."
+        },
+        "suggestions": {
+          "title": "AI suggestions in the review queue",
+          "description": "Confidence bands, suggested accounts, and AI reasoning on review cards and widgets. Turning them off keeps every human review action fully operable."
+        }
+      },
+      "needsCompany": "Save your company settings first — the AI posture is stored with them.",
+      "needsCompanyCta": "Open company settings",
+      "saved": "AI posture saved.",
+      "saveError": "Could not save the AI posture."
     }
   }
 }

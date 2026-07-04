@@ -126,7 +126,14 @@
       "vat": "Moms",
       "aiSuggestion": "AI-förslag",
       "ruleHits": "Regelträffar och proveniens",
-      "cited": "Citerad: {title}"
+      "cited": "Citerad: {title}",
+      "band": {
+        "high": "Hög konfidens",
+        "medium": "Medelhög konfidens",
+        "low": "Låg konfidens"
+      },
+      "suggestionsOff": "AI-förslag är avstängda för den här arbetsytan under AI-hållning. Underlaget, regelträffarna och alla granskningsåtgärder nedan fungerar som vanligt — besluta manuellt.",
+      "suggestionsOffCta": "Öppna inställningar för AI-hållning"
     },
     "actions": {
       "legend": "Granskningsåtgärder",
@@ -384,6 +391,18 @@
       "toPay": "Moms att betala",
       "toRefund": "Moms att få tillbaka"
     },
+    "taxTimeline": {
+      "title": "Lagstadgad skattekalender",
+      "description": "Kommande deadlines hos Skatteverket och Bolagsverket för arbetsytans momsperiod och räkenskapsår. Endast momsdeadlines bär ett belopp — övriga visas medvetet utan.",
+      "empty": "Inga lagstadgade deadlines de närmaste 120 dagarna.",
+      "sourcesLabel": "Källor",
+      "kinds": {
+        "vat-return": "Momsdeklaration",
+        "employer-declaration": "Arbetsgivardeklaration",
+        "f-skatt": "Debiterad preliminärskatt",
+        "annual-report": "Årsredovisning"
+      }
+    },
     "alerts": {
       "label": "Regelbevakning",
       "title": "Deadlines och regulatoriska signaler",
@@ -620,6 +639,49 @@
       "cashPosition": "Hur ser kassaläget ut just nu?",
       "vatDeadline": "När ska nästa momsdeklaration lämnas?",
       "representationRules": "Vad gäller för avdrag vid representation?"
+    }
+  },
+  "settings": {
+    "aiPosture": {
+      "about": {
+        "label": "Om den här AI:n",
+        "title": "Vad som körs här, och under vems beslutanderätt",
+        "runtimeMode": "Körläge",
+        "provider": "AI-leverantör",
+        "model": "Modell",
+        "host": "Endpoint-värd",
+        "status": "Status",
+        "operational": "I drift",
+        "notOperational": "Ej i drift",
+        "modes": {
+          "demo": "Demo",
+          "normal": "Normal"
+        },
+        "providers": {
+          "azure-openai": "Azure OpenAI",
+          "local-demo": "Lokal demokörning (deterministisk, ingen extern AI-tjänst)",
+          "unavailable": "Otillgänglig — ingen AI-leverantör är konfigurerad"
+        },
+        "approvalStatement": "AI:n föreslår och utarbetar — den bokför aldrig. Varje AI-förslag blir en bokföringspost först efter ditt uttryckliga godkännande i granskningskön.",
+        "loading": "Läser in körningsinformation…",
+        "unavailable": "Körningsinformationen kunde inte läsas in."
+      },
+      "article50": "Transparensmeddelande (EU:s AI-förordning, artikel 50): du informeras alltid när du interagerar med ett AI-system här, och AI-genererat innehåll är märkt som sådant.",
+      "toggles": {
+        "label": "AI-ytor",
+        "advisor": {
+          "title": "AI-rådgivarchatt",
+          "description": "Den grundade rådgivaren på rådgivarskärmen. Avstängd döljs chatten — bokföring, insamling och granskningskön fungerar utan den."
+        },
+        "suggestions": {
+          "title": "AI-förslag i granskningskön",
+          "description": "Konfidensband, föreslagna konton och AI-resonemang på granskningskort och widgetar. Avstängda förblir varje mänsklig granskningsåtgärd fullt användbar."
+        }
+      },
+      "needsCompany": "Spara företagsinställningarna först — AI-hållningen lagras tillsammans med dem.",
+      "needsCompanyCta": "Öppna företagsinställningar",
+      "saved": "AI-hållningen sparad.",
+      "saveError": "AI-hållningen kunde inte sparas."
     }
   }
 }

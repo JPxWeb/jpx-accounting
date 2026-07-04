@@ -19,6 +19,7 @@ import { KpiRow } from "../reports/kpi-row";
 import { NarrativeCard } from "../reports/narrative-card";
 import { PnlStatement } from "../reports/pnl-statement";
 import { PrintHeader } from "../reports/print-header";
+import { TaxTimelineRow } from "../reports/tax-timeline-row";
 import { VatReturnTable } from "../reports/vat-return-table";
 import { ScreenHeader } from "../ui/screen-header";
 import { SectionLabel } from "../ui/section-label";
@@ -171,6 +172,8 @@ export function ReportsScreen() {
       <BalanceSheetStatement statement={pack.balanceSheet} onSelectAccount={openDrill} />
 
       <VatReturnTable boxes={pack.vatReturn} />
+
+      <TaxTimelineRow />
 
       <section id="compliance-watch" className="glass-panel rounded-xl p-5" data-testid="alerts-panel">
         <SectionLabel>{t("alerts.label")}</SectionLabel>

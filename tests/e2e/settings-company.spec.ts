@@ -48,6 +48,24 @@ test("saves the workspace profile and persists it across reload", async ({ page 
   await expect(page.getByTestId("trial-balance-row").first()).toContainText(/EUR/);
 });
 
+test("saves the VAT period and persists it across reload", async ({ page }) => {
+  await page.goto("/settings/company");
+  await expect(page.getByTestId("company-form")).toBeVisible();
+
+  // Quarterly is the Swedish SMB default from the contracts schema.
+  await expect(page.getByTestId("company-vat-period")).toContainText("Quarterly");
+
+  await fillCompanyBasics(page);
+  await pickSelectOption(page, "company-vat-period", "Monthly");
+
+  await page.getByTestId("company-form-submit").click();
+  await expect(page.getByText("Company settings saved.")).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByTestId("company-form")).toBeVisible();
+  await expect(page.getByTestId("company-vat-period")).toContainText("Monthly");
+});
+
 test("saving a Swedish locale flips html lang and the shell copy", async ({ page }) => {
   await page.goto("/settings/company");
   await expect(page.getByTestId("company-form")).toBeVisible();

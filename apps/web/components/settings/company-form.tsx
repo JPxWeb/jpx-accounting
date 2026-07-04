@@ -53,7 +53,20 @@ const FISCAL_YEAR_START_OPTIONS = MONTH_LABELS.map((label, index) => ({
   label,
 }));
 
-type ProfileSelectName = "profile.country" | "profile.locale" | "profile.currency" | "profile.fiscalYearStart";
+// VAT reporting cadence (Task 5.10) — drives the statutory tax calendar and
+// the VAT widgets. Values come from `vatPeriodSchema` in contracts.
+const VAT_PERIOD_OPTIONS = [
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+  { value: "yearly", label: "Yearly" },
+];
+
+type ProfileSelectName =
+  | "profile.country"
+  | "profile.locale"
+  | "profile.currency"
+  | "profile.fiscalYearStart"
+  | "profile.vatPeriod";
 
 function ProfileSelectField({
   control,
@@ -242,6 +255,13 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
               label="Fiscal year start"
               options={FISCAL_YEAR_START_OPTIONS}
               testId="company-profile-fiscal-year-start"
+            />
+            <ProfileSelectField
+              control={form.control}
+              name="profile.vatPeriod"
+              label="VAT period"
+              options={VAT_PERIOD_OPTIONS}
+              testId="company-vat-period"
             />
           </div>
         </fieldset>
