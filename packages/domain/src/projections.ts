@@ -15,6 +15,22 @@ export type LedgerLine = {
   deductible: boolean;
 };
 
+/**
+ * Filter ledger lines to an inclusive day window. Comparisons are string-based
+ * on `bookedAt.slice(0, 10)` (booked timestamps are ISO strings), matching the
+ * unified period model's local-calendar day grammar. No range (or an empty
+ * one) returns the input array unchanged.
+ */
+export function filterLedgerLines(lines: LedgerLine[], range?: { from?: string; to?: string }): LedgerLine[] {
+  if (!range || (range.from === undefined && range.to === undefined)) return lines;
+  return lines.filter((line) => {
+    const day = line.bookedAt.slice(0, 10);
+    if (range.from !== undefined && day < range.from) return false;
+    if (range.to !== undefined && day > range.to) return false;
+    return true;
+  });
+}
+
 export function buildJournal(lines: LedgerLine[]): JournalEntryProjection[] {
   return lines.map((line, index) => ({
     id: `journal_${index + 1}`,

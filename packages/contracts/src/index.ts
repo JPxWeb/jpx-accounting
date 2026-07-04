@@ -263,6 +263,125 @@ export const reportBundleSchema = z.object({
   vat: z.array(vatProjectionSchema),
 });
 
+/**
+ * Report pack family (advisory-pivot Phase 4). ONE `ReportPack` per period is
+ * the single source object for the reports screen: every number in prose,
+ * KPI, chart, and table renders from the same fetched pack. Lives in
+ * contracts (not domain) so `packages/reporting` can consume it without a
+ * domain↔reporting cycle. `reportBundleSchema` above stays UNCHANGED.
+ */
+
+/**
+ * One statement row. Sign conventions (fixed by the domain builders):
+ * P&L lines are credit−debit (revenue positive, costs negative); balance-sheet
+ * assets are debit−credit; equity/liabilities are credit−debit.
+ */
+export const statementLineSchema = z.object({
+  accountNumber: z.string(),
+  accountName: z.string(),
+  amount: z.number(),
+});
+
+/** Group keys are client i18n keys — the server ships keys, never labels. */
+export const statementGroupKeySchema = z.enum([
+  "revenue",
+  "materials",
+  "externalCost",
+  "personnel",
+  "financial",
+  "assets",
+  "equityAndLiabilities",
+]);
+
+export const statementGroupSchema = z.object({
+  key: statementGroupKeySchema,
+  lines: z.array(statementLineSchema),
+  total: z.number(),
+});
+
+/**
+ * Resultatrapport. `personnel` includes 78xx depreciation per the bas-2026
+ * template's account classes (documented limitation of the 68-account subset).
+ */
+export const profitLossStatementSchema = z.object({
+  period: z.object({ from: z.string(), to: z.string() }),
+  groups: z.array(statementGroupSchema),
+  operatingResult: z.number(),
+  financialNet: z.number(),
+  periodResult: z.number(),
+});
+
+/**
+ * Balansrapport as of a day. `computedResult` is the cumulative P&L result not
+ * yet booked to equity (no closing entries exist); `balanced` asserts
+ * assets ≈ equity/liabilities + computedResult within ±0.005.
+ */
+export const balanceSheetStatementSchema = z.object({
+  asOf: z.string(),
+  assets: statementGroupSchema,
+  equityAndLiabilities: statementGroupSchema,
+  computedResult: z.number(),
+  balanced: z.boolean(),
+});
+
+/** One momsdeklaration box row (labels come from the VAT regime data). */
+export const vatReturnBoxSchema = z.object({
+  box: z.string(),
+  label: z.string(),
+  amount: z.number(),
+});
+
+/**
+ * Cash movement bridge over the period. Invariant (asserted by unit tests and
+ * held by construction in the builder): opening + Σ drivers + other.amount
+ * = closing = the independent 19xx balance at the period's `to` day.
+ */
+export const cashBridgeSchema = z.object({
+  /** 19xx balance before the period's first day. */
+  opening: z.number(),
+  /** Top movers by absolute attributed cash impact. */
+  drivers: z.array(z.object({ accountNumber: z.string(), accountName: z.string(), amount: z.number() })).max(4),
+  /** Everything the drivers don't carry (incl. rounding residue). */
+  other: z.object({ amount: z.number(), accountNumbers: z.array(z.string()) }),
+  /** 19xx balance at the period's last day. */
+  closing: z.number(),
+});
+
+export const monthlyPointSchema = z.object({
+  /** Calendar month `YYYY-MM`. */
+  month: z.string(),
+  cashIn: z.number(),
+  cashOut: z.number(),
+  /** Cumulative 19xx balance at month end (includes pre-series history). */
+  cashClosing: z.number(),
+  revenue: z.number(),
+  result: z.number(),
+});
+
+export const reportPeriodKindSchema = z.enum(["month", "quarter", "fiscal-year", "ytd", "all"]);
+
+/** Resolved period the pack was built for (token grammar lives in domain). */
+export const reportPeriodSchema = z.object({
+  token: z.string(),
+  kind: reportPeriodKindSchema,
+  from: z.string(),
+  to: z.string(),
+});
+
+export const reportPackSchema = z.object({
+  period: reportPeriodSchema,
+  /** Equal-kind preceding window (absent for `all`). */
+  previousPeriod: z.object({ from: z.string(), to: z.string() }).optional(),
+  profitLoss: profitLossStatementSchema,
+  previousProfitLoss: profitLossStatementSchema.optional(),
+  balanceSheet: balanceSheetStatementSchema,
+  vatReturn: z.array(vatReturnBoxSchema),
+  cashBridge: cashBridgeSchema,
+  /** Trailing 12 calendar months ending at the period's last month. */
+  monthly: z.array(monthlyPointSchema).max(12),
+  generatedAt: z.string(),
+});
+
 export const evidenceCreateResultSchema = z.object({
   evidence: evidenceObjectSchema,
   packet: evidencePacketSchema,
@@ -484,6 +603,17 @@ export type SimulationRun = z.infer<typeof simulationRunSchema>;
 export type CloseRun = z.infer<typeof closeRunSchema>;
 export type ComplianceAlert = z.infer<typeof complianceAlertSchema>;
 export type ReportBundle = z.infer<typeof reportBundleSchema>;
+export type StatementLine = z.infer<typeof statementLineSchema>;
+export type StatementGroupKey = z.infer<typeof statementGroupKeySchema>;
+export type StatementGroup = z.infer<typeof statementGroupSchema>;
+export type ProfitLossStatement = z.infer<typeof profitLossStatementSchema>;
+export type BalanceSheetStatement = z.infer<typeof balanceSheetStatementSchema>;
+export type VatReturnBox = z.infer<typeof vatReturnBoxSchema>;
+export type CashBridge = z.infer<typeof cashBridgeSchema>;
+export type MonthlyPoint = z.infer<typeof monthlyPointSchema>;
+export type ReportPeriodKind = z.infer<typeof reportPeriodKindSchema>;
+export type ReportPeriod = z.infer<typeof reportPeriodSchema>;
+export type ReportPack = z.infer<typeof reportPackSchema>;
 export type EvidenceCreateResult = z.infer<typeof evidenceCreateResultSchema>;
 export type WorkspaceSnapshot = z.infer<typeof workspaceSnapshotSchema>;
 export type EvidenceCreateInput = z.infer<typeof evidenceCreateInputSchema>;
