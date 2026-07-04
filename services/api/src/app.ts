@@ -25,11 +25,13 @@ import {
 import { AiRuntimeUnavailableError, type AiRuntime, isAiRuntimeOperational } from "@jpx-accounting/ai-core";
 import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
-import type { LedgerStore, ReviewAction } from "@jpx-accounting/domain";
+import type { LedgerStore, ReportRange, ReviewAction } from "@jpx-accounting/domain";
 import {
   buildSieExport,
+  currentMonthToken,
   decodeSieBuffer,
   encodePc8,
+  InvalidPeriodTokenError,
   InvalidReviewEditError,
   MemoryLedgerStore,
   nowIso,
@@ -99,6 +101,34 @@ async function parseBody<T>(request: Request, schema: ZodType<T>): Promise<T> {
   }
 
   return parsed.data;
+}
+
+const REPORT_DAY_PARAM = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Parse the optional `from`/`to` report-window query params (inclusive
+ * `YYYY-MM-DD` day strings). Absent params keep the historical unfiltered
+ * behavior; malformed days or an inverted window are well-formed requests
+ * that are semantically unprocessable → 422 (CONVENTIONS Rule 16).
+ */
+function parseReportRange(c: Context<AppEnv>): ReportRange | undefined {
+  const from = c.req.query("from");
+  const to = c.req.query("to");
+  if (from === undefined && to === undefined) return undefined;
+  for (const [name, value] of [
+    ["from", from],
+    ["to", to],
+  ] as const) {
+    if (value !== undefined && !REPORT_DAY_PARAM.test(value)) {
+      throw new HTTPException(422, { message: `Invalid "${name}" query parameter: expected YYYY-MM-DD.` });
+    }
+  }
+  if (from !== undefined && to !== undefined && from > to) {
+    throw new HTTPException(422, {
+      message: `Invalid report range: "from" (${from}) must not be after "to" (${to}).`,
+    });
+  }
+  return { ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}) };
 }
 
 type JsonErrorExtras = Partial<Pick<ApiJsonErrorBody, "code" | "issues">>;
@@ -296,6 +326,11 @@ export function createApp({
       return jsonError(c, error.message, runtimeMode, 422, { code: "sie_import_error" });
     }
 
+    if (error instanceof InvalidPeriodTokenError) {
+      // Unknown/malformed ?period= token → 422 (Rule 16).
+      return jsonError(c, error.message, runtimeMode, 422, { code: "invalid_period_token" });
+    }
+
     if (error instanceof LedgerStoreUnavailableError || error instanceof AiRuntimeUnavailableError) {
       return jsonError(c, error.message, runtimeMode, 503);
     }
@@ -329,11 +364,25 @@ export function createApp({
 
   app.get("/api/workspace", async (context) => context.json(await currentStore.getSnapshot()));
   app.get("/api/reviews/feed", async (context) => context.json(await currentStore.getReviewFeed()));
-  app.get("/api/reports/journal", async (context) => context.json((await currentStore.getReports()).journal));
-  const reportBalances = async (context: Context<AppEnv>) => context.json((await currentStore.getReports()).balances);
+  // Report routes accept an optional inclusive ?from=&to= day window (no
+  // params → unfiltered, the historical shape the api.spec pins rely on).
+  app.get("/api/reports/journal", async (context) =>
+    context.json((await currentStore.getReports(parseReportRange(context))).journal),
+  );
+  const reportBalances = async (context: Context<AppEnv>) =>
+    context.json((await currentStore.getReports(parseReportRange(context))).balances);
   app.get("/api/reports/general-ledger", reportBalances);
   app.get("/api/reports/trial-balance", reportBalances);
-  app.get("/api/reports/vat-prep", async (context) => context.json((await currentStore.getReports()).vat));
+  app.get("/api/reports/vat-prep", async (context) =>
+    context.json((await currentStore.getReports(parseReportRange(context))).vat),
+  );
+  // ONE ReportPack per period is the reports screen's single source object.
+  // ?period= takes the unified token grammar; default = the current calendar
+  // month. Unknown tokens surface as 422 via InvalidPeriodTokenError.
+  app.get("/api/reports/pack", async (context) => {
+    const period = context.req.query("period") ?? currentMonthToken();
+    return context.json(await currentStore.getReportPack({ period }));
+  });
 
   app.post("/api/evidence", async (context) => {
     const input = await parseBody(context.req.raw, evidenceCreateInputSchema);

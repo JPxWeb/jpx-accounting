@@ -54,6 +54,10 @@ export class UnavailableLedgerStore implements LedgerStore {
     return this.fail();
   }
 
+  async getReportPack() {
+    return this.fail();
+  }
+
   async getSnapshot() {
     return this.fail();
   }

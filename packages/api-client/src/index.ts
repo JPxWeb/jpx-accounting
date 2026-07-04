@@ -2,13 +2,17 @@
 // when `baseUrl` is set — the demo in-memory fallback returns the same domain shapes directly (still contract-aligned).
 
 import type { ZodType } from "zod";
+import { z } from "zod";
 
 import type {
+  AccountBalanceProjection,
   AssistantRequest,
   AssistantSession,
   CompanySettings,
   EvidenceContext,
   EvidenceCreateInput,
+  JournalEntryProjection,
+  ReportPack,
   ReviewDecisionInput,
   ReviewTask,
   RuntimeMode,
@@ -19,15 +23,19 @@ import type {
   UploadInitResult,
 } from "@jpx-accounting/contracts";
 import {
+  accountBalanceProjectionSchema,
   assistantSessionSchema,
   evidenceContextSchema,
   evidenceCreateResultSchema,
+  journalEntryProjectionSchema,
+  reportPackSchema,
   reviewTaskSchema,
   sieImportResultSchema,
   simulationRunSchema,
   uploadInitResultSchema,
   workspaceSnapshotSchema,
 } from "@jpx-accounting/contracts";
+import type { ReportRange } from "@jpx-accounting/domain";
 import {
   buildSieExport,
   decodeSieBuffer,
@@ -69,6 +77,18 @@ async function parseJsonBody<T>(response: Response, schema: ZodType<T>): Promise
   }
 
   return parsed.data;
+}
+
+const journalProjectionListSchema = z.array(journalEntryProjectionSchema);
+const accountBalanceListSchema = z.array(accountBalanceProjectionSchema);
+
+/** Serialize an optional report window into `?from=&to=` (empty when unscoped). */
+function reportRangeQuery(range?: ReportRange): string {
+  const params = new URLSearchParams();
+  if (range?.from !== undefined) params.set("from", range.from);
+  if (range?.to !== undefined) params.set("to", range.to);
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }
 
 async function requestJson<T>(baseUrl: string, path: string, schema: ZodType<T>, options?: RequestOptions): Promise<T> {
@@ -120,6 +140,40 @@ export class AccountingApiClient {
     if (this.fallbackStore) return this.fallbackStore.getSnapshot();
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.baseUrl, "/api/workspace", workspaceSnapshotSchema);
+  }
+
+  /**
+   * Journal entries, optionally scoped server-side to an inclusive
+   * `YYYY-MM-DD` day window. No range → the full unfiltered journal.
+   */
+  async getJournal(range?: ReportRange): Promise<JournalEntryProjection[]> {
+    if (this.fallbackStore) return (await this.fallbackStore.getReports(range)).journal;
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.baseUrl, `/api/reports/journal${reportRangeQuery(range)}`, journalProjectionListSchema);
+  }
+
+  /**
+   * Account balances, optionally scoped to a day window. With a range the
+   * result is the PERIOD MOVEMENT (only lines booked inside the window) —
+   * deliberate for the Books trial-balance view.
+   */
+  async getTrialBalance(range?: ReportRange): Promise<AccountBalanceProjection[]> {
+    if (this.fallbackStore) return (await this.fallbackStore.getReports(range)).balances;
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.baseUrl, `/api/reports/trial-balance${reportRangeQuery(range)}`, accountBalanceListSchema);
+  }
+
+  /**
+   * ONE `ReportPack` per period token — the single source object every number
+   * on the reports screen (prose, KPI, chart, table) renders from. Invalid
+   * tokens surface as HTTP 422 (`AccountingApiError`); the offline demo
+   * throws `InvalidPeriodTokenError` from the domain resolver directly.
+   */
+  async getReportPack(period: string): Promise<ReportPack> {
+    if (this.fallbackStore) return this.fallbackStore.getReportPack({ period });
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const params = new URLSearchParams({ period });
+    return requestJson(this.baseUrl, `/api/reports/pack?${params.toString()}`, reportPackSchema);
   }
 
   async createEvidence(input: EvidenceCreateInput) {

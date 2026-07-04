@@ -307,3 +307,80 @@ test("assistant, knowledge, simulation, close, and import endpoints round-trip",
   expect(sieExportText).toContain("#SIETYP 4");
   expect(sieExportText).toContain("#TRANS 6110 {} 100.00");
 });
+
+test("period-scoped report routes and the ReportPack endpoint", async ({ request }) => {
+  // Default pack FIRST, while the workspace is seed-only: the seed books its
+  // lines "now", so the no-param pack (current month) reconciles to the
+  // Phase 4 finding-8 numbers. Fetching before the March import keeps the
+  // cumulative cash/balance-sheet figures seed-pure.
+  const defaultPack = await request.get(`${apiBaseUrl}/api/reports/pack`);
+  expect(defaultPack.ok()).toBeTruthy();
+  const defaultJson = await defaultPack.json();
+  expect(defaultJson.period.kind).toBe("month");
+  expect(defaultJson.profitLoss.periodResult).toBe(-1000);
+  expect(defaultJson.cashBridge.closing).toBe(-1250);
+  expect(defaultJson.balanceSheet.balanced).toBe(true);
+  const boxAmount = (pack: { vatReturn: Array<{ box: string; amount: number }> }, box: string) =>
+    pack.vatReturn.find((entry) => entry.box === box)?.amount;
+  expect(boxAmount(defaultJson, "48")).toBe(250);
+  expect(boxAmount(defaultJson, "49")).toBe(-250);
+
+  // Pin the March fixture: seed lines are booked "now", so a 2026-03-15
+  // voucher is a permanent out-of-default-period fixture (finding 8).
+  const sieFixture = [
+    "#FLAGGA 0",
+    "#SIETYP 4",
+    '#KONTO 6110 "Kontorsmateriel"',
+    '#VER A 90 20260315 "March window fixture"',
+    "{",
+    "#TRANS 6110 {} 100.00",
+    "#TRANS 1930 {} -100.00",
+    "}",
+  ].join("\n");
+  const imported = await request.post(`${apiBaseUrl}/api/imports/sie`, {
+    headers: { "content-type": "text/plain" },
+    data: sieFixture,
+  });
+  expect(imported.ok()).toBeTruthy();
+  expect(await imported.json()).toMatchObject({ accepted: true, importedVouchers: 1 });
+
+  // March window → exactly the two imported lines.
+  const march = await request.get(`${apiBaseUrl}/api/reports/journal?from=2026-03-01&to=2026-03-31`);
+  expect(march.ok()).toBeTruthy();
+  const marchData = (await march.json()) as Array<{ accountNumber: string; bookedAt: string }>;
+  expect(marchData).toHaveLength(2);
+  expect(marchData.map((entry) => entry.accountNumber)).toEqual(["6110", "1930"]);
+
+  // April window → empty.
+  const april = await request.get(`${apiBaseUrl}/api/reports/journal?from=2026-04-01&to=2026-04-30`);
+  expect(april.ok()).toBeTruthy();
+  expect(await april.json()).toHaveLength(0);
+
+  // Trial balance over the window is the period movement.
+  const trialBalance = await request.get(`${apiBaseUrl}/api/reports/trial-balance?from=2026-03-01&to=2026-03-31`);
+  expect(trialBalance.ok()).toBeTruthy();
+  const trialBalanceData = (await trialBalance.json()) as Array<{ accountNumber: string; debit: number }>;
+  expect(trialBalanceData).toHaveLength(2);
+  expect(trialBalanceData.find((row) => row.accountNumber === "6110")?.debit).toBe(100);
+
+  // Malformed and inverted windows → 422 (Rule 16).
+  const malformed = await request.get(`${apiBaseUrl}/api/reports/journal?from=2026-3-01`);
+  expect(malformed.status()).toBe(422);
+  const inverted = await request.get(`${apiBaseUrl}/api/reports/journal?from=2026-04-01&to=2026-03-01`);
+  expect(inverted.status()).toBe(422);
+
+  // ReportPack for March: the imported voucher is the whole story.
+  const pack = await request.get(`${apiBaseUrl}/api/reports/pack?period=2026-03`);
+  expect(pack.ok()).toBeTruthy();
+  const packJson = await pack.json();
+  expect(packJson.period).toMatchObject({ token: "2026-03", kind: "month", from: "2026-03-01", to: "2026-03-31" });
+  expect(packJson.profitLoss.periodResult).toBe(-100);
+  // The SIE subset carries no VAT semantics, so the net-VAT box stays 0 —
+  // present in the return, honest about the window.
+  expect(boxAmount(packJson, "49")).toBe(0);
+
+  // Unknown period token → 422 via InvalidPeriodTokenError.
+  const bogus = await request.get(`${apiBaseUrl}/api/reports/pack?period=bogus`);
+  expect(bogus.status()).toBe(422);
+  expect((await bogus.json()).code).toBe("invalid_period_token");
+});

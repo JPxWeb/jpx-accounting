@@ -579,6 +579,12 @@ export const workspaceSnapshotSchema = z.object({
   assistantExamples: z.array(assistantSessionSchema),
   closeRun: closeRunSchema,
   alerts: z.array(complianceAlertSchema),
+  /**
+   * Evidence packets (advisory-pivot Phase 4): the voucher→evidence join
+   * (`voucher.evidencePacketId` → `packet.evidenceIds`) resolves client-side
+   * from the snapshot alone. Defaulted so pre-Phase-4 payloads keep parsing.
+   */
+  packets: z.array(evidencePacketSchema).default([]),
 });
 
 export type Role = z.infer<typeof roleSchema>;

@@ -1,5 +1,10 @@
 import type { AccountBalanceProjection, JournalEntryProjection, VatProjection } from "@jpx-accounting/contracts";
 
+export * from "./kpis";
+export * from "./narrative";
+
+// summarizeJournal/summarizeVat below are slated for deletion in Phase 4
+// Task 4.6, once the reports-screen rewrite removes their last consumer.
 export function summarizeJournal(journal: JournalEntryProjection[]) {
   return {
     count: journal.length,

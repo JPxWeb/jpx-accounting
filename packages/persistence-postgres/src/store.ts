@@ -16,6 +16,7 @@ import type {
   ExtractionResult,
   LedgerEvent,
   ReportBundle,
+  ReportPack,
   ReviewDecisionInput,
   ReviewTask,
   SieImportResult,
@@ -34,11 +35,13 @@ import {
   buildExtractedFields,
   buildJournal,
   buildPostingLines,
+  buildReportPack,
   buildVat,
   createId,
   deriveVoucherFields,
   detectComplianceIssues,
   evaluateVoucherRules,
+  filterLedgerLines,
   guessAccountingMethod,
   initialLedgerLines,
   mergeExtractedFields,
@@ -49,7 +52,9 @@ import {
   ReviewNotFoundError,
   simulateApprovals,
   today,
+  type LedgerLine,
   type LedgerStore,
+  type ReportRange,
   type ReviewAction,
   type SieImportInput,
 } from "@jpx-accounting/domain";
@@ -59,21 +64,6 @@ import type { PostgresClient } from "./client";
 // ---------------------------------------------------------------------------
 // Local helper types
 // ---------------------------------------------------------------------------
-
-// The `LedgerLine` shape is not exported from @jpx-accounting/domain, so we
-// reproduce it here. It must stay in lock-step with `buildJournal`'s parameter
-// type — see `packages/domain/src/projections.ts`.
-type LedgerLine = {
-  voucherId: string;
-  accountNumber: string;
-  accountName: string;
-  description: string;
-  debit: number;
-  credit: number;
-  vatCode: string;
-  bookedAt: string;
-  deductible: boolean;
-};
 
 // The transaction handle exposed by `postgres-js` inside `sql.begin(async tx => …)`.
 // We type it loosely as the same surface as the top-level client so all tagged-template
@@ -1000,11 +990,15 @@ export class PostgresLedgerStore implements LedgerStore {
     return rows.map(rowToReview);
   }
 
-  async getReports(): Promise<ReportBundle> {
-    // Always prepend the seeded ledger lines so projection output matches the
-    // MemoryLedgerStore baseline. Anything posted via approved/booked-without-VAT
-    // reviews or imported from SIE is replayed from event payload `lines`
-    // (PostedToLedger + VoucherImported both carry them — Rule 13).
+  /**
+   * Rebuild the workspace's full ledger-line stream. Always prepends the
+   * seeded ledger lines so projection output matches the MemoryLedgerStore
+   * baseline. Anything posted via approved/booked-without-VAT reviews or
+   * imported from SIE is replayed from event payload `lines` (PostedToLedger
+   * + VoucherImported both carry them — Rule 13). Shared by `getReports` and
+   * `getReportPack` so the two read paths can never diverge.
+   */
+  private async collectLedgerLines(): Promise<LedgerLine[]> {
     const lines: LedgerLine[] = [...initialLedgerLines()];
 
     const rows = await this.client<{ payload: Record<string, unknown> }[]>`
@@ -1025,11 +1019,24 @@ export class PostgresLedgerStore implements LedgerStore {
       }
     }
 
+    return lines;
+  }
+
+  async getReports(range?: ReportRange): Promise<ReportBundle> {
+    const lines = filterLedgerLines(await this.collectLedgerLines(), range);
     return {
       journal: buildJournal(lines),
       balances: buildBalances(lines),
       vat: buildVat(lines),
     };
+  }
+
+  async getReportPack(input: { period: string }): Promise<ReportPack> {
+    const [lines, settings] = await Promise.all([this.collectLedgerLines(), this.getCompanySettings()]);
+    return buildReportPack(lines, {
+      periodToken: input.period,
+      fiscalYearStart: settings?.profile.fiscalYearStart ?? "01-01",
+    });
   }
 
   async getSnapshot(): Promise<WorkspaceSnapshot> {
@@ -1051,6 +1058,23 @@ export class PostgresLedgerStore implements LedgerStore {
       ORDER BY created_at ASC
     `;
 
+    // Evidence packets + their item joins so the voucher→evidence join
+    // (`voucher.evidencePacketId` → `packet.evidenceIds`) resolves client-side
+    // from the snapshot alone (advisory-pivot Phase 4, finding 5).
+    const packetRows = await this.client<(PacketRow & { evidence_object_ids: string[] })[]>`
+      SELECT p.id, p.organization_id, p.workspace_id, p.note, p.voice_transcript, p.created_at,
+             COALESCE(
+               (SELECT array_agg(i.evidence_object_id ORDER BY i.evidence_object_id)
+                FROM ledger.evidence_packet_items i
+                WHERE i.evidence_packet_id = p.id),
+               '{}'::text[]
+             ) AS evidence_object_ids
+      FROM ledger.evidence_packets p
+      WHERE p.organization_id = ${this.defaults.organizationId}
+        AND p.workspace_id = ${this.defaults.workspaceId}
+      ORDER BY p.created_at ASC
+    `;
+
     const [reviews, reports, closeRun] = await Promise.all([
       this.getReviewFeed(),
       this.getReports(),
@@ -1065,6 +1089,7 @@ export class PostgresLedgerStore implements LedgerStore {
       assistantExamples: [],
       closeRun,
       alerts: [],
+      packets: packetRows.map((row) => rowToPacket(row, row.evidence_object_ids)),
     };
   }
 

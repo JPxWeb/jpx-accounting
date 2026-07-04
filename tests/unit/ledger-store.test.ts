@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { workspaceSnapshotSchema } from "@jpx-accounting/contracts";
 import type { LedgerStore } from "@jpx-accounting/domain";
 import {
   deriveDeterministicExtraction,
+  InvalidPeriodTokenError,
   InvalidReviewEditError,
   MemoryLedgerStore,
   parseSie,
@@ -11,6 +13,23 @@ import {
   SieImportError,
   today,
 } from "@jpx-accounting/domain";
+
+/**
+ * March 2026 SIE fixture: seed lines are booked "now", so a voucher pinned to
+ * 2026-03-15 is a permanent out-of-current-period fixture (Phase 4 finding 8).
+ */
+const marchSieFile = () =>
+  parseSie(
+    [
+      "#SIETYP 4",
+      '#KONTO 6110 "Kontorsmateriel"',
+      '#VER A 42 20260315 "Inköpta pärmar"',
+      "{",
+      "#TRANS 6110 {} 100.00",
+      "#TRANS 1930 {} -100.00",
+      "}",
+    ].join("\n"),
+  );
 
 test("MemoryLedgerStore satisfies the LedgerStore contract for create, review, and reports", async () => {
   const store: LedgerStore = new MemoryLedgerStore();
@@ -392,4 +411,125 @@ test("MemoryLedgerStore.putCompanySettings normalizes legacy payloads without a 
   } as Parameters<MemoryLedgerStore["putCompanySettings"]>[0];
   const saved = await store.putCompanySettings(legacy);
   assert.deepEqual(saved.profile, { country: "SE", locale: "sv-SE", currency: "SEK", fiscalYearStart: "01-01" });
+});
+
+test("MemoryLedgerStore.getReports(range) scopes journal/balances/vat to the inclusive day window", async () => {
+  const store = new MemoryLedgerStore();
+  await store.importSie({ actorId: "user_founder", file: marchSieFile() });
+
+  // No range → unfiltered, byte-identical to the historical behavior.
+  const unfiltered = await store.getReports();
+  assert.equal(unfiltered.journal.length, 5, "3 seed lines + 2 imported lines");
+  assert.deepEqual(await store.getReports({}), unfiltered, "empty range object is also unfiltered");
+
+  // March window → only the imported voucher, across all three projections.
+  const march = await store.getReports({ from: "2026-03-01", to: "2026-03-31" });
+  assert.deepEqual(
+    march.journal.map((entry) => [entry.accountNumber, entry.debit, entry.credit, entry.bookedAt]),
+    [
+      ["6110", 100, 0, "2026-03-15"],
+      ["1930", 0, 100, "2026-03-15"],
+    ],
+  );
+  assert.deepEqual(
+    march.balances.map((balance) => [balance.accountNumber, balance.balance]),
+    [
+      ["1930", -100],
+      ["6110", 100],
+    ],
+  );
+  assert.deepEqual(
+    march.vat.map((entry) => entry.vatCode),
+    ["NA"],
+    "seed VAT25 lines are outside the window",
+  );
+
+  // Inclusive at both edges: the fixture is booked exactly on 2026-03-15.
+  assert.equal((await store.getReports({ from: "2026-03-15", to: "2026-03-15" })).journal.length, 2);
+
+  // Half-open windows: `to`-only keeps history up to the day, `from`-only
+  // keeps everything since (the seed lines are booked "now", after March).
+  assert.equal((await store.getReports({ to: "2026-03-15" })).journal.length, 2);
+  assert.equal((await store.getReports({ from: "2026-03-16" })).journal.length, 3);
+
+  // Empty window → empty projections, not an error.
+  const april = await store.getReports({ from: "2026-04-01", to: "2026-04-30" });
+  assert.deepEqual(april, { journal: [], balances: [], vat: [] });
+});
+
+test("MemoryLedgerStore.getReportPack composes the period pack and reads fiscalYearStart from settings", async () => {
+  const store = new MemoryLedgerStore();
+  await store.importSie({ actorId: "user_founder", file: marchSieFile() });
+
+  const pack = await store.getReportPack({ period: "2026-03" });
+  assert.deepEqual(pack.period, { token: "2026-03", kind: "month", from: "2026-03-01", to: "2026-03-31" });
+  const externalCost = pack.profitLoss.groups.find((group) => group.key === "externalCost");
+  assert.deepEqual(externalCost?.lines, [{ accountNumber: "6110", accountName: "Kontorsmateriel", amount: -100 }]);
+  assert.equal(pack.profitLoss.periodResult, -100);
+
+  // Without settings the fiscal year defaults to 01-01: Q1 = Jan–Mar.
+  const calendarQ1 = await store.getReportPack({ period: "2026-Q1" });
+  assert.equal(calendarQ1.period.from, "2026-01-01");
+  assert.equal(calendarQ1.period.to, "2026-03-31");
+  assert.equal(calendarQ1.profitLoss.periodResult, -100);
+
+  // A broken fiscal year from company settings shifts the quarter windows:
+  // Q3 of the fy starting 2025-07-01 is Jan–Mar 2026.
+  await store.putCompanySettings({
+    organizationId: "org_test",
+    organizationName: "Test AB",
+    organizationNumber: "556677-8899",
+    addressLine1: "Kungsgatan 1",
+    postalCode: "111 22",
+    city: "Stockholm",
+    contactEmail: "test@example.com",
+    profile: { country: "SE" as const, locale: "sv-SE", currency: "SEK", fiscalYearStart: "07-01" },
+  });
+  const fiscalQ3 = await store.getReportPack({ period: "2025-Q3" });
+  assert.equal(fiscalQ3.period.from, "2026-01-01");
+  assert.equal(fiscalQ3.period.to, "2026-03-31");
+  assert.equal(fiscalQ3.profitLoss.periodResult, -100);
+
+  // Unknown tokens propagate InvalidPeriodTokenError (→ HTTP 422, Rule 16).
+  await assert.rejects(
+    () => store.getReportPack({ period: "bogus" }),
+    (error) => error instanceof InvalidPeriodTokenError,
+  );
+});
+
+test("MemoryLedgerStore.getSnapshot carries evidence packets so the voucher→evidence join resolves", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await store.createEvidence({
+    organizationId: "org_jpx",
+    workspaceId: "workspace_main",
+    actorId: "user_founder",
+    title: "Packet join receipt",
+    originalFilename: "packet-join.jpg",
+    mimeType: "image/jpeg",
+    modalities: ["camera"],
+  });
+
+  const snapshot = await store.getSnapshot();
+  assert.equal(snapshot.packets.length, 2, "seeded packet + created packet");
+
+  // Every voucher's evidencePacketId resolves to a packet whose evidenceIds
+  // resolve to snapshot evidence — the client-side drill join (finding 5).
+  for (const voucher of snapshot.vouchers) {
+    const packet = snapshot.packets.find((candidate) => candidate.id === voucher.evidencePacketId);
+    assert.ok(packet, `packet for voucher ${voucher.id} must be in the snapshot`);
+    assert.ok(packet.evidenceIds.length > 0);
+    for (const evidenceId of packet.evidenceIds) {
+      assert.ok(
+        snapshot.evidence.some((evidence) => evidence.id === evidenceId),
+        "packet evidence ids resolve inside the snapshot",
+      );
+    }
+  }
+  const createdPacket = snapshot.packets.find((packet) => packet.id === created.voucher.evidencePacketId);
+  assert.deepEqual(createdPacket?.evidenceIds, [created.evidence.id]);
+
+  // Additive-safe contract (Rule 5): pre-Phase-4 payloads without `packets`
+  // still parse, defaulting to [].
+  const { packets: _packets, ...legacyShape } = snapshot;
+  assert.deepEqual(workspaceSnapshotSchema.parse(legacyShape).packets, []);
 });

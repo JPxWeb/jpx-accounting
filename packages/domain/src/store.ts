@@ -14,6 +14,7 @@ import type {
   ExtractionResult,
   LedgerEvent,
   ReportBundle,
+  ReportPack,
   ReviewDecisionEdit,
   ReviewDecisionInput,
   ReviewTask,
@@ -36,7 +37,8 @@ import {
   guessAccountingMethod,
   initialLedgerLines,
 } from "./evidence-defaults";
-import { buildJournal, buildBalances, buildVat } from "./projections";
+import { buildJournal, buildBalances, buildVat, filterLedgerLines } from "./projections";
+import { buildReportPack } from "./reports/pack";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
@@ -45,6 +47,13 @@ import { simulateApprovals } from "./simulation";
 
 type LedgerLine = Parameters<typeof buildJournal>[0][number];
 export type ReviewAction = "approve" | "reject" | "book-without-vat";
+
+/**
+ * Inclusive local-calendar day window (`YYYY-MM-DD` strings) for scoping the
+ * report bundle. Omitted bounds are open; omitting the range entirely keeps
+ * `getReports()` byte-identical to the historical unfiltered behavior.
+ */
+export type ReportRange = { from?: string; to?: string };
 
 /**
  * Thrown when an API caller references review IDs that don't exist in the
@@ -272,7 +281,14 @@ export interface LedgerStore {
   importSie(input: SieImportInput): Promise<SieImportResult>;
   findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined>;
   getReviewFeed(): Promise<ReviewTask[]>;
-  getReports(): Promise<ReportBundle>;
+  getReports(range?: ReportRange): Promise<ReportBundle>;
+  /**
+   * Compose the full `ReportPack` for one period token (unified grammar —
+   * `resolvePeriodToken`). Fiscal-year windows come from the workspace
+   * profile's `fiscalYearStart` in company settings (default `01-01`).
+   * Unknown tokens propagate `InvalidPeriodTokenError` (→ HTTP 422, Rule 16).
+   */
+  getReportPack(input: { period: string }): Promise<ReportPack>;
   getSnapshot(): Promise<WorkspaceSnapshot>;
   getEvents(): Promise<LedgerEvent[]>;
   suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined>;
@@ -792,12 +808,21 @@ export class MemoryLedgerStore implements LedgerStore {
     return [...this.reviews.values()].sort((left, right) => right.id.localeCompare(left.id));
   }
 
-  async getReports(): Promise<ReportBundle> {
+  async getReports(range?: ReportRange): Promise<ReportBundle> {
+    const lines = filterLedgerLines(this.ledgerLines, range);
     return {
-      journal: buildJournal(this.ledgerLines),
-      balances: buildBalances(this.ledgerLines),
-      vat: buildVat(this.ledgerLines),
+      journal: buildJournal(lines),
+      balances: buildBalances(lines),
+      vat: buildVat(lines),
     };
+  }
+
+  async getReportPack(input: { period: string }): Promise<ReportPack> {
+    const settings = await this.getCompanySettings();
+    return buildReportPack(this.ledgerLines, {
+      periodToken: input.period,
+      fiscalYearStart: settings?.profile.fiscalYearStart ?? "01-01",
+    });
   }
 
   async getSnapshot(): Promise<WorkspaceSnapshot> {
@@ -809,6 +834,7 @@ export class MemoryLedgerStore implements LedgerStore {
       assistantExamples: this.assistantExamples,
       closeRun: await this.getCloseRun(),
       alerts: this.alerts,
+      packets: [...this.evidencePackets.values()],
     };
   }
 

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ExtractionResult } from "@jpx-accounting/contracts";
+import type { ExtractionResult, ReportPack } from "@jpx-accounting/contracts";
 import {
   deriveDeterministicExtraction,
+  InvalidPeriodTokenError,
   InvalidReviewEditError,
   MemoryLedgerStore,
   parseSie,
@@ -482,6 +483,129 @@ test(
     }
   },
 );
+
+test(
+  "PostgresLedgerStore.getReports(range) windows + getReportPack parity with Memory (modulo generatedAt)",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+      const memory = new MemoryLedgerStore();
+
+      // The fixture is pinned to 2026-03-15 while seed lines are booked "now"
+      // — a permanent out-of-current-period voucher (Phase 4 finding 8).
+      const file = parseSie(
+        [
+          "#SIETYP 4",
+          '#KONTO 6110 "Kontorsmateriel"',
+          '#VER A 42 20260315 "Inköpta pärmar"',
+          "{",
+          "#TRANS 6110 {} 100.00",
+          "#TRANS 1930 {} -100.00",
+          "}",
+        ].join("\n"),
+      );
+      await store.importSie({ actorId: "user_test", file });
+      await memory.importSie({ actorId: "user_test", file });
+
+      // Range windows replay through the shared collectLedgerLines path.
+      const march = await store.getReports({ from: "2026-03-01", to: "2026-03-31" });
+      assert.deepEqual(
+        march.journal.map((entry) => [entry.accountNumber, entry.debit, entry.credit, entry.bookedAt]),
+        [
+          ["6110", 100, 0, "2026-03-15"],
+          ["1930", 0, 100, "2026-03-15"],
+        ],
+      );
+      assert.equal((await store.getReports({ from: "2026-04-01", to: "2026-04-30" })).journal.length, 0);
+      const unfiltered = await store.getReports();
+      assert.equal(unfiltered.journal.length, 5, "no-arg getReports stays unfiltered (3 seed + 2 imported)");
+
+      // Pack parity: the two stores must build the SAME pack for the same
+      // period, modulo the generatedAt timestamp (CONVENTIONS Rules 6, 11).
+      const withoutGeneratedAt = ({ generatedAt: _generatedAt, ...rest }: ReportPack) => rest;
+      const pgPack = await store.getReportPack({ period: "2026-03" });
+      const memPack = await memory.getReportPack({ period: "2026-03" });
+      assert.deepEqual(withoutGeneratedAt(pgPack), withoutGeneratedAt(memPack), "ReportPack parity Memory vs Postgres");
+      assert.equal(pgPack.profitLoss.periodResult, -100);
+
+      // Both stores propagate unknown tokens identically (→ HTTP 422).
+      await assert.rejects(
+        () => store.getReportPack({ period: "bogus" }),
+        (error) => error instanceof InvalidPeriodTokenError,
+      );
+    } finally {
+      await client`delete from ledger.events where organization_id = ${orgId}`;
+      await closePostgresClient(client);
+    }
+  },
+);
+
+test("PostgresLedgerStore.getSnapshot exposes org/workspace-scoped packets + Memory parity", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+    const baseInput = {
+      actorId: "user_test",
+      title: "Packet snapshot receipt",
+      originalFilename: "packet-snapshot.jpg",
+      mimeType: "image/jpeg",
+      modalities: ["camera" as const],
+    };
+    const created = await store.createEvidence({ ...baseInput, organizationId: orgId, workspaceId: wsId });
+    const composed = await store.composeEvidence({
+      organizationId: orgId,
+      workspaceId: wsId,
+      actorId: "user_test",
+      evidenceIds: [created.evidence.id],
+      note: "Bundled for the drill join",
+    });
+
+    const snapshot = await store.getSnapshot();
+    // Exactly the two packets of THIS workspace — rows from other orgs (or
+    // other tests) must not leak into the snapshot.
+    assert.equal(snapshot.packets.length, 2, "create + compose packets, org/workspace-scoped");
+    const createdPacket = snapshot.packets.find((packet) => packet.id === created.packet.id);
+    assert.deepEqual(createdPacket?.evidenceIds, [created.evidence.id]);
+    const composedPacket = snapshot.packets.find((packet) => packet.id === composed.id);
+    assert.deepEqual(composedPacket?.evidenceIds, [created.evidence.id]);
+    assert.equal(composedPacket?.note, "Bundled for the drill join");
+
+    // The voucher→evidence join resolves from the snapshot alone (finding 5).
+    const voucher = snapshot.vouchers.find((candidate) => candidate.id === created.voucher.id);
+    assert.ok(voucher);
+    const joined = snapshot.packets.find((packet) => packet.id === voucher.evidencePacketId);
+    assert.deepEqual(joined?.evidenceIds, [created.evidence.id]);
+
+    // Memory parity (Rule 11): the same create resolves the same join shape.
+    const memory = new MemoryLedgerStore();
+    const memCreated = await memory.createEvidence({
+      ...baseInput,
+      organizationId: "org_jpx",
+      workspaceId: "workspace_main",
+    });
+    const memSnapshot = await memory.getSnapshot();
+    const memPacket = memSnapshot.packets.find((packet) => packet.id === memCreated.voucher.evidencePacketId);
+    assert.deepEqual(memPacket?.evidenceIds, [memCreated.evidence.id]);
+  } finally {
+    await client`delete from ledger.events where organization_id = ${orgId}`;
+    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+  }
+});
 
 test("PostgresLedgerStore.answerAssistantQuestion delegates + persists", { skip }, async () => {
   if (!databaseUrl) return;
