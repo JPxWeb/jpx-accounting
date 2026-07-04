@@ -456,3 +456,29 @@ app.post("/api/compliance-watch/refresh", async (context) => {
   return context.json(visible);
 });
 ```
+
+---
+
+## 27. Visual baselines: mask clock-derived UI with `data-visual-mask`
+
+**Rule:** Any UI element that renders wall-clock-derived values — "now" timestamps, today-relative dates, event hashes over time-dependent data, activity feeds — must carry a `data-visual-mask` attribute. `tests/e2e/visual-regression.spec.ts` masks `[data-visual-mask]` regions, so baselines must be **date-stable**: the visual suite has to pass on any calendar day, not just the day the screenshots were captured.
+
+**The incident:** The Phase 5 dashboard multiplied clock-derived surfaces (topbar timestamp, recent-activity event dates, integrity head hash, journal/archive dates). Without masks, the 20 themed full-page baselines diff on every element that encodes "today" — a suite captured on the 4th fails on the 5th with diffs that look like regressions but are just the calendar moving.
+
+**The check:**
+
+- When adding a component that renders `Date.now()`/`new Date()`/`nowIso()`-derived output (directly or via a formatted prop), add `data-visual-mask` to the element that displays it.
+- Before re-baselining, review EVERY diff image; a diff localized to a date/hash region means a missing mask, not a legitimate visual change. Never re-baseline to paper over a date-shaped diff.
+
+---
+
+## 28. Exact-pin fast-moving UI libraries and confine their imports to one adapter
+
+**Rule:** Libraries on 0.x versions or fresh majors (semver gives them license to break on any release) are added with **exact pins** (no `^`), and every import from them is confined to ONE adapter file or directory — enforced by a grep gate at the phase exit — so a version bump touches a single seam. Verify the library's documented API against the installed types/dist before coding to it; docs for fast-moving libs routinely describe unreleased or unreachable options.
+
+**The incident:** Phase 5 added `@dnd-kit/react@0.5.0` (0.x) and AI SDK 7 (`ai@7.0.15`, new major with `experimental_` APIs). The tech memo's planned dnd-kit `tolerance: 8` activation constraint turned out to be unreachable through the public package (it required importing constraint classes from the undeclared transitive `@dnd-kit/dom`) — caught only by verifying against the installed 0.5.0 types. Both libs were exact-pinned and confined: `@dnd-kit` imports live only in `apps/web/components/dashboard/sortable-grid.tsx`; `ai`/`@ai-sdk` imports only in `apps/web/components/advisor/*` and `services/api/src/advisor/*`.
+
+**The check:**
+
+- PR review on `package.json`: any new 0.x or new-major UI/SDK dependency uses an exact version, and the PR names the single adapter file/directory its imports live in.
+- Add the corresponding grep to the exit-gate checklist (e.g. `grep -rn "@dnd-kit" apps/web --include="*.tsx" | grep -v sortable-grid` must be empty).
