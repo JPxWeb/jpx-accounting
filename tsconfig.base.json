@@ -20,6 +20,7 @@
       "@jpx-accounting/domain": ["packages/domain/src/index.ts"],
       "@jpx-accounting/api-client": ["packages/api-client/src/index.ts"],
       "@jpx-accounting/ai-core": ["packages/ai-core/src/index.ts"],
+      "@jpx-accounting/advisor": ["packages/advisor/src/index.ts"],
       "@jpx-accounting/reporting": ["packages/reporting/src/index.ts"],
       "@jpx-accounting/ui-tokens": ["packages/ui-tokens/src/index.ts"]
     }

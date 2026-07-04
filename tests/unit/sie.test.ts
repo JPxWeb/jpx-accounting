@@ -80,7 +80,8 @@ const goldenSettings: CompanySettings = {
   postalCode: "111 22",
   city: "Stockholm",
   contactEmail: "golden@example.com",
-  profile: { country: "SE", locale: "sv-SE", currency: "SEK", fiscalYearStart: "01-01" },
+  profile: { country: "SE", locale: "sv-SE", currency: "SEK", fiscalYearStart: "01-01", vatPeriod: "quarterly" },
+  aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
 };
 
 const goldenGeneratedAt = "2026-07-04T12:00:00.000Z";

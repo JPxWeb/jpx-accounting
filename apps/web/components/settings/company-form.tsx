@@ -6,6 +6,7 @@ import {
   companySettingsSchema,
   type CountryCode,
   countryCodeSchema,
+  DEFAULT_AI_POSTURE,
   DEFAULT_WORKSPACE_PROFILE,
 } from "@jpx-accounting/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -261,6 +262,7 @@ const EMPTY_COMPANY_SETTINGS: CompanySettings = {
   city: "",
   contactEmail: "",
   profile: DEFAULT_WORKSPACE_PROFILE,
+  aiPosture: DEFAULT_AI_POSTURE,
 };
 
 export function CompanyForm() {

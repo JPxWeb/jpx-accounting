@@ -38,12 +38,14 @@ import {
   parseSie,
   ReviewNotFoundError,
   SieImportError,
+  summarizeEventIntegrity,
   today,
 } from "@jpx-accounting/domain";
 
 import type { BlobUploader } from "./blob";
 import { MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
 import type { CorsRuntimePolicy } from "./config";
+import type { AiRuntimeMetadata } from "./runtime";
 import { isLedgerStoreOperational, LedgerStoreUnavailableError } from "./runtime";
 
 type CreateAppOptions = {
@@ -53,6 +55,8 @@ type CreateAppOptions = {
   corsPolicy: CorsRuntimePolicy;
   blobUploader: BlobUploader;
   documentIntelligence: DocumentIntelligenceClient;
+  /** Transparency metadata for `GET /api/runtime-info` (provider/model/host — never secrets). */
+  aiMetadata: AiRuntimeMetadata;
   /**
    * JWKS endpoint (typically `${SUPABASE_URL}/auth/v1/keys`). When provided, mutating routes
    * require a valid JWT. When absent, mutations stay open — current demo + pilot behavior.
@@ -161,6 +165,7 @@ export function createApp({
   corsPolicy,
   blobUploader,
   documentIntelligence,
+  aiMetadata,
   jwksUrl,
   allowTestReset,
 }: CreateAppOptions) {
@@ -383,6 +388,26 @@ export function createApp({
     const period = context.req.query("period") ?? currentMonthToken();
     return context.json(await currentStore.getReportPack({ period }));
   });
+
+  // Hash-chain integrity summary (Phase 5): linkage verification over the
+  // store's event log — no LedgerStore interface change (plan finding 6).
+  app.get("/api/integrity", async (context) =>
+    context.json(summarizeEventIntegrity(await currentStore.getEvents(), { verifiedAt: nowIso() })),
+  );
+
+  // Runtime AI transparency for the About-this-AI panel (EU AI Act Art. 50).
+  // Provider/model/endpoint host only — never keys.
+  app.get("/api/runtime-info", (context) =>
+    context.json({
+      runtimeMode,
+      ai: {
+        operational: isAiRuntimeOperational(aiRuntime),
+        provider: aiMetadata.provider,
+        ...(aiMetadata.model !== undefined ? { model: aiMetadata.model } : {}),
+        ...(aiMetadata.endpointHost !== undefined ? { endpointHost: aiMetadata.endpointHost } : {}),
+      },
+    }),
+  );
 
   app.post("/api/evidence", async (context) => {
     const input = await parseBody(context.req.raw, evidenceCreateInputSchema);

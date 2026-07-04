@@ -421,5 +421,19 @@
       "button": "Skriv ut / spara som PDF",
       "generatedAt": "Genererad {timestamp}"
     }
+  },
+  "dashboard": {
+    "chrome": {
+      "dragHandleAria": "Ändra ordning på {title}",
+      "removeAria": "Dölj {title}"
+    },
+    "picker": {
+      "open": "Anpassa",
+      "title": "Widgetar på översikten",
+      "description": "Välj vilka widgetar som visas. Dolda widgetar behåller sin plats och sina data — inget raderas.",
+      "shown": "Visas",
+      "hidden": "Dold",
+      "reset": "Återställ layout"
+    }
   }
 }

@@ -1,4 +1,5 @@
 import { createAiRuntime } from "@jpx-accounting/ai-core";
+import type { AiProvider } from "@jpx-accounting/contracts";
 import { createDocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import type { LedgerStore } from "@jpx-accounting/domain";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
@@ -6,6 +7,36 @@ import { createPostgresClient, PostgresLedgerStore } from "@jpx-accounting/persi
 
 import { createBlobUploader } from "./blob";
 import type { ApiRuntimeConfig } from "./config";
+
+/**
+ * Transparency metadata for `GET /api/runtime-info` (advisory pivot Phase 5).
+ * Derived once at boot from the same config the AI runtime factory reads:
+ * demo → local-demo; normal + configured → azure-openai (+ model/endpoint
+ * host); else unavailable. Never carries secrets.
+ */
+export type AiRuntimeMetadata = {
+  provider: AiProvider;
+  model?: string | undefined;
+  endpointHost?: string | undefined;
+};
+
+function buildAiMetadata(config: ApiRuntimeConfig): AiRuntimeMetadata {
+  if (config.runtimeMode === "demo") {
+    return { provider: "local-demo" };
+  }
+  const { endpoint, apiKey, model } = config.azureOpenAi;
+  // Mirrors createAiRuntime's selection: endpoint + apiKey → ResponsesAiRuntime.
+  if (endpoint && apiKey) {
+    let endpointHost: string | undefined;
+    try {
+      endpointHost = new URL(endpoint).host;
+    } catch {
+      endpointHost = undefined;
+    }
+    return { provider: "azure-openai", model, endpointHost };
+  }
+  return { provider: "unavailable" };
+}
 
 // Wires LedgerStore + AI implementations from `ApiRuntimeConfig`. Demo always uses MemoryLedgerStore; normal mode intentionally uses an unavailable stub until persistence lands.
 export class LedgerStoreUnavailableError extends Error {
@@ -123,6 +154,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
       }),
       blobUploader,
       documentIntelligence,
+      aiMetadata: buildAiMetadata(config),
       jwksUrl: config.auth.jwksUrl,
     };
   }
@@ -152,6 +184,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
     }),
     blobUploader,
     documentIntelligence,
+    aiMetadata: buildAiMetadata(config),
     jwksUrl: config.auth.jwksUrl,
   };
 }

@@ -388,7 +388,14 @@ test("MemoryLedgerStore.getCompanySettings/putCompanySettings round-trip", async
     postalCode: "111 22",
     city: "Stockholm",
     contactEmail: "test@example.com",
-    profile: { country: "SE" as const, locale: "en-GB", currency: "EUR", fiscalYearStart: "07-01" },
+    profile: {
+      country: "SE" as const,
+      locale: "en-GB",
+      currency: "EUR",
+      fiscalYearStart: "07-01",
+      vatPeriod: "quarterly" as const,
+    },
+    aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
   };
   const saved = await store.putCompanySettings(settings);
   assert.equal(saved.organizationName, "Test AB");
@@ -410,7 +417,13 @@ test("MemoryLedgerStore.putCompanySettings normalizes legacy payloads without a 
     contactEmail: "legacy@example.com",
   } as Parameters<MemoryLedgerStore["putCompanySettings"]>[0];
   const saved = await store.putCompanySettings(legacy);
-  assert.deepEqual(saved.profile, { country: "SE", locale: "sv-SE", currency: "SEK", fiscalYearStart: "01-01" });
+  assert.deepEqual(saved.profile, {
+    country: "SE",
+    locale: "sv-SE",
+    currency: "SEK",
+    fiscalYearStart: "01-01",
+    vatPeriod: "quarterly",
+  });
 });
 
 test("MemoryLedgerStore.getReports(range) scopes journal/balances/vat to the inclusive day window", async () => {
@@ -483,7 +496,14 @@ test("MemoryLedgerStore.getReportPack composes the period pack and reads fiscalY
     postalCode: "111 22",
     city: "Stockholm",
     contactEmail: "test@example.com",
-    profile: { country: "SE" as const, locale: "sv-SE", currency: "SEK", fiscalYearStart: "07-01" },
+    profile: {
+      country: "SE" as const,
+      locale: "sv-SE",
+      currency: "SEK",
+      fiscalYearStart: "07-01",
+      vatPeriod: "quarterly" as const,
+    },
+    aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
   });
   const fiscalQ3 = await store.getReportPack({ period: "2025-Q3" });
   assert.equal(fiscalQ3.period.from, "2026-01-01");

@@ -2,6 +2,7 @@ import type { AccountBalanceProjection } from "@jpx-accounting/contracts";
 
 export * from "./kpis";
 export * from "./narrative";
+export * from "./observations";
 
 // summarizeJournal/summarizeVat were deleted in Phase 4 Task 4.6 — the
 // reports screen renders from the ReportPack (buildKpis/buildReportNarrative).

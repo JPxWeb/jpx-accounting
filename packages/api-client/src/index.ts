@@ -11,10 +11,12 @@ import type {
   CompanySettings,
   EvidenceContext,
   EvidenceCreateInput,
+  IntegritySummary,
   JournalEntryProjection,
   ReportPack,
   ReviewDecisionInput,
   ReviewTask,
+  RuntimeInfo,
   RuntimeMode,
   SieImportResult,
   SimulationRequest,
@@ -27,9 +29,11 @@ import {
   assistantSessionSchema,
   evidenceContextSchema,
   evidenceCreateResultSchema,
+  integritySummarySchema,
   journalEntryProjectionSchema,
   reportPackSchema,
   reviewTaskSchema,
+  runtimeInfoSchema,
   sieImportResultSchema,
   simulationRunSchema,
   uploadInitResultSchema,
@@ -44,6 +48,7 @@ import {
   MemoryLedgerStore,
   nowIso,
   parseSie,
+  summarizeEventIntegrity,
   today,
 } from "@jpx-accounting/domain";
 
@@ -349,6 +354,32 @@ export class AccountingApiClient {
     const payload = (await response.json().catch(() => undefined)) as { url?: unknown } | undefined;
     if (!payload || typeof payload.url !== "string") return null;
     return { url: payload.url };
+  }
+
+  /**
+   * Hash-chain integrity summary (`GET /api/integrity`). The offline demo
+   * computes the same summary locally: `getEvents()` + the pure domain
+   * `summarizeEventIntegrity` — one verification algorithm, two entry points.
+   */
+  async getIntegritySummary(): Promise<IntegritySummary> {
+    if (this.fallbackStore) {
+      return summarizeEventIntegrity(await this.fallbackStore.getEvents(), { verifiedAt: nowIso() });
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.baseUrl, "/api/integrity", integritySummarySchema);
+  }
+
+  /**
+   * Runtime AI transparency (`GET /api/runtime-info`) for the About-this-AI
+   * panel. The offline demo is by construction the local deterministic
+   * runtime, so the fallback answer is static and honest.
+   */
+  async getRuntimeInfo(): Promise<RuntimeInfo> {
+    if (this.fallbackStore) {
+      return { runtimeMode: "demo", ai: { operational: true, provider: "local-demo" } };
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.baseUrl, "/api/runtime-info", runtimeInfoSchema);
   }
 
   async getCompanySettings(): Promise<CompanySettings | null> {

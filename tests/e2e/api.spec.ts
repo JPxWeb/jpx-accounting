@@ -308,6 +308,38 @@ test("assistant, knowledge, simulation, close, and import endpoints round-trip",
   expect(sieExportText).toContain("#TRANS 6110 {} 100.00");
 });
 
+test("integrity and runtime-info endpoints surface a linked chain and the demo AI posture", async ({ request }) => {
+  // Fresh reset → the demo seed's four events (EvidenceReceived,
+  // FieldsExtracted, VoucherCreated, SuggestionGenerated) in one linked chain.
+  const integrity = await request.get(`${apiBaseUrl}/api/integrity`);
+  expect(integrity.ok()).toBeTruthy();
+  const integrityJson = await integrity.json();
+  expect(integrityJson.chainLinked).toBe(true);
+  expect(integrityJson.eventCount).toBe(4);
+  expect(typeof integrityJson.headHash).toBe("string");
+  expect(integrityJson.recentEvents).toHaveLength(4);
+  // Newest-first: the seed's last append leads.
+  expect(integrityJson.recentEvents[0].eventType).toBe("SuggestionGenerated");
+  expect(integrityJson.bas).toMatchObject({ template: "bas-2026" });
+  expect(integrityJson.bas.accountCount).toBeGreaterThan(0);
+
+  // A mutation extends the chain and keeps it linked.
+  const created = await request.post(`${apiBaseUrl}/api/evidence`, { data: createEvidencePayload });
+  expect(created.ok()).toBeTruthy();
+  const integrityAfter = await request.get(`${apiBaseUrl}/api/integrity`);
+  const integrityAfterJson = await integrityAfter.json();
+  expect(integrityAfterJson.chainLinked).toBe(true);
+  expect(integrityAfterJson.eventCount).toBe(8);
+  expect(integrityAfterJson.recentEvents).toHaveLength(8);
+
+  const runtimeInfo = await request.get(`${apiBaseUrl}/api/runtime-info`);
+  expect(runtimeInfo.ok()).toBeTruthy();
+  expect(await runtimeInfo.json()).toMatchObject({
+    runtimeMode: "demo",
+    ai: { operational: true, provider: "local-demo" },
+  });
+});
+
 test("period-scoped report routes and the ReportPack endpoint", async ({ request }) => {
   // Default pack FIRST, while the workspace is seed-only: the seed books its
   // lines "now", so the no-param pack (current month) reconciles to the

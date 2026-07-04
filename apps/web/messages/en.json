@@ -421,5 +421,19 @@
       "button": "Print / save as PDF",
       "generatedAt": "Generated {timestamp}"
     }
+  },
+  "dashboard": {
+    "chrome": {
+      "dragHandleAria": "Reorder {title}",
+      "removeAria": "Hide {title}"
+    },
+    "picker": {
+      "open": "Customize",
+      "title": "Dashboard widgets",
+      "description": "Choose which widgets are shown. Hidden widgets keep their place and data — nothing is deleted.",
+      "shown": "Shown",
+      "hidden": "Hidden",
+      "reset": "Reset layout"
+    }
   }
 }

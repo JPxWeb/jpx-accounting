@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  aiPostureSchema,
   companySettingsSchema,
   countryValidationRegistry,
+  DEFAULT_AI_POSTURE,
   DEFAULT_WORKSPACE_PROFILE,
   workspaceProfileSchema,
 } from "@jpx-accounting/contracts";
@@ -24,6 +26,7 @@ test("DEFAULT_WORKSPACE_PROFILE carries the Sweden defaults", () => {
     locale: "sv-SE",
     currency: "SEK",
     fiscalYearStart: "01-01",
+    vatPeriod: "quarterly",
   });
 });
 
@@ -64,4 +67,45 @@ test("profile round-trips custom values through the settings schema", () => {
   assert.equal(parsed.profile.currency, "EUR");
   assert.equal(parsed.profile.locale, "en-GB");
   assert.equal(parsed.profile.fiscalYearStart, "05-01");
+});
+
+test("legacy profile without vatPeriod parses to the quarterly default", () => {
+  const parsed = companySettingsSchema.parse({
+    ...validBase,
+    profile: { country: "SE", locale: "sv-SE", currency: "SEK", fiscalYearStart: "01-01" },
+  });
+  assert.equal(parsed.profile.vatPeriod, "quarterly");
+});
+
+test("vatPeriod round-trips and rejects unknown cadences", () => {
+  const parsed = companySettingsSchema.parse({
+    ...validBase,
+    profile: { vatPeriod: "monthly" },
+  });
+  assert.equal(parsed.profile.vatPeriod, "monthly");
+  assert.equal(workspaceProfileSchema.safeParse({ vatPeriod: "yearly" }).success, true);
+  assert.equal(workspaceProfileSchema.safeParse({ vatPeriod: "weekly" }).success, false);
+});
+
+test("DEFAULT_AI_POSTURE enables both AI surfaces", () => {
+  assert.deepEqual(DEFAULT_AI_POSTURE, { advisorEnabled: true, suggestionsEnabled: true });
+});
+
+test("legacy company settings without aiPosture parse to the enabled defaults", () => {
+  const parsed = companySettingsSchema.parse(validBase);
+  assert.deepEqual(parsed.aiPosture, DEFAULT_AI_POSTURE);
+});
+
+test("aiPosture round-trips per-feature toggles", () => {
+  const parsed = companySettingsSchema.parse({
+    ...validBase,
+    aiPosture: { advisorEnabled: false, suggestionsEnabled: true },
+  });
+  assert.equal(parsed.aiPosture.advisorEnabled, false);
+  assert.equal(parsed.aiPosture.suggestionsEnabled, true);
+  // Partial payloads fill the missing toggle from the schema default.
+  assert.deepEqual(aiPostureSchema.parse({ suggestionsEnabled: false }), {
+    advisorEnabled: true,
+    suggestionsEnabled: false,
+  });
 });

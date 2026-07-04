@@ -24,6 +24,24 @@ function hasField(fields: ExtractedField[], key: string) {
   return fields.some((field) => field.key === key && field.value.trim().length > 0);
 }
 
+/**
+ * ONE shared confidence-band vocabulary (advisory pivot Phase 5). Replaces the
+ * web's former 0.95/0.80 tiers (`filter-types.ts` delegates here): the seeded
+ * demo review at 0.86 lands in "high", making batch-approve exercisable in
+ * demo E2E — deliberate (plan finding 3). Bands render as text + color, never
+ * color alone.
+ */
+export type ConfidenceBand = "high" | "medium" | "low";
+
+export const CONFIDENCE_HIGH_THRESHOLD = 0.85;
+export const CONFIDENCE_MEDIUM_THRESHOLD = 0.6;
+
+export function confidenceBand(confidence: number): ConfidenceBand {
+  if (confidence >= CONFIDENCE_HIGH_THRESHOLD) return "high";
+  if (confidence >= CONFIDENCE_MEDIUM_THRESHOLD) return "medium";
+  return "low";
+}
+
 export function evaluateVoucherRules(voucher: Voucher) {
   const ruleHits: RuleHit[] = [];
   const fields = voucher.extractedFields;

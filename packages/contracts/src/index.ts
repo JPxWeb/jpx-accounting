@@ -159,11 +159,21 @@ export const reviewTaskSchema = z.object({
   ),
 });
 
+export const aggregateTypeSchema = z.enum([
+  "evidence",
+  "voucher",
+  "review",
+  "ledger",
+  "policy",
+  "simulation",
+  "export",
+]);
+
 export const ledgerEventSchema = z.object({
   id: z.string(),
   organizationId: z.string(),
   workspaceId: z.string(),
-  aggregateType: z.enum(["evidence", "voucher", "review", "ledger", "policy", "simulation", "export"]),
+  aggregateType: aggregateTypeSchema,
   aggregateId: z.string(),
   eventType: eventTypeSchema,
   actorId: z.string(),
@@ -490,6 +500,14 @@ export const simulationRequestSchema = z.object({
 });
 
 /**
+ * VAT reporting cadence (advisory pivot Phase 5). Drives the statutory tax
+ * calendar (`buildTaxTimeline` in domain) and the VAT dashboard widgets.
+ * Quarterly is the Swedish SMB default.
+ */
+export const vatPeriodSchema = z.enum(["monthly", "quarterly", "yearly"]);
+export type VatPeriod = z.infer<typeof vatPeriodSchema>;
+
+/**
  * Workspace profile — country/locale/currency/fiscal-year seam for the
  * European abstractions (advisory pivot Phase 2). Lives on the org-level
  * company settings until multi-workspace lands.
@@ -505,9 +523,24 @@ export const workspaceProfileSchema = z.object({
     .string()
     .regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/)
     .default("01-01"),
+  /** VAT reporting cadence — defaulted so pre-Phase-5 payloads keep parsing (no migration). */
+  vatPeriod: vatPeriodSchema.default("quarterly"),
 });
 export type WorkspaceProfile = z.infer<typeof workspaceProfileSchema>;
 export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = workspaceProfileSchema.parse({});
+
+/**
+ * Per-feature AI posture (advisory pivot Phase 5, EU AI Act Article 50
+ * transparency). Human review stays mandatory regardless — these toggles only
+ * gate the AI *surfaces* (advisor chat, suggestion chips), never the review
+ * gate itself. Org-level jsonb + Zod defaults → no migration needed.
+ */
+export const aiPostureSchema = z.object({
+  advisorEnabled: z.boolean().default(true),
+  suggestionsEnabled: z.boolean().default(true),
+});
+export type AiPosture = z.infer<typeof aiPostureSchema>;
+export const DEFAULT_AI_POSTURE: AiPosture = aiPostureSchema.parse({});
 
 export const companySettingsSchema = z
   .object({
@@ -523,6 +556,7 @@ export const companySettingsSchema = z
     bankIban: z.string().optional(),
     bankBic: z.string().optional(),
     profile: workspaceProfileSchema.default(DEFAULT_WORKSPACE_PROFILE),
+    aiPosture: aiPostureSchema.default(DEFAULT_AI_POSTURE),
   })
   .superRefine((value, ctx) => {
     // Validation is looked up per country — Sweden is a registry entry, not a hardcode.
@@ -587,6 +621,124 @@ export const workspaceSnapshotSchema = z.object({
   packets: z.array(evidencePacketSchema).default([]),
 });
 
+/**
+ * Advisory-layer vocabulary (advisory pivot Phase 5): statutory tax deadlines,
+ * deterministic observations, ledger integrity, knowledge retrieval, and
+ * runtime AI transparency. Schemas live here (not domain/reporting) so the
+ * web, the API, and the pure packages all speak the same shapes.
+ */
+
+export const taxDeadlineKindSchema = z.enum(["vat-return", "employer-declaration", "f-skatt", "annual-report"]);
+
+export const taxDeadlineSchema = z.object({
+  /** Deterministic id, e.g. `tax_vat_2026-Q2`. */
+  id: z.string(),
+  kind: taxDeadlineKindSchema,
+  /** YYYY-MM-DD (weekend-shifted where the statute allows). */
+  dueDate: z.string(),
+  /** Deterministic human-readable period reference (e.g. `2026-Q2`, `2026-05`). */
+  periodLabel: z.string(),
+  /** Unified period token when the deadline maps to a report window (VAT only). */
+  periodToken: z.string().optional(),
+  /**
+   * Which pack figure carries the amount. Only VAT deadlines are computable
+   * (box 49); employer/F-skatt render date-only — `null` is honest.
+   */
+  amountRef: z.enum(["box49"]).nullable(),
+  /** Key into `TAX_DEADLINE_SOURCES` (verbatim Swedish source strings in domain). */
+  sourceKey: z.string(),
+});
+
+export const observationDetectorSchema = z.enum([
+  "cash-runway",
+  "expense-anomaly",
+  "vat-set-aside",
+  "deadline-proximity",
+  "missing-evidence",
+  "supplier-spike",
+]);
+
+export const observationSeveritySchema = z.enum(["info", "warning", "critical"]);
+
+export const observationProvenanceKindSchema = z.enum(["account", "voucher", "evidence", "report", "deadline"]);
+
+/**
+ * One deterministic observation. The server never ships prose: `titleKey`
+ * resolves in the web's `observations` message namespace with `params`
+ * (every number in `params` is copied from the detector's inputs — the
+ * reconciliation guard tests pin this).
+ */
+export const observationSchema = z.object({
+  id: z.string(),
+  detector: observationDetectorSchema,
+  severity: observationSeveritySchema,
+  titleKey: z.string(),
+  params: z.record(z.string(), z.union([z.string(), z.number()])),
+  provenance: z.array(z.object({ kind: observationProvenanceKindSchema, target: z.string() })),
+  action: z.object({ labelKey: z.string(), href: z.string() }).optional(),
+});
+
+/**
+ * Hash-chain integrity summary (`GET /api/integrity`). Linkage verification
+ * only: genesis + `previousHash === predecessor.eventHash` — detects removal,
+ * reordering, and insertion. Payload recomputation is a documented future
+ * note (Postgres jsonb normalizes key order, so recomputed hashes are not
+ * byte-stable).
+ */
+export const integritySummarySchema = z.object({
+  eventCount: z.number().int().nonnegative(),
+  chainLinked: z.boolean(),
+  headHash: z.string().nullable(),
+  lastEventAt: z.string().nullable(),
+  verifiedAt: z.string(),
+  recentEvents: z
+    .array(
+      z.object({
+        id: z.string(),
+        eventType: eventTypeSchema,
+        aggregateType: aggregateTypeSchema,
+        occurredAt: z.string(),
+        actorId: z.string(),
+      }),
+    )
+    .max(8),
+  bas: z.object({ template: z.string(), accountCount: z.number().int().nonnegative() }),
+});
+
+/** One retrieved knowledge chunk with its source provenance. */
+export const knowledgePassageSchema = z.object({
+  id: z.string(),
+  docId: z.string(),
+  title: z.string(),
+  excerpt: z.string(),
+  source: z.string(),
+  url: z.string().optional(),
+  score: z.number(),
+});
+
+export const knowledgeQueryResultSchema = z.object({
+  query: z.string(),
+  mode: z.enum(["keyword", "vector"]),
+  passages: z.array(knowledgePassageSchema),
+});
+
+/**
+ * Runtime AI transparency (`GET /api/runtime-info`) — feeds the About-this-AI
+ * settings panel (EU AI Act Article 50). Never carries secrets: model name +
+ * endpoint host only.
+ */
+export const aiProviderSchema = z.enum(["azure-openai", "local-demo", "unavailable"]);
+
+export const runtimeInfoSchema = z.object({
+  runtimeMode: runtimeModeSchema,
+  ai: z.object({
+    operational: z.boolean(),
+    provider: aiProviderSchema,
+    model: z.string().optional(),
+    endpointHost: z.string().optional(),
+  }),
+});
+
 export type Role = z.infer<typeof roleSchema>;
 export type AccountingMethod = z.infer<typeof accountingMethodSchema>;
 export type RuntimeMode = z.infer<typeof runtimeModeSchema>;
@@ -632,5 +784,17 @@ export type SuggestionRequest = z.infer<typeof suggestionRequestSchema>;
 export type UploadInit = z.infer<typeof uploadInitSchema>;
 export type UploadInitResult = z.infer<typeof uploadInitResultSchema>;
 export type CompanySettings = z.infer<typeof companySettingsSchema>;
+export type AggregateType = z.infer<typeof aggregateTypeSchema>;
+export type TaxDeadlineKind = z.infer<typeof taxDeadlineKindSchema>;
+export type TaxDeadline = z.infer<typeof taxDeadlineSchema>;
+export type ObservationDetector = z.infer<typeof observationDetectorSchema>;
+export type ObservationSeverity = z.infer<typeof observationSeveritySchema>;
+export type ObservationProvenanceKind = z.infer<typeof observationProvenanceKindSchema>;
+export type Observation = z.infer<typeof observationSchema>;
+export type IntegritySummary = z.infer<typeof integritySummarySchema>;
+export type KnowledgePassage = z.infer<typeof knowledgePassageSchema>;
+export type KnowledgeQueryResult = z.infer<typeof knowledgeQueryResultSchema>;
+export type AiProvider = z.infer<typeof aiProviderSchema>;
+export type RuntimeInfo = z.infer<typeof runtimeInfoSchema>;
 
 export type { ApiJsonErrorBody, ApiJsonErrorRuntimeMode, ApiValidationIssue } from "./api-errors";

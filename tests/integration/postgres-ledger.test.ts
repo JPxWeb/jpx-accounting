@@ -665,7 +665,14 @@ test("PostgresLedgerStore.getCompanySettings/putCompanySettings round-trip", { s
       postalCode: "111 22",
       city: "Stockholm",
       contactEmail: "test@example.com",
-      profile: { country: "SE" as const, locale: "en-GB", currency: "EUR", fiscalYearStart: "07-01" },
+      profile: {
+        country: "SE" as const,
+        locale: "en-GB",
+        currency: "EUR",
+        fiscalYearStart: "07-01",
+        vatPeriod: "quarterly" as const,
+      },
+      aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
     };
     await store.putCompanySettings(settings);
     const loaded = await store.getCompanySettings();
@@ -700,7 +707,13 @@ test("PostgresLedgerStore.getCompanySettings normalizes legacy jsonb rows withou
       values (${orgId}, ${client.json(legacyJson as never)}, ${orgId})
     `;
     const loaded = await store.getCompanySettings();
-    assert.deepEqual(loaded?.profile, { country: "SE", locale: "sv-SE", currency: "SEK", fiscalYearStart: "01-01" });
+    assert.deepEqual(loaded?.profile, {
+      country: "SE",
+      locale: "sv-SE",
+      currency: "SEK",
+      fiscalYearStart: "01-01",
+      vatPeriod: "quarterly",
+    });
   } finally {
     await client`delete from ledger.organization_settings where organization_id = ${orgId}`;
     await closePostgresClient(client);

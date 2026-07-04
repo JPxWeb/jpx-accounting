@@ -18,6 +18,7 @@
     "test:unit": "tsx --test \"tests/unit/**/*.test.ts\"",
     "test:integration": "tsx --test \"tests/integration/**/*.test.ts\"",
     "build": "pnpm --filter @jpx-accounting/web build && pnpm --filter @jpx-accounting/api build",
+    "build:knowledge": "tsx scripts/build-knowledge-corpus.mjs",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm typecheck:tests && pnpm test:unit && pnpm build",
     "build:e2e": "cross-env NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE=demo NEXT_PUBLIC_API_BASE_URL=/api-proxy pnpm build",
     "test:e2e": "pnpm build:e2e && playwright test",
