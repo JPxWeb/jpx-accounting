@@ -391,11 +391,20 @@
     "charts": {
       "monthly": {
         "title": "Kassa in / ut per månad",
-        "aria": "Stapeldiagram över månatliga in- och utbetalningar"
+        "aria": "Stapeldiagram över månatliga in- och utbetalningar",
+        "cashIn": "Inbetalningar",
+        "cashOut": "Utbetalningar",
+        "headerMonth": "Månad"
       },
       "cashBridge": {
         "title": "Kassabrygga",
-        "aria": "Vattenfallsdiagram över periodens kassadrivare"
+        "aria": "Vattenfallsdiagram över periodens kassadrivare",
+        "opening": "Ingående",
+        "closing": "Utgående",
+        "other": "Övrigt",
+        "headerStep": "Post",
+        "headerAmount": "Belopp",
+        "drillAria": "Visa verifikationsrader för konto {account}"
       },
       "showTable": "Visa datatabell",
       "hideTable": "Dölj datatabell",
@@ -407,6 +416,10 @@
       "openLedger": "Öppna i huvudboken",
       "importedBadge": "Importerad",
       "empty": "Inga rader för det här kontot under perioden."
+    },
+    "print": {
+      "button": "Skriv ut / spara som PDF",
+      "generatedAt": "Genererad {timestamp}"
     }
   }
 }

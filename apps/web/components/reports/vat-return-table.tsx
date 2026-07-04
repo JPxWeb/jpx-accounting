@@ -16,7 +16,11 @@ export function VatReturnTable({ boxes }: { boxes: VatReturnBox[] }) {
   const netBox = boxes.find((box) => box.box === "49");
 
   return (
-    <section id="vat-preparation" data-testid="vat-preparation" className="glass-panel rounded-xl p-5">
+    <section
+      id="vat-preparation"
+      data-testid="vat-preparation"
+      className="glass-panel rounded-xl p-5 break-inside-avoid"
+    >
       <h2 className="text-lg font-semibold">{t("title")}</h2>
       <p className="mt-2 text-sm text-muted-foreground">{t("description")}</p>
       <div className="mt-4">

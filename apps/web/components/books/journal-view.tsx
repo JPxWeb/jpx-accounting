@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { parseAsString, useQueryState } from "nuqs";
 import { usePeriodScope } from "../../hooks/use-period-scope";
 import { apiClient } from "../../lib/client";
+import { buildVoucherLookup, VoucherLink } from "../reports/voucher-link";
 import { Money } from "../ui/money";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 
@@ -27,7 +28,10 @@ export function JournalView() {
     queryFn: () => apiClient.getSnapshot(),
   });
 
-  const vouchersById = new Map((workspace?.vouchers ?? []).map((voucher) => [voucher.id, voucher]));
+  // One lookup for both the supplier filter and the VoucherLink cells (Task
+  // 4.8): voucher→packet→evidence resolves from the snapshot alone.
+  const lookup = buildVoucherLookup(workspace);
+  const vouchersById = lookup.vouchersById;
 
   const entries = (journalQuery.data ?? []).filter((entry) => {
     if (!supplier) return true;
@@ -78,8 +82,10 @@ export function JournalView() {
               {entries.map((entry) => (
                 <TableRow key={`${entry.voucherId}-${entry.accountNumber}`}>
                   <TableCell>{entry.bookedAt.slice(0, 10)}</TableCell>
+                  {/* Same TEXT as before (voucherNumber ?? voucherId) — VoucherLink only
+                      adds the evidence link / imported badge around it (Task 4.8). */}
                   <TableCell className="text-mono">
-                    {vouchersById.get(entry.voucherId)?.voucherNumber ?? entry.voucherId}
+                    <VoucherLink voucherId={entry.voucherId} lookup={lookup} />
                   </TableCell>
                   <TableCell>
                     {entry.accountNumber} {entry.accountName}

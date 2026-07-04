@@ -391,11 +391,20 @@
     "charts": {
       "monthly": {
         "title": "Cash in / out per month",
-        "aria": "Bar chart of monthly cash in and cash out"
+        "aria": "Bar chart of monthly cash in and cash out",
+        "cashIn": "Cash in",
+        "cashOut": "Cash out",
+        "headerMonth": "Month"
       },
       "cashBridge": {
         "title": "Cash bridge",
-        "aria": "Waterfall chart of the period's cash movement drivers"
+        "aria": "Waterfall chart of the period's cash movement drivers",
+        "opening": "Opening",
+        "closing": "Closing",
+        "other": "Other",
+        "headerStep": "Step",
+        "headerAmount": "Amount",
+        "drillAria": "Show journal lines for account {account}"
       },
       "showTable": "Show data table",
       "hideTable": "Hide data table",
@@ -407,6 +416,10 @@
       "openLedger": "Open in general ledger",
       "importedBadge": "Imported",
       "empty": "No lines for this account in the period."
+    },
+    "print": {
+      "button": "Print / save as PDF",
+      "generatedAt": "Generated {timestamp}"
     }
   }
 }

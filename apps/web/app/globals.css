@@ -416,3 +416,44 @@ button:active:not(:disabled) {
     display: inline-flex;
   }
 }
+
+/*
+ * Print-clean report pack (advisory-pivot Phase 4, Task 4.9).
+ *
+ * Shell chrome carries Tailwind `print:hidden`, but that utility lives in a
+ * cascade layer and loses to the UN-layered `.shell-rail { display: block }`
+ * etc. above (same pitfall as the base anchor rule documented earlier in this
+ * file) — so the chrome classes whose `display` globals.css itself sets are
+ * re-hidden here, un-layered, after the responsive blocks.
+ */
+@media print {
+  .shell-rail,
+  .mobile-dock,
+  .capture-button-mobile,
+  .capture-button-desktop {
+    display: none;
+  }
+
+  /* Plain paper background — no ambient gradients. */
+  html,
+  body {
+    background: none;
+  }
+
+  /* Glass becomes border-only: ink-friendly, token-driven. */
+  .glass-chrome,
+  .glass-panel,
+  .glass-panel-soft,
+  .glass-panel-inset {
+    background: none;
+    border: 1px solid var(--color-border-strong);
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* On paper a link's affordance is the underline. */
+  a {
+    text-decoration: underline;
+  }
+}

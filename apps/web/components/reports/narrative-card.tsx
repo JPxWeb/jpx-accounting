@@ -13,9 +13,9 @@ import { SectionLabel } from "../ui/section-label";
  * every number in the prose is literally a value the statements below render
  * (the E2E reconciliation gate asserts text equality on the period result).
  *
- * Provenance chips scroll to the section that carries the fact. The
- * `cash-bridge` target mounts with the chart kit (Task 4.7); until then the
- * scroll is a no-op.
+ * Provenance chips scroll to the section that carries the fact — except the
+ * biggest-mover chip, which names one account and therefore drills straight
+ * into the account drawer via `onSelectAccount` (Task 4.8).
  */
 const CHIP_TARGETS: Record<NarrativeFact["id"], string> = {
   "period-result": "pnl-statement",
@@ -36,8 +36,21 @@ function narrativeValue(factId: NarrativeFact["id"], amount: number): ReactNode 
   );
 }
 
-export function NarrativeCard({ facts }: { facts: NarrativeFact[] }) {
+export function NarrativeCard({
+  facts,
+  onSelectAccount,
+}: {
+  facts: NarrativeFact[];
+  onSelectAccount?: (accountNumber: string) => void;
+}) {
   const t = useTranslations("reports.narrative");
+
+  function chipAction(fact: NarrativeFact) {
+    if (fact.id === "biggest-mover" && onSelectAccount) {
+      return () => onSelectAccount(fact.accountNumber);
+    }
+    return () => scrollToSection(CHIP_TARGETS[fact.id]);
+  }
 
   function factSentence(fact: NarrativeFact): ReactNode {
     switch (fact.id) {
@@ -82,8 +95,8 @@ export function NarrativeCard({ facts }: { facts: NarrativeFact[] }) {
               <button
                 type="button"
                 data-testid={`narrative-chip-${fact.id}`}
-                className="rounded-full bg-primary-soft px-3 py-1 text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                onClick={() => scrollToSection(CHIP_TARGETS[fact.id])}
+                className="rounded-full bg-primary-soft px-3 py-1 text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary print:hidden"
+                onClick={chipAction(fact)}
               >
                 {t(`chips.${fact.id}`)}
               </button>

@@ -166,12 +166,14 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
 
   return (
     <div className="app-shell">
+      {/* print:hidden on all shell chrome (Task 4.9) is screen-inert — it only
+          strips navigation/banners from the printed report pack. */}
       <div
-        className="pointer-events-none fixed inset-0"
+        className="pointer-events-none fixed inset-0 print:hidden"
         style={{ background: "radial-gradient(circle at top, var(--page-glow-light), transparent 45%)" }}
       />
       <div className="shell-layout">
-        <aside className="shell-rail" data-testid="desktop-navigation">
+        <aside className="shell-rail print:hidden" data-testid="desktop-navigation">
           <div className="shell-rail-inner">
             <section className="glass-chrome rounded-xl px-5 py-5">
               <div className="flex items-center justify-between gap-3">
@@ -262,7 +264,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
 
         <div className="shell-main">
           <header
-            className="page-shell page-shell-compact shell-topbar"
+            className="page-shell page-shell-compact shell-topbar print:hidden"
             data-testid="app-shell-header"
             data-hidden={barsHidden}
           >
@@ -308,7 +310,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
           </header>
 
           {digest ? (
-            <details className="page-shell page-shell-compact lg:hidden" data-testid="digest-mobile">
+            <details className="page-shell page-shell-compact lg:hidden print:hidden" data-testid="digest-mobile">
               <summary className="glass-panel-soft cursor-pointer rounded-md px-4 py-3 text-sm font-medium">
                 {t("digest.mobileSummary")}
               </summary>
@@ -317,7 +319,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
           ) : null}
 
           {webRuntimeConfig.runtimeMode === "demo" ? (
-            <div className="page-shell page-shell-compact">
+            <div className="page-shell page-shell-compact print:hidden">
               <div
                 data-testid="runtime-mode-banner"
                 className="glass-panel-soft rounded-lg border border-warning-soft px-4 py-3 text-sm text-warning"
@@ -337,7 +339,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
         <div
           aria-live="polite"
           data-testid="draft-notice"
-          className={`fixed left-1/2 top-24 z-40 w-[min(92vw,30rem)] -translate-x-1/2 rounded-lg px-4 py-3 text-center text-sm font-medium ${
+          className={`fixed left-1/2 top-24 z-40 w-[min(92vw,30rem)] -translate-x-1/2 rounded-lg px-4 py-3 text-center text-sm font-medium print:hidden ${
             captureStatus.tone === "error"
               ? "bg-danger-soft text-danger shadow-md"
               : captureStatus.tone === "warning"
@@ -352,7 +354,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
       <nav
         aria-label={t("mobileNavAria")}
         data-testid="mobile-dock"
-        className="mobile-dock glass-chrome rounded-2xl px-2 py-2 lg:hidden"
+        className="mobile-dock glass-chrome rounded-2xl px-2 py-2 lg:hidden print:hidden"
         data-hidden={barsHidden}
       >
         <div className="grid grid-cols-5 gap-2">

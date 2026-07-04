@@ -21,7 +21,7 @@ export function PnlStatement({
   const t = useTranslations("reports.pnl");
 
   return (
-    <section id="pnl-statement" data-testid="pnl-statement" className="glass-panel rounded-xl p-5">
+    <section id="pnl-statement" data-testid="pnl-statement" className="glass-panel rounded-xl p-5 break-inside-avoid">
       <h2 className="text-lg font-semibold">{t("title")}</h2>
       <div className="mt-4 space-y-5">
         {statement.groups.map((group) => (

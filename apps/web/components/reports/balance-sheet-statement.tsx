@@ -46,7 +46,7 @@ export function BalanceSheetStatement({
   }
 
   return (
-    <section id="balance-sheet" data-testid="balance-sheet" className="glass-panel rounded-xl p-5">
+    <section id="balance-sheet" data-testid="balance-sheet" className="glass-panel rounded-xl p-5 break-inside-avoid">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">{t("title")}</h2>

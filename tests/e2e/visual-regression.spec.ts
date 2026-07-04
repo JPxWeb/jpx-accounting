@@ -11,11 +11,13 @@ import { resetApiState } from "./test-helpers";
  * Dynamic regions (timestamps, generated ids) get masked via
  * [data-visual-mask] attributes on the element in question.
  */
-const SCREENS: { name: string; path: string }[] = [
+const SCREENS: { name: string; path: string; readySelector?: string }[] = [
   { name: "today", path: "/today" },
   { name: "capture", path: "/capture" },
   { name: "books", path: "/books" },
-  { name: "reports", path: "/reports" },
+  // The report charts mount via next/dynamic({ ssr: false }) — networkidle can
+  // fire before the lazy chunk renders, so wait for the waterfall SVG.
+  { name: "reports", path: "/reports", readySelector: '[data-testid="cash-bridge"] svg' },
   { name: "settings-company", path: "/settings/company" },
 ];
 
@@ -34,6 +36,9 @@ for (const theme of ["light", "dark"] as const) {
       await page.emulateMedia({ reducedMotion: "reduce", colorScheme: theme });
       await page.goto(screen.path);
       await page.waitForLoadState("networkidle");
+      if (screen.readySelector) {
+        await page.waitForSelector(screen.readySelector);
+      }
       await expect(page).toHaveScreenshot(`${screen.name}-${theme}.png`, {
         fullPage: true,
         maxDiffPixelRatio: 0.02,

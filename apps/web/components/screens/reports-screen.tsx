@@ -3,6 +3,8 @@
 import { buildKpis, buildReportNarrative } from "@jpx-accounting/reporting";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
+import dynamic from "next/dynamic";
+import { parseAsString, useQueryState } from "nuqs";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -10,10 +12,13 @@ import { usePeriodScope } from "../../hooks/use-period-scope";
 import { apiClient } from "../../lib/client";
 import { getErrorMessage } from "../../lib/request-errors";
 import { PeriodSelector } from "../period/period-selector";
+import { AccountDrillDrawer } from "../reports/account-drill-drawer";
 import { BalanceSheetStatement } from "../reports/balance-sheet-statement";
+import { ChartSkeleton } from "../reports/charts/chart-kit";
 import { KpiRow } from "../reports/kpi-row";
 import { NarrativeCard } from "../reports/narrative-card";
 import { PnlStatement } from "../reports/pnl-statement";
+import { PrintHeader } from "../reports/print-header";
 import { VatReturnTable } from "../reports/vat-return-table";
 import { ScreenHeader } from "../ui/screen-header";
 import { SectionLabel } from "../ui/section-label";
@@ -23,14 +28,38 @@ import { UnavailableState } from "../ui/unavailable-state";
 
 /**
  * Reports v2 (advisory-pivot Phase 4): narrative-first, ONE `ReportPack` per
- * period is the single source object — prose, KPIs, (soon) charts, and the
+ * period is the single source object — prose, KPIs, charts, and the
  * statements all render from the same fetched values, so they can never
- * disagree. Charts land in Task 4.7, the account drill drawer in Task 4.8.
+ * disagree.
+ *
+ * Recharts stays out of the eager bundle: every chart module is loaded via
+ * `next/dynamic({ ssr: false })` (this screen is already a client component,
+ * so `ssr: false` is allowed), with `ChartSkeleton` holding the layout while
+ * the chunk arrives. All three dynamic imports share the ONE
+ * `../reports/charts` barrel specifier on purpose: separate specifiers made
+ * Turbopack emit a ~290 kB recharts core per chart (see the barrel's note).
  */
+const MonthlyBarsChart = dynamic(() => import("../reports/charts").then((mod) => mod.MonthlyBarsChart), {
+  ssr: false,
+  loading: ChartSkeleton,
+});
+const CashBridgeChart = dynamic(() => import("../reports/charts").then((mod) => mod.CashBridgeChart), {
+  ssr: false,
+  loading: ChartSkeleton,
+});
+const Sparkline = dynamic(() => import("../reports/charts").then((mod) => mod.Sparkline), { ssr: false });
 export function ReportsScreen() {
   const t = useTranslations("reports");
   const { raw } = usePeriodScope();
   const [exporting, setExporting] = useState(false);
+  // The drill drawer's open account IS the ?drill= URL param (Task 4.8); the
+  // drawer component reads the same key, so this setter is the one wiring
+  // every drill source (statement rows, waterfall bars, mover chip) needs.
+  const [, setDrill] = useQueryState("drill", parseAsString);
+
+  function openDrill(accountNumber: string) {
+    void setDrill(accountNumber);
+  }
 
   const packQuery = useQuery({
     queryKey: ["reports", "pack", raw],
@@ -85,40 +114,61 @@ export function ReportsScreen() {
 
   return (
     <div className="page-shell space-y-6">
+      <PrintHeader generatedAt={pack.generatedAt} />
+
       <ScreenHeader
         eyebrow={t("eyebrow")}
         title={t("title")}
         description={t("description")}
         aside={
-          <div className="flex w-full flex-col gap-3 sm:items-end">
-            <button
-              type="button"
-              data-testid="export-sie"
-              disabled={exporting}
-              onClick={() => void exportSie()}
-              className="rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white shadow-md disabled:opacity-60"
-            >
-              {exporting ? t("export.exporting") : t("export.button")}
-            </button>
+          // Interactive controls disappear from the printed pack (Task 4.9).
+          <div className="flex w-full flex-col gap-3 sm:items-end print:hidden">
+            <div className="flex flex-wrap gap-3 sm:justify-end">
+              <button
+                type="button"
+                data-testid="print-report"
+                onClick={() => window.print()}
+                className="rounded-lg bg-surface-muted px-5 py-3 text-sm font-semibold text-foreground shadow-sm"
+              >
+                {t("print.button")}
+              </button>
+              <button
+                type="button"
+                data-testid="export-sie"
+                disabled={exporting}
+                onClick={() => void exportSie()}
+                className="rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white shadow-md disabled:opacity-60"
+              >
+                {exporting ? t("export.exporting") : t("export.button")}
+              </button>
+            </div>
             <p className="text-xs text-muted-foreground">{t("export.hint")}</p>
           </div>
         }
       />
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 print:hidden">
         <PeriodSelector />
       </div>
 
-      <KpiRow kpis={kpis} />
+      <KpiRow
+        kpis={kpis}
+        sparklines={{
+          result: <Sparkline values={kpis.sparklines.result} />,
+          cash: <Sparkline values={kpis.sparklines.cash} />,
+          revenue: <Sparkline values={kpis.sparklines.revenue} />,
+        }}
+      />
 
-      <NarrativeCard facts={facts} />
+      <NarrativeCard facts={facts} onSelectAccount={openDrill} />
 
-      {/* Chart slots (Task 4.7): monthly in/out bars + cash-bridge waterfall
-          mount here, fed by the SAME pack (pack.monthly / pack.cashBridge). */}
+      <MonthlyBarsChart monthly={pack.monthly} />
 
-      <PnlStatement statement={pack.profitLoss} />
+      <CashBridgeChart bridge={pack.cashBridge} onDrill={openDrill} />
 
-      <BalanceSheetStatement statement={pack.balanceSheet} />
+      <PnlStatement statement={pack.profitLoss} onSelectAccount={openDrill} />
+
+      <BalanceSheetStatement statement={pack.balanceSheet} onSelectAccount={openDrill} />
 
       <VatReturnTable boxes={pack.vatReturn} />
 
@@ -138,6 +188,8 @@ export function ReportsScreen() {
           ))}
         </div>
       </section>
+
+      <AccountDrillDrawer />
     </div>
   );
 }
