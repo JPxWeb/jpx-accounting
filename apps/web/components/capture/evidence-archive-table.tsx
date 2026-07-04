@@ -36,9 +36,12 @@ export function EvidenceArchiveTable() {
         cell: ({ row }) => {
           const hash = row.original.hash;
           return (
+            // Hashes fold in seed timestamps, so they drift with the clock;
+            // masked to keep visual baselines date-stable.
             <button
               type="button"
               className="text-mono text-xs underline"
+              data-visual-mask
               onClick={() => {
                 void navigator.clipboard.writeText(hash);
                 toast.success(t("hashCopied"));
@@ -52,7 +55,7 @@ export function EvidenceArchiveTable() {
       {
         accessorKey: "createdAt",
         header: t("headerUploaded"),
-        cell: ({ row }) => row.original.createdAt.slice(0, 10),
+        cell: ({ row }) => <span data-visual-mask>{row.original.createdAt.slice(0, 10)}</span>,
       },
       {
         id: "open",

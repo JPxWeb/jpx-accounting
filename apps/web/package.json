@@ -10,10 +10,12 @@
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@ai-sdk/react": "4.0.16",
     "@base-ui/react": "^1.3.0",
     "@dnd-kit/helpers": "0.5.0",
     "@dnd-kit/react": "0.5.0",
     "@hookform/resolvers": "^5.2.2",
+    "@jpx-accounting/advisor": "workspace:*",
     "@jpx-accounting/api-client": "workspace:*",
     "@jpx-accounting/contracts": "workspace:*",
     "@jpx-accounting/domain": "workspace:*",
@@ -22,6 +24,7 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@tanstack/react-query": "5.91.0",
     "@tanstack/react-table": "^8.21.3",
+    "ai": "7.0.15",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "idb": "8.0.3",

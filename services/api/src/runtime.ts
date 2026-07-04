@@ -144,6 +144,14 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
     apiKey: config.azureDocumentIntelligence.apiKey,
   });
 
+  // Advisor chat wiring (Task 5.7): approval-signing secret + the Azure
+  // OpenAI slice the normal-mode model factory reads. Same env surface as
+  // ai-core — createApp decides per runtime mode whether to build the model.
+  const advisor = {
+    toolApprovalSecret: config.advisor.toolApprovalSecret,
+    azureOpenAi: config.azureOpenAi,
+  };
+
   if (config.runtimeMode === "demo") {
     return {
       runtimeMode: config.runtimeMode,
@@ -155,6 +163,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
       blobUploader,
       documentIntelligence,
       aiMetadata: buildAiMetadata(config),
+      advisor,
       jwksUrl: config.auth.jwksUrl,
     };
   }
@@ -185,6 +194,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
     blobUploader,
     documentIntelligence,
     aiMetadata: buildAiMetadata(config),
+    advisor,
     jwksUrl: config.auth.jwksUrl,
   };
 }

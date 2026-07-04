@@ -33,7 +33,19 @@ export type ApiRuntimeConfig = {
     /** Full JWKS URL — typically `${SUPABASE_URL}/auth/v1/keys`. When set, /api/* mutations require a valid JWT. */
     jwksUrl?: string | undefined;
   };
+  advisor: {
+    /**
+     * HMAC secret for AI SDK tool-approval signing (`experimental_toolApprovalSecret`):
+     * the server signs each streamed approval request and verifies the signature when
+     * the approval is replayed, so clients cannot forge approvals. The demo default
+     * keeps local/offline runs working; production sets ADVISOR_TOOL_APPROVAL_SECRET.
+     */
+    toolApprovalSecret: string;
+  };
 };
+
+/** Demo fallback for ADVISOR_TOOL_APPROVAL_SECRET — not a production credential. */
+const DEMO_ADVISOR_TOOL_APPROVAL_SECRET = "jpx-demo-advisor-tool-approval-secret";
 
 function normalizeOptionalValue(value?: string) {
   const trimmed = value?.trim();
@@ -82,6 +94,9 @@ export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiR
     },
     auth: {
       jwksUrl: normalizeOptionalValue(env.SUPABASE_JWKS_URL),
+    },
+    advisor: {
+      toolApprovalSecret: normalizeOptionalValue(env.ADVISOR_TOOL_APPROVAL_SECRET) ?? DEMO_ADVISOR_TOOL_APPROVAL_SECRET,
     },
   };
 }

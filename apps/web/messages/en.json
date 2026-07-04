@@ -18,6 +18,10 @@
       "all": "All periods",
       "fiscalYear": "FY {year}",
       "quarter": "Q{quarter} {year}"
+    },
+    "integrityChip": {
+      "intact": "hash chain intact · {template} · {count, plural, one {# event} other {# events}}",
+      "broken": "hash chain check failed · {template} · {count, plural, one {# event} other {# events}}"
     }
   },
   "shell": {
@@ -50,9 +54,6 @@
     "topbar": {
       "location": "Sweden Central / Stockholm",
       "captureAria": "Capture evidence"
-    },
-    "digest": {
-      "mobileSummary": "Today's pulse"
     },
     "demoBanner": "Demo mode is active. Local demo data and local AI fallback are enabled intentionally.",
     "captureSheet": {
@@ -425,7 +426,8 @@
   "dashboard": {
     "chrome": {
       "dragHandleAria": "Reorder {title}",
-      "removeAria": "Hide {title}"
+      "removeAria": "Hide {title}",
+      "open": "Open"
     },
     "picker": {
       "open": "Customize",
@@ -434,6 +436,190 @@
       "shown": "Shown",
       "hidden": "Hidden",
       "reset": "Reset layout"
+    },
+    "header": {
+      "eyebrow": "Today / Overview",
+      "title": "Your finances at a glance.",
+      "description": "Nine widgets over the same numbers the reports print — drag to arrange, and every figure drills down to its source."
+    },
+    "view": {
+      "label": "Today view",
+      "dashboard": "Dashboard",
+      "queue": "Review queue"
+    },
+    "loading": "Loading…",
+    "emptyCanvas": "All widgets are hidden. Use Customize to bring them back.",
+    "widgets": {
+      "cash-position": {
+        "title": "Cash position",
+        "cashLabel": "Cash balance",
+        "noHistory": "Not enough history for a runway estimate yet.",
+        "empty": "No cash movement booked yet."
+      },
+      "review-queue": {
+        "title": "Review queue",
+        "pending": "{count, plural, one {# pending review} other {# pending reviews}}",
+        "empty": "The queue is clear — nothing waiting for review.",
+        "approve": "Approve",
+        "batch": "Approve all high ({count})",
+        "batchTitle": "Approve {count, plural, one {# high-confidence review} other {# high-confidence reviews}}?",
+        "batchDescription": "Each review is approved one by one through the ordinary review gate — you remain the decision maker for every posting.",
+        "batchConfirm": "Approve {count}",
+        "batchCancel": "Cancel",
+        "batchDone": "{count, plural, one {# review approved.} other {# reviews approved.}}",
+        "batchError": "Batch approval stopped — {completed} of {total} approved.",
+        "band": {
+          "high": "High confidence",
+          "medium": "Medium confidence",
+          "low": "Low confidence"
+        }
+      },
+      "tax-timeline": {
+        "title": "Tax deadlines",
+        "empty": "No statutory deadlines in the next 120 days.",
+        "kinds": {
+          "vat-return": "VAT return",
+          "employer-declaration": "Employer declaration",
+          "f-skatt": "F-tax prepayment",
+          "annual-report": "Annual report"
+        }
+      },
+      "observations": {
+        "title": "Observations",
+        "empty": "Nothing unusual right now.",
+        "severity": {
+          "info": "Info",
+          "warning": "Warning",
+          "critical": "Critical"
+        }
+      },
+      "result": {
+        "title": "Result",
+        "periodResult": "Result this period",
+        "delta": "vs previous period",
+        "empty": "Nothing booked this period yet."
+      },
+      "cash-bridge": {
+        "title": "Cash bridge",
+        "opening": "Opening",
+        "other": "Other",
+        "closing": "Closing",
+        "empty": "No cash movement this period."
+      },
+      "vat-status": {
+        "title": "VAT status",
+        "toPay": "VAT to pay",
+        "toRefund": "VAT to get back",
+        "period": "Period {token}",
+        "setAside": "Set this aside for Skatteverket until the return is due.",
+        "empty": "No VAT activity this period."
+      },
+      "recent-activity": {
+        "title": "Recent activity",
+        "system": "System",
+        "empty": "No ledger events yet."
+      },
+      "integrity": {
+        "title": "Ledger integrity",
+        "lastEvent": "Last event",
+        "headHash": "Head hash",
+        "brokenHint": "The event chain did not verify — the log may have been altered. Investigate before trusting reports."
+      }
+    }
+  },
+  "observations": {
+    "cashRunway": {
+      "positive": "Cash is growing — {cash, number} in the bank with about {monthlyNet, number} added per month.",
+      "burning": "About {runwayMonths, number} months of runway — {cash, number} in cash at a burn of {monthlyBurn, number} per month.",
+      "action": "Open cash bridge"
+    },
+    "expenseAnomaly": {
+      "spike": "{account} {accountName} is at {amount, number} this month — typically around {typicalAmount, number}.",
+      "action": "Open general ledger"
+    },
+    "vatSetAside": {
+      "setAside": "Set aside {amount, number} for VAT in {periodLabel}.",
+      "action": "Open VAT return"
+    },
+    "deadlineProximity": {
+      "due": "Statutory deadline on {dueDate} — {daysUntil, plural, =0 {due today} one {# day left} other {# days left}}.",
+      "action": "Open tax timeline"
+    },
+    "missingEvidence": {
+      "count": "{count, plural, one {# voucher is missing evidence} other {# vouchers are missing evidence}} — Bokföringslagen wants a verification behind every posting.",
+      "action": "Open capture"
+    },
+    "supplierSpike": {
+      "spike": "{supplier} is at {amount, number} this month — typically around {typicalAmount, number}.",
+      "action": "Open suppliers"
+    }
+  },
+  "advisor": {
+    "eyebrow": "Advisor",
+    "title": "Ask AI about your numbers",
+    "description": "The advisor explains, cites Swedish sources, and drafts review actions — but it never posts anything. Every proposal waits for your explicit approval in the review gate.",
+    "article50": {
+      "badge": "AI assistant",
+      "statement": "You are chatting with an AI system (EU AI Act, Article 50). Answers are AI-generated and grounded in your report pack; any action the advisor proposes executes only after your explicit approval through the ordinary review queue."
+    },
+    "aiGeneratedMarker": "AI-generated",
+    "emptyState": "Ask about your cash position, VAT, deadlines, or the review queue. Answers cite their sources, and proposals always wait for your approval.",
+    "promptsLabel": "Suggested questions",
+    "input": {
+      "label": "Ask a grounded question",
+      "placeholder": "How is our cash position right now?",
+      "hint": "The advisor cites Swedish sources and proposes actions — nothing is posted without your explicit approval.",
+      "send": "Send",
+      "streaming": "Answering…"
+    },
+    "threads": {
+      "title": "Conversations",
+      "subtitle": "Stored locally in this browser.",
+      "empty": "Ask a question to start your first conversation on this device.",
+      "new": "New conversation",
+      "untitled": "Untitled conversation"
+    },
+    "provenance": {
+      "aria": "Sources"
+    },
+    "approval": {
+      "awaiting": "Draft by AI — awaiting your approval",
+      "account": "Account",
+      "vat": "VAT code",
+      "amount": "Amount",
+      "confidence": "Confidence",
+      "gateNote": "Approving executes the ordinary review decision — the review gate stays the only path to a posted voucher.",
+      "approve": "Approve",
+      "reject": "Reject",
+      "respondedApproved": "Approval sent — the advisor is confirming…",
+      "respondedRejected": "Rejection sent — the advisor is confirming…"
+    },
+    "tool": {
+      "drafting": "Drafting a proposal…",
+      "approvedRow": "Approved through the review gate",
+      "deniedTitle": "Nothing was posted",
+      "deniedRow": "The proposal was rejected — the item stays in the review queue for your manual decision."
+    },
+    "error": {
+      "fallback": "The advisor request could not be completed.",
+      "dismiss": "Dismiss"
+    },
+    "disabled": {
+      "eyebrow": "AI posture",
+      "title": "The AI advisor is turned off",
+      "message": "This workspace has the advisor disabled under AI posture. Bookkeeping, capture, and the review queue keep working without it — no AI runs in the background.",
+      "cta": "Open AI posture settings"
+    },
+    "prompts": {
+      "cashRunway": "How is our cash position and runway?",
+      "expenseAnomaly": "Why are costs unusually high this month?",
+      "vatSetAside": "How much VAT should we set aside?",
+      "deadlineProximity": "Which statutory deadlines are coming up?",
+      "missingEvidence": "Which vouchers are missing evidence?",
+      "supplierSpike": "Which supplier costs spiked this month?",
+      "cashPosition": "How is our cash position right now?",
+      "vatDeadline": "When is our next VAT return due?",
+      "representationRules": "What are the rules for deducting representation?"
     }
   }
 }

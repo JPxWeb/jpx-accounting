@@ -42,9 +42,12 @@ import {
   today,
 } from "@jpx-accounting/domain";
 
+import { AdvisorDisabledError, AdvisorValidationError, createAdvisorChatHandler } from "./advisor/chat";
+import { createAdvisorModel, type AdvisorModelConfig } from "./advisor/model";
 import type { BlobUploader } from "./blob";
 import { MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
 import type { CorsRuntimePolicy } from "./config";
+import { queryKnowledge } from "./knowledge";
 import type { AiRuntimeMetadata } from "./runtime";
 import { isLedgerStoreOperational, LedgerStoreUnavailableError } from "./runtime";
 
@@ -57,6 +60,15 @@ type CreateAppOptions = {
   documentIntelligence: DocumentIntelligenceClient;
   /** Transparency metadata for `GET /api/runtime-info` (provider/model/host — never secrets). */
   aiMetadata: AiRuntimeMetadata;
+  /**
+   * Advisor chat wiring (Task 5.7): HMAC secret for AI SDK tool-approval
+   * signing + the Azure OpenAI slice for the normal-mode model. Demo mode
+   * never touches the model; unconfigured normal mode answers 503.
+   */
+  advisor: {
+    toolApprovalSecret: string;
+    azureOpenAi: AdvisorModelConfig;
+  };
   /**
    * JWKS endpoint (typically `${SUPABASE_URL}/auth/v1/keys`). When provided, mutating routes
    * require a valid JWT. When absent, mutations stay open — current demo + pilot behavior.
@@ -166,11 +178,20 @@ export function createApp({
   blobUploader,
   documentIntelligence,
   aiMetadata,
+  advisor,
   jwksUrl,
   allowTestReset,
 }: CreateAppOptions) {
   const app = new Hono<AppEnv>();
   let currentStore = store;
+
+  // Late-bound store accessor keeps the advisor honest across /api/testing/reset swaps.
+  const advisorChat = createAdvisorChatHandler({
+    getStore: () => currentStore,
+    runtimeMode,
+    model: runtimeMode === "demo" ? undefined : createAdvisorModel(advisor.azureOpenAi),
+    toolApprovalSecret: advisor.toolApprovalSecret,
+  });
 
   async function postReviewDecision(c: Context<AppEnv>, reviewId: string, outcome: ReviewAction) {
     const input = await parseBody(c.req.raw, reviewDecisionInputSchema);
@@ -303,6 +324,15 @@ export function createApp({
   app.onError((error, c) => {
     if (error instanceof ApiValidationError) {
       return jsonError(c, error.message, runtimeMode, 400, { code: error.code, issues: error.issues });
+    }
+
+    if (error instanceof AdvisorValidationError) {
+      // Well-formed JSON but out-of-bounds/invalid advisor messages → 422 (Rule 16).
+      return jsonError(c, error.message, runtimeMode, 422, { code: error.code, issues: error.issues });
+    }
+
+    if (error instanceof AdvisorDisabledError) {
+      return jsonError(c, error.message, runtimeMode, 403, { code: error.code });
     }
 
     if (error instanceof UploadValidationError) {
@@ -583,18 +613,18 @@ export function createApp({
     return context.json(answer, 201);
   });
 
+  // Advisor chat (Task 5.7): AI SDK 7 UI-message SSE. Deterministic demo
+  // stream or Azure streamText — both route tool approvals through the
+  // existing review decision. Inherits the full mutation middleware stack
+  // (body limit, rate limiter, JWT when configured) like every /api/* POST.
+  app.post("/api/advisor/chat", (context) => advisorChat(context.req.raw));
+
   app.post("/api/knowledge/query", async (context) => {
     const input = await parseBody(context.req.raw, knowledgeQuerySchema);
-    // Knowledge query is a placeholder until the Azure AI Search index ships
-    // (foundation in migration 0003 + knowledge.documents table). Returning
-    // citations from any other flow's data is wrong provenance in an audit
-    // context (CONVENTIONS Rule 10). Return [] until real retrieval lands.
-    return context.json({
-      query: input.query,
-      citations: [],
-      answer:
-        "Knowledge queries are routed through the same grounded advisory stack; next step is wiring the knowledge.documents table (0003 migration) to Azure AI Search.",
-    });
+    // Real sourced retrieval (Task 5.7): BM25-lite over the bundled corpus —
+    // passages carry verbatim source provenance (Rule 10). Vector mode lands
+    // with the pgvector ingestion loop in Task 5.11.
+    return context.json(await queryKnowledge(input.query));
   });
 
   app.post("/api/simulations/run", async (context) => {

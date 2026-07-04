@@ -6,7 +6,14 @@ import { getWebServerRuntimeConfig } from "../../../lib/server-runtime-config";
  * Strips hop-by-hop headers; forwards a small allowlist only.
  */
 
-const responseHeaders = new Set(["content-type", "content-disposition", "cache-control"]);
+const responseHeaders = new Set([
+  "content-type",
+  "content-disposition",
+  "cache-control",
+  // AI SDK UI-message stream marker (advisor chat SSE) — clients sniff this
+  // to pick the stream protocol, so the proxy must not strip it.
+  "x-vercel-ai-ui-message-stream",
+]);
 
 const requestHeaders = ["accept", "authorization", "content-type", "x-request-id"] as const;
 
@@ -55,7 +62,10 @@ async function proxyRequest(request: Request, path: string[]) {
     }
   }
 
-  return new Response(await response.arrayBuffer(), {
+  // Stream the upstream body through unbuffered (finding 1): SSE responses
+  // (advisor chat) would hang behind an arrayBuffer() drain, and streaming is
+  // byte-identical for every buffered JSON route.
+  return new Response(response.body, {
     status: response.status,
     headers: nextHeaders,
   });

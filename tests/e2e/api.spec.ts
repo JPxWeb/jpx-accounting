@@ -215,14 +215,22 @@ test("assistant, knowledge, simulation, close, and import endpoints round-trip",
   expect(assistantData.status).toBe("grounded");
   expect(assistantData.citations.length).toBeGreaterThan(0);
 
+  // Knowledge query returns real sourced passages from the bundled corpus
+  // (BM25-lite keyword mode until the pgvector loop lands in Task 5.11).
+  // "representation" ranks a Skatteverket-sourced chunk first per the corpus
+  // retrieval unit tests.
   const knowledge = await request.post(`${apiBaseUrl}/api/knowledge/query`, {
     data: {
       actorId: "user_founder",
-      query: "representation limits",
+      query: "representation",
     },
   });
   expect(knowledge.ok()).toBeTruthy();
-  expect((await knowledge.json()).answer).toContain("Azure AI Search");
+  const knowledgeJson = await knowledge.json();
+  expect(knowledgeJson.mode).toBe("keyword");
+  expect(knowledgeJson.passages.length).toBeGreaterThanOrEqual(1);
+  expect(knowledgeJson.passages[0].source).toMatch(/Skatteverket|Bokföringslagen|BAS/);
+  expect(knowledgeJson.passages[0].excerpt.length).toBeGreaterThan(0);
 
   // simulationRequestSchema now requires reviewIds + action (Phase 7 port). Pick a real
   // review from the demo seed instead of hardcoding an ID, since createId() is random.
@@ -306,6 +314,50 @@ test("assistant, knowledge, simulation, close, and import endpoints round-trip",
   expect(sieExportText).toContain('#PROGRAM "JPX Accounting" "0.1.0"');
   expect(sieExportText).toContain("#SIETYP 4");
   expect(sieExportText).toContain("#TRANS 6110 {} 100.00");
+});
+
+test("advisor chat streams a UI-message SSE turn in demo mode", async ({ request }) => {
+  const response = await request.post(`${apiBaseUrl}/api/advisor/chat`, {
+    data: {
+      id: "advisor-smoke",
+      trigger: "submit-message",
+      messages: [
+        {
+          id: "advisor-smoke-q1",
+          role: "user",
+          parts: [{ type: "text", text: "Hur ser kassan ut just nu?" }],
+        },
+      ],
+    },
+  });
+  expect(response.status()).toBe(200);
+  const headers = response.headers();
+  expect(headers["content-type"]).toContain("text/event-stream");
+  expect(headers["x-vercel-ai-ui-message-stream"]).toBe("v1");
+
+  // The demo turn is deterministic and finite: data: frames carrying text
+  // deltas, a finish frame, and the SSE [DONE] terminator.
+  const body = await response.text();
+  expect(body).toContain("data: ");
+  expect(body).toContain('"type":"text-delta"');
+  expect(body).toContain('"type":"finish"');
+  expect(body).toContain("data: [DONE]");
+
+  // Bounded body: exceeding the 40-message ceiling is a well-formed but
+  // unprocessable request → 422 with the validation_error shape (Rule 16).
+  const oversized = await request.post(`${apiBaseUrl}/api/advisor/chat`, {
+    data: {
+      id: "advisor-smoke-oversized",
+      trigger: "submit-message",
+      messages: Array.from({ length: 41 }, (_, index) => ({
+        id: `advisor-smoke-m${index}`,
+        role: "user",
+        parts: [{ type: "text", text: `fråga ${index}` }],
+      })),
+    },
+  });
+  expect(oversized.status()).toBe(422);
+  expect((await oversized.json()).code).toBe("validation_error");
 });
 
 test("integrity and runtime-info endpoints surface a linked chain and the demo AI posture", async ({ request }) => {

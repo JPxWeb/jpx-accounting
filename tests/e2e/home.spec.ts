@@ -17,8 +17,24 @@ function captureButton(page: Page) {
     : page.getByTestId("capture-open-desktop");
 }
 
-test("home screen can add a new review item from the browser", async ({ page }) => {
+test("home screen defaults to the advisory dashboard", async ({ page }) => {
   await page.goto("/");
+
+  // `/` → `/today` → dashboard view (the queue moved to ?view=queue, Task 5.8).
+  await expect(page.getByTestId("dashboard-canvas")).toBeVisible();
+  await expect(page.getByTestId("widget-review-queue")).toBeVisible();
+  await expect(page.getByTestId("widget-integrity")).toBeVisible();
+  await expect(page.getByTestId("runtime-mode-pill")).toContainText("Demo");
+
+  // The header toggle flips to the full review queue and back.
+  await page.getByTestId("today-view-queue").click();
+  await expect(page.getByTestId("review-card")).toHaveCount(1);
+  await page.getByTestId("today-view-dashboard").click();
+  await expect(page.getByTestId("dashboard-canvas")).toBeVisible();
+});
+
+test("queue view can add a new review item from the browser", async ({ page }) => {
+  await page.goto("/today?view=queue");
 
   await expect(page.getByRole("heading", { name: /Keep the next accounting decision obvious/i })).toBeVisible();
   await expect(page.getByTestId("runtime-mode-pill")).toContainText("Demo");
@@ -43,12 +59,12 @@ test("home screen can add a new review item from the browser", async ({ page }) 
   await expect(page.getByTestId("evidence-row")).toHaveCount(2);
   await expect(page.getByTestId("draft-row")).toHaveCount(0);
 
-  await page.goto("/today");
+  await page.goto("/today?view=queue");
   await expect(page.getByTestId("review-card")).toHaveCount(2);
 });
 
-test("home screen supports approval and local draft capture", async ({ page }) => {
-  await page.goto("/");
+test("queue view supports approval and local draft capture", async ({ page }) => {
+  await page.goto("/today?view=queue");
 
   await expect(page.getByTestId("review-card")).toHaveCount(1);
 
@@ -63,8 +79,8 @@ test("home screen supports approval and local draft capture", async ({ page }) =
   await expect(page.getByTestId("draft-notice")).toContainText("Camera draft saved");
 });
 
-test("home screen passes WCAG 2.2 AA accessibility checks", async ({ page }) => {
-  await page.goto("/");
+test("queue view passes WCAG 2.2 AA accessibility checks", async ({ page }) => {
+  await page.goto("/today?view=queue");
   await expect(page.getByTestId("review-card")).toHaveCount(1);
   await expectAccessible(page);
 });

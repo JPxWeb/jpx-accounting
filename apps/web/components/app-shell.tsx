@@ -40,7 +40,7 @@ type CaptureStatus = {
   message: string;
 };
 
-export function AppShell({ children, digest }: { children: ReactNode; digest?: ReactNode }) {
+export function AppShell({ children }: { children: ReactNode }) {
   const t = useTranslations("shell");
   const tPromotion = useTranslations("capture.promotion");
   const queryClient = useQueryClient();
@@ -228,8 +228,6 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
               })}
             </nav>
 
-            {digest ? <div className="hidden lg:block">{digest}</div> : null}
-
             <section className="glass-panel rounded-xl p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -291,7 +289,8 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
               <div className="flex items-center gap-2">
                 <div className="hidden rounded-lg glass-panel-soft px-3 py-2 text-right text-xs text-muted-foreground sm:block">
                   <div className="font-medium text-foreground">{t("topbar.location")}</div>
-                  <div>{timestamp}</div>
+                  {/* Clock-derived; masked in visual-regression.spec.ts so baselines stay date-stable. */}
+                  <div data-visual-mask>{timestamp}</div>
                 </div>
                 <div className="lg:hidden">
                   <ThemeToggle />
@@ -308,15 +307,6 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
               </div>
             </div>
           </header>
-
-          {digest ? (
-            <details className="page-shell page-shell-compact lg:hidden print:hidden" data-testid="digest-mobile">
-              <summary className="glass-panel-soft cursor-pointer rounded-md px-4 py-3 text-sm font-medium">
-                {t("digest.mobileSummary")}
-              </summary>
-              <div className="mt-2">{digest}</div>
-            </details>
-          ) : null}
 
           {webRuntimeConfig.runtimeMode === "demo" ? (
             <div className="page-shell page-shell-compact print:hidden">

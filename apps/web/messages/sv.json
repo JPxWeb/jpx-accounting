@@ -18,6 +18,10 @@
       "all": "Alla perioder",
       "fiscalYear": "Räkenskapsår {year}",
       "quarter": "Kv {quarter} {year}"
+    },
+    "integrityChip": {
+      "intact": "hashkedjan intakt · {template} · {count, plural, one {# händelse} other {# händelser}}",
+      "broken": "hashkedjan kunde inte verifieras · {template} · {count, plural, one {# händelse} other {# händelser}}"
     }
   },
   "shell": {
@@ -50,9 +54,6 @@
     "topbar": {
       "location": "Sweden Central / Stockholm",
       "captureAria": "Fånga underlag"
-    },
-    "digest": {
-      "mobileSummary": "Dagens puls"
     },
     "demoBanner": "Demoläge är aktivt. Lokal demodata och lokal AI-fallback är avsiktligt aktiverade.",
     "captureSheet": {
@@ -425,7 +426,8 @@
   "dashboard": {
     "chrome": {
       "dragHandleAria": "Ändra ordning på {title}",
-      "removeAria": "Dölj {title}"
+      "removeAria": "Dölj {title}",
+      "open": "Öppna"
     },
     "picker": {
       "open": "Anpassa",
@@ -434,6 +436,190 @@
       "shown": "Visas",
       "hidden": "Dold",
       "reset": "Återställ layout"
+    },
+    "header": {
+      "eyebrow": "Idag / Översikt",
+      "title": "Din ekonomi i ett svep.",
+      "description": "Nio widgetar över samma siffror som rapporterna skriver ut — dra för att ordna, och varje siffra går att borra ner till sin källa."
+    },
+    "view": {
+      "label": "Vy för Idag",
+      "dashboard": "Översikt",
+      "queue": "Granskningskö"
+    },
+    "loading": "Läser in…",
+    "emptyCanvas": "Alla widgetar är dolda. Använd Anpassa för att ta tillbaka dem.",
+    "widgets": {
+      "cash-position": {
+        "title": "Kassaläge",
+        "cashLabel": "Kassasaldo",
+        "noHistory": "Inte tillräcklig historik för en runway-uppskattning ännu.",
+        "empty": "Inga kassarörelser bokförda ännu."
+      },
+      "review-queue": {
+        "title": "Granskningskö",
+        "pending": "{count, plural, one {# väntande granskning} other {# väntande granskningar}}",
+        "empty": "Kön är tom — inget väntar på granskning.",
+        "approve": "Godkänn",
+        "batch": "Godkänn alla höga ({count})",
+        "batchTitle": "Godkänn {count, plural, one {# granskning med hög konfidens} other {# granskningar med hög konfidens}}?",
+        "batchDescription": "Varje granskning godkänns en och en genom den vanliga granskningsgrinden — du förblir beslutsfattare för varje bokning.",
+        "batchConfirm": "Godkänn {count}",
+        "batchCancel": "Avbryt",
+        "batchDone": "{count, plural, one {# granskning godkänd.} other {# granskningar godkända.}}",
+        "batchError": "Batchgodkännandet stoppades — {completed} av {total} godkända.",
+        "band": {
+          "high": "Hög konfidens",
+          "medium": "Medelhög konfidens",
+          "low": "Låg konfidens"
+        }
+      },
+      "tax-timeline": {
+        "title": "Skattedeadlines",
+        "empty": "Inga lagstadgade deadlines de närmaste 120 dagarna.",
+        "kinds": {
+          "vat-return": "Momsdeklaration",
+          "employer-declaration": "Arbetsgivardeklaration",
+          "f-skatt": "Debiterad preliminärskatt",
+          "annual-report": "Årsredovisning"
+        }
+      },
+      "observations": {
+        "title": "Observationer",
+        "empty": "Inget ovanligt just nu.",
+        "severity": {
+          "info": "Info",
+          "warning": "Varning",
+          "critical": "Kritisk"
+        }
+      },
+      "result": {
+        "title": "Resultat",
+        "periodResult": "Resultat denna period",
+        "delta": "mot föregående period",
+        "empty": "Inget bokfört denna period ännu."
+      },
+      "cash-bridge": {
+        "title": "Kassabrygga",
+        "opening": "Ingående",
+        "other": "Övrigt",
+        "closing": "Utgående",
+        "empty": "Inga kassarörelser denna period."
+      },
+      "vat-status": {
+        "title": "Momsläge",
+        "toPay": "Moms att betala",
+        "toRefund": "Moms att få tillbaka",
+        "period": "Period {token}",
+        "setAside": "Sätt undan detta för Skatteverket tills deklarationen förfaller.",
+        "empty": "Ingen momsaktivitet denna period."
+      },
+      "recent-activity": {
+        "title": "Senaste aktivitet",
+        "system": "System",
+        "empty": "Inga huvudbokshändelser ännu."
+      },
+      "integrity": {
+        "title": "Huvudbokens integritet",
+        "lastEvent": "Senaste händelse",
+        "headHash": "Topphash",
+        "brokenHint": "Händelsekedjan kunde inte verifieras — loggen kan ha ändrats. Utred innan du litar på rapporterna."
+      }
+    }
+  },
+  "observations": {
+    "cashRunway": {
+      "positive": "Kassan växer — {cash, number} på banken och cirka {monthlyNet, number} tillförs per månad.",
+      "burning": "Cirka {runwayMonths, number} månaders runway — {cash, number} i kassan vid en burn på {monthlyBurn, number} per månad.",
+      "action": "Öppna kassabryggan"
+    },
+    "expenseAnomaly": {
+      "spike": "{account} {accountName} ligger på {amount, number} den här månaden — normalt cirka {typicalAmount, number}.",
+      "action": "Öppna huvudboken"
+    },
+    "vatSetAside": {
+      "setAside": "Sätt undan {amount, number} för moms för {periodLabel}.",
+      "action": "Öppna momsdeklarationen"
+    },
+    "deadlineProximity": {
+      "due": "Lagstadgad deadline {dueDate} — {daysUntil, plural, =0 {förfaller idag} one {# dag kvar} other {# dagar kvar}}.",
+      "action": "Öppna skattekalendern"
+    },
+    "missingEvidence": {
+      "count": "{count, plural, one {# verifikat saknar underlag} other {# verifikat saknar underlag}} — bokföringslagen kräver en verifikation bakom varje bokning.",
+      "action": "Öppna Fånga"
+    },
+    "supplierSpike": {
+      "spike": "{supplier} ligger på {amount, number} den här månaden — normalt cirka {typicalAmount, number}.",
+      "action": "Öppna leverantörer"
+    }
+  },
+  "advisor": {
+    "eyebrow": "Rådgivare",
+    "title": "Fråga AI om dina siffror",
+    "description": "Rådgivaren förklarar, citerar svenska källor och utarbetar granskningsåtgärder — men den bokför aldrig något. Varje förslag väntar på ditt uttryckliga godkännande i granskningsgrinden.",
+    "article50": {
+      "badge": "AI-assistent",
+      "statement": "Du chattar med ett AI-system (EU:s AI-förordning, artikel 50). Svaren är AI-genererade och grundade i ditt rapportpaket; åtgärder som rådgivaren föreslår utförs först efter ditt uttryckliga godkännande via den vanliga granskningskön."
+    },
+    "aiGeneratedMarker": "AI-genererat",
+    "emptyState": "Fråga om kassaläget, momsen, deadlines eller granskningskön. Svaren citerar sina källor och förslag väntar alltid på ditt godkännande.",
+    "promptsLabel": "Föreslagna frågor",
+    "input": {
+      "label": "Ställ en grundad fråga",
+      "placeholder": "Hur ser kassaläget ut just nu?",
+      "hint": "Rådgivaren citerar svenska källor och föreslår åtgärder — ingenting bokförs utan ditt uttryckliga godkännande.",
+      "send": "Skicka",
+      "streaming": "Svarar…"
+    },
+    "threads": {
+      "title": "Konversationer",
+      "subtitle": "Sparas lokalt i den här webbläsaren.",
+      "empty": "Ställ en fråga för att starta din första konversation på den här enheten.",
+      "new": "Ny konversation",
+      "untitled": "Namnlös konversation"
+    },
+    "provenance": {
+      "aria": "Källor"
+    },
+    "approval": {
+      "awaiting": "Utkast av AI — väntar på ditt godkännande",
+      "account": "Konto",
+      "vat": "Momskod",
+      "amount": "Belopp",
+      "confidence": "Konfidens",
+      "gateNote": "Ett godkännande utför det vanliga granskningsbeslutet — granskningsgrinden förblir den enda vägen till en bokförd verifikation.",
+      "approve": "Godkänn",
+      "reject": "Avvisa",
+      "respondedApproved": "Godkännandet skickat — rådgivaren bekräftar…",
+      "respondedRejected": "Avvisningen skickad — rådgivaren bekräftar…"
+    },
+    "tool": {
+      "drafting": "Utarbetar ett förslag…",
+      "approvedRow": "Godkänt via granskningsgrinden",
+      "deniedTitle": "Ingenting bokfördes",
+      "deniedRow": "Förslaget avvisades — posten ligger kvar i granskningskön för ditt manuella beslut."
+    },
+    "error": {
+      "fallback": "Rådgivarens förfrågan kunde inte slutföras.",
+      "dismiss": "Stäng"
+    },
+    "disabled": {
+      "eyebrow": "AI-hållning",
+      "title": "AI-rådgivaren är avstängd",
+      "message": "Den här arbetsytan har rådgivaren avstängd under AI-hållning. Bokföring, insamling och granskningskön fungerar utan den — ingen AI körs i bakgrunden.",
+      "cta": "Öppna inställningar för AI-hållning"
+    },
+    "prompts": {
+      "cashRunway": "Hur ser vårt kassaläge och vår runway ut?",
+      "expenseAnomaly": "Varför är kostnaderna ovanligt höga den här månaden?",
+      "vatSetAside": "Hur mycket moms bör vi sätta undan?",
+      "deadlineProximity": "Vilka lagstadgade datum närmar sig?",
+      "missingEvidence": "Vilka verifikat saknar underlag?",
+      "supplierSpike": "Vilken leverantörskostnad har ökat mest den här månaden?",
+      "cashPosition": "Hur ser kassaläget ut just nu?",
+      "vatDeadline": "När ska nästa momsdeklaration lämnas?",
+      "representationRules": "Vad gäller för avdrag vid representation?"
     }
   }
 }

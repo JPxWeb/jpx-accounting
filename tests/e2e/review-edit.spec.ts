@@ -8,7 +8,7 @@ test.beforeEach(async ({ request }) => {
 });
 
 test("edit sheet approves a review with a corrected account and VAT code", async ({ page }) => {
-  await page.goto("/today");
+  await page.goto("/today?view=queue");
   await expect(page.getByTestId("review-card")).toHaveCount(1);
 
   await page.getByTestId("review-edit").click();
@@ -32,7 +32,7 @@ test("edit sheet approves a review with a corrected account and VAT code", async
 });
 
 test("edit sheet blocks submission while edited amounts do not add up", async ({ page }) => {
-  await page.goto("/today");
+  await page.goto("/today?view=queue");
   await expect(page.getByTestId("review-card")).toHaveCount(1);
 
   await page.getByTestId("review-edit").click();
@@ -51,7 +51,7 @@ test("edit sheet blocks submission while edited amounts do not add up", async ({
 });
 
 test("edit sheet passes WCAG 2.2 AA accessibility checks while open", async ({ page }) => {
-  await page.goto("/today");
+  await page.goto("/today?view=queue");
   await expect(page.getByTestId("review-card")).toHaveCount(1);
 
   await page.getByTestId("review-edit").click();

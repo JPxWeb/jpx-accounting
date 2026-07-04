@@ -41,7 +41,7 @@ test("saves the workspace profile and persists it across reload", async ({ page 
   await expect(page.getByLabel("Organization name")).toHaveValue("Jpx Konsult AB");
 
   // Exit-gate proof: the currency/locale change reflects in rendered amounts.
-  await page.goto("/today");
+  await page.goto("/today?view=queue");
   await expect(page.getByTestId("review-card").first()).toContainText(/EUR/);
 
   await page.goto("/books?view=trial-balance");

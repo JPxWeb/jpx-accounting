@@ -81,7 +81,8 @@ export function JournalView() {
             <TableBody>
               {entries.map((entry) => (
                 <TableRow key={`${entry.voucherId}-${entry.accountNumber}`}>
-                  <TableCell>{entry.bookedAt.slice(0, 10)}</TableCell>
+                  {/* Demo-seed bookings are dated "now"; masked so visual baselines stay date-stable. */}
+                  <TableCell data-visual-mask>{entry.bookedAt.slice(0, 10)}</TableCell>
                   {/* Same TEXT as before (voucherNumber ?? voucherId) — VoucherLink only
                       adds the evidence link / imported badge around it (Task 4.8). */}
                   <TableCell className="text-mono">

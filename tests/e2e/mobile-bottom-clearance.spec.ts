@@ -8,7 +8,10 @@ test.beforeEach(async ({ request }) => {
 
 const screensWithLongContent = [
   { path: "/reports", lastCardTestId: "vat-preparation" },
-  { path: "/assistant", lastCardTestId: "policy-rules-studio" },
+  // Task 5.9 rebuilt /assistant: the chat panel is taller than the mobile
+  // viewport, so target its bottom-most interactive element instead — the
+  // Send button still lands under the dock if the canvas padding regresses.
+  { path: "/assistant", lastCardTestId: "assistant-submit" },
   // /settings redirects to /settings/company (PR-D2); the long About page keeps billing-card last.
   { path: "/settings/about", lastCardTestId: "billing-card" },
 ];

@@ -20,6 +20,7 @@ function createTestApiApp(runtimeMode: "demo" | "normal") {
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: {},
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret" },
   });
 
   return createApp({ ...dependencies, allowTestReset: false });
