@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Cross-tool contract:** [`AGENTS.md`](AGENTS.md) is the compact agent contract shared by all coding tools (JPx ADR DL-001) and wins on conflict; this file is the deeper Claude-specific project memory.
+
 Prefer **official docs**: use Context7 (e.g. `/vercel/next.js` pinned to the repo Next version) or vendor docs before relying on recalled API details — especially ESLint flat config, pnpm lifecycle policy, Playwright wiring, Azure deploy.
 
 ## Build & Dev Commands
