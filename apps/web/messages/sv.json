@@ -151,6 +151,31 @@
       "supplierPlaceholder": "Filtrera efter leverantör...",
       "confidenceAria": "Filtrera efter konfidens",
       "allConfidence": "All konfidens"
+    },
+    "simulation": {
+      "selectHint": "Välj väntande granskningar för att förhandsgranska bokföringspåverkan innan godkännande.",
+      "selectReview": "Välj {title} för simulering",
+      "previewButton": "Förhandsgranska påverkan ({count})",
+      "requestTitle": "Förhandsgranska {count, plural, one {# godkännande} other {# godkännanden}}",
+      "eyebrow": "Simulering",
+      "title": "Förhandsgranskning av godkännandepåverkan",
+      "description": "Skrivskyddad projicering för {count, plural, one {# vald granskning} other {# valda granskningar}}. Inga verifikationer bokförs.",
+      "close": "Stäng",
+      "closeAria": "Stäng simuleringsförhandsvisning",
+      "loading": "Kör simulering…",
+      "notFoundError": "En eller flera valda granskningar finns inte längre. Uppdatera kön och försök igen.",
+      "serverError": "Simuleringstjänsten är otillgänglig. Försök igen om en stund.",
+      "genericError": "Simuleringen kunde inte slutföras.",
+      "balanceTitle": "Förändringar i kontosaldon",
+      "balanceEmpty": "Ingen kontorörelse för detta urval.",
+      "vatTitle": "Momsförändringar",
+      "vatEmpty": "Ingen momsrörelse för detta urval.",
+      "accountColumn": "Konto",
+      "debitColumn": "Debet Δ",
+      "creditColumn": "Kredit Δ",
+      "vatCodeColumn": "Moms-kod",
+      "baseColumn": "Bas Δ",
+      "amountColumn": "Moms Δ"
     }
   },
   "evidence": {
@@ -318,7 +343,11 @@
       "readOnly": "Avslutskörningar är skrivskyddade i den här versionen.",
       "copilotLabel": "Avslutscopilot",
       "copilotTitle": "Månadsavslutet förblir synligt medan kön rör sig.",
-      "advisoryBadge": "Endast rådgivande"
+      "advisoryBadge": "Endast rådgivande",
+      "empty": {
+        "title": "Periodavslut är inte tillgängligt ännu",
+        "message": "Checklistor för månadsavslut visas här när periodavslut är implementerat. Granskningskön är fortfarande vägen till bokförda verifikat."
+      }
     }
   },
   "reports": {
@@ -717,6 +746,119 @@
       "saved": "AI-hållningen sparad.",
       "saveError": "AI-hållningen kunde inte sparas."
     },
+    "about": {
+      "eyebrow": "Inställningar / Om",
+      "title": "Om den här versionen",
+      "description": "Den här ytan gör plattformens hållning tydlig: drift i Sverige, append-only-bokföringshändelser och tydlig separation mellan rådgivande intelligens och beslutanderätt att bokföra.",
+      "status": {
+        "title": "Status",
+        "description": "Skrivskyddad bild av hur den här versionen körs idag. Mutationer går fortfarande via granskningskön."
+      },
+      "runtimePosture": {
+        "title": "Körläge",
+        "modes": { "demo": "Demoläge", "normal": "Normalläge" },
+        "modeActive": "{mode} är aktivt för det här webbskalet.",
+        "demoBody": "Lokal demolagring och lokal AI-reserv syns med flit.",
+        "normalBody": "Normalläge förväntar API-stödd beteende och visar otillgängligt tillstånd när konfiguration saknas.",
+        "serviceWorkerDisabled": "Service worker-registrering är avstängd för den här versionen.",
+        "serviceWorkerEnabled": "Service worker-registrering är påslagen med cache endast för statiska tillgångar."
+      },
+      "deploymentPosture": {
+        "title": "Drifthållning",
+        "line1": "Azure i Sweden Central, Supabase i Stockholm, oföränderliga underlag i Blob-lagring.",
+        "line2": "Normalläge använder den riktiga API-vägen och ersätter inte bokföringsdata med syntetiska data.",
+        "line3": "Förhandsgranskningsautomation ligger utanför produktionens mutationsväg."
+      },
+      "workspaceInfo": {
+        "eyebrow": "Arbetsyta",
+        "title": "Sweden Central · Stockholm",
+        "today": "Idag är det {date}."
+      },
+      "auditSpine": {
+        "title": "Revisionsryggrad",
+        "line1": "Append-only-händelser är den juridiska sanningen.",
+        "line2": "Läsmodeller driver gränssnittet, aldrig tvärtom.",
+        "line3": "Rättelser är nya händelser med aktörs- och tidsstämpelproveniens."
+      },
+      "appearance": {
+        "title": "Utseende",
+        "themeTitle": "Tema",
+        "themeBody": "Följ systeminställningen, eller tvinga ljust eller mörkt tema för den här enheten."
+      },
+      "configuration": {
+        "title": "Konfiguration",
+        "description": "Dessa områden motsvarar vad operatörer förväntar sig i en produktionsarbetsyta. Koppling sker funktion för funktion.",
+        "comingSoon": "Kommer snart",
+        "profile": {
+          "title": "Profil",
+          "body": "Inloggad identitet, personliga preferenser och sessionssynlighet mellan enheter."
+        },
+        "billing": {
+          "title": "Fakturering",
+          "body": "Prenumeration, användning och fakturaleverans för JPX-arbetsytan."
+        },
+        "workspace": {
+          "title": "Arbetsyta",
+          "body": "Hyresgästnamn, räkenskapskalender, kontostandarder och miljöetiketter.",
+          "companyLink": "Företagsinställningar",
+          "fiscalYearLink": "Räkenskapsår & moms"
+        },
+        "integrations": {
+          "title": "Integrationer",
+          "body": "Skatteverkets deklarationer, bankflöden och löneöverlämningar med tydliga förtroendenivåer.",
+          "link": "Öppna integrationer"
+        },
+        "team": {
+          "title": "Team",
+          "body": "Bjud in kollegor, delegera granskningsbanor och separera rådgivning från bokföringsroller.",
+          "link": "Öppna team & roller"
+        }
+      }
+    },
+    "company": {
+      "organizationName": "Organisationsnamn",
+      "organizationNumber": "Organisationsnummer",
+      "organizationNumberPlaceholder": "556677-8899",
+      "address": "Adress",
+      "postalCode": "Postnummer",
+      "postalCodePlaceholder": "111 22",
+      "city": "Ort",
+      "contactEmail": "Kontakt-e-post",
+      "workspaceProfile": "Arbetsytans profil",
+      "country": "Land",
+      "locale": "Språk",
+      "currency": "Valuta",
+      "fiscalYearStart": "Räkenskapsårets start",
+      "vatPeriod": "Momsperiod",
+      "save": "Spara företag",
+      "saving": "Sparar…",
+      "saved": "Företagsinställningarna sparade.",
+      "saveError": "Företagsinställningarna kunde inte sparas.",
+      "countries": { "SE": "Sverige" },
+      "locales": { "sv-SE": "Svenska", "en-GB": "Engelska" },
+      "currencies": {
+        "SEK": "SEK",
+        "EUR": "EUR",
+        "NOK": "NOK",
+        "DKK": "DKK",
+        "GBP": "GBP",
+        "USD": "USD"
+      },
+      "months": {
+        "01": "Januari",
+        "02": "Februari",
+        "03": "Mars",
+        "04": "April",
+        "05": "Maj",
+        "06": "Juni",
+        "07": "Juli",
+        "08": "Augusti",
+        "09": "September",
+        "10": "Oktober",
+        "11": "November",
+        "12": "December"
+      }
+    },
     "fiscalYear": {
       "eyebrow": "Inställningar / Räkenskapsår & moms",
       "title": "Räkenskapsår och momstakt.",
@@ -756,7 +898,31 @@
       "retentionTitle": "Arkiveringsbas",
       "retentionBody": "Räkenskapsinformation bevaras till och med det sjunde året efter utgången av det kalenderår då räkenskapsåret avslutades. Den append-only-förda huvudboken och de oföränderliga underlagen är hur arbetsytan uppfyller den skyldigheten.",
       "sourceLabel": "Källa",
-      "retentionLink": "Öppna arkiveringspolicyn"
+      "retentionLink": "Öppna arkiveringspolicyn",
+      "alerts": {
+        "label": "Regelefterlevnad",
+        "title": "Aktiva regulatoriska signaler",
+        "description": "Om detekteras vid uppdatering med samma regler som matar regelefterlevnadspanelen i rapporter. Automatiskt lösta detekteringar döljs som standard.",
+        "refresh": "Uppdatera larm",
+        "refreshing": "Uppdaterar…",
+        "refreshError": "Regelefterlevnadslarm kunde inte uppdateras.",
+        "loading": "Laddar regelefterlevnadslarm…",
+        "empty": "Inga aktiva regelefterlevnadslarm — bevakningslistan är tom.",
+        "includeResolved": "Visa lösta",
+        "openReview": "Öppna i granskningskön",
+        "statusAutoResolved": "Automatiskt löst av systemet",
+        "severity": {
+          "info": "Info",
+          "warning": "Varning",
+          "critical": "Kritisk"
+        },
+        "status": {
+          "open": "Öppen",
+          "acknowledged": "Bekräftad",
+          "resolved": "Löst",
+          "dismissed": "Avfärdad"
+        }
+      }
     },
     "retention": {
       "eyebrow": "Inställningar / Arkivering",
@@ -853,6 +1019,16 @@
         "title": "E-postintag",
         "body": "En intagsadress per arbetsyta som gör vidarebefordrade fakturor till insamlingsutkast. Inte byggd ännu — det finns ingen adress att visa."
       }
+    },
+    "sidebar": {
+      "company": "Företag",
+      "fiscalYear": "Räkenskapsår & moms",
+      "integrations": "Integrationer",
+      "team": "Team & roller",
+      "aiPosture": "AI-hållning",
+      "retention": "Arkivering",
+      "compliance": "Regelefterlevnad",
+      "about": "Om den här versionen"
     }
   }
 }

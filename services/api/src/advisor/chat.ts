@@ -355,6 +355,12 @@ export function createAdvisorChatHandler(options: AdvisorChatHandlerOptions): (r
       const approvalResponse = findApprovalResponse(messages);
 
       if (approvalResponse) {
+        // Demo replay intentionally skips HMAC: MemoryLedgerStore exposes the
+        // same applyReviewDecision path the review-queue button already uses,
+        // so forging an approval here grants no privilege an anonymous demo
+        // user lacks (§A C8). Normal mode MUST use streamText +
+        // experimental_toolApprovalSecret below instead.
+        //
         // Human answered the proposal: execute through the review gate on
         // approval, or skip entirely on denial. Executed BEFORE streaming so
         // store errors surface as proper HTTP errors, not mid-stream noise.
@@ -407,6 +413,10 @@ export function createAdvisorChatHandler(options: AdvisorChatHandlerOptions): (r
       }),
     };
 
+    // experimental_toolApprovalSecret is the sole normal-mode forgery guard (§A N7).
+    // It is an unstable `experimental_` AI SDK 7 API — pin upgrades, monitor
+    // release notes, and restore an equivalent server-side HMAC check if the flag
+    // is renamed or removed.
     const result = streamText({
       model,
       system: buildSystemPrompt(grounding, passages),

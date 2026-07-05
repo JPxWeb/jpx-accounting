@@ -47,6 +47,10 @@ jobs:
       - name: Typecheck all packages
         run: pnpm typecheck
 
+      # Matches root `pnpm check` — tests/ has its own tsconfig (see tests/tsconfig.json).
+      - name: Typecheck tests directory
+        run: pnpm typecheck:tests
+
       - name: Run unit tests
         run: pnpm test:unit
 
@@ -100,8 +104,9 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm test:e2e:install
 
-      - name: Build
-        run: pnpm build
+      # E2E servers expect demo/proxy env inlined at build time (playwright.config.ts).
+      - name: Build for E2E
+        run: pnpm build:e2e
 
       - name: Run E2E tests
         run: npx playwright test

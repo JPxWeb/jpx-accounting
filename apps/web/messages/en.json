@@ -151,6 +151,31 @@
       "supplierPlaceholder": "Filter by supplier...",
       "confidenceAria": "Filter by confidence",
       "allConfidence": "All confidence"
+    },
+    "simulation": {
+      "selectHint": "Select pending reviews to preview the ledger impact before approving.",
+      "selectReview": "Select {title} for simulation",
+      "previewButton": "Preview impact ({count})",
+      "requestTitle": "Preview {count, plural, one {# approval} other {# approvals}}",
+      "eyebrow": "Simulation",
+      "title": "Approval impact preview",
+      "description": "Read-only projection for {count, plural, one {# selected review} other {# selected reviews}}. No vouchers are posted.",
+      "close": "Close",
+      "closeAria": "Close simulation preview",
+      "loading": "Running simulation…",
+      "notFoundError": "One or more selected reviews no longer exist. Refresh the queue and try again.",
+      "serverError": "The simulation service is unavailable. Try again shortly.",
+      "genericError": "The simulation could not be completed.",
+      "balanceTitle": "Account balance changes",
+      "balanceEmpty": "No account movement for this selection.",
+      "vatTitle": "VAT changes",
+      "vatEmpty": "No VAT movement for this selection.",
+      "accountColumn": "Account",
+      "debitColumn": "Debit Δ",
+      "creditColumn": "Credit Δ",
+      "vatCodeColumn": "VAT code",
+      "baseColumn": "Base Δ",
+      "amountColumn": "VAT Δ"
     }
   },
   "evidence": {
@@ -318,7 +343,11 @@
       "readOnly": "Close runs are read-only in this build.",
       "copilotLabel": "Close Copilot",
       "copilotTitle": "Month-end stays visible while the queue moves.",
-      "advisoryBadge": "Advisory only"
+      "advisoryBadge": "Advisory only",
+      "empty": {
+        "title": "Period close not available yet",
+        "message": "Month-end checklists will appear here once period-close runs are implemented. The review queue remains the path to posted vouchers."
+      }
     }
   },
   "reports": {
@@ -717,6 +746,119 @@
       "saved": "AI posture saved.",
       "saveError": "Could not save the AI posture."
     },
+    "about": {
+      "eyebrow": "Settings / About",
+      "title": "About this build",
+      "description": "This slice makes the platform posture legible: Sweden-hosted deployment, append-only accounting events, and clear separation between advisory intelligence and mutation authority.",
+      "status": {
+        "title": "Status",
+        "description": "Read-only picture of how this build is running today. Mutations still flow through the inbox review path."
+      },
+      "runtimePosture": {
+        "title": "Runtime posture",
+        "modes": { "demo": "Demo mode", "normal": "Normal mode" },
+        "modeActive": "{mode} is active for this web shell.",
+        "demoBody": "Local demo store and local AI fallback are visible on purpose.",
+        "normalBody": "Normal mode expects API-backed behavior and surfaces unavailable state when config is missing.",
+        "serviceWorkerDisabled": "Service worker registration is disabled for this build.",
+        "serviceWorkerEnabled": "Service worker registration is enabled with static-asset-only caching."
+      },
+      "deploymentPosture": {
+        "title": "Deployment posture",
+        "line1": "Azure in Sweden Central, Supabase in Stockholm, immutable evidence in Blob storage.",
+        "line2": "Normal mode uses the real API path and does not substitute synthetic accounting data.",
+        "line3": "Preview-only automation remains outside the production mutation path."
+      },
+      "workspaceInfo": {
+        "eyebrow": "Workspace",
+        "title": "Sweden Central · Stockholm",
+        "today": "Today is {date}."
+      },
+      "auditSpine": {
+        "title": "Audit spine",
+        "line1": "Append-only events are the legal source of truth.",
+        "line2": "Read models power the UI, never the other way around.",
+        "line3": "Corrections are new events with actor and timestamp provenance."
+      },
+      "appearance": {
+        "title": "Appearance",
+        "themeTitle": "Theme",
+        "themeBody": "Follow the system preference, or force light or dark for this device."
+      },
+      "configuration": {
+        "title": "Configuration",
+        "description": "These areas map to what operators expect in a production workspace. Wiring arrives feature-by-feature.",
+        "comingSoon": "Coming soon",
+        "profile": {
+          "title": "Profile",
+          "body": "Signed-in identity, personal preferences, and session visibility across devices."
+        },
+        "billing": {
+          "title": "Billing",
+          "body": "Subscription, usage, and invoice delivery for the JPX workspace."
+        },
+        "workspace": {
+          "title": "Workspace",
+          "body": "Tenant name, fiscal calendar, chart defaults, and environment labels.",
+          "companyLink": "Company settings",
+          "fiscalYearLink": "Fiscal year & VAT"
+        },
+        "integrations": {
+          "title": "Integrations",
+          "body": "Skatteverket declarations, bank feeds, and payroll hand-offs with explicit trust tiers.",
+          "link": "Open integrations"
+        },
+        "team": {
+          "title": "Team",
+          "body": "Invite colleagues, delegate review lanes, and separate advisory from posting roles.",
+          "link": "Open team & roles"
+        }
+      }
+    },
+    "company": {
+      "organizationName": "Organization name",
+      "organizationNumber": "Organization number",
+      "organizationNumberPlaceholder": "556677-8899",
+      "address": "Address",
+      "postalCode": "Postal code",
+      "postalCodePlaceholder": "111 22",
+      "city": "City",
+      "contactEmail": "Contact email",
+      "workspaceProfile": "Workspace profile",
+      "country": "Country",
+      "locale": "Locale",
+      "currency": "Currency",
+      "fiscalYearStart": "Fiscal year start",
+      "vatPeriod": "VAT period",
+      "save": "Save company",
+      "saving": "Saving…",
+      "saved": "Company settings saved.",
+      "saveError": "Could not save company settings.",
+      "countries": { "SE": "Sweden" },
+      "locales": { "sv-SE": "Svenska", "en-GB": "English" },
+      "currencies": {
+        "SEK": "SEK",
+        "EUR": "EUR",
+        "NOK": "NOK",
+        "DKK": "DKK",
+        "GBP": "GBP",
+        "USD": "USD"
+      },
+      "months": {
+        "01": "January",
+        "02": "February",
+        "03": "March",
+        "04": "April",
+        "05": "May",
+        "06": "June",
+        "07": "July",
+        "08": "August",
+        "09": "September",
+        "10": "October",
+        "11": "November",
+        "12": "December"
+      }
+    },
     "fiscalYear": {
       "eyebrow": "Settings / Fiscal year & VAT",
       "title": "Fiscal year and VAT cadence.",
@@ -756,7 +898,31 @@
       "retentionTitle": "Retention baseline",
       "retentionBody": "Accounting records are kept until the end of the seventh year after the calendar year in which the fiscal year ended. The append-only ledger and immutable evidence files are how this workspace meets that duty.",
       "sourceLabel": "Source",
-      "retentionLink": "Open the retention policy"
+      "retentionLink": "Open the retention policy",
+      "alerts": {
+        "label": "Compliance watch",
+        "title": "Active regulatory signals",
+        "description": "Re-detected on refresh from the same rules that feed the reports compliance panel. Resolved auto-detections are hidden by default.",
+        "refresh": "Refresh alerts",
+        "refreshing": "Refreshing…",
+        "refreshError": "Compliance alerts could not be refreshed.",
+        "loading": "Loading compliance alerts…",
+        "empty": "No active compliance alerts — the watch list is clear.",
+        "includeResolved": "Show resolved",
+        "openReview": "Open in review queue",
+        "statusAutoResolved": "Auto-resolved by system",
+        "severity": {
+          "info": "Info",
+          "warning": "Warning",
+          "critical": "Critical"
+        },
+        "status": {
+          "open": "Open",
+          "acknowledged": "Acknowledged",
+          "resolved": "Resolved",
+          "dismissed": "Dismissed"
+        }
+      }
     },
     "retention": {
       "eyebrow": "Settings / Retention",
@@ -853,6 +1019,16 @@
         "title": "Email intake",
         "body": "A per-workspace intake address that turns forwarded invoices into capture drafts. Not built yet — there is no address to show."
       }
+    },
+    "sidebar": {
+      "company": "Company",
+      "fiscalYear": "Fiscal year & VAT",
+      "integrations": "Integrations",
+      "team": "Team & roles",
+      "aiPosture": "AI posture",
+      "retention": "Retention",
+      "compliance": "Compliance watch",
+      "about": "About this build"
     }
   }
 }

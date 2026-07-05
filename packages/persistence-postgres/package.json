@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@jpx-accounting/advisor": "workspace:*",
     "@jpx-accounting/contracts": "workspace:*",
     "@jpx-accounting/domain": "workspace:*",
     "postgres": "3.4.5"

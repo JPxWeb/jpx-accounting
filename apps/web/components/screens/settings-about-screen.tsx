@@ -1,97 +1,123 @@
 "use client";
 
-import { formatRuntimeModeLabel } from "../../lib/presentation";
+import { localTodayIso } from "@jpx-accounting/domain";
+import Link from "next/link";
+import { useTranslations } from "next-intl";
+
 import { webRuntimeConfig } from "../../lib/runtime-config";
 import { useWorkspaceProfile } from "../providers/workspace-profile-provider";
 import { ThemeToggle } from "../theme-toggle";
 import { ScreenHeader } from "../ui/screen-header";
 
 function ComingSoon({ title, body, testId }: { title: string; body: string; testId?: string }) {
+  const t = useTranslations("settings.about.configuration");
+
   return (
     <section className="glass-panel rounded-xl p-5" data-testid={testId}>
       <h3 className="text-lg font-semibold text-foreground">{title}</h3>
       <p className="mt-3 text-sm text-muted-foreground">{body}</p>
-      <p className="text-eyebrow mt-4">Coming soon</p>
+      <p className="text-eyebrow mt-4">{t("comingSoon")}</p>
+    </section>
+  );
+}
+
+function ConfigLinkCard({
+  title,
+  body,
+  links,
+  testId,
+}: {
+  title: string;
+  body: string;
+  links: readonly { href: string; label: string }[];
+  testId?: string;
+}) {
+  return (
+    <section className="glass-panel rounded-xl p-5" data-testid={testId}>
+      <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+      <p className="mt-3 text-sm text-muted-foreground">{body}</p>
+      <div className="mt-4 flex flex-wrap gap-3">
+        {links.map((link) => (
+          <Link key={link.href} href={link.href} className="text-sm font-semibold text-foreground underline">
+            {link.label}
+          </Link>
+        ))}
+      </div>
     </section>
   );
 }
 
 export function SettingsAboutScreen() {
+  const t = useTranslations("settings.about");
   const { locale } = useWorkspaceProfile();
   const today = new Date();
+  const todayIso = localTodayIso();
+  const runtimeMode = webRuntimeConfig.runtimeMode;
 
   return (
     <div className="space-y-8">
-      <ScreenHeader
-        eyebrow="Settings / About"
-        title="About this build"
-        description="This slice makes the platform posture legible: Sweden-hosted deployment, append-only accounting events, and clear separation between advisory intelligence and mutation authority."
-        testId="settings-hero"
-      />
+      <ScreenHeader eyebrow={t("eyebrow")} title={t("title")} description={t("description")} testId="settings-hero" />
 
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-foreground">Status</h2>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Read-only picture of how this build is running today. Mutations still flow through the inbox review path.
-        </p>
+        <h2 className="text-xl font-semibold text-foreground">{t("status.title")}</h2>
+        <p className="max-w-3xl text-sm text-muted-foreground">{t("status.description")}</p>
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="glass-panel rounded-xl p-5" data-testid="runtime-posture">
-            <h3 className="text-lg font-semibold">Runtime posture</h3>
+            <h3 className="text-lg font-semibold">{t("runtimePosture.title")}</h3>
             <ul className="mt-4 list-none space-y-3 text-sm text-muted-foreground">
-              <li>{formatRuntimeModeLabel(webRuntimeConfig.runtimeMode)} is active for this web shell.</li>
               <li>
-                {webRuntimeConfig.runtimeMode === "demo"
-                  ? "Local demo store and local AI fallback are visible on purpose."
-                  : "Normal mode expects API-backed behavior and surfaces unavailable state when config is missing."}
+                {t("runtimePosture.modeActive", {
+                  mode: t(`runtimePosture.modes.${runtimeMode}`),
+                })}
               </li>
+              <li>{runtimeMode === "demo" ? t("runtimePosture.demoBody") : t("runtimePosture.normalBody")}</li>
               <li>
-                Service worker registration is{" "}
                 {webRuntimeConfig.disableServiceWorker
-                  ? "disabled for this build."
-                  : "enabled with static-asset-only caching."}
+                  ? t("runtimePosture.serviceWorkerDisabled")
+                  : t("runtimePosture.serviceWorkerEnabled")}
               </li>
             </ul>
           </section>
 
           <section className="glass-panel rounded-xl p-5" data-testid="deployment-posture">
-            <h3 className="text-lg font-semibold">Deployment posture</h3>
+            <h3 className="text-lg font-semibold">{t("deploymentPosture.title")}</h3>
             <ul className="mt-4 list-none space-y-3 text-sm text-muted-foreground">
-              <li>Azure in Sweden Central, Supabase in Stockholm, immutable evidence in Blob storage.</li>
-              <li>Normal mode uses the real API path and does not substitute synthetic accounting data.</li>
-              <li>Preview-only automation remains outside the production mutation path.</li>
+              <li>{t("deploymentPosture.line1")}</li>
+              <li>{t("deploymentPosture.line2")}</li>
+              <li>{t("deploymentPosture.line3")}</li>
             </ul>
           </section>
 
           <section data-testid="workspace-info" className="glass-panel rounded-xl p-5">
-            <p className="text-eyebrow">Workspace</p>
-            <h3 className="mt-2 text-lg font-semibold">Sweden Central · Stockholm</h3>
+            <p className="text-eyebrow">{t("workspaceInfo.eyebrow")}</p>
+            <h3 className="mt-2 text-lg font-semibold">{t("workspaceInfo.title")}</h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              Today is{" "}
-              <time dateTime={today.toISOString().slice(0, 10)} suppressHydrationWarning>
-                {new Intl.DateTimeFormat(locale).format(today)}
-              </time>
-              .
+              {t.rich("workspaceInfo.today", {
+                date: () => (
+                  <time dateTime={todayIso} suppressHydrationWarning>
+                    {new Intl.DateTimeFormat(locale).format(today)}
+                  </time>
+                ),
+              })}
             </p>
           </section>
 
           <section className="glass-panel rounded-xl p-5" data-testid="audit-spine">
-            <h3 className="text-lg font-semibold">Audit spine</h3>
+            <h3 className="text-lg font-semibold">{t("auditSpine.title")}</h3>
             <ul className="mt-4 list-none space-y-3 text-sm text-muted-foreground">
-              <li>Append-only events are the legal source of truth.</li>
-              <li>Read models power the UI, never the other way around.</li>
-              <li>Corrections are new events with actor and timestamp provenance.</li>
+              <li>{t("auditSpine.line1")}</li>
+              <li>{t("auditSpine.line2")}</li>
+              <li>{t("auditSpine.line3")}</li>
             </ul>
           </section>
         </div>
       </div>
 
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-foreground">Appearance</h2>
+        <h2 className="text-xl font-semibold text-foreground">{t("appearance.title")}</h2>
         <section className="glass-panel rounded-xl p-5" data-testid="appearance-settings">
-          <h3 className="text-lg font-semibold">Theme</h3>
-          <p className="mt-3 text-sm text-muted-foreground">
-            Follow the system preference, or force light or dark for this device.
-          </p>
+          <h3 className="text-lg font-semibold">{t("appearance.themeTitle")}</h3>
+          <p className="mt-3 text-sm text-muted-foreground">{t("appearance.themeBody")}</p>
           <div className="mt-4">
             <ThemeToggle />
           </div>
@@ -99,27 +125,34 @@ export function SettingsAboutScreen() {
       </div>
 
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-foreground">Configuration</h2>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          These areas map to what operators expect in a production workspace. Wiring arrives feature-by-feature.
-        </p>
+        <h2 className="text-xl font-semibold text-foreground">{t("configuration.title")}</h2>
+        <p className="max-w-3xl text-sm text-muted-foreground">{t("configuration.description")}</p>
         <div className="grid gap-6 md:grid-cols-2">
-          <ComingSoon
-            title="Profile"
-            body="Signed-in identity, personal preferences, and session visibility across devices."
+          <ComingSoon title={t("configuration.profile.title")} body={t("configuration.profile.body")} />
+          <ConfigLinkCard
+            title={t("configuration.workspace.title")}
+            body={t("configuration.workspace.body")}
+            testId="workspace-config-card"
+            links={[
+              { href: "/settings/company", label: t("configuration.workspace.companyLink") },
+              { href: "/settings/fiscal-year", label: t("configuration.workspace.fiscalYearLink") },
+            ]}
           />
-          <ComingSoon title="Workspace" body="Tenant name, fiscal calendar, chart defaults, and environment labels." />
-          <ComingSoon
-            title="Integrations"
-            body="Skatteverket declarations, bank feeds, and payroll hand-offs with explicit trust tiers."
+          <ConfigLinkCard
+            title={t("configuration.integrations.title")}
+            body={t("configuration.integrations.body")}
+            testId="integrations-config-card"
+            links={[{ href: "/settings/integrations", label: t("configuration.integrations.link") }]}
+          />
+          <ConfigLinkCard
+            title={t("configuration.team.title")}
+            body={t("configuration.team.body")}
+            testId="team-config-card"
+            links={[{ href: "/settings/team", label: t("configuration.team.link") }]}
           />
           <ComingSoon
-            title="Team"
-            body="Invite colleagues, delegate review lanes, and separate advisory from posting roles."
-          />
-          <ComingSoon
-            title="Billing"
-            body="Subscription, usage, and invoice delivery for the JPX workspace."
+            title={t("configuration.billing.title")}
+            body={t("configuration.billing.body")}
             testId="billing-card"
           />
         </div>

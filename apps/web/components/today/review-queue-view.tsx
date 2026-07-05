@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReviewKeyboard } from "../../hooks/use-review-keyboard";
 import { apiClient } from "../../lib/client";
+import { AccountingApiError } from "@jpx-accounting/api-client";
 import { getErrorMessage } from "../../lib/request-errors";
 import {
   type ConfidenceFilter,
@@ -20,11 +21,13 @@ import {
 import { ReviewCard } from "./review-card";
 import { ReviewEditSheet } from "./review-edit-sheet";
 import { ReviewFilters } from "./review-filters";
+import { SimulationPreviewModal } from "./simulation-preview-modal";
 import { MetricCard } from "../ui/metric-card";
 import { ScreenHeader } from "../ui/screen-header";
 import { SectionLabel } from "../ui/section-label";
 import { ScreenSkeleton } from "../ui/skeleton";
 import { UnavailableState } from "../ui/unavailable-state";
+import { Button } from "../ui/button";
 
 /**
  * The full review queue, extracted VERBATIM from the pre-dashboard
@@ -70,9 +73,13 @@ function reviewMatchesStatus(review: ReviewTask, statusFilter: StatusFilter): bo
 
 export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
   const t = useTranslations("today");
+  const tSimulation = useTranslations("today.simulation");
   const queryClient = useQueryClient();
   const [manualFocusId, setManualFocusId] = useState<string | null>(null);
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
+  const [selectedReviewIds, setSelectedReviewIds] = useState<Set<string>>(() => new Set());
+  const [simulationOpen, setSimulationOpen] = useState(false);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
 
   const workspaceQuery = useQuery({
     queryKey: ["workspace"],
@@ -113,6 +120,17 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
   const bookWithoutVatReview = useMutation({
     mutationFn: (id: string) => apiClient.bookWithoutVatReview(id, { actorId: ACTOR_ID }),
     onSuccess: onMutationSuccess,
+  });
+
+  const simulationPreview = useMutation({
+    mutationFn: (reviewIds: string[]) =>
+      apiClient.runSimulation({
+        actorId: ACTOR_ID,
+        title: tSimulation("requestTitle", { count: reviewIds.length }),
+        scenario: "review-queue-preview",
+        reviewIds,
+        action: "approve",
+      }),
   });
 
   const reviews = useMemo(() => data?.reviews ?? [], [data?.reviews]);
@@ -172,6 +190,41 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
     void setSupplier(null);
     void setConfidence("all");
   }, [setStatus, setSupplier, setConfidence]);
+
+  const toggleReviewSelection = useCallback((reviewId: string, selected: boolean) => {
+    setSelectedReviewIds((current) => {
+      const next = new Set(current);
+      if (selected) next.add(reviewId);
+      else next.delete(reviewId);
+      return next;
+    });
+  }, []);
+
+  const openSimulationPreview = useCallback(() => {
+    const reviewIds = [...selectedReviewIds];
+    if (reviewIds.length === 0) return;
+    setSimulationError(null);
+    setSimulationOpen(true);
+    simulationPreview.mutate(reviewIds, {
+      onError: (error) => {
+        if (error instanceof AccountingApiError && error.status === 404) {
+          setSimulationError(tSimulation("notFoundError"));
+          return;
+        }
+        if (error instanceof AccountingApiError && error.status >= 500) {
+          setSimulationError(tSimulation("serverError"));
+          return;
+        }
+        setSimulationError(getErrorMessage(error, tSimulation("genericError")));
+      },
+    });
+  }, [selectedReviewIds, tSimulation, simulationPreview]);
+
+  const closeSimulationPreview = useCallback(() => {
+    setSimulationOpen(false);
+    setSimulationError(null);
+    simulationPreview.reset();
+  }, [simulationPreview]);
 
   const actionError =
     approveReview.error || rejectReview.error || bookWithoutVatReview.error
@@ -253,6 +306,18 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
               <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{t("queueDescription")}</p>
             </div>
             <ReviewFilters />
+            <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+              <p className="text-sm text-muted-foreground">{tSimulation("selectHint")}</p>
+              <Button
+                type="button"
+                variant="secondary"
+                data-testid="simulation-preview-open"
+                disabled={selectedReviewIds.size === 0 || simulationPreview.isPending}
+                onClick={openSimulationPreview}
+              >
+                {tSimulation("previewButton", { count: selectedReviewIds.size })}
+              </Button>
+            </div>
           </div>
           {actionError ? (
             <p className="mt-4 rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">{actionError}</p>
@@ -275,16 +340,33 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
             </div>
           ) : (
             filteredReviews.map((review, index) => (
-              <ReviewCard
-                key={review.id}
-                review={review}
-                voucher={voucherById.get(review.voucherId)}
-                index={index}
-                focused={focusedId === review.id}
-                ref={review.id === paramFocusId ? focusedCardRef : undefined}
-                onFocus={() => setFocusedId(review.id)}
-                onAction={(action) => handleAction(review.id, action)}
-              />
+              <div key={review.id} className="flex items-start gap-3">
+                {review.status === "needs-review" ? (
+                  <label className="mt-5 flex shrink-0 items-center">
+                    <input
+                      type="checkbox"
+                      data-testid={`review-select-${review.id}`}
+                      checked={selectedReviewIds.has(review.id)}
+                      aria-label={tSimulation("selectReview", { title: review.title })}
+                      onChange={(event) => toggleReviewSelection(review.id, event.target.checked)}
+                      className="size-4 rounded border-border"
+                    />
+                  </label>
+                ) : (
+                  <span className="mt-5 w-4 shrink-0" aria-hidden />
+                )}
+                <div className="min-w-0 flex-1">
+                  <ReviewCard
+                    review={review}
+                    voucher={voucherById.get(review.voucherId)}
+                    index={index}
+                    focused={focusedId === review.id}
+                    ref={review.id === paramFocusId ? focusedCardRef : undefined}
+                    onFocus={() => setFocusedId(review.id)}
+                    onAction={(action) => handleAction(review.id, action)}
+                  />
+                </div>
+              </div>
             ))
           )}
         </div>
@@ -300,6 +382,16 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
             onMutationSuccess(review);
             setEditingReviewId(null);
           }}
+        />
+      ) : null}
+
+      {simulationOpen ? (
+        <SimulationPreviewModal
+          run={simulationPreview.data}
+          loading={simulationPreview.isPending}
+          errorMessage={simulationError}
+          selectedCount={selectedReviewIds.size}
+          onClose={closeSimulationPreview}
         />
       ) : null}
     </div>

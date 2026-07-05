@@ -10,7 +10,9 @@ import {
   DEFAULT_WORKSPACE_PROFILE,
 } from "@jpx-accounting/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
+import { useMemo } from "react";
 import { type Control, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -22,44 +24,9 @@ import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { ScreenSkeleton } from "../ui/skeleton";
 
-const COUNTRY_LABELS: Record<CountryCode, string> = { SE: "Sweden" };
-
-const COUNTRY_OPTIONS = countryCodeSchema.options.map((code) => ({ value: code, label: COUNTRY_LABELS[code] }));
-
-const LOCALE_OPTIONS = [
-  { value: "sv-SE", label: "Svenska" },
-  { value: "en-GB", label: "English" },
-];
-
-const CURRENCY_OPTIONS = ["SEK", "EUR", "NOK", "DKK", "GBP", "USD"].map((code) => ({ value: code, label: code }));
-
-const MONTH_LABELS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-
-const FISCAL_YEAR_START_OPTIONS = MONTH_LABELS.map((label, index) => ({
-  value: `${String(index + 1).padStart(2, "0")}-01`,
-  label,
-}));
-
-// VAT reporting cadence (Task 5.10) — drives the statutory tax calendar and
-// the VAT widgets. Values come from `vatPeriodSchema` in contracts.
-const VAT_PERIOD_OPTIONS = [
-  { value: "monthly", label: "Monthly" },
-  { value: "quarterly", label: "Quarterly" },
-  { value: "yearly", label: "Yearly" },
-];
+const CURRENCY_CODES = ["SEK", "EUR", "NOK", "DKK", "GBP", "USD"] as const;
+const LOCALE_CODES = ["sv-SE", "en-GB"] as const;
+const VAT_PERIOD_CODES = ["monthly", "quarterly", "yearly"] as const;
 
 type ProfileSelectName =
   | "profile.country"
@@ -109,9 +76,49 @@ function ProfileSelectField({
   );
 }
 
+function useCompanyFormOptions() {
+  const t = useTranslations("settings.company");
+  const tVat = useTranslations("settings.fiscalYear");
+
+  return useMemo(() => {
+    const countryOptions = countryCodeSchema.options.map((code) => ({
+      value: code,
+      label: t(`countries.${code as CountryCode}`),
+    }));
+
+    const localeOptions = LOCALE_CODES.map((code) => ({
+      value: code,
+      label: t(`locales.${code}`),
+    }));
+
+    const currencyOptions = CURRENCY_CODES.map((code) => ({
+      value: code,
+      label: t(`currencies.${code}`),
+    }));
+
+    const fiscalYearStartOptions = Array.from({ length: 12 }, (_, index) => {
+      const month = String(index + 1).padStart(2, "0");
+      return {
+        value: `${month}-01`,
+        label: t(`months.${month}`),
+      };
+    });
+
+    const vatPeriodOptions = VAT_PERIOD_CODES.map((code) => ({
+      value: code,
+      label: tVat(`vatPeriods.${code}`),
+    }));
+
+    return { countryOptions, localeOptions, currencyOptions, fiscalYearStartOptions, vatPeriodOptions };
+  }, [t, tVat]);
+}
+
 function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
+  const t = useTranslations("settings.company");
   const queryClient = useQueryClient();
   const router = useRouter();
+  const { countryOptions, localeOptions, currencyOptions, fiscalYearStartOptions, vatPeriodOptions } =
+    useCompanyFormOptions();
 
   const form = useForm<CompanySettings>({
     // @hookform/resolvers v5.2 has an overload-resolution bug on Zod v4 schemas:
@@ -131,10 +138,10 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
       // refresh re-renders server components with the new catalog + html lang.
       document.cookie = `NEXT_LOCALE=${messagesLocale(saved.profile.locale)}; path=/; max-age=31536000`;
       router.refresh();
-      toast.success("Company settings saved.");
+      toast.success(t("saved"));
     },
     onError: () => {
-      toast.error("Could not save company settings.");
+      toast.error(t("saveError"));
     },
   });
 
@@ -150,7 +157,7 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
           name="organizationName"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Organization name</FormLabel>
+              <FormLabel>{t("organizationName")}</FormLabel>
               <FormControl>
                 <Input {...field} />
               </FormControl>
@@ -163,9 +170,9 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
           name="organizationNumber"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Organization number</FormLabel>
+              <FormLabel>{t("organizationNumber")}</FormLabel>
               <FormControl>
-                <Input placeholder="556677-8899" {...field} />
+                <Input placeholder={t("organizationNumberPlaceholder")} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -176,7 +183,7 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
           name="addressLine1"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Address</FormLabel>
+              <FormLabel>{t("address")}</FormLabel>
               <FormControl>
                 <Input {...field} />
               </FormControl>
@@ -190,9 +197,9 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
             name="postalCode"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Postal code</FormLabel>
+                <FormLabel>{t("postalCode")}</FormLabel>
                 <FormControl>
-                  <Input placeholder="111 22" {...field} />
+                  <Input placeholder={t("postalCodePlaceholder")} {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -203,7 +210,7 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
             name="city"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>City</FormLabel>
+                <FormLabel>{t("city")}</FormLabel>
                 <FormControl>
                   <Input {...field} />
                 </FormControl>
@@ -217,7 +224,7 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
           name="contactEmail"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Contact email</FormLabel>
+              <FormLabel>{t("contactEmail")}</FormLabel>
               <FormControl>
                 <Input type="email" {...field} />
               </FormControl>
@@ -226,47 +233,47 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
           )}
         />
         <fieldset className="space-y-4 rounded-lg border border-border p-4">
-          <legend className="px-1 text-sm font-medium text-foreground">Workspace profile</legend>
+          <legend className="px-1 text-sm font-medium text-foreground">{t("workspaceProfile")}</legend>
           <div className="grid grid-cols-2 gap-4">
             <ProfileSelectField
               control={form.control}
               name="profile.country"
-              label="Country"
-              options={COUNTRY_OPTIONS}
+              label={t("country")}
+              options={countryOptions}
               testId="company-profile-country"
             />
             <ProfileSelectField
               control={form.control}
               name="profile.locale"
-              label="Locale"
-              options={LOCALE_OPTIONS}
+              label={t("locale")}
+              options={localeOptions}
               testId="company-profile-locale"
             />
             <ProfileSelectField
               control={form.control}
               name="profile.currency"
-              label="Currency"
-              options={CURRENCY_OPTIONS}
+              label={t("currency")}
+              options={currencyOptions}
               testId="company-profile-currency"
             />
             <ProfileSelectField
               control={form.control}
               name="profile.fiscalYearStart"
-              label="Fiscal year start"
-              options={FISCAL_YEAR_START_OPTIONS}
+              label={t("fiscalYearStart")}
+              options={fiscalYearStartOptions}
               testId="company-profile-fiscal-year-start"
             />
             <ProfileSelectField
               control={form.control}
               name="profile.vatPeriod"
-              label="VAT period"
-              options={VAT_PERIOD_OPTIONS}
+              label={t("vatPeriod")}
+              options={vatPeriodOptions}
               testId="company-vat-period"
             />
           </div>
         </fieldset>
         <Button type="submit" disabled={mutation.isPending} data-testid="company-form-submit">
-          {mutation.isPending ? "Saving…" : "Save company"}
+          {mutation.isPending ? t("saving") : t("save")}
         </Button>
       </form>
     </Form>

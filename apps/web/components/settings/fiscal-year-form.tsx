@@ -1,7 +1,7 @@
 "use client";
 
 import { type CompanySettings, DEFAULT_WORKSPACE_PROFILE } from "@jpx-accounting/contracts";
-import { buildTaxTimeline, resolvePeriodToken, TAX_DEADLINE_SOURCES } from "@jpx-accounting/domain";
+import { buildTaxTimeline, localTodayIso, resolvePeriodToken, TAX_DEADLINE_SOURCES } from "@jpx-accounting/domain";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
@@ -13,13 +13,6 @@ import { Button } from "../ui/button";
 import { SectionLabel } from "../ui/section-label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { ScreenSkeleton } from "../ui/skeleton";
-
-/** Local calendar day (`YYYY-MM-DD`) — never `toISOString().slice` (UTC bug). */
-function localTodayIso(): string {
-  const now = new Date();
-  const pad2 = (value: number) => String(value).padStart(2, "0");
-  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-}
 
 /**
  * How far ahead to look for the next årsredovisning: a fiscal year that just

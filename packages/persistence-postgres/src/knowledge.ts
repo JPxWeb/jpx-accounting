@@ -1,3 +1,4 @@
+import { buildExcerpt } from "@jpx-accounting/advisor";
 import type { KnowledgePassage } from "@jpx-accounting/contracts";
 
 import type { PostgresClient } from "./client";
@@ -21,9 +22,6 @@ import type { PostgresClient } from "./client";
 
 /** Must match the `halfvec(1536)` column — `text-embedding-3-small` dimensions. */
 export const KNOWLEDGE_EMBEDDING_DIMENSIONS = 1536;
-
-/** Mirrors the keyword path (`EXCERPT_TARGET_CHARS` in `@jpx-accounting/advisor`). */
-const EXCERPT_TARGET_CHARS = 300;
 
 export type KnowledgeWorkspaceScope = {
   organizationId: string;
@@ -106,19 +104,6 @@ function parseContentEnvelope(content: string): ContentEnvelope | undefined {
   }
 }
 
-/** Collapse markdown bullets/newlines into one flowing line and cut at a word boundary near the target length. */
-function buildExcerpt(text: string): string {
-  const flowing = text
-    .split("\n")
-    .map((line) => line.replace(/^\s*[-*]\s+/, "").trim())
-    .filter((line) => line.length > 0)
-    .join(" ");
-  if (flowing.length <= EXCERPT_TARGET_CHARS) return flowing;
-  let end = flowing.lastIndexOf(" ", EXCERPT_TARGET_CHARS);
-  if (end <= 0) end = EXCERPT_TARGET_CHARS;
-  return `${flowing.slice(0, end)}…`;
-}
-
 /**
  * Idempotently upsert embedded corpus chunks into `knowledge.documents`,
  * keyed on the stable chunk id. Re-running the ingestion refreshes content,
@@ -190,6 +175,8 @@ function rowToPassage(row: KnowledgeQueryRow): KnowledgePassage {
     id: row.id,
     docId: envelope?.docId ?? row.id.split("#")[0] ?? row.id,
     title: row.title,
+    // No query tokens here — pgvector ranks by embedding, so start-anchored
+    // excerpts preserve historical output (shared util, §A C7).
     excerpt: buildExcerpt(envelope?.text ?? row.content),
     source: envelope?.source ?? row.title,
     ...(row.url ? { url: row.url } : {}),

@@ -240,6 +240,9 @@ importers:
 
   packages/persistence-postgres:
     dependencies:
+      '@jpx-accounting/advisor':
+        specifier: workspace:*
+        version: link:../advisor
       '@jpx-accounting/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -272,6 +275,9 @@ importers:
       '@hono/node-server':
         specifier: 1.19.11
         version: 1.19.11(hono@4.12.8)
+      '@hono/zod-validator':
+        specifier: 0.8.0
+        version: 0.8.0(hono@4.12.8)(zod@4.3.6)
       '@jpx-accounting/advisor':
         specifier: workspace:*
         version: link:../../packages/advisor
@@ -932,6 +938,12 @@ packages:
     engines: {node: '>=18.14.1'}
     peerDependencies:
       hono: ^4
+
+  '@hono/zod-validator@0.8.0':
+    resolution: {integrity: sha512-5uS4S1/LKtZQYvD4BtpPUFkOv8d1wNxHHrChm26buMiEYc1FrHWvDUaKVBwkiVtvSExHSpLGDvcnpI2Copyj9w==}
+    peerDependencies:
+      hono: '>=4.10.0'
+      zod: ^3.25.0 || ^4.0.0
 
   '@hookform/resolvers@5.4.0':
     resolution: {integrity: sha512-EIsqr/t/qbinPIhGjMdtvutIN1Kk4uwbROE9/UQ93CAVGR7GkA7Y92+fX80OzXi/OB67jVFYwKGO1WzkxmkFZw==}
@@ -5322,6 +5334,11 @@ snapshots:
   '@hono/node-server@1.19.11(hono@4.12.8)':
     dependencies:
       hono: 4.12.8
+
+  '@hono/zod-validator@0.8.0(hono@4.12.8)(zod@4.3.6)':
+    dependencies:
+      hono: 4.12.8
+      zod: 4.3.6
 
   '@hookform/resolvers@5.4.0(react-hook-form@7.76.1(react@19.2.4))':
     dependencies:

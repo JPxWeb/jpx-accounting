@@ -94,7 +94,7 @@ function previousDay(date: CalendarDate): CalendarDate {
 }
 
 /** Local calendar today as YYYY-MM-DD (never `toISOString().slice`). */
-function localTodayIso(): string {
+export function localTodayIso(): string {
   const now = new Date();
   return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
 }

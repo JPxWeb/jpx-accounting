@@ -176,6 +176,13 @@ which breaks exactly two API surfaces —
 - The **build job**: web Docker image builds and pushes to GHCR
   (`ghcr.io/jpxweb/jpx-accounting-web`), API bundles with esbuild — CI artifacts are
   healthy; this is purely a deploy-permission problem.
+- **Deploy gating (2026-07-05):** push-to-main deploy now waits for a green **CI**
+  workflow (`workflow_run`) instead of racing CI. Storage **blob CORS** is wired to the
+  live web origin via `storageCorsAllowedOrigins` / Bicep defaults — without it, browser
+  `PUT`s to the SAS URL fail preflight in `normal` mode even after RBAC is fixed.
+- **Secrets wiring (2026-07-05):** Bicep now accepts `advisorToolApprovalSecret`,
+  `supabaseJwksUrl`, `accountingCorsOrigins`, and `supabasePoolerTransactionMode`; normal
+  mode rejects the demo HMAC default at template validation time.
 - **Demo mode** everywhere (local dev, E2E): `StubBlobUploader` never touches Azure,
   so capture/preview flows work without any RBAC.
 - All non-blob API surfaces in `normal` mode once deployed: Postgres ledger writes,

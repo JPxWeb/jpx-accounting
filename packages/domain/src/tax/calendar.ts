@@ -1,6 +1,6 @@
 import type { TaxDeadline, VatPeriod, WorkspaceProfile } from "@jpx-accounting/contracts";
 
-import { resolvePeriodToken } from "../reports/period";
+import { localTodayIso, resolvePeriodToken } from "../reports/period";
 
 /**
  * Swedish statutory tax calendar (advisory pivot Phase 5, plan finding 8 —
@@ -66,12 +66,6 @@ function parseDay(value: string): CalendarDate {
     throw new Error(`Invalid day string "${value}" — expected YYYY-MM-DD.`);
   }
   return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
-}
-
-/** Local calendar today as YYYY-MM-DD (never `toISOString().slice`). */
-function localTodayIso(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
 }
 
 /** Zero-based month index helpers for month arithmetic without Date objects. */

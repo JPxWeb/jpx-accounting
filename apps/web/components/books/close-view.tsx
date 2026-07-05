@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { apiClient } from "../../lib/client";
 import { SectionLabel } from "../ui/section-label";
 import { StatusBadge } from "../ui/status-badge";
+import { UnavailableState } from "../ui/unavailable-state";
 
 function closeItemVariant(status: string) {
   if (status === "ready") return "accent" as const;
@@ -21,6 +22,7 @@ export function CloseView() {
   });
 
   const closeRun = data?.closeRun;
+  const hasChecklist = (closeRun?.checklist.length ?? 0) > 0;
 
   return (
     <div className="space-y-4" data-testid="close-view">
@@ -34,16 +36,20 @@ export function CloseView() {
           </div>
           <StatusBadge status={t("advisoryBadge")} variant="accent" />
         </div>
-        <div className="mt-4 space-y-3">
-          {closeRun?.checklist.map((item) => (
-            <div key={item.id} className="glass-panel-soft rounded-lg px-4 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <p className="text-sm font-medium text-foreground">{item.label}</p>
-                <StatusBadge status={item.status} variant={closeItemVariant(item.status)} />
+        {hasChecklist ? (
+          <div className="mt-4 space-y-3">
+            {closeRun?.checklist.map((item) => (
+              <div key={item.id} className="glass-panel-soft rounded-lg px-4 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-sm font-medium text-foreground">{item.label}</p>
+                  <StatusBadge status={item.status} variant={closeItemVariant(item.status)} />
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <UnavailableState testId="close-run-empty" title={t("empty.title")} message={t("empty.message")} />
+        )}
       </section>
     </div>
   );

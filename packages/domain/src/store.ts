@@ -39,6 +39,7 @@ import {
 } from "./evidence-defaults";
 import { buildJournal, buildBalances, buildVat, filterLedgerLines } from "./projections";
 import { buildReportPack } from "./reports/pack";
+import { currentMonthToken } from "./reports/period";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
@@ -826,14 +827,17 @@ export class MemoryLedgerStore implements LedgerStore {
   }
 
   async getSnapshot(): Promise<WorkspaceSnapshot> {
+    // Defensive array copies (Rule 17): internal collections are mutated in place
+    // (e.g. answerAssistantQuestion unshifts assistantExamples) — callers must not
+    // share mutable refs with the store (§A N8).
     return {
       evidence: [...this.evidence.values()],
       vouchers: [...this.vouchers.values()],
       reviews: await this.getReviewFeed(),
       reports: await this.getReports(),
-      assistantExamples: this.assistantExamples,
+      assistantExamples: [...this.assistantExamples],
       closeRun: await this.getCloseRun(),
-      alerts: this.alerts,
+      alerts: [...this.alerts],
       packets: [...this.evidencePackets.values()],
     };
   }
@@ -863,7 +867,7 @@ export class MemoryLedgerStore implements LedgerStore {
     const voucher = this.vouchers.get(review.voucherId);
     if (!voucher) return undefined;
     // Review decisions are single-use mutations; replayed requests should not post duplicate ledger lines.
-    if (review.status !== "needs-review") return review;
+    if (review.status !== "needs-review") return { ...review };
 
     // Decision-time derivation for edited approvals: validates (throwing
     // InvalidReviewEditError BEFORE any mutation) and derives the effective
@@ -878,9 +882,8 @@ export class MemoryLedgerStore implements LedgerStore {
     }
 
     const occurredAt = nowIso();
-    review.status = action === "approve" ? "approved" : action === "reject" ? "rejected" : "booked-without-vat";
-    voucher.status = review.status;
-    review.provenanceTimeline.push({
+    const newStatus = action === "approve" ? "approved" : action === "reject" ? "rejected" : "booked-without-vat";
+    const timelineStep = {
       id: createId("step"),
       label:
         action === "approve"
@@ -894,16 +897,27 @@ export class MemoryLedgerStore implements LedgerStore {
               : "Booked without VAT deduction",
       timestamp: occurredAt,
       actor: input.actorId,
-    });
+    };
+
+    // Clone-before-mutate (Rule 17): review/voucher may have been returned by
+    // getSnapshot() — replace read models instead of mutating shared objects.
+    let updatedReview: ReviewTask = {
+      ...review,
+      status: newStatus,
+      provenanceTimeline: [...review.provenanceTimeline, timelineStep],
+    };
+    const updatedVoucher: Voucher = { ...voucher, status: newStatus };
     if (edited && postingSuggestion) {
       // Review read model reflects what was actually posted.
-      review.suggestion = postingSuggestion;
+      updatedReview = { ...updatedReview, suggestion: postingSuggestion };
       this.suggestions.set(voucher.id, postingSuggestion);
     }
+    this.reviews.set(reviewId, updatedReview);
+    this.vouchers.set(voucher.id, updatedVoucher);
 
     this.appendEvent({
-      organizationId: voucher.organizationId,
-      workspaceId: voucher.workspaceId,
+      organizationId: updatedVoucher.organizationId,
+      workspaceId: updatedVoucher.workspaceId,
       aggregateType: "review",
       aggregateId: reviewId,
       eventType: action === "approve" ? "ReviewApproved" : "ReviewRejected",
@@ -917,10 +931,10 @@ export class MemoryLedgerStore implements LedgerStore {
       this.ledgerLines.push(...lines);
 
       this.appendEvent({
-        organizationId: voucher.organizationId,
-        workspaceId: voucher.workspaceId,
+        organizationId: updatedVoucher.organizationId,
+        workspaceId: updatedVoucher.workspaceId,
         aggregateType: "ledger",
-        aggregateId: voucher.id,
+        aggregateId: updatedVoucher.id,
         eventType: "PostedToLedger",
         actorId: input.actorId,
         occurredAt,
@@ -930,7 +944,7 @@ export class MemoryLedgerStore implements LedgerStore {
       });
     }
 
-    return review;
+    return { ...updatedReview };
   }
 
   async answerAssistantQuestion(question: string): Promise<AssistantSession> {
@@ -1029,15 +1043,13 @@ export class MemoryLedgerStore implements LedgerStore {
   }
 
   async getCloseRun(): Promise<CloseRun> {
+    // Period-close engine is not implemented yet — return an honest empty shell
+    // instead of a synthetic checklist (Phase 3.5 / §A C2).
     return {
-      id: "close_current",
-      period: "2026-03",
+      id: "close_unavailable",
+      period: currentMonthToken(),
       generatedAt: nowIso(),
-      checklist: [
-        { id: "close_1", label: "Confirm all uploaded evidence has a linked voucher", status: "ready" },
-        { id: "close_2", label: "Review blocked VAT deductions", status: "open" },
-        { id: "close_3", label: "Export SIE package for accountant review", status: "ready" },
-      ],
+      checklist: [],
     };
   }
 }

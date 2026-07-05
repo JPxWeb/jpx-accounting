@@ -83,8 +83,12 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
-@description('Comma-separated browser origins permitted to PUT to blob storage during evidence upload.')
-param storageCorsAllowedOrigins string = 'http://localhost:3002,http://localhost:3200'
+@description('Comma-separated browser origins permitted to PUT to blob storage during evidence upload. When empty, Bicep derives the live web App Service origin plus local dev ports.')
+param storageCorsAllowedOrigins string = ''
+
+var webAppDefaultOrigin = 'https://${namePrefix}-${environmentName}-web.azurewebsites.net'
+var localDevOrigins = 'http://localhost:3002,http://localhost:3200'
+var effectiveStorageCorsAllowedOrigins = empty(storageCorsAllowedOrigins) ? '${webAppDefaultOrigin},${localDevOrigins}' : storageCorsAllowedOrigins
 
 resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
   parent: storage
@@ -95,7 +99,7 @@ resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01
         {
           // PUT for the SAS upload itself; OPTIONS for the preflight; GET so the browser can verify
           // status if the client opts to. Headers cover Content-Type + Azure block-blob metadata.
-          allowedOrigins: split(storageCorsAllowedOrigins, ',')
+          allowedOrigins: split(effectiveStorageCorsAllowedOrigins, ',')
           allowedMethods: ['PUT', 'OPTIONS', 'GET']
           allowedHeaders: ['Content-Type', 'x-ms-blob-type', 'x-ms-version', 'x-ms-date']
           exposedHeaders: ['x-ms-request-id', 'x-ms-version', 'ETag']
@@ -118,9 +122,32 @@ resource evidenceContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
 // App Service – API (Hono, bundled with esbuild)
 // ---------------------------------------------------------------------------
 
-@description('Direct Postgres connection string for the API (Supabase / pgvector). Optional — leave blank to keep normal mode fail-closed.')
+@description('Direct Postgres connection string for the API (Supabase / pgvector). Optional � leave blank to keep normal mode fail-closed.')
 @secure()
 param supabaseDbUrl string = ''
+
+@description('HMAC secret for AI SDK tool-approval signing. Required in normal mode; must not equal the demo default (see services/api/src/config.ts).')
+@secure()
+param advisorToolApprovalSecret string = ''
+
+@description('Supabase JWKS URL for JWT verification on mutating routes (typically `${SUPABASE_URL}/auth/v1/keys`).')
+@secure()
+param supabaseJwksUrl string = ''
+
+@description('Comma-separated browser origins permitted to call the API directly in normal mode (ACCOUNTING_CORS_ORIGINS). When empty, Bicep defaults to the deployed web App Service origin.')
+param accountingCorsOrigins string = ''
+
+@description('Set true when SUPABASE_DB_URL uses Supavisor transaction mode (port 6543); disables postgres-js named prepared statements.')
+param supabasePoolerTransactionMode bool = false
+
+// Fail closed: normal mode must not ship with the offline demo HMAC (config.ts DEMO_ADVISOR_TOOL_APPROVAL_SECRET).
+var demoAdvisorToolApprovalSecret = 'jpx-demo-advisor-tool-approval-secret'
+var effectiveAccountingCorsOrigins = empty(accountingCorsOrigins) ? webAppDefaultOrigin : accountingCorsOrigins
+
+assert(
+  runtimeMode != 'normal' || (length(advisorToolApprovalSecret) > 0 && advisorToolApprovalSecret != demoAdvisorToolApprovalSecret),
+  'normal mode requires a non-empty ADVISOR_TOOL_APPROVAL_SECRET that is not the demo default'
+)
 
 resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
   name: '${namePrefix}-${environmentName}-api'
@@ -152,6 +179,10 @@ resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AZURE_OPENAI_MODEL', value: azureOpenaiModel }
         { name: 'AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT', value: azureDocumentIntelligenceEndpoint }
         { name: 'AZURE_DOCUMENT_INTELLIGENCE_API_KEY', value: azureDocumentIntelligenceApiKey }
+        { name: 'ADVISOR_TOOL_APPROVAL_SECRET', value: advisorToolApprovalSecret }
+        { name: 'SUPABASE_JWKS_URL', value: supabaseJwksUrl }
+        { name: 'ACCOUNTING_CORS_ORIGINS', value: effectiveAccountingCorsOrigins }
+        { name: 'SUPABASE_POOLER_TRANSACTION_MODE', value: string(supabasePoolerTransactionMode) }
       ]
     }
   }
