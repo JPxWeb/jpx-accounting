@@ -20,6 +20,14 @@ on:
         options:
           - normal
           - demo
+      assignStorageRoles:
+        description: "Create the two storage role assignments in Bicep (needs the deploy SP to hold roleAssignments/write — see docs/DEPLOY_UNBLOCK.md)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -114,6 +122,7 @@ jobs:
           parameters: >-
             environmentName=dev
             runtimeMode=${{ inputs.runtimeMode || 'normal' }}
+            assignStorageRoles=${{ inputs.assignStorageRoles || 'false' }}
             webDockerImage=${{ env.WEB_IMAGE }}:${{ github.sha }}
             supabaseDbUrl=${{ secrets.SUPABASE_DB_URL }}
             azureOpenaiEndpoint=${{ secrets.AZURE_OPENAI_ENDPOINT }}

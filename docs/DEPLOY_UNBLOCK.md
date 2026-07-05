@@ -1,8 +1,14 @@
-# DEPLOY_UNBLOCK — getting the CD pipeline green again
+# DEPLOY_UNBLOCK — storage RBAC for the CD pipeline
 
-**Status:** the `Deploy` workflow (`.github/workflows/deploy.yml`) has been red since
-2026-05-07. This document is the runbook for unblocking it. It requires an action
-only the subscription owner (Johan) can perform — the repo cannot fix this by itself.
+**Status (2026-07-05):** the `Deploy` workflow used to abort at `Deploy Bicep
+infrastructure` because the template unconditionally created two storage role
+assignments the CD service principal isn't allowed to write. That is now **gated
+behind the `assignStorageRoles` Bicep parameter, default `false`**, so the deploy
+completes and ships web + API with the principal's existing rights. What remains is a
+one-time action only the subscription owner (Johan) can perform: get those two roles
+onto the API's managed identity so User-Delegation SAS minting works in `normal` mode.
+Until then the app deploys fine but blob upload/preview surfaces 403 (see the bottom
+section). Pick **Option 1** (declarative, recommended) or **Option 2** (manual, once).
 
 ## The root cause, precisely
 
@@ -12,8 +18,9 @@ GitHub secret (step `Azure Login`, `azure/login@v2`) and then runs
 `infra/azure/main.bicep`.
 
 That Bicep template contains two `Microsoft.Authorization/roleAssignments@2022-04-01`
-resources (`apiBlobDelegatorAssignment` and `apiBlobDataContributorAssignment`,
-lines ~162–182). They grant the API App Service's system-assigned managed identity:
+resources (`apiBlobDelegatorAssignment` and `apiBlobDataContributorAssignment`), now
+each guarded by `= if (assignStorageRoles)`. They grant the API App Service's
+system-assigned managed identity:
 
 | Role                          | Built-in role definition GUID          | Scope                                |
 | ----------------------------- | -------------------------------------- | ------------------------------------ |
@@ -23,10 +30,18 @@ lines ~162–182). They grant the API App Service's system-assigned managed iden
 Creating a role assignment requires the **deploying** principal to hold
 `Microsoft.Authorization/roleAssignments/write` at the target scope. The deploy
 service principal only has resource-level rights (enough for App Services, Storage,
-etc.), so the ARM deployment fails with an `AuthorizationFailed` error naming
-`Microsoft.Authorization/roleAssignments/write`, and the whole deploy job aborts at
-the `Deploy Bicep infrastructure` step — before the API zip-deploy and the web
-container configuration ever run.
+etc.). While the two assignments were unconditional, the ARM deployment failed with an
+`AuthorizationFailed` error naming `Microsoft.Authorization/roleAssignments/write`, and
+the whole deploy job aborted at the `Deploy Bicep infrastructure` step — before the API
+zip-deploy and the web container configuration ever ran.
+
+**The gate that unblocked CD:** `main.bicep` now declares
+`param assignStorageRoles bool = false` and both role-assignment resources are
+`= if (assignStorageRoles) { … }`. `deploy.yml` passes `assignStorageRoles=false` on
+every push to `main` (and exposes it as a `workflow_dispatch` choice input), so the
+template validates and deploys with the principal's existing rights. The two options
+below are how you get the roles actually in place; the names/scopes are `guid()`-stable,
+so nothing about idempotency changed.
 
 Names the template computes (with the default `environmentName=dev`,
 `namePrefix=jpxacct`):
@@ -42,9 +57,9 @@ placeholders are used — see "Finding the identifiers" at the end.
 
 ## Option 1 — grant the deploy principal constrained role-assignment rights (recommended)
 
-Keep the Bicep exactly as it is (role assignments stay declarative and idempotent —
-`guid(...)`-named, so re-deploys are no-ops) and give the deploy service principal
-permission to write **only these two roles, only in this resource group**.
+Keep the role assignments declarative and give the deploy service principal permission
+to write **only these two roles, only in this resource group** — then re-run the deploy
+with the gate flipped on (`assignStorageRoles=true`) so Bicep creates them idempotently.
 
 Azure's built-in **Role Based Access Control Administrator** role
 (GUID `f58310d9-a9f6-439a-9e8d-f62e7b41a168`) exists precisely for this: it can
@@ -75,26 +90,28 @@ Notes:
   Role Based Access Control Administrator → select the deploy SP → Conditions →
   "Allow user to only assign selected roles" → pick Storage Blob Delegator +
   Storage Blob Data Contributor._
-- Afterwards, re-run the workflow: GitHub → Actions → Deploy → _Run workflow_
-  (`workflow_dispatch`, environment `dev`, runtimeMode `normal`), or push to `main`.
-  No repo changes needed.
+- Afterwards, re-run the workflow **with the gate on**: GitHub → Actions → Deploy →
+  _Run workflow_ → environment `dev`, runtimeMode `normal`, **assignStorageRoles `true`**.
+  Bicep then creates the two assignments declaratively. (Leaving it `false` — e.g. a
+  plain push to `main` — keeps deploying fine; it just won't (re)assert the roles.) If
+  you want every push to assert them once the grant is in place, change the
+  `assignStorageRoles` default to `true` in `main.bicep` and `deploy.yml`.
 
-## Option 2 — take the role assignments out of Bicep, assign them once by hand
+## Option 2 — leave the gate off, assign the two roles once by hand
 
-If granting the CD principal any role-assignment rights is unacceptable, move the
-two grants out of the pipeline entirely. The managed identity's object id is stable
-for the life of the App Service, so this is genuinely one-time (until the App
-Service is deleted/recreated, which resets `principalId` — then repeat step 3).
+If granting the CD principal any role-assignment rights is unacceptable, leave
+`assignStorageRoles=false` (the default — no repo change needed) and assign the two
+grants manually. The managed identity's object id is stable for the life of the App
+Service, so this is genuinely one-time (until the App Service is deleted/recreated,
+which resets `principalId` — then repeat step 3).
 
-**1. Delete from `infra/azure/main.bicep`:** the whole RBAC section — the comment
-block starting `// RBAC — Managed identity must hold both roles…`, the two `var`
-lines (`storageBlobDelegatorRoleId`, `storageBlobDataContributorRoleId`) and both
-resources `apiBlobDelegatorAssignment` and `apiBlobDataContributorAssignment`
-(currently lines ~153–182). Nothing else references them; no outputs change.
+**1. Nothing to edit** — with `assignStorageRoles=false`, the two role-assignment
+resources are already skipped by the `if (...)` guard, so the Bicep step succeeds with
+the SP's existing rights. (Historically this option meant deleting the RBAC block; the
+gate makes that unnecessary.)
 
 **2. Run the deploy once** (push to `main` or `workflow_dispatch`) so the API App
-Service and its system-assigned identity exist. With the role assignments removed,
-the Bicep step now succeeds with the SP's existing rights.
+Service and its system-assigned identity exist.
 
 **3. Assign the two roles manually, once,** as Owner / User Access Administrator:
 
@@ -140,16 +157,15 @@ Trade-off vs Option 1: infra is no longer fully declarative — a fresh environm
 without the grants until someone re-runs step 3. If you pick this option, keep this
 file as the canonical reminder.
 
-## What stays broken until one of these is done — and what already works
+## What stays limited until one of these is done — and what already works
 
-**Broken (CD):** every run of `deploy.yml` fails at `Deploy Bicep infrastructure`.
-Because the API zip-deploy, web container config, and smoke tests are later steps of
-the same job, **no code has deployed via CD since 2026-05-07** — web and API in
-Azure are stale, not merely degraded.
+**CD itself:** now completes. With `assignStorageRoles=false` the `Deploy Bicep
+infrastructure` step validates and applies, then the API zip-deploy, web container
+config, and smoke tests run as normal.
 
-**Broken after deploy if the roles are missing** (e.g. Option 2 step 1–2 done but
-step 3 skipped): User-Delegation SAS minting returns 403 in `normal` mode, which
-breaks exactly two API surfaces —
+**Blob surfaces if the roles are still missing** (deploy done, neither Option 1 nor
+Option 2 step 3 performed): User-Delegation SAS minting returns 403 in `normal` mode,
+which breaks exactly two API surfaces —
 
 - `POST /api/uploads/init` (write SAS for evidence upload; capture uploads fail),
 - `GET /api/evidence/:id/file-url` + the extraction read-SAS path in

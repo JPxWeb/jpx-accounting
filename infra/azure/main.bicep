@@ -26,6 +26,13 @@ param appServicePlanResourceGroup string = 'jpx-main-rg'
 @allowed(['demo', 'normal'])
 param runtimeMode string = 'demo'
 
+@description('''Create the two storage role assignments for the API managed identity.
+Defaults to false so CD stays green with a deploy principal that lacks
+Microsoft.Authorization/roleAssignments/write. Set true only once that principal has been
+granted constrained RBAC-Administrator rights (see docs/DEPLOY_UNBLOCK.md, Option 1);
+otherwise assign the two roles out-of-band (Option 2).''')
+param assignStorageRoles bool = false
+
 // Azure OpenAI / Foundry (wire later)
 @description('Azure OpenAI endpoint')
 @secure()
@@ -154,12 +161,19 @@ resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
 // RBAC — Managed identity must hold both roles or User-Delegation SAS minting returns 403.
 // Storage Blob Delegator is what authorizes getUserDelegationKey(); Storage Blob Data Contributor
 // scopes the actual blob writes to the evidence container.
+//
+// Gated behind `assignStorageRoles` (default false): creating a role assignment needs the
+// DEPLOYING principal to hold Microsoft.Authorization/roleAssignments/write, which the CD service
+// principal does not have — leaving these unconditional aborted the whole deploy at template
+// validation. With the flag off, the app deploys and the two roles are applied out-of-band; see
+// docs/DEPLOY_UNBLOCK.md. Names/scopes are guid()-stable, so flipping the flag on later (once the
+// principal is granted the constrained RBAC-Administrator role) is an idempotent no-op re-assign.
 // ---------------------------------------------------------------------------
 
 var storageBlobDelegatorRoleId = 'db58b8e5-c6ad-4a2a-8342-4190687cbf4a'
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 
-resource apiBlobDelegatorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource apiBlobDelegatorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (assignStorageRoles) {
   // Scope must be the storage account so the identity can call getUserDelegationKey on it.
   scope: storage
   name: guid(storage.id, apiApp.id, storageBlobDelegatorRoleId)
@@ -170,7 +184,7 @@ resource apiBlobDelegatorAssignment 'Microsoft.Authorization/roleAssignments@202
   }
 }
 
-resource apiBlobDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource apiBlobDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (assignStorageRoles) {
   // Container-scoped so the identity can only write to evidence/, not other containers.
   scope: evidenceContainer
   name: guid(evidenceContainer.id, apiApp.id, storageBlobDataContributorRoleId)
