@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "JPX Accounting",
     short_name: "JPX",
     description:
-      "AI advisory accounting for European small businesses — deadlines, insights, and compliant bookkeeping.",
+      "AI advisory accounting for European small businesses — Sweden-first depth (BAS, moms, Bokföringslagen), human-approved postings, and an append-only verifiable ledger.",
     start_url: "/",
     display: "standalone",
     background_color: APP_BACKGROUND_COLOR,

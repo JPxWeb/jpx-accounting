@@ -27,7 +27,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 const APP_DESCRIPTION =
-  "AI advisory accounting for European small businesses — deadlines, insights, and compliant bookkeeping.";
+  "AI advisory accounting for European small businesses — Sweden-first depth (BAS, moms, Bokföringslagen), human-approved postings, and an append-only verifiable ledger.";
 
 export const metadata: Metadata = {
   title: "JPX Accounting",

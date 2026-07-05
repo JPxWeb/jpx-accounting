@@ -3,7 +3,7 @@
 import type { ReviewTask, Voucher } from "@jpx-accounting/contracts";
 import { confidenceBand, type ConfidenceBand } from "@jpx-accounting/domain";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import type { Ref } from "react";
@@ -59,6 +59,9 @@ type ReviewCardProps = {
 export function ReviewCard({ review, voucher, index, focused, onFocus, onAction, ref }: ReviewCardProps) {
   const t = useTranslations("today.card");
   const { locale } = useWorkspaceProfile();
+  // Motion pass (Task 6.4): the y-offset entrance is transform motion, so it is
+  // disabled for reduced-motion users; the opacity fade stays (not vestibular).
+  const reduceMotion = useReducedMotion();
   // Shared `company-settings` cache entry (same key as the settings forms and
   // the dashboard widgets) — flipping the AI-posture toggle updates every
   // rendered card live. Unset settings fall back to the contract default.
@@ -73,14 +76,18 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
   const citation = review.suggestion?.citations[0];
   const supplier = voucher?.voucherFields.supplierName ?? review.title;
   const isActionable = review.status === "needs-review";
+  // Approve/dismiss fade (Task 6.4): decided cards recede to 75% opacity so
+  // pending work stays visually dominant. Opacity-only — no layout shift, and
+  // the fade itself runs without the entrance stagger delay.
+  const settled = !isActionable;
 
   return (
     <motion.article
       ref={ref}
       data-testid="review-card"
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.05, MAX_STAGGER_DELAY_S) }}
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 12 }}
+      animate={{ opacity: settled ? 0.75 : 1, y: 0 }}
+      transition={{ delay: settled ? 0 : Math.min(index * 0.05, MAX_STAGGER_DELAY_S) }}
       tabIndex={0}
       onClick={onFocus}
       onFocus={onFocus}
@@ -187,7 +194,7 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
 
             <details className="glass-panel-soft rounded-lg p-4">
               <summary className="text-eyebrow cursor-pointer list-none">{t("ruleHits")}</summary>
-              <div className="mt-4 space-y-3">
+              <div className="motion-enter mt-4 space-y-3">
                 {review.suggestion?.ruleHits.map((rule) => (
                   <div key={rule.id} className="glass-panel-inset rounded-lg px-3 py-3 text-sm">
                     <p className="font-semibold text-foreground">{rule.title}</p>

@@ -9,7 +9,6 @@ import { rateLimiter } from "hono-rate-limiter";
 import type { ZodType } from "zod";
 
 import {
-  assistantRequestSchema,
   companySettingsSchema,
   evidenceComposeInputSchema,
   evidenceCreateInputSchema,
@@ -598,20 +597,8 @@ export function createApp({
     return context.body(encodePc8(text));
   });
 
-  app.post("/api/assistant/sessions", async (context) => {
-    const input = await parseBody(context.req.raw, assistantRequestSchema);
-    const snapshot = await currentStore.getSnapshot();
-    const citations = snapshot.reviews[0]?.suggestion?.citations ?? [
-      {
-        id: "internal_arch",
-        title: "Internal architecture policy",
-        sourceType: "internal",
-        excerpt: "AI suggestions require human review before posting.",
-      },
-    ];
-    const answer = await aiRuntime.answerQuestion(input.question, citations);
-    return context.json(answer, 201);
-  });
+  // `POST /api/assistant/sessions` (one-shot Q&A) was retired in Phase 6 —
+  // superseded by the streaming `/api/advisor/chat` below.
 
   // Advisor chat (Task 5.7): AI SDK 7 UI-message SSE. Deterministic demo
   // stream or Azure streamText — both route tool approvals through the

@@ -13,7 +13,12 @@
  *   when the operation is a no-op (lets callers cheaply skip persistence).
  */
 
-/** Canonical widget set, in default display order (Phase 5 plan, Task 5.5). */
+/**
+ * Canonical widget set, in default display order (Phase 5 plan, Task 5.5;
+ * `getting-started` appended in Phase 6, Task 6.1). New widgets MUST be
+ * appended LAST: `parseLayout` re-appends ids missing from a persisted order
+ * in canonical order, so appending keeps existing saved layouts intact.
+ */
 export const WIDGET_IDS = [
   "cash-position",
   "review-queue",
@@ -24,6 +29,7 @@ export const WIDGET_IDS = [
   "vat-status",
   "recent-activity",
   "integrity",
+  "getting-started",
 ] as const;
 
 export type WidgetId = (typeof WIDGET_IDS)[number];

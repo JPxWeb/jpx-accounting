@@ -37,19 +37,19 @@
     "primaryNavAria": "Primary",
     "mobileNavAria": "Mobile primary",
     "marketing": {
-      "headline": "Trustworthy AI bookkeeping for Sweden-first teams.",
-      "subheadline": "Compliance-critical flows stay deterministic. AI guides, cites, and accelerates the review surface.",
+      "headline": "AI advisory accounting for European small businesses.",
+      "subheadline": "Sweden-first depth — BAS accounts, moms, and Bokföringslagen built in. The AI advises and cites; every posting is approved by you on an append-only, verifiable ledger.",
       "demoNotice": "Demo mode is intentionally using local scaffold behavior so it is never mistaken for live accounting."
     },
     "captureLane": {
       "eyebrow": "Capture lane",
-      "description": "Camera, paste, upload, and share land in the same queue and show where the draft was stored.",
+      "description": "Every receipt lands as reviewable evidence — camera, paste, upload, and share go through the same local-first draft queue.",
       "badge": "Local-first",
       "action": "Capture Evidence"
     },
     "innovation": {
-      "eyebrow": "Innovation track",
-      "description": "Voice capture, simulations, and close copilot are isolated from posting authority until they earn trust."
+      "eyebrow": "Trustworthy by design",
+      "description": "AI here is labeled and cites its sources (EU AI Act, Article 50) and holds no posting authority — the review queue is the only path into your ledger."
     },
     "topbar": {
       "location": "Sweden Central / Stockholm",
@@ -283,6 +283,9 @@
       "clearSupplierAria": "Clear supplier filter",
       "emptyForSupplier": "No journal entries for {supplier} in this period.",
       "empty": "No journal entries in this period.",
+      "emptyPreview": "Once vouchers land, every posting line shows here — date, account, and amount, each drillable to its evidence. Capture a receipt or import your SIE history to get started.",
+      "emptyCaptureCta": "Capture evidence",
+      "emptyImportCta": "Import SIE history",
       "headerDate": "Date",
       "headerVoucher": "Voucher",
       "headerAccount": "Account",
@@ -342,6 +345,8 @@
       "title": "This period in words",
       "computedFrom": "Computed from your ledger — every number above matches the statements below.",
       "empty": "Nothing has been booked in this period yet.",
+      "emptyPreview": "As soon as something is booked, this pack fills in: the period result in words, the income statement, the balance sheet, the cash bridge, and the VAT return boxes — all from the same numbers.",
+      "emptyCta": "Capture your first evidence",
       "periodResult": "The period closed at <value></value>.",
       "periodResultWithDelta": "The period closed at <value></value>, <delta></delta> versus the previous period.",
       "biggestMover": "Biggest cost mover: {accountNumber} {accountName} at <value></value> (<delta></delta> vs previous period).",
@@ -459,7 +464,7 @@
     "header": {
       "eyebrow": "Today / Overview",
       "title": "Your finances at a glance.",
-      "description": "Nine widgets over the same numbers the reports print — drag to arrange, and every figure drills down to its source."
+      "description": "Widgets over the same numbers the reports print — drag to arrange, and every figure drills down to its source."
     },
     "view": {
       "label": "Today view",
@@ -543,6 +548,35 @@
         "lastEvent": "Last event",
         "headHash": "Head hash",
         "brokenHint": "The event chain did not verify — the log may have been altered. Investigate before trusting reports."
+      },
+      "getting-started": {
+        "title": "Getting started",
+        "progress": "{done} of {total} done",
+        "stepDone": "done",
+        "steps": {
+          "capture": {
+            "label": "Capture your first evidence",
+            "hint": "Camera, upload, or paste — it lands as a local draft first."
+          },
+          "approve": {
+            "label": "Approve a review",
+            "hint": "Nothing posts to the ledger without your decision."
+          },
+          "import": {
+            "label": "Import your SIE history",
+            "hint": "Bring prior bookkeeping over from any Swedish system."
+          },
+          "advisor": {
+            "label": "Ask the advisor",
+            "hint": "Grounded answers with cited Swedish sources (per browser)."
+          },
+          "profile": {
+            "label": "Set your company profile",
+            "hint": "Fiscal year and VAT period drive your deadlines."
+          }
+        },
+        "allDoneTitle": "You're set up.",
+        "allDoneHint": "Every step is done. Hide this card with its ✕ or under Customize whenever you like — it won't remove itself."
       }
     }
   },
@@ -682,6 +716,143 @@
       "needsCompanyCta": "Open company settings",
       "saved": "AI posture saved.",
       "saveError": "Could not save the AI posture."
+    },
+    "fiscalYear": {
+      "eyebrow": "Settings / Fiscal year & VAT",
+      "title": "Fiscal year and VAT cadence.",
+      "description": "The fiscal year start month drives every fiscal-quarter report window and the statutory tax timeline. The VAT reporting cadence is shown here and edited together with the company profile.",
+      "startLabel": "Fiscal year start month",
+      "previewNote": "The window and deadline below follow the selected start month — save to apply it to reports and the tax timeline.",
+      "currentWindow": "Current fiscal year",
+      "arsredovisning": "Next årsredovisning deadline",
+      "arsredovisningBody": "Annual report to Bolagsverket for the fiscal year ending {fyEnd}.",
+      "vatPeriodLabel": "VAT reporting period",
+      "vatPeriods": { "monthly": "Monthly", "quarterly": "Quarterly", "yearly": "Yearly" },
+      "vatEditHint": "Edited together with the company profile.",
+      "vatEditLink": "Open company settings",
+      "needsCompany": "Save your company settings first — the fiscal year is stored on the workspace profile with them.",
+      "needsCompanyCta": "Open company settings",
+      "sourceLabel": "Source",
+      "save": "Save fiscal year",
+      "saving": "Saving…",
+      "saved": "Fiscal year saved.",
+      "saveError": "Could not save the fiscal year."
+    },
+    "compliance": {
+      "eyebrow": "Settings / Compliance watch",
+      "title": "Ledger integrity, verified.",
+      "description": "The hash-chain verdict for this workspace's append-only event ledger, the recent event tail with actor attribution, and the statutory retention baseline the ledger exists to satisfy.",
+      "chainLabel": "Hash chain",
+      "loading": "Verifying the event chain…",
+      "unavailable": "The integrity summary could not be loaded.",
+      "eventCount": "Events",
+      "basTemplate": "Account template",
+      "basAccounts": "{count, plural, one {# account} other {# accounts}}",
+      "headHash": "Head hash",
+      "lastEvent": "Last event",
+      "scopeNote": "Linkage verification only: genesis plus previous-hash links — removal, reordering, and insertion are caught. Payload recomputation is a documented follow-up, not a claim this panel makes.",
+      "recentTitle": "Recent events",
+      "recentEmpty": "No events yet — the chain starts with your first capture.",
+      "retentionTitle": "Retention baseline",
+      "retentionBody": "Accounting records are kept until the end of the seventh year after the calendar year in which the fiscal year ended. The append-only ledger and immutable evidence files are how this workspace meets that duty.",
+      "sourceLabel": "Source",
+      "retentionLink": "Open the retention policy"
+    },
+    "retention": {
+      "eyebrow": "Settings / Retention",
+      "title": "Nothing is deleted. That is the policy.",
+      "description": "Bokföringslagen's seven-year archiving duty, and how the append-only ledger and immutable evidence storage meet it in each runtime mode.",
+      "ledgerTitle": "Append-only ledger",
+      "ledgerBody": "Accounting events are never edited or deleted. Corrections are appended as new events with actor and timestamp provenance, so history stays complete by construction.",
+      "evidenceTitle": "Immutable evidence",
+      "evidenceBody": "Evidence files are written once with a recorded SHA-256 hash and are never overwritten. The ledger references them; it never replaces them.",
+      "statuteTitle": "Statutory duty — seven years",
+      "statuteBody": "Accounting records must be kept until the end of the seventh year after the calendar year in which the fiscal year ended (Bokföringslagen 7 kap. 2 §).",
+      "sourceLabel": "Source",
+      "storageTitle": "Where your records live",
+      "storageDemoTitle": "Demo mode",
+      "storageDemo1": "Ledger events live in the API's in-memory store and reset when it restarts.",
+      "storageDemo2": "Capture drafts are held locally in your browser (IndexedDB) until promoted.",
+      "storageDemo3": "No demo data leaves your machine — and nothing in demo mode satisfies the statutory archiving duty.",
+      "storageNormalTitle": "Normal mode",
+      "storageNormal1": "Ledger events persist append-only in Supabase Postgres (Stockholm).",
+      "storageNormal2": "Evidence files persist in Azure Blob Storage (Sweden Central), written via short-lived signed URLs.",
+      "storageNormal3": "Both stores keep records within the EU, in ordered, accessible form.",
+      "roadmapTitle": "What does not exist yet",
+      "roadmapBody": "Per-class legal-hold toggles and retention-expiry tooling are not built, so there are no controls to show here. When they land, every hold will be an attributed ledger event — not a silent flag."
+    },
+    "team": {
+      "eyebrow": "Settings / Team & roles",
+      "title": "One workspace, one actor — honestly.",
+      "description": "There is no login or invitation system yet. Every ledger event still records who did it, so the attribution spine that multi-user needs is already in place.",
+      "currentTitle": "Current actor",
+      "currentRole": "Owner — you",
+      "currentBody": "Every action in this workspace — captures, approvals, imports, settings — is recorded on the event ledger under this actor id.",
+      "actorsTitle": "Actors seen in recent events",
+      "actorsBody": "Attribution read live from the most recent events on the ledger — the only roles that exist today.",
+      "actorsLoading": "Reading recent events…",
+      "actorsUnavailable": "Recent event attribution could not be loaded.",
+      "actorsEmpty": "No events yet.",
+      "actorEvents": "{count, plural, one {# event} other {# events}}",
+      "seatTitle": "Accountant seat",
+      "seatBadge": "Planned",
+      "seatBody": "A free accountant seat is a design commitment: your accountant reviews and approves in the same review gate you use, with their own actor id on every decision. The event attribution above is the seam it plugs into.",
+      "inviteNote": "Invitations are not built yet. There is no invite form here on purpose — when it exists, it will be real."
+    },
+    "integrations": {
+      "eyebrow": "Settings / Integrations",
+      "title": "What is connected, honestly.",
+      "description": "Real signals from the running system — no decorative connection cards. Demo mode swaps every external service for an explicit local stub.",
+      "modeLine": "Web shell: {web} · API: {api}",
+      "modeLoading": "Web shell: {web} · API: checking…",
+      "modeUnavailable": "Web shell: {web} · API: not reachable",
+      "modes": { "demo": "Demo", "normal": "Normal" },
+      "status": {
+        "available": "Available",
+        "operational": "Operational",
+        "notOperational": "Not operational",
+        "notReported": "Not reported",
+        "demoStub": "Demo stub",
+        "planned": "Planned",
+        "notBuilt": "Not built"
+      },
+      "sie": {
+        "title": "SIE 4 import & export",
+        "body": "Spec-valid SIE 4 in both directions (PC8/CP437). Import replays vouchers through the append-only ledger; export serializes the journal.",
+        "importCta": "Import on Capture",
+        "exportCta": "Export on Reports"
+      },
+      "ai": {
+        "title": "AI advisor (Azure OpenAI)",
+        "bodyDemo": "The demo runtime answers deterministically from your projections — no external AI service is called.",
+        "bodyNormal": "Grounded advisor chat and narrative phrasing. Configuration is reported by the API — model and host, never secrets.",
+        "model": "Model",
+        "host": "Endpoint host",
+        "loading": "Reading runtime information…",
+        "unavailable": "Runtime information could not be loaded."
+      },
+      "blob": {
+        "title": "Evidence storage (Azure Blob)",
+        "bodyDemo": "Demo mode stores nothing in Azure — uploads go to an explicit local stub.",
+        "bodyNormal": "Evidence files are written to Azure Blob Storage via short-lived User-Delegation SAS URLs minted by the API's managed identity.",
+        "note": "Per-service configuration is not exposed by the current API surface — this card reports the runtime mode, not a live storage probe."
+      },
+      "ocr": {
+        "title": "Document extraction (Azure Document Intelligence)",
+        "bodyDemo": "Demo mode derives deterministic extraction fields from the file itself — plausible, honest, and offline.",
+        "bodyNormal": "Invoices and receipts are extracted with Azure Document Intelligence when configured; without configuration the API falls back to the deterministic stub.",
+        "note": "Per-service configuration is not exposed by the current API surface — this card reports the runtime mode, not a live extraction probe."
+      },
+      "peppol": {
+        "title": "Peppol e-invoicing readiness",
+        "what": "Peppol is the EU network for structured e-invoices — increasingly the default rail for B2B and public-sector invoicing across Europe.",
+        "ready": "Architecturally ready: every posting is an append-only event with structured, BAS-coded voucher lines and immutable evidence — the shape a Peppol document maps onto.",
+        "honest": "Transport is not implemented. JPX cannot send or receive Peppol documents yet, and no access point is connected."
+      },
+      "email": {
+        "title": "Email intake",
+        "body": "A per-workspace intake address that turns forwarded invoices into capture drafts. Not built yet — there is no address to show."
+      }
     }
   }
 }

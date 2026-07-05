@@ -2,6 +2,7 @@
 
 import type { NarrativeFact } from "@jpx-accounting/reporting";
 import { useTranslations } from "next-intl";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Money } from "../ui/money";
@@ -86,7 +87,19 @@ export function NarrativeCard({
     <section className="glass-panel rounded-xl p-5" data-testid="narrative-card">
       <SectionLabel>{t("title")}</SectionLabel>
       {facts.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">{t("empty")}</p>
+        // Empty preview (Task 6.1): the pack still renders below with zeros —
+        // say what fills in once something is booked, and link the first step.
+        <div className="mt-4 space-y-3" data-testid="narrative-empty">
+          <p className="text-sm text-muted-foreground">{t("empty")}</p>
+          <p className="text-sm leading-6 text-muted-foreground">{t("emptyPreview")}</p>
+          <Link
+            href="/capture"
+            data-testid="narrative-empty-capture"
+            className="inline-block rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm print:hidden"
+          >
+            {t("emptyCta")}
+          </Link>
+        </div>
       ) : (
         <ul className="mt-4 space-y-3">
           {facts.map((fact) => (

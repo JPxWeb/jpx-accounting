@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
+import Link from "next/link";
 import { parseAsString, useQueryState } from "nuqs";
 import { usePeriodScope } from "../../hooks/use-period-scope";
 import { apiClient } from "../../lib/client";
@@ -62,9 +63,34 @@ export function JournalView() {
         </div>
       ) : null}
       {entries.length === 0 ? (
-        <div className="glass-panel rounded-xl p-8 text-center">
-          <p className="text-sm text-muted-foreground">{supplier ? t("emptyForSupplier", { supplier }) : t("empty")}</p>
-        </div>
+        supplier ? (
+          <div className="glass-panel rounded-xl p-8 text-center">
+            <p className="text-sm text-muted-foreground">{t("emptyForSupplier", { supplier })}</p>
+          </div>
+        ) : (
+          // Empty preview (Task 6.1): say what WILL appear here and link the two
+          // ways to get there — both live on /capture (quick-add + SIE import).
+          <div className="glass-panel rounded-xl p-8 text-center" data-testid="journal-empty">
+            <p className="text-sm font-semibold text-foreground">{t("empty")}</p>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{t("emptyPreview")}</p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+              <Link
+                href="/capture"
+                data-testid="journal-empty-capture"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm"
+              >
+                {t("emptyCaptureCta")}
+              </Link>
+              <Link
+                href="/capture"
+                data-testid="journal-empty-import"
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-muted"
+              >
+                {t("emptyImportCta")}
+              </Link>
+            </div>
+          </div>
+        )
       ) : (
         <div className="glass-panel rounded-xl p-5">
           <Table>

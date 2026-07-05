@@ -21,9 +21,11 @@ test("DEFAULT_LAYOUT covers every widget id exactly once, in spec order, none hi
   assert.equal(DEFAULT_LAYOUT.v, DASHBOARD_LAYOUT_VERSION);
   assert.deepEqual([...DEFAULT_LAYOUT.order], [...WIDGET_IDS]);
   assert.deepEqual([...DEFAULT_LAYOUT.hidden], []);
-  assert.equal(WIDGET_IDS.length, 9);
+  assert.equal(WIDGET_IDS.length, 10);
   assert.equal(new Set(WIDGET_IDS).size, WIDGET_IDS.length);
-  // The plan's exact default order (Task 5.5) — pinned so a reorder is deliberate.
+  // The plan's exact default order (Task 5.5; `getting-started` appended LAST
+  // in Task 6.1 so persisted layouts keep working) — pinned so a reorder is
+  // deliberate.
   assert.deepEqual(
     [...WIDGET_IDS],
     [
@@ -36,8 +38,18 @@ test("DEFAULT_LAYOUT covers every widget id exactly once, in spec order, none hi
       "vat-status",
       "recent-activity",
       "integrity",
+      "getting-started",
     ],
   );
+});
+
+test("a persisted pre-Phase-6 nine-widget layout re-appends getting-started last", () => {
+  const nineWidgetIds = WIDGET_IDS.filter((id) => id !== "getting-started");
+  const layout = parseLayout(JSON.stringify({ v: 1, order: [...nineWidgetIds].reverse(), hidden: ["result"] }));
+  // The user's saved order survives untouched; the new widget lands at the end.
+  assert.deepEqual(layout.order, [...[...nineWidgetIds].reverse(), "getting-started"]);
+  assert.deepEqual(layout.hidden, ["result"]);
+  assert.ok(visibleWidgetIds(layout).includes("getting-started"));
 });
 
 test("serialize → parse round-trips a customized layout", () => {
@@ -87,6 +99,7 @@ test("parseLayout tolerates unknown ids, duplicates, and missing widgets", () =>
     "cash-bridge",
     "vat-status",
     "recent-activity",
+    "getting-started",
   ]);
   assert.deepEqual(layout.hidden, ["cash-position"]);
   assert.equal(layout.order.length, WIDGET_IDS.length);

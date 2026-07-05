@@ -37,19 +37,19 @@
     "primaryNavAria": "Primär",
     "mobileNavAria": "Mobil primär",
     "marketing": {
-      "headline": "Pålitlig AI-bokföring för Sverige-först-team.",
-      "subheadline": "Compliance-kritiska flöden förblir deterministiska. AI vägleder, citerar och snabbar upp granskningsytan.",
+      "headline": "AI-rådgivande redovisning för europeiska småföretag.",
+      "subheadline": "Svenskt djup först — BAS-kontoplan, moms och bokföringslagen inbyggda. AI:n råder och citerar; varje bokning godkänns av dig i en verifierbar huvudbok som aldrig skrivs om.",
       "demoNotice": "Demoläget använder avsiktligt lokalt scaffold-beteende så att det aldrig misstas för skarp bokföring."
     },
     "captureLane": {
       "eyebrow": "Insamlingsspår",
-      "description": "Kamera, inklistring, uppladdning och delning hamnar i samma kö och visar var utkastet sparades.",
+      "description": "Varje kvitto landar som granskningsbart underlag — kamera, inklistring, uppladdning och delning går genom samma lokala utkastkö.",
       "badge": "Lokalt först",
       "action": "Fånga underlag"
     },
     "innovation": {
-      "eyebrow": "Innovationsspår",
-      "description": "Röstinmatning, simuleringar och avslutscopilot hålls isolerade från bokföringsbehörighet tills de förtjänat förtroende."
+      "eyebrow": "Pålitlig i grunden",
+      "description": "AI:n här är märkt och citerar sina källor (EU:s AI-förordning, artikel 50) och saknar bokföringsbehörighet — granskningskön är den enda vägen in i din huvudbok."
     },
     "topbar": {
       "location": "Sweden Central / Stockholm",
@@ -283,6 +283,9 @@
       "clearSupplierAria": "Rensa leverantörsfiltret",
       "emptyForSupplier": "Inga journalposter för {supplier} under den här perioden.",
       "empty": "Inga journalposter under den här perioden.",
+      "emptyPreview": "När verifikat landar visas varje bokföringsrad här — datum, konto och belopp, med borrning ner till sitt underlag. Fånga ett kvitto eller importera din SIE-historik för att komma igång.",
+      "emptyCaptureCta": "Fånga underlag",
+      "emptyImportCta": "Importera SIE-historik",
       "headerDate": "Datum",
       "headerVoucher": "Verifikat",
       "headerAccount": "Konto",
@@ -342,6 +345,8 @@
       "title": "Perioden i ord",
       "computedFrom": "Beräknat från din bokföring — varje siffra ovan stämmer med rapporterna nedan.",
       "empty": "Inget har bokförts under den här perioden ännu.",
+      "emptyPreview": "Så fort något bokförs fylls paketet i: periodens resultat i ord, resultaträkning, balansräkning, kassabryggan och momsdeklarationens rutor — allt från samma siffror.",
+      "emptyCta": "Fånga ditt första underlag",
       "periodResult": "Perioden stängde på <value></value>.",
       "periodResultWithDelta": "Perioden stängde på <value></value>, <delta></delta> jämfört med föregående period.",
       "biggestMover": "Största kostnadsrörelsen: {accountNumber} {accountName} på <value></value> (<delta></delta> mot föregående period).",
@@ -459,7 +464,7 @@
     "header": {
       "eyebrow": "Idag / Översikt",
       "title": "Din ekonomi i ett svep.",
-      "description": "Nio widgetar över samma siffror som rapporterna skriver ut — dra för att ordna, och varje siffra går att borra ner till sin källa."
+      "description": "Widgetar över samma siffror som rapporterna skriver ut — dra för att ordna, och varje siffra går att borra ner till sin källa."
     },
     "view": {
       "label": "Vy för Idag",
@@ -543,6 +548,35 @@
         "lastEvent": "Senaste händelse",
         "headHash": "Topphash",
         "brokenHint": "Händelsekedjan kunde inte verifieras — loggen kan ha ändrats. Utred innan du litar på rapporterna."
+      },
+      "getting-started": {
+        "title": "Kom igång",
+        "progress": "{done} av {total} klara",
+        "stepDone": "klar",
+        "steps": {
+          "capture": {
+            "label": "Fånga ditt första underlag",
+            "hint": "Kamera, uppladdning eller inklistring — det landar som ett lokalt utkast först."
+          },
+          "approve": {
+            "label": "Godkänn en granskning",
+            "hint": "Inget bokförs i huvudboken utan ditt beslut."
+          },
+          "import": {
+            "label": "Importera din SIE-historik",
+            "hint": "Ta med tidigare bokföring från vilket svenskt system som helst."
+          },
+          "advisor": {
+            "label": "Fråga rådgivaren",
+            "hint": "Grundade svar med citerade svenska källor (per webbläsare)."
+          },
+          "profile": {
+            "label": "Ange din företagsprofil",
+            "hint": "Räkenskapsår och momsperiod styr dina deadlines."
+          }
+        },
+        "allDoneTitle": "Du är igång.",
+        "allDoneHint": "Alla steg är klara. Dölj det här kortet med dess ✕ eller under Anpassa när du vill — det tar inte bort sig självt."
       }
     }
   },
@@ -682,6 +716,143 @@
       "needsCompanyCta": "Öppna företagsinställningar",
       "saved": "AI-hållningen sparad.",
       "saveError": "AI-hållningen kunde inte sparas."
+    },
+    "fiscalYear": {
+      "eyebrow": "Inställningar / Räkenskapsår & moms",
+      "title": "Räkenskapsår och momstakt.",
+      "description": "Räkenskapsårets startmånad styr varje kvartalsfönster i rapporterna och den lagstadgade skattetidslinjen. Momsredovisningstakten visas här och redigeras tillsammans med företagsprofilen.",
+      "startLabel": "Räkenskapsårets startmånad",
+      "previewNote": "Fönstret och deadlinen nedan följer den valda startmånaden — spara för att tillämpa den på rapporter och skattetidslinjen.",
+      "currentWindow": "Innevarande räkenskapsår",
+      "arsredovisning": "Nästa årsredovisningsdeadline",
+      "arsredovisningBody": "Årsredovisning till Bolagsverket för räkenskapsåret som slutar {fyEnd}.",
+      "vatPeriodLabel": "Momsredovisningsperiod",
+      "vatPeriods": { "monthly": "Månadsvis", "quarterly": "Kvartalsvis", "yearly": "Årsvis" },
+      "vatEditHint": "Redigeras tillsammans med företagsprofilen.",
+      "vatEditLink": "Öppna företagsinställningar",
+      "needsCompany": "Spara företagsinställningarna först — räkenskapsåret lagras på arbetsytans profil tillsammans med dem.",
+      "needsCompanyCta": "Öppna företagsinställningar",
+      "sourceLabel": "Källa",
+      "save": "Spara räkenskapsår",
+      "saving": "Sparar…",
+      "saved": "Räkenskapsåret sparat.",
+      "saveError": "Räkenskapsåret kunde inte sparas."
+    },
+    "compliance": {
+      "eyebrow": "Inställningar / Regelefterlevnad",
+      "title": "Bokföringens integritet, verifierad.",
+      "description": "Hashkedjans utlåtande för arbetsytans append-only-händelselogg, de senaste händelserna med aktörsattribution och den lagstadgade arkiveringsbas som loggen finns till för att uppfylla.",
+      "chainLabel": "Hashkedja",
+      "loading": "Verifierar händelsekedjan…",
+      "unavailable": "Integritetssammanfattningen kunde inte läsas in.",
+      "eventCount": "Händelser",
+      "basTemplate": "Kontomall",
+      "basAccounts": "{count, plural, one {# konto} other {# konton}}",
+      "headHash": "Kedjans topphash",
+      "lastEvent": "Senaste händelse",
+      "scopeNote": "Enbart länkverifiering: genesis plus föregående-hash-länkar — borttagning, omordning och insättning upptäcks. Omberäkning av innehållet är en dokumenterad uppföljning, inte något denna panel påstår.",
+      "recentTitle": "Senaste händelser",
+      "recentEmpty": "Inga händelser ännu — kedjan börjar med din första insamling.",
+      "retentionTitle": "Arkiveringsbas",
+      "retentionBody": "Räkenskapsinformation bevaras till och med det sjunde året efter utgången av det kalenderår då räkenskapsåret avslutades. Den append-only-förda huvudboken och de oföränderliga underlagen är hur arbetsytan uppfyller den skyldigheten.",
+      "sourceLabel": "Källa",
+      "retentionLink": "Öppna arkiveringspolicyn"
+    },
+    "retention": {
+      "eyebrow": "Inställningar / Arkivering",
+      "title": "Inget raderas. Det är policyn.",
+      "description": "Bokföringslagens sjuåriga arkiveringsskyldighet, och hur den append-only-förda huvudboken och den oföränderliga underlagslagringen uppfyller den i varje körläge.",
+      "ledgerTitle": "Append-only-huvudbok",
+      "ledgerBody": "Bokföringshändelser redigeras eller raderas aldrig. Rättelser läggs till som nya händelser med aktörs- och tidsstämpelproveniens, så historiken förblir komplett per konstruktion.",
+      "evidenceTitle": "Oföränderliga underlag",
+      "evidenceBody": "Underlagsfiler skrivs en gång med registrerad SHA-256-hash och skrivs aldrig över. Huvudboken refererar till dem; den ersätter dem aldrig.",
+      "statuteTitle": "Lagstadgad skyldighet — sju år",
+      "statuteBody": "Räkenskapsinformation ska bevaras till och med det sjunde året efter utgången av det kalenderår då räkenskapsåret avslutades (Bokföringslagen 7 kap. 2 §).",
+      "sourceLabel": "Källa",
+      "storageTitle": "Var dina räkenskaper finns",
+      "storageDemoTitle": "Demoläge",
+      "storageDemo1": "Bokföringshändelser ligger i API:ets minneslagring och nollställs när det startas om.",
+      "storageDemo2": "Insamlingsutkast hålls lokalt i din webbläsare (IndexedDB) tills de befordras.",
+      "storageDemo3": "Ingen demodata lämnar din maskin — och inget i demoläget uppfyller den lagstadgade arkiveringsskyldigheten.",
+      "storageNormalTitle": "Normalläge",
+      "storageNormal1": "Bokföringshändelser lagras append-only i Supabase Postgres (Stockholm).",
+      "storageNormal2": "Underlagsfiler lagras i Azure Blob Storage (Sweden Central), skrivna via kortlivade signerade URL:er.",
+      "storageNormal3": "Båda lagren håller räkenskaperna inom EU, i ordnat och åtkomligt skick.",
+      "roadmapTitle": "Vad som inte finns ännu",
+      "roadmapBody": "Reglage för legal hold per klass och verktyg för arkiveringstidens utgång är inte byggda, så det finns inga kontroller att visa här. När de landar blir varje spärr en attribuerad bokföringshändelse — inte en tyst flagga."
+    },
+    "team": {
+      "eyebrow": "Inställningar / Team & roller",
+      "title": "En arbetsyta, en aktör — ärligt.",
+      "description": "Det finns ännu inget inloggnings- eller inbjudningssystem. Varje bokföringshändelse registrerar ändå vem som gjorde den, så attributionsryggraden som fleranvändarläge kräver finns redan på plats.",
+      "currentTitle": "Aktuell aktör",
+      "currentRole": "Ägare — du",
+      "currentBody": "Varje åtgärd i den här arbetsytan — insamlingar, godkännanden, importer, inställningar — registreras i händelseloggen under detta aktörs-id.",
+      "actorsTitle": "Aktörer i senaste händelserna",
+      "actorsBody": "Attribution läst direkt från de senaste händelserna i huvudboken — de enda roller som finns i dag.",
+      "actorsLoading": "Läser senaste händelserna…",
+      "actorsUnavailable": "Attributionen från senaste händelserna kunde inte läsas in.",
+      "actorsEmpty": "Inga händelser ännu.",
+      "actorEvents": "{count, plural, one {# händelse} other {# händelser}}",
+      "seatTitle": "Redovisningskonsultplats",
+      "seatBadge": "Planerad",
+      "seatBody": "En kostnadsfri plats för din redovisningskonsult är ett designåtagande: konsulten granskar och godkänner i samma granskningsgrind som du, med eget aktörs-id på varje beslut. Händelseattributionen ovan är sömmen den kopplas in i.",
+      "inviteNote": "Inbjudningar är inte byggda ännu. Det finns medvetet inget inbjudningsformulär här — när det finns kommer det att vara på riktigt."
+    },
+    "integrations": {
+      "eyebrow": "Inställningar / Integrationer",
+      "title": "Vad som är anslutet, ärligt.",
+      "description": "Verkliga signaler från det körande systemet — inga dekorativa anslutningskort. Demoläget byter ut varje extern tjänst mot en uttrycklig lokal stubbe.",
+      "modeLine": "Webbskal: {web} · API: {api}",
+      "modeLoading": "Webbskal: {web} · API: kontrollerar…",
+      "modeUnavailable": "Webbskal: {web} · API: kan inte nås",
+      "modes": { "demo": "Demo", "normal": "Normal" },
+      "status": {
+        "available": "Tillgänglig",
+        "operational": "I drift",
+        "notOperational": "Ej i drift",
+        "notReported": "Rapporteras ej",
+        "demoStub": "Demostubbe",
+        "planned": "Planerad",
+        "notBuilt": "Ej byggd"
+      },
+      "sie": {
+        "title": "SIE 4-import & -export",
+        "body": "Spec-giltig SIE 4 i båda riktningarna (PC8/CP437). Import spelar upp verifikat genom den append-only-förda huvudboken; export serialiserar journalen.",
+        "importCta": "Importera på Insamling",
+        "exportCta": "Exportera på Rapporter"
+      },
+      "ai": {
+        "title": "AI-rådgivare (Azure OpenAI)",
+        "bodyDemo": "Demokörningen svarar deterministiskt utifrån dina projektioner — ingen extern AI-tjänst anropas.",
+        "bodyNormal": "Grundad rådgivarchatt och formulering av rapportkommentarer. Konfigurationen rapporteras av API:et — modell och värd, aldrig hemligheter.",
+        "model": "Modell",
+        "host": "Endpoint-värd",
+        "loading": "Läser körningsinformation…",
+        "unavailable": "Körningsinformationen kunde inte läsas in."
+      },
+      "blob": {
+        "title": "Underlagslagring (Azure Blob)",
+        "bodyDemo": "Demoläget lagrar ingenting i Azure — uppladdningar går till en uttrycklig lokal stubbe.",
+        "bodyNormal": "Underlagsfiler skrivs till Azure Blob Storage via kortlivade User-Delegation-SAS-URL:er utfärdade av API:ets hanterade identitet.",
+        "note": "Konfiguration per tjänst exponeras inte av dagens API-yta — kortet rapporterar körläget, inte en live-sondering av lagringen."
+      },
+      "ocr": {
+        "title": "Dokumentextraktion (Azure Document Intelligence)",
+        "bodyDemo": "Demoläget härleder deterministiska extraktionsfält från själva filen — rimligt, ärligt och offline.",
+        "bodyNormal": "Fakturor och kvitton extraheras med Azure Document Intelligence när det är konfigurerat; utan konfiguration faller API:et tillbaka på den deterministiska stubben.",
+        "note": "Konfiguration per tjänst exponeras inte av dagens API-yta — kortet rapporterar körläget, inte en live-sondering av extraktionen."
+      },
+      "peppol": {
+        "title": "Peppol-beredskap för e-faktura",
+        "what": "Peppol är EU:s nätverk för strukturerade e-fakturor — alltmer standardrälsen för B2B- och offentlig fakturering i Europa.",
+        "ready": "Arkitektoniskt redo: varje bokföring är en append-only-händelse med strukturerade, BAS-kodade verifikatrader och oföränderliga underlag — den form ett Peppol-dokument mappar mot.",
+        "honest": "Transporten är inte implementerad. JPX kan ännu inte skicka eller ta emot Peppol-dokument, och ingen accesspunkt är ansluten."
+      },
+      "email": {
+        "title": "E-postintag",
+        "body": "En intagsadress per arbetsyta som gör vidarebefordrade fakturor till insamlingsutkast. Inte byggd ännu — det finns ingen adress att visa."
+      }
     }
   }
 }

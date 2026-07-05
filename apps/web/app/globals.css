@@ -359,6 +359,65 @@ button:active:not(:disabled) {
   }
 }
 
+/*
+ * Motion pass (advisory-pivot Phase 6, Task 6.4) — tasteful, compositor-cheap
+ * motion: transform/opacity only, never layout-affecting properties. Every
+ * rule sits behind `prefers-reduced-motion: no-preference` IN ADDITION to the
+ * global reduced-motion kill switch above, so reduced-motion users get zero
+ * movement (the kill switch alone would still flash end states).
+ */
+@keyframes drop-zone-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.01);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Dashboard widget hover lift — a 2px rise + slightly deeper shadow.
+     Safe with dnd-kit: sortable drag transforms land on the WRAPPER div in
+     sortable-grid.tsx, never on the lifted element itself. border-color is
+     included so this rule doesn't clobber the .glass-panel hover transition
+     above (transition declarations replace, they don't merge). */
+  @media (hover: hover) {
+    .motion-lift {
+      transition:
+        transform 180ms ease,
+        border-color 200ms ease,
+        box-shadow 180ms ease;
+    }
+
+    .motion-lift:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-lg);
+    }
+  }
+
+  /* Capture drop-zone drag-over pulse — gentle breathing while a dragged file
+     hovers the target. DropZone sets data-drag-active from its drag handlers. */
+  .capture-drop-zone[data-drag-active="true"] {
+    animation: drop-zone-pulse 1.1s ease-in-out infinite;
+  }
+
+  /* Entrance for content that pops into the DOM without JS animation
+     (details expansions, conditionally rendered panels): fade + 6px rise via
+     @starting-style — runs once on first render, degrades to no motion where
+     unsupported. */
+  .motion-enter {
+    transition:
+      opacity 220ms ease,
+      transform 220ms ease;
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+}
+
 @media (min-width: 768px) {
   .page-shell {
     padding: 20px 24px 0;

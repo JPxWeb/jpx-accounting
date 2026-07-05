@@ -4,6 +4,7 @@ import type { WidgetId } from "../../lib/dashboard-layout-core";
 import type { DashboardData } from "./use-dashboard-data";
 import { CashBridgeWidget } from "./widgets/cash-bridge-widget";
 import { CashPositionWidget } from "./widgets/cash-position-widget";
+import { GettingStartedWidget } from "./widgets/getting-started-widget";
 import { IntegrityWidget } from "./widgets/integrity-widget";
 import { ObservationsWidget } from "./widgets/observations-widget";
 import { RecentActivityWidget } from "./widgets/recent-activity-widget";
@@ -21,8 +22,9 @@ export type WidgetRegistryEntry = {
 };
 
 /**
- * The nine dashboard widgets (Task 5.8), keyed by the layout core's canonical
- * ids. Titles are NOT here — they are i18n messages resolved by the dashboard
+ * The ten dashboard widgets (Task 5.8 + the Task 6.1 getting-started
+ * checklist), keyed by the layout core's canonical ids. Titles are NOT here —
+ * they are i18n messages resolved by the dashboard
  * (`dashboard.widgets.<id>.title`), which also feeds the picker labels.
  */
 export const WIDGET_REGISTRY: Record<WidgetId, WidgetRegistryEntry> = {
@@ -35,4 +37,6 @@ export const WIDGET_REGISTRY: Record<WidgetId, WidgetRegistryEntry> = {
   "vat-status": { component: VatStatusWidget, drillHref: "/reports#vat-preparation" },
   "recent-activity": { component: RecentActivityWidget, drillHref: "/books" },
   integrity: { component: IntegrityWidget },
+  // No drill link — every checklist step is its own link to its surface.
+  "getting-started": { component: GettingStartedWidget },
 };

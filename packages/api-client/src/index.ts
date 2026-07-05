@@ -6,8 +6,6 @@ import { z } from "zod";
 
 import type {
   AccountBalanceProjection,
-  AssistantRequest,
-  AssistantSession,
   CompanySettings,
   EvidenceContext,
   EvidenceCreateInput,
@@ -26,7 +24,6 @@ import type {
 } from "@jpx-accounting/contracts";
 import {
   accountBalanceProjectionSchema,
-  assistantSessionSchema,
   evidenceContextSchema,
   evidenceCreateResultSchema,
   integritySummarySchema,
@@ -214,14 +211,8 @@ export class AccountingApiClient {
     });
   }
 
-  async askAssistant(input: AssistantRequest): Promise<AssistantSession> {
-    if (this.fallbackStore) return this.fallbackStore.answerAssistantQuestion(input.question);
-    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.baseUrl, "/api/assistant/sessions", assistantSessionSchema, {
-      method: "POST",
-      json: input,
-    });
-  }
+  // `askAssistant` (POST /api/assistant/sessions) was retired in Phase 6 —
+  // the assistant screen streams through `/api/advisor/chat` instead.
 
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
     if (this.fallbackStore) return this.fallbackStore.runSimulation(input);

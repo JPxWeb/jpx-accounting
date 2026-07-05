@@ -44,7 +44,7 @@ export function WidgetChrome({
 
   return (
     <section
-      className={`glass-panel flex h-full min-w-0 flex-col rounded-xl p-4 ${isDragging ? "opacity-80 shadow-lg" : ""}`}
+      className={`glass-panel motion-lift flex h-full min-w-0 flex-col rounded-xl p-4 ${isDragging ? "opacity-80 shadow-lg" : ""}`}
       data-testid={`widget-${id}`}
       aria-label={title}
     >

@@ -4,10 +4,10 @@ import { expectAccessible } from "./a11y-helpers";
 import { apiBaseUrl, resetApiState } from "./test-helpers";
 
 /**
- * The /today advisory dashboard (Task 5.8): nine widgets on shared queries,
- * keyboard-only reorder with layout persistence, the widget picker, observation
- * provenance, and the widget-level approvals that route through the ordinary
- * review gate.
+ * The /today advisory dashboard (Task 5.8 + the Task 6.1 getting-started
+ * checklist): ten widgets on shared queries, keyboard-only reorder with layout
+ * persistence, the widget picker, observation provenance, and the widget-level
+ * approvals that route through the ordinary review gate.
  */
 
 const WIDGET_IDS = [
@@ -20,6 +20,7 @@ const WIDGET_IDS = [
   "vat-status",
   "recent-activity",
   "integrity",
+  "getting-started",
 ] as const;
 
 test.beforeEach(async ({ request }) => {
@@ -33,7 +34,7 @@ function widgetOrder(page: Page): Promise<string[]> {
     .evaluateAll((sections) => sections.map((section) => section.getAttribute("data-testid")!.slice("widget-".length)));
 }
 
-test("all nine widgets render on the default dashboard", async ({ page }) => {
+test("all ten widgets render on the default dashboard", async ({ page }) => {
   await page.goto("/today");
 
   await expect(page.getByTestId("dashboard-canvas")).toBeVisible();
@@ -172,6 +173,33 @@ test("batch approve routes every seeded high-confidence review through approvals
 
   await page.goto("/today?view=queue");
   await expect(page.getByTestId("review-status").filter({ hasText: "approved" })).toHaveCount(1);
+});
+
+test("getting-started checklist derives from workspace data and its links resolve", async ({ page }) => {
+  await page.goto("/today");
+
+  const widget = page.getByTestId("widget-getting-started");
+  await expect(widget).toBeVisible();
+  // Fresh reset: only the seeded evidence/review exist and nothing is decided,
+  // imported, asked, or saved — every step is open.
+  await expect(widget.getByTestId("getting-started-progress")).toHaveText("0 of 5 done");
+
+  // Every step links to its surface.
+  await expect(widget.getByTestId("getting-started-step-capture")).toHaveAttribute("href", "/capture");
+  await expect(widget.getByTestId("getting-started-step-approve")).toHaveAttribute("href", "/today?view=queue");
+  await expect(widget.getByTestId("getting-started-step-import")).toHaveAttribute("href", "/capture");
+  await expect(widget.getByTestId("getting-started-step-advisor")).toHaveAttribute("href", "/assistant");
+  await expect(widget.getByTestId("getting-started-step-profile")).toHaveAttribute("href", "/settings/company");
+
+  // Steps are pure derivations: approving through the review widget (ordinary
+  // review gate) flips the approve step without any stored checklist state.
+  await page.getByTestId("widget-review-queue").getByTestId("review-widget-approve").click();
+  await expect(widget.getByTestId("getting-started-step-approve")).toHaveAttribute("data-complete", "true");
+  await expect(widget.getByTestId("getting-started-progress")).toHaveText("1 of 5 done");
+
+  // And the links navigate for real.
+  await widget.getByTestId("getting-started-step-capture").click();
+  await expect(page).toHaveURL(/\/capture$/);
 });
 
 test("dashboard passes WCAG 2.2 AA checks idle and mid-keyboard-drag", async ({ page, isMobile }) => {

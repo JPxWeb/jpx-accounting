@@ -1,6 +1,6 @@
 # JPX Accounting
 
-Mobile-first, AI-native Swedish accounting platform scaffold.
+AI advisory accounting for European small businesses, built Sweden-first: BAS chart of accounts, moms (VAT), and Bokföringslagen are first-class, not localizations. The AI advises, cites its sources, and drafts proposals (labeled per EU AI Act, Article 50) — it never posts. Every posting is human-approved through the review queue onto an append-only, hash-chained ledger. Ships as a mobile-first PWA.
 
 ## Included
 

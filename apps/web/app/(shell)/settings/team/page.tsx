@@ -1,13 +1,14 @@
+import { getTranslations } from "next-intl/server";
+
+import { TeamOverview } from "../../../../components/settings/team-overview";
 import { ScreenHeader } from "../../../../components/ui/screen-header";
 
-export default function TeamSettingsPage() {
+export default async function TeamSettingsPage() {
+  const t = await getTranslations("settings.team");
   return (
     <div className="space-y-6">
-      <ScreenHeader
-        eyebrow="Settings / Team & roles"
-        title="Members, invitations, and role matrix."
-        description="Owner / Bookkeeper / Read-only role assignments. Full team management lands in Phase 8."
-      />
+      <ScreenHeader eyebrow={t("eyebrow")} title={t("title")} description={t("description")} />
+      <TeamOverview />
     </div>
   );
 }

@@ -203,17 +203,13 @@ test("honest upload pipeline: init → PUT → create with metadata → persiste
   expect((await legacyCreate.json()).voucher.voucherFields.grossAmount).toBe(1249);
 });
 
-test("assistant, knowledge, simulation, close, and import endpoints round-trip", async ({ request }) => {
-  const assistant = await request.post(`${apiBaseUrl}/api/assistant/sessions`, {
-    data: {
-      actorId: "user_founder",
-      question: "How should we think about deductible VAT here?",
-    },
+test("knowledge, simulation, close, and import endpoints round-trip", async ({ request }) => {
+  // `/api/assistant/sessions` was retired in Phase 6 — superseded by the
+  // streaming `/api/advisor/chat` (pinned below): gone means 404.
+  const retiredAssistant = await request.post(`${apiBaseUrl}/api/assistant/sessions`, {
+    data: { actorId: "user_founder", question: "retired?" },
   });
-  expect(assistant.ok()).toBeTruthy();
-  const assistantData = await assistant.json();
-  expect(assistantData.status).toBe("grounded");
-  expect(assistantData.citations.length).toBeGreaterThan(0);
+  expect(retiredAssistant.status()).toBe(404);
 
   // Knowledge query returns real sourced passages from the bundled corpus
   // (BM25-lite keyword mode until the pgvector loop lands in Task 5.11).

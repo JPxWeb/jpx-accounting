@@ -57,7 +57,7 @@ export function DropZone({ onFiles, inputRef }: DropZoneProps) {
         setDragActive(false);
         emitFiles(event.dataTransfer?.files);
       }}
-      className={`glass-panel-soft flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+      className={`glass-panel-soft capture-drop-zone flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
         dragActive ? "border-primary bg-primary/5" : "border-border"
       }`}
     >
