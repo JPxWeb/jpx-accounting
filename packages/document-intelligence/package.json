@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@jpx-accounting/contracts": "workspace:*",
+    "@jpx-accounting/domain": "workspace:*",
     "@azure-rest/ai-document-intelligence": "1.0.0",
     "@azure/core-auth": "1.9.0"
   }

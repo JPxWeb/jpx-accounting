@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="236" height="48" viewBox="0 0 236 48" fill="none" role="img" aria-label="JPX Accounting">
+  <g transform="translate(0 4) scale(0.625)">
+    <rect width="64" height="64" rx="14" fill="#0f766e" />
+    <g stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" fill="none">
+      <path d="M19 17h27" />
+      <path d="M26 27h20" />
+      <path d="M33 37h13" />
+      <path d="M46 17v25c0 6.6-5.1 11-11.5 11-4.4 0-8-2-9.9-5.3" />
+    </g>
+  </g>
+  <text x="52" y="31" font-family="Manrope, 'Segoe UI', system-ui, sans-serif" font-weight="700" font-size="21" letter-spacing="-0.02em" fill="#134e4a">JPX Accounting</text>
+</svg>

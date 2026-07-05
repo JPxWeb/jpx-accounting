@@ -1,0 +1,858 @@
+{
+  "common": {
+    "skipToContent": "Skip to content",
+    "theme": {
+      "groupLabel": "Theme",
+      "system": "System theme",
+      "light": "Light theme",
+      "dark": "Dark theme"
+    },
+    "period": {
+      "selectorAria": "Reporting period",
+      "groups": {
+        "months": "Months",
+        "quarters": "Quarters",
+        "year": "Year"
+      },
+      "ytd": "Year to date",
+      "all": "All periods",
+      "fiscalYear": "FY {year}",
+      "quarter": "Q{quarter} {year}"
+    },
+    "integrityChip": {
+      "intact": "hash chain intact · {template} · {count, plural, one {# event} other {# events}}",
+      "broken": "hash chain check failed · {template} · {count, plural, one {# event} other {# events}}"
+    }
+  },
+  "shell": {
+    "brand": "JPX Accounting",
+    "nav": {
+      "today": { "label": "Today", "summary": "Today's review queue" },
+      "capture": { "label": "Capture", "summary": "Evidence & drafts" },
+      "books": { "label": "Books", "summary": "Journal, accounts, close" },
+      "reports": { "label": "Reports", "summary": "P&L, BS, VAT, exports" },
+      "settings": { "label": "Settings", "summary": "Company & integrations" },
+      "advisor": { "label": "Advisor", "summary": "Ask about your numbers" }
+    },
+    "primaryNavAria": "Primary",
+    "mobileNavAria": "Mobile primary",
+    "marketing": {
+      "headline": "AI advisory accounting for European small businesses.",
+      "subheadline": "Sweden-first depth — BAS accounts, moms, and Bokföringslagen built in. The AI advises and cites; every posting is approved by you on an append-only, verifiable ledger.",
+      "demoNotice": "Demo mode is intentionally using local scaffold behavior so it is never mistaken for live accounting."
+    },
+    "captureLane": {
+      "eyebrow": "Capture lane",
+      "description": "Every receipt lands as reviewable evidence — camera, paste, upload, and share go through the same local-first draft queue.",
+      "badge": "Local-first",
+      "action": "Capture Evidence"
+    },
+    "innovation": {
+      "eyebrow": "Trustworthy by design",
+      "description": "AI here is labeled and cites its sources (EU AI Act, Article 50) and holds no posting authority — the review queue is the only path into your ledger."
+    },
+    "topbar": {
+      "location": "Sweden Central / Stockholm",
+      "captureAria": "Capture evidence"
+    },
+    "demoBanner": "Demo mode is active. Local demo data and local AI fallback are enabled intentionally.",
+    "captureSheet": {
+      "eyebrow": "Quick Intake",
+      "title": "Add business evidence",
+      "close": "Close",
+      "closeAria": "Close capture sheet",
+      "description": "Capture starts locally first so the UI stays responsive. The result tells you whether the draft was stored persistently or only for this tab.",
+      "pasteHint": "Paste works on the Capture page — press Ctrl+V (or Cmd+V) there to capture a copied image.",
+      "shareHint": "Use your device's share menu and pick JPX Accounting to send evidence here."
+    },
+    "draftModes": {
+      "camera": { "label": "Camera", "hint": "Snap a receipt with the device camera" },
+      "upload": { "label": "Upload", "hint": "Pick a PDF or image from disk" },
+      "paste": { "label": "Paste", "hint": "Paste an image from clipboard" },
+      "share": { "label": "Share", "hint": "Receive from another app via PWA share" }
+    },
+    "draftTitle": "{mode} draft",
+    "captureStatus": {
+      "indexeddb": "{mode} draft saved locally in IndexedDB.",
+      "session": "{mode} draft saved for this browser tab only.",
+      "memory": "{mode} draft saved in temporary memory for this tab only.",
+      "error": "{mode} draft could not be saved locally. Check browser storage permissions and try again."
+    }
+  },
+  "palette": {
+    "dialogAria": "Search workspace",
+    "placeholder": "Search vouchers, reviews, accounts…",
+    "askAdvisor": "Ask advisor",
+    "askAdvisorHint": "Ask about your numbers",
+    "noMatches": "No matches",
+    "resultsAria": "Search results",
+    "escHint": "Esc to close · {shortcut}"
+  },
+  "today": {
+    "eyebrow": "Today / Needs Review",
+    "title": "Review-ready bookkeeping, shaped for the phone first.",
+    "description": "Evidence arrives once, suggestions stay explainable, and the queue keeps the real accounting work above the fold instead of hiding it under dashboard chrome.",
+    "metricPending": "Pending reviews",
+    "metricBlocked": "Blocked VAT",
+    "reviewQueue": "Review queue",
+    "queueTitle": "Keep the next accounting decision obvious.",
+    "queueDescription": "Cards stay compact on mobile, expand on larger screens, and keep AI reasoning behind secondary disclosure until it is needed.",
+    "emptyFiltered": "No reviews match these filters.",
+    "emptyQueue": "No reviews in the queue.",
+    "clearFilters": "Clear filters",
+    "editSheet": {
+      "eyebrow": "Review edit",
+      "title": "Edit before approval",
+      "description": "Correct the account, VAT code, or amounts — approving posts the corrected lines.",
+      "closeAria": "Close the edit sheet",
+      "accountLabel": "Account",
+      "vatCodeLabel": "VAT code",
+      "grossLabel": "Gross amount",
+      "netLabel": "Net amount",
+      "vatAmountLabel": "VAT amount",
+      "amountError": "Net + VAT must equal gross (within 0.01); all three amounts are required when any of them changes.",
+      "submit": "Approve with edits",
+      "submitting": "Approving…",
+      "cancel": "Cancel",
+      "submitError": "The edited approval could not be completed.",
+      "appendOnlyNote": "Approving posts new ledger lines with your corrections — the original evidence, suggestion, and event history stay append-only and are never rewritten."
+    },
+    "card": {
+      "invoiceMethod": "Invoice method",
+      "cashMethod": "Cash method",
+      "pendingVoucher": "Pending voucher",
+      "date": "Date",
+      "gross": "Gross",
+      "vat": "VAT",
+      "aiSuggestion": "AI suggestion",
+      "ruleHits": "Rule hits and provenance",
+      "cited": "Cited: {title}",
+      "band": {
+        "high": "High confidence",
+        "medium": "Medium confidence",
+        "low": "Low confidence"
+      },
+      "suggestionsOff": "AI suggestions are turned off for this workspace under AI posture. The evidence, rule hits, and every review action below keep working — decide manually.",
+      "suggestionsOffCta": "Open AI posture settings"
+    },
+    "actions": {
+      "legend": "Review actions",
+      "accept": "Accept",
+      "edit": "Edit",
+      "bookWithoutVat": "Book w/o VAT",
+      "reject": "Reject"
+    },
+    "filters": {
+      "statusAria": "Filter by status",
+      "all": "All",
+      "needsReview": "Needs review",
+      "blocked": "Blocked",
+      "approved": "Approved",
+      "supplierPlaceholder": "Filter by supplier...",
+      "confidenceAria": "Filter by confidence",
+      "allConfidence": "All confidence"
+    }
+  },
+  "evidence": {
+    "eyebrow": "Evidence",
+    "description": "Immutable file record, hash chain, and provenance.",
+    "back": "Back to Capture",
+    "notFound": {
+      "title": "Evidence not found",
+      "message": "This evidence id is not present in the current workspace snapshot."
+    },
+    "meta": {
+      "hash": "Hash",
+      "originalFilename": "Original filename",
+      "mimeType": "MIME type",
+      "size": "Size",
+      "uploaded": "Uploaded",
+      "trustLevel": "Trust level",
+      "blobPath": "Blob path"
+    },
+    "preview": {
+      "title": "Preview",
+      "imageAlt": "Preview of {title}",
+      "frameTitle": "Preview of {title}",
+      "loading": "Loading preview…",
+      "unavailable": "No preview is available on this device.",
+      "unavailableHint": "The file was captured on another device or the storage backend does not serve previews."
+    },
+    "fields": {
+      "title": "Extracted fields",
+      "empty": "No extracted fields yet — run extraction to populate them.",
+      "headerField": "Field",
+      "headerValue": "Value",
+      "headerConfidence": "Confidence"
+    },
+    "links": {
+      "title": "Review",
+      "voucher": "Voucher {number}",
+      "openReview": "Open review",
+      "extract": "Re-run extraction",
+      "extracting": "Extracting…",
+      "extractLocked": "This voucher is already decided — extraction stays locked so the ledger remains append-only.",
+      "extractSuccess": "Extraction refreshed.",
+      "extractError": "Extraction failed. Try again.",
+      "noVoucher": "No voucher is linked to this evidence yet."
+    }
+  },
+  "capture": {
+    "shared": {
+      "draftSaved": "Shared content saved as a draft.",
+      "promoted": "{count, plural, one {Shared file promoted to ledger evidence.} other {# shared files promoted to ledger evidence.}}",
+      "pendingBanner": "{count, plural, one {One shared file} other {# shared files}} could not be staged into evidence. Add {count, plural, one {it} other {them}} again from Quick add."
+    },
+    "eyebrow": "Capture",
+    "title": "Add evidence, see drafts, browse the archive.",
+    "description": "The single home for everything you've captured — drafts in progress, freshly uploaded, fully archived.",
+    "quickAdd": {
+      "title": "Quick add",
+      "description": "Each tile creates a local draft you can promote into ledger evidence.",
+      "tiles": {
+        "camera": { "label": "Camera", "hint": "Snap a receipt with the device camera" },
+        "upload": { "label": "Upload", "hint": "Pick a PDF or image from disk" },
+        "paste": { "label": "Paste", "hint": "Paste an image from clipboard" },
+        "share": { "label": "Share", "hint": "Receive from another app via PWA share" }
+      },
+      "draftTitle": "{mode} draft",
+      "draftAdded": "{mode} draft added.",
+      "draftError": "Could not save {mode} draft locally.",
+      "pasteEmpty": "No image found in the clipboard.",
+      "pasteUnavailable": "Clipboard access is unavailable here — press Ctrl+V (or Cmd+V) on this page instead.",
+      "shareHint": "Open your device's share menu and choose JPX Accounting to send files here.",
+      "importSie": "Import SIE file",
+      "importing": "Importing…",
+      "connectBank": "Connect bank feed"
+    },
+    "sieResult": {
+      "imported": "Imported {vouchers} vouchers from the SIE file.",
+      "importedWithSkipped": "Imported {vouchers} vouchers from the SIE file — {skipped} skipped.",
+      "error": "Could not import the SIE file."
+    },
+    "dropzone": {
+      "aria": "Add evidence files by browsing or dropping them here",
+      "title": "Drop receipts or invoices here",
+      "hint": "Images and PDFs up to 16 MB — click, press Enter, or drag files in."
+    },
+    "promotion": {
+      "promoted": "{name} promoted to ledger evidence.",
+      "promoteError": "Could not promote {name}. Retry from the drafts table.",
+      "rejectedType": "{name} was skipped — only images and PDFs are supported.",
+      "rejectedSize": "{name} was skipped — files must be 16 MB or smaller."
+    },
+    "drafts": {
+      "title": "Drafts in progress",
+      "empty": "No local drafts. Use Quick add above or the capture button.",
+      "headerPreview": "Preview",
+      "thumbAlt": "Preview of {name}",
+      "headerMode": "Mode",
+      "headerTitle": "Title",
+      "headerCreated": "Created",
+      "headerAction": "Action",
+      "promote": "Promote to ledger",
+      "promoted": "Draft promoted to ledger evidence.",
+      "promoteError": "Could not promote the draft."
+    },
+    "archive": {
+      "title": "Evidence archive",
+      "searchPlaceholder": "Search evidence…",
+      "empty": "No archived evidence yet. Promote a draft above to populate the archive.",
+      "headerTitle": "Title",
+      "headerType": "Type",
+      "headerHash": "Hash",
+      "headerUploaded": "Uploaded",
+      "open": "Open",
+      "hashCopied": "Hash copied."
+    }
+  },
+  "books": {
+    "eyebrow": "Books",
+    "title": "The ledger, drillable.",
+    "description": "Journal, general ledger, trial balance, suppliers, and close — all scoped to a period.",
+    "unknownSupplier": "(Unknown supplier)",
+    "tabs": {
+      "journal": "Journal",
+      "generalLedger": "General ledger",
+      "trialBalance": "Trial balance",
+      "suppliers": "Suppliers",
+      "close": "Close"
+    },
+    "journal": {
+      "supplierChip": "Supplier {supplier}",
+      "clearSupplierAria": "Clear supplier filter",
+      "emptyForSupplier": "No journal entries for {supplier} in this period.",
+      "empty": "No journal entries in this period.",
+      "emptyPreview": "Once vouchers land, every posting line shows here — date, account, and amount, each drillable to its evidence. Capture a receipt or import your SIE history to get started.",
+      "emptyCaptureCta": "Capture evidence",
+      "emptyImportCta": "Import SIE history",
+      "headerDate": "Date",
+      "headerVoucher": "Voucher",
+      "headerAccount": "Account",
+      "headerDescription": "Description",
+      "headerDebit": "Debit",
+      "headerCredit": "Credit"
+    },
+    "generalLedger": {
+      "accountChip": "Account {account}",
+      "clearAccountAria": "Clear account filter",
+      "emptyForAccount": "No ledger entries for account {account} in this period.",
+      "empty": "No ledger entries in this period.",
+      "net": "Net"
+    },
+    "trialBalance": {
+      "title": "Trial balance",
+      "empty": "No balances yet. Post a voucher to populate the trial balance.",
+      "rowTitle": "View {account} in general ledger",
+      "debit": "Debit",
+      "credit": "Credit"
+    },
+    "suppliers": {
+      "empty": "No suppliers yet. Vouchers with a supplier name appear here.",
+      "headerSupplier": "Supplier",
+      "headerVouchers": "Vouchers",
+      "headerTotal": "Total spent",
+      "viewInJournal": "View in journal"
+    },
+    "close": {
+      "readOnly": "Close runs are read-only in this build.",
+      "copilotLabel": "Close Copilot",
+      "copilotTitle": "Month-end stays visible while the queue moves.",
+      "advisoryBadge": "Advisory only"
+    }
+  },
+  "reports": {
+    "eyebrow": "Reports",
+    "title": "Reports",
+    "description": "Every number on this screen renders from one report pack per period — prose, KPIs, and statements can never drift apart.",
+    "export": {
+      "button": "Export SIE",
+      "exporting": "Exporting…",
+      "hint": "Downloads the workspace SIE file from the API.",
+      "error": "SIE export failed."
+    },
+    "unavailable": {
+      "title": "Reports unavailable",
+      "message": "Reports could not be loaded. Check the runtime configuration and API availability."
+    },
+    "kpis": {
+      "result": "Result",
+      "cash": "Cash",
+      "revenue": "Revenue",
+      "vat": "Net VAT (box 49)"
+    },
+    "narrative": {
+      "title": "This period in words",
+      "computedFrom": "Computed from your ledger — every number above matches the statements below.",
+      "empty": "Nothing has been booked in this period yet.",
+      "emptyPreview": "As soon as something is booked, this pack fills in: the period result in words, the income statement, the balance sheet, the cash bridge, and the VAT return boxes — all from the same numbers.",
+      "emptyCta": "Capture your first evidence",
+      "periodResult": "The period closed at <value></value>.",
+      "periodResultWithDelta": "The period closed at <value></value>, <delta></delta> versus the previous period.",
+      "biggestMover": "Biggest cost mover: {accountNumber} {accountName} at <value></value> (<delta></delta> vs previous period).",
+      "cashDelta": "Cash went from <opening></opening> to <closing></closing>, a change of <delta></delta>.",
+      "vatToPay": "Net VAT position (box 49): <value></value> to pay.",
+      "vatToRefund": "Net VAT position (box 49): <value></value> to get back.",
+      "chips": {
+        "period-result": "Income statement",
+        "biggest-mover": "Income statement",
+        "cash-delta": "Cash bridge",
+        "vat-position": "VAT return"
+      }
+    },
+    "pnl": {
+      "title": "Income statement",
+      "groups": {
+        "revenue": "Operating income",
+        "materials": "Materials and goods",
+        "externalCost": "Other external costs",
+        "personnel": "Personnel costs",
+        "financial": "Financial items"
+      },
+      "subtotal": "Subtotal",
+      "operatingResult": "Operating result",
+      "financialNet": "Financial net",
+      "periodResult": "Result for the period"
+    },
+    "balanceSheet": {
+      "title": "Balance sheet",
+      "asOf": "As of {date}",
+      "groups": {
+        "assets": "Assets",
+        "equityAndLiabilities": "Equity and liabilities"
+      },
+      "computedResult": "Computed period result (not yet closed)",
+      "totalAssets": "Total assets",
+      "totalEquityAndLiabilities": "Total equity and liabilities",
+      "balanced": "Balanced",
+      "notBalanced": "Out of balance"
+    },
+    "vat": {
+      "title": "VAT return",
+      "description": "Momsdeklaration boxes computed over the selected period.",
+      "headerBox": "Box",
+      "headerLabel": "Description",
+      "headerAmount": "Amount",
+      "toPay": "VAT to pay",
+      "toRefund": "VAT to get back"
+    },
+    "taxTimeline": {
+      "title": "Statutory tax timeline",
+      "description": "Upcoming Skatteverket and Bolagsverket deadlines for this workspace's VAT period and fiscal year. Only VAT deadlines carry an amount — the others are date-only on purpose.",
+      "empty": "No statutory deadlines in the next 120 days.",
+      "sourcesLabel": "Sources",
+      "kinds": {
+        "vat-return": "VAT return",
+        "employer-declaration": "Employer declaration",
+        "f-skatt": "F-tax prepayment",
+        "annual-report": "Annual report"
+      }
+    },
+    "alerts": {
+      "label": "Compliance watch",
+      "title": "Deadlines and regulatory signals",
+      "description": "Pulled from the same compliance feed as the inbox notifications surface."
+    },
+    "charts": {
+      "monthly": {
+        "title": "Cash in / out per month",
+        "aria": "Bar chart of monthly cash in and cash out",
+        "cashIn": "Cash in",
+        "cashOut": "Cash out",
+        "headerMonth": "Month"
+      },
+      "cashBridge": {
+        "title": "Cash bridge",
+        "aria": "Waterfall chart of the period's cash movement drivers",
+        "opening": "Opening",
+        "closing": "Closing",
+        "other": "Other",
+        "headerStep": "Step",
+        "headerAmount": "Amount",
+        "drillAria": "Show journal lines for account {account}"
+      },
+      "showTable": "Show data table",
+      "hideTable": "Hide data table",
+      "loading": "Loading chart…"
+    },
+    "drill": {
+      "title": "Account {account}",
+      "close": "Close",
+      "openLedger": "Open in general ledger",
+      "importedBadge": "Imported",
+      "empty": "No lines for this account in the period."
+    },
+    "print": {
+      "button": "Print / save as PDF",
+      "generatedAt": "Generated {timestamp}"
+    }
+  },
+  "dashboard": {
+    "chrome": {
+      "dragHandleAria": "Reorder {title}",
+      "removeAria": "Hide {title}",
+      "open": "Open"
+    },
+    "picker": {
+      "open": "Customize",
+      "title": "Dashboard widgets",
+      "description": "Choose which widgets are shown. Hidden widgets keep their place and data — nothing is deleted.",
+      "shown": "Shown",
+      "hidden": "Hidden",
+      "reset": "Reset layout"
+    },
+    "header": {
+      "eyebrow": "Today / Overview",
+      "title": "Your finances at a glance.",
+      "description": "Widgets over the same numbers the reports print — drag to arrange, and every figure drills down to its source."
+    },
+    "view": {
+      "label": "Today view",
+      "dashboard": "Dashboard",
+      "queue": "Review queue"
+    },
+    "loading": "Loading…",
+    "emptyCanvas": "All widgets are hidden. Use Customize to bring them back.",
+    "widgets": {
+      "cash-position": {
+        "title": "Cash position",
+        "cashLabel": "Cash balance",
+        "noHistory": "Not enough history for a runway estimate yet.",
+        "empty": "No cash movement booked yet."
+      },
+      "review-queue": {
+        "title": "Review queue",
+        "pending": "{count, plural, one {# pending review} other {# pending reviews}}",
+        "empty": "The queue is clear — nothing waiting for review.",
+        "approve": "Approve",
+        "batch": "Approve all high ({count})",
+        "batchTitle": "Approve {count, plural, one {# high-confidence review} other {# high-confidence reviews}}?",
+        "batchDescription": "Each review is approved one by one through the ordinary review gate — you remain the decision maker for every posting.",
+        "batchConfirm": "Approve {count}",
+        "batchCancel": "Cancel",
+        "batchDone": "{count, plural, one {# review approved.} other {# reviews approved.}}",
+        "batchError": "Batch approval stopped — {completed} of {total} approved.",
+        "band": {
+          "high": "High confidence",
+          "medium": "Medium confidence",
+          "low": "Low confidence"
+        }
+      },
+      "tax-timeline": {
+        "title": "Tax deadlines",
+        "empty": "No statutory deadlines in the next 120 days.",
+        "kinds": {
+          "vat-return": "VAT return",
+          "employer-declaration": "Employer declaration",
+          "f-skatt": "F-tax prepayment",
+          "annual-report": "Annual report"
+        }
+      },
+      "observations": {
+        "title": "Observations",
+        "empty": "Nothing unusual right now.",
+        "severity": {
+          "info": "Info",
+          "warning": "Warning",
+          "critical": "Critical"
+        }
+      },
+      "result": {
+        "title": "Result",
+        "periodResult": "Result this period",
+        "delta": "vs previous period",
+        "empty": "Nothing booked this period yet."
+      },
+      "cash-bridge": {
+        "title": "Cash bridge",
+        "opening": "Opening",
+        "other": "Other",
+        "closing": "Closing",
+        "empty": "No cash movement this period."
+      },
+      "vat-status": {
+        "title": "VAT status",
+        "toPay": "VAT to pay",
+        "toRefund": "VAT to get back",
+        "period": "Period {token}",
+        "setAside": "Set this aside for Skatteverket until the return is due.",
+        "empty": "No VAT activity this period."
+      },
+      "recent-activity": {
+        "title": "Recent activity",
+        "system": "System",
+        "empty": "No ledger events yet."
+      },
+      "integrity": {
+        "title": "Ledger integrity",
+        "lastEvent": "Last event",
+        "headHash": "Head hash",
+        "brokenHint": "The event chain did not verify — the log may have been altered. Investigate before trusting reports."
+      },
+      "getting-started": {
+        "title": "Getting started",
+        "progress": "{done} of {total} done",
+        "stepDone": "done",
+        "steps": {
+          "capture": {
+            "label": "Capture your first evidence",
+            "hint": "Camera, upload, or paste — it lands as a local draft first."
+          },
+          "approve": {
+            "label": "Approve a review",
+            "hint": "Nothing posts to the ledger without your decision."
+          },
+          "import": {
+            "label": "Import your SIE history",
+            "hint": "Bring prior bookkeeping over from any Swedish system."
+          },
+          "advisor": {
+            "label": "Ask the advisor",
+            "hint": "Grounded answers with cited Swedish sources (per browser)."
+          },
+          "profile": {
+            "label": "Set your company profile",
+            "hint": "Fiscal year and VAT period drive your deadlines."
+          }
+        },
+        "allDoneTitle": "You're set up.",
+        "allDoneHint": "Every step is done. Hide this card with its ✕ or under Customize whenever you like — it won't remove itself."
+      }
+    }
+  },
+  "observations": {
+    "cashRunway": {
+      "positive": "Cash is growing — {cash, number} in the bank with about {monthlyNet, number} added per month.",
+      "burning": "About {runwayMonths, number} months of runway — {cash, number} in cash at a burn of {monthlyBurn, number} per month.",
+      "action": "Open cash bridge"
+    },
+    "expenseAnomaly": {
+      "spike": "{account} {accountName} is at {amount, number} this month — typically around {typicalAmount, number}.",
+      "action": "Open general ledger"
+    },
+    "vatSetAside": {
+      "setAside": "Set aside {amount, number} for VAT in {periodLabel}.",
+      "action": "Open VAT return"
+    },
+    "deadlineProximity": {
+      "due": "Statutory deadline on {dueDate} — {daysUntil, plural, =0 {due today} one {# day left} other {# days left}}.",
+      "action": "Open tax timeline"
+    },
+    "missingEvidence": {
+      "count": "{count, plural, one {# voucher is missing evidence} other {# vouchers are missing evidence}} — Bokföringslagen wants a verification behind every posting.",
+      "action": "Open capture"
+    },
+    "supplierSpike": {
+      "spike": "{supplier} is at {amount, number} this month — typically around {typicalAmount, number}.",
+      "action": "Open suppliers"
+    }
+  },
+  "advisor": {
+    "eyebrow": "Advisor",
+    "title": "Ask AI about your numbers",
+    "description": "The advisor explains, cites Swedish sources, and drafts review actions — but it never posts anything. Every proposal waits for your explicit approval in the review gate.",
+    "article50": {
+      "badge": "AI assistant",
+      "statement": "You are chatting with an AI system (EU AI Act, Article 50). Answers are AI-generated and grounded in your report pack; any action the advisor proposes executes only after your explicit approval through the ordinary review queue."
+    },
+    "aiGeneratedMarker": "AI-generated",
+    "emptyState": "Ask about your cash position, VAT, deadlines, or the review queue. Answers cite their sources, and proposals always wait for your approval.",
+    "promptsLabel": "Suggested questions",
+    "input": {
+      "label": "Ask a grounded question",
+      "placeholder": "How is our cash position right now?",
+      "hint": "The advisor cites Swedish sources and proposes actions — nothing is posted without your explicit approval.",
+      "send": "Send",
+      "streaming": "Answering…"
+    },
+    "threads": {
+      "title": "Conversations",
+      "subtitle": "Stored locally in this browser.",
+      "empty": "Ask a question to start your first conversation on this device.",
+      "new": "New conversation",
+      "untitled": "Untitled conversation"
+    },
+    "provenance": {
+      "aria": "Sources"
+    },
+    "approval": {
+      "awaiting": "Draft by AI — awaiting your approval",
+      "account": "Account",
+      "vat": "VAT code",
+      "amount": "Amount",
+      "confidence": "Confidence",
+      "gateNote": "Approving executes the ordinary review decision — the review gate stays the only path to a posted voucher.",
+      "approve": "Approve",
+      "reject": "Reject",
+      "respondedApproved": "Approval sent — the advisor is confirming…",
+      "respondedRejected": "Rejection sent — the advisor is confirming…"
+    },
+    "tool": {
+      "drafting": "Drafting a proposal…",
+      "approvedRow": "Approved through the review gate",
+      "deniedTitle": "Nothing was posted",
+      "deniedRow": "The proposal was rejected — the item stays in the review queue for your manual decision."
+    },
+    "error": {
+      "fallback": "The advisor request could not be completed.",
+      "dismiss": "Dismiss"
+    },
+    "disabled": {
+      "eyebrow": "AI posture",
+      "title": "The AI advisor is turned off",
+      "message": "This workspace has the advisor disabled under AI posture. Bookkeeping, capture, and the review queue keep working without it — no AI runs in the background.",
+      "cta": "Open AI posture settings"
+    },
+    "prompts": {
+      "cashRunway": "How is our cash position and runway?",
+      "expenseAnomaly": "Why are costs unusually high this month?",
+      "vatSetAside": "How much VAT should we set aside?",
+      "deadlineProximity": "Which statutory deadlines are coming up?",
+      "missingEvidence": "Which vouchers are missing evidence?",
+      "supplierSpike": "Which supplier costs spiked this month?",
+      "cashPosition": "How is our cash position right now?",
+      "vatDeadline": "When is our next VAT return due?",
+      "representationRules": "What are the rules for deducting representation?"
+    }
+  },
+  "settings": {
+    "aiPosture": {
+      "about": {
+        "label": "About this AI",
+        "title": "What runs here, and under whose authority",
+        "runtimeMode": "Runtime mode",
+        "provider": "AI provider",
+        "model": "Model",
+        "host": "Endpoint host",
+        "status": "Status",
+        "operational": "Operational",
+        "notOperational": "Not operational",
+        "modes": {
+          "demo": "Demo",
+          "normal": "Normal"
+        },
+        "providers": {
+          "azure-openai": "Azure OpenAI",
+          "local-demo": "Local demo runtime (deterministic, no external AI service)",
+          "unavailable": "Unavailable — no AI provider is configured"
+        },
+        "approvalStatement": "The AI suggests and drafts — it never posts. Every AI proposal becomes a ledger entry only after your explicit approval in the review queue.",
+        "loading": "Loading runtime information…",
+        "unavailable": "Runtime information could not be loaded."
+      },
+      "article50": "Transparency notice (EU AI Act, Article 50): you are always told when you interact with an AI system here, and AI-generated content is labeled as such.",
+      "toggles": {
+        "label": "AI surfaces",
+        "advisor": {
+          "title": "AI advisor chat",
+          "description": "The grounded advisor on the Advisor screen. Turning it off hides the chat — bookkeeping, capture, and the review queue keep working without it."
+        },
+        "suggestions": {
+          "title": "AI suggestions in the review queue",
+          "description": "Confidence bands, suggested accounts, and AI reasoning on review cards and widgets. Turning them off keeps every human review action fully operable."
+        }
+      },
+      "needsCompany": "Save your company settings first — the AI posture is stored with them.",
+      "needsCompanyCta": "Open company settings",
+      "saved": "AI posture saved.",
+      "saveError": "Could not save the AI posture."
+    },
+    "fiscalYear": {
+      "eyebrow": "Settings / Fiscal year & VAT",
+      "title": "Fiscal year and VAT cadence.",
+      "description": "The fiscal year start month drives every fiscal-quarter report window and the statutory tax timeline. The VAT reporting cadence is shown here and edited together with the company profile.",
+      "startLabel": "Fiscal year start month",
+      "previewNote": "The window and deadline below follow the selected start month — save to apply it to reports and the tax timeline.",
+      "currentWindow": "Current fiscal year",
+      "arsredovisning": "Next årsredovisning deadline",
+      "arsredovisningBody": "Annual report to Bolagsverket for the fiscal year ending {fyEnd}.",
+      "vatPeriodLabel": "VAT reporting period",
+      "vatPeriods": { "monthly": "Monthly", "quarterly": "Quarterly", "yearly": "Yearly" },
+      "vatEditHint": "Edited together with the company profile.",
+      "vatEditLink": "Open company settings",
+      "needsCompany": "Save your company settings first — the fiscal year is stored on the workspace profile with them.",
+      "needsCompanyCta": "Open company settings",
+      "sourceLabel": "Source",
+      "save": "Save fiscal year",
+      "saving": "Saving…",
+      "saved": "Fiscal year saved.",
+      "saveError": "Could not save the fiscal year."
+    },
+    "compliance": {
+      "eyebrow": "Settings / Compliance watch",
+      "title": "Ledger integrity, verified.",
+      "description": "The hash-chain verdict for this workspace's append-only event ledger, the recent event tail with actor attribution, and the statutory retention baseline the ledger exists to satisfy.",
+      "chainLabel": "Hash chain",
+      "loading": "Verifying the event chain…",
+      "unavailable": "The integrity summary could not be loaded.",
+      "eventCount": "Events",
+      "basTemplate": "Account template",
+      "basAccounts": "{count, plural, one {# account} other {# accounts}}",
+      "headHash": "Head hash",
+      "lastEvent": "Last event",
+      "scopeNote": "Linkage verification only: genesis plus previous-hash links — removal, reordering, and insertion are caught. Payload recomputation is a documented follow-up, not a claim this panel makes.",
+      "recentTitle": "Recent events",
+      "recentEmpty": "No events yet — the chain starts with your first capture.",
+      "retentionTitle": "Retention baseline",
+      "retentionBody": "Accounting records are kept until the end of the seventh year after the calendar year in which the fiscal year ended. The append-only ledger and immutable evidence files are how this workspace meets that duty.",
+      "sourceLabel": "Source",
+      "retentionLink": "Open the retention policy"
+    },
+    "retention": {
+      "eyebrow": "Settings / Retention",
+      "title": "Nothing is deleted. That is the policy.",
+      "description": "Bokföringslagen's seven-year archiving duty, and how the append-only ledger and immutable evidence storage meet it in each runtime mode.",
+      "ledgerTitle": "Append-only ledger",
+      "ledgerBody": "Accounting events are never edited or deleted. Corrections are appended as new events with actor and timestamp provenance, so history stays complete by construction.",
+      "evidenceTitle": "Immutable evidence",
+      "evidenceBody": "Evidence files are written once with a recorded SHA-256 hash and are never overwritten. The ledger references them; it never replaces them.",
+      "statuteTitle": "Statutory duty — seven years",
+      "statuteBody": "Accounting records must be kept until the end of the seventh year after the calendar year in which the fiscal year ended (Bokföringslagen 7 kap. 2 §).",
+      "sourceLabel": "Source",
+      "storageTitle": "Where your records live",
+      "storageDemoTitle": "Demo mode",
+      "storageDemo1": "Ledger events live in the API's in-memory store and reset when it restarts.",
+      "storageDemo2": "Capture drafts are held locally in your browser (IndexedDB) until promoted.",
+      "storageDemo3": "No demo data leaves your machine — and nothing in demo mode satisfies the statutory archiving duty.",
+      "storageNormalTitle": "Normal mode",
+      "storageNormal1": "Ledger events persist append-only in Supabase Postgres (Stockholm).",
+      "storageNormal2": "Evidence files persist in Azure Blob Storage (Sweden Central), written via short-lived signed URLs.",
+      "storageNormal3": "Both stores keep records within the EU, in ordered, accessible form.",
+      "roadmapTitle": "What does not exist yet",
+      "roadmapBody": "Per-class legal-hold toggles and retention-expiry tooling are not built, so there are no controls to show here. When they land, every hold will be an attributed ledger event — not a silent flag."
+    },
+    "team": {
+      "eyebrow": "Settings / Team & roles",
+      "title": "One workspace, one actor — honestly.",
+      "description": "There is no login or invitation system yet. Every ledger event still records who did it, so the attribution spine that multi-user needs is already in place.",
+      "currentTitle": "Current actor",
+      "currentRole": "Owner — you",
+      "currentBody": "Every action in this workspace — captures, approvals, imports, settings — is recorded on the event ledger under this actor id.",
+      "actorsTitle": "Actors seen in recent events",
+      "actorsBody": "Attribution read live from the most recent events on the ledger — the only roles that exist today.",
+      "actorsLoading": "Reading recent events…",
+      "actorsUnavailable": "Recent event attribution could not be loaded.",
+      "actorsEmpty": "No events yet.",
+      "actorEvents": "{count, plural, one {# event} other {# events}}",
+      "seatTitle": "Accountant seat",
+      "seatBadge": "Planned",
+      "seatBody": "A free accountant seat is a design commitment: your accountant reviews and approves in the same review gate you use, with their own actor id on every decision. The event attribution above is the seam it plugs into.",
+      "inviteNote": "Invitations are not built yet. There is no invite form here on purpose — when it exists, it will be real."
+    },
+    "integrations": {
+      "eyebrow": "Settings / Integrations",
+      "title": "What is connected, honestly.",
+      "description": "Real signals from the running system — no decorative connection cards. Demo mode swaps every external service for an explicit local stub.",
+      "modeLine": "Web shell: {web} · API: {api}",
+      "modeLoading": "Web shell: {web} · API: checking…",
+      "modeUnavailable": "Web shell: {web} · API: not reachable",
+      "modes": { "demo": "Demo", "normal": "Normal" },
+      "status": {
+        "available": "Available",
+        "operational": "Operational",
+        "notOperational": "Not operational",
+        "notReported": "Not reported",
+        "demoStub": "Demo stub",
+        "planned": "Planned",
+        "notBuilt": "Not built"
+      },
+      "sie": {
+        "title": "SIE 4 import & export",
+        "body": "Spec-valid SIE 4 in both directions (PC8/CP437). Import replays vouchers through the append-only ledger; export serializes the journal.",
+        "importCta": "Import on Capture",
+        "exportCta": "Export on Reports"
+      },
+      "ai": {
+        "title": "AI advisor (Azure OpenAI)",
+        "bodyDemo": "The demo runtime answers deterministically from your projections — no external AI service is called.",
+        "bodyNormal": "Grounded advisor chat and narrative phrasing. Configuration is reported by the API — model and host, never secrets.",
+        "model": "Model",
+        "host": "Endpoint host",
+        "loading": "Reading runtime information…",
+        "unavailable": "Runtime information could not be loaded."
+      },
+      "blob": {
+        "title": "Evidence storage (Azure Blob)",
+        "bodyDemo": "Demo mode stores nothing in Azure — uploads go to an explicit local stub.",
+        "bodyNormal": "Evidence files are written to Azure Blob Storage via short-lived User-Delegation SAS URLs minted by the API's managed identity.",
+        "note": "Per-service configuration is not exposed by the current API surface — this card reports the runtime mode, not a live storage probe."
+      },
+      "ocr": {
+        "title": "Document extraction (Azure Document Intelligence)",
+        "bodyDemo": "Demo mode derives deterministic extraction fields from the file itself — plausible, honest, and offline.",
+        "bodyNormal": "Invoices and receipts are extracted with Azure Document Intelligence when configured; without configuration the API falls back to the deterministic stub.",
+        "note": "Per-service configuration is not exposed by the current API surface — this card reports the runtime mode, not a live extraction probe."
+      },
+      "peppol": {
+        "title": "Peppol e-invoicing readiness",
+        "what": "Peppol is the EU network for structured e-invoices — increasingly the default rail for B2B and public-sector invoicing across Europe.",
+        "ready": "Architecturally ready: every posting is an append-only event with structured, BAS-coded voucher lines and immutable evidence — the shape a Peppol document maps onto.",
+        "honest": "Transport is not implemented. JPX cannot send or receive Peppol documents yet, and no access point is connected."
+      },
+      "email": {
+        "title": "Email intake",
+        "body": "A per-workspace intake address that turns forwarded invoices into capture drafts. Not built yet — there is no address to show."
+      }
+    }
+  }
+}

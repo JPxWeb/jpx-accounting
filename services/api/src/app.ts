@@ -9,7 +9,6 @@ import { rateLimiter } from "hono-rate-limiter";
 import type { ZodType } from "zod";
 
 import {
-  assistantRequestSchema,
   companySettingsSchema,
   evidenceComposeInputSchema,
   evidenceCreateInputSchema,
@@ -25,12 +24,30 @@ import {
 import { AiRuntimeUnavailableError, type AiRuntime, isAiRuntimeOperational } from "@jpx-accounting/ai-core";
 import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
-import type { LedgerStore, ReviewAction } from "@jpx-accounting/domain";
-import { MemoryLedgerStore, ReviewNotFoundError } from "@jpx-accounting/domain";
+import type { LedgerStore, ReportRange, ReviewAction } from "@jpx-accounting/domain";
+import {
+  buildSieExport,
+  currentMonthToken,
+  decodeSieBuffer,
+  encodePc8,
+  InvalidPeriodTokenError,
+  InvalidReviewEditError,
+  MemoryLedgerStore,
+  nowIso,
+  parseSie,
+  ReviewNotFoundError,
+  SieImportError,
+  summarizeEventIntegrity,
+  today,
+} from "@jpx-accounting/domain";
 
+import { AdvisorDisabledError, AdvisorValidationError, createAdvisorChatHandler } from "./advisor/chat";
+import { createAdvisorModel, type AdvisorModelConfig } from "./advisor/model";
 import type { BlobUploader } from "./blob";
-import { UploadValidationError } from "./blob";
+import { MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
 import type { CorsRuntimePolicy } from "./config";
+import { queryKnowledge } from "./knowledge";
+import type { AiRuntimeMetadata } from "./runtime";
 import { isLedgerStoreOperational, LedgerStoreUnavailableError } from "./runtime";
 
 type CreateAppOptions = {
@@ -40,6 +57,17 @@ type CreateAppOptions = {
   corsPolicy: CorsRuntimePolicy;
   blobUploader: BlobUploader;
   documentIntelligence: DocumentIntelligenceClient;
+  /** Transparency metadata for `GET /api/runtime-info` (provider/model/host — never secrets). */
+  aiMetadata: AiRuntimeMetadata;
+  /**
+   * Advisor chat wiring (Task 5.7): HMAC secret for AI SDK tool-approval
+   * signing + the Azure OpenAI slice for the normal-mode model. Demo mode
+   * never touches the model; unconfigured normal mode answers 503.
+   */
+  advisor: {
+    toolApprovalSecret: string;
+    azureOpenAi: AdvisorModelConfig;
+  };
   /**
    * JWKS endpoint (typically `${SUPABASE_URL}/auth/v1/keys`). When provided, mutating routes
    * require a valid JWT. When absent, mutations stay open — current demo + pilot behavior.
@@ -90,16 +118,32 @@ async function parseBody<T>(request: Request, schema: ZodType<T>): Promise<T> {
   return parsed.data;
 }
 
-async function buildSIEExport(store: LedgerStore) {
-  const reports = await store.getReports();
-  const lines = ["#FLAGGA 0", '#PROGRAM "JPX Accounting" "0.1.0"', "#FORMAT PC8"];
+const REPORT_DAY_PARAM = /^\d{4}-\d{2}-\d{2}$/;
 
-  for (const entry of reports.journal) {
-    lines.push(`#VER A "${entry.voucherId}" "${entry.bookedAt.slice(0, 10)}" "${entry.description}"`);
-    lines.push(`#TRANS ${entry.accountNumber} {} ${entry.debit - entry.credit}`);
+/**
+ * Parse the optional `from`/`to` report-window query params (inclusive
+ * `YYYY-MM-DD` day strings). Absent params keep the historical unfiltered
+ * behavior; malformed days or an inverted window are well-formed requests
+ * that are semantically unprocessable → 422 (CONVENTIONS Rule 16).
+ */
+function parseReportRange(c: Context<AppEnv>): ReportRange | undefined {
+  const from = c.req.query("from");
+  const to = c.req.query("to");
+  if (from === undefined && to === undefined) return undefined;
+  for (const [name, value] of [
+    ["from", from],
+    ["to", to],
+  ] as const) {
+    if (value !== undefined && !REPORT_DAY_PARAM.test(value)) {
+      throw new HTTPException(422, { message: `Invalid "${name}" query parameter: expected YYYY-MM-DD.` });
+    }
   }
-
-  return lines.join("\n");
+  if (from !== undefined && to !== undefined && from > to) {
+    throw new HTTPException(422, {
+      message: `Invalid report range: "from" (${from}) must not be after "to" (${to}).`,
+    });
+  }
+  return { ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}) };
 }
 
 type JsonErrorExtras = Partial<Pick<ApiJsonErrorBody, "code" | "issues">>;
@@ -132,11 +176,21 @@ export function createApp({
   corsPolicy,
   blobUploader,
   documentIntelligence,
+  aiMetadata,
+  advisor,
   jwksUrl,
   allowTestReset,
 }: CreateAppOptions) {
   const app = new Hono<AppEnv>();
   let currentStore = store;
+
+  // Late-bound store accessor keeps the advisor honest across /api/testing/reset swaps.
+  const advisorChat = createAdvisorChatHandler({
+    getStore: () => currentStore,
+    runtimeMode,
+    model: runtimeMode === "demo" ? undefined : createAdvisorModel(advisor.azureOpenAi),
+    toolApprovalSecret: advisor.toolApprovalSecret,
+  });
 
   async function postReviewDecision(c: Context<AppEnv>, reviewId: string, outcome: ReviewAction) {
     const input = await parseBody(c.req.raw, reviewDecisionInputSchema);
@@ -182,6 +236,10 @@ export function createApp({
     onError: (c) => jsonError(c, "Request body too large.", runtimeMode, 413),
   });
 
+  // Stub blob uploads (PUT /api/uploads/:uploadId) carry file bytes, not JSON — they get their own
+  // limit below, matching MAX_UPLOAD_BYTES, instead of the 512 KiB JSON ceiling.
+  const isStubUploadPut = (c: Context<AppEnv>) => c.req.method === "PUT" && /^\/api\/uploads\/[^/]+$/.test(c.req.path);
+
   app.use("/api/*", async (c, next) => {
     if (!["POST", "PUT", "PATCH"].includes(c.req.method)) {
       return next();
@@ -189,8 +247,24 @@ export function createApp({
     if (c.req.path === "/api/imports/sie") {
       return next();
     }
+    if (isStubUploadPut(c)) {
+      return next();
+    }
     return defaultJsonBodyLimit(c, next);
   });
+
+  if (blobUploader.kind === "stub") {
+    const uploadBodyLimit = bodyLimit({
+      maxSize: MAX_UPLOAD_BYTES,
+      onError: (inner) => jsonError(inner, "Request body too large.", runtimeMode, 413),
+    });
+    app.use("/api/uploads/:uploadId", async (c, next) => {
+      if (!isStubUploadPut(c)) {
+        return next();
+      }
+      return uploadBodyLimit(c, next);
+    });
+  }
 
   // Rate-limit only the mutating surface so health/ready probes and read-only GETs are unaffected.
   // 60 mutations per minute per IP fits an interactive single-user pilot — bump when scale-out lands
@@ -208,6 +282,12 @@ export function createApp({
   });
   app.use("/api/*", async (c, next) => {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
+      return next();
+    }
+    // Test instances (ALLOW_TEST_RESET) are exempt: the sequential E2E suite
+    // legitimately exceeds 60 mutations/min from one IP and started flaking
+    // with 429s on /api/testing/reset once the capture pipeline became real.
+    if (allowTestReset) {
       return next();
     }
     return apiMutationLimiter(c, next);
@@ -245,6 +325,15 @@ export function createApp({
       return jsonError(c, error.message, runtimeMode, 400, { code: error.code, issues: error.issues });
     }
 
+    if (error instanceof AdvisorValidationError) {
+      // Well-formed JSON but out-of-bounds/invalid advisor messages → 422 (Rule 16).
+      return jsonError(c, error.message, runtimeMode, 422, { code: error.code, issues: error.issues });
+    }
+
+    if (error instanceof AdvisorDisabledError) {
+      return jsonError(c, error.message, runtimeMode, 403, { code: error.code });
+    }
+
     if (error instanceof UploadValidationError) {
       return jsonError(c, error.message, runtimeMode, 400, { code: error.code });
     }
@@ -255,6 +344,25 @@ export function createApp({
 
     if (error instanceof ReviewNotFoundError) {
       return jsonError(c, error.message, runtimeMode, 404, { code: "review_not_found" });
+    }
+
+    if (error instanceof InvalidReviewEditError) {
+      // Well-formed JSON but semantically unprocessable amounts → 422 (Rule 16).
+      return jsonError(c, error.message, runtimeMode, 422, {
+        code: "invalid_review_edit",
+        issues: error.issues.map((message) => ({ path: ["edited"], message })),
+      });
+    }
+
+    if (error instanceof SieImportError) {
+      // Whole-file bound violations → 422; per-voucher problems never throw
+      // (they land in the result's `skipped` list instead — Rule 21).
+      return jsonError(c, error.message, runtimeMode, 422, { code: "sie_import_error" });
+    }
+
+    if (error instanceof InvalidPeriodTokenError) {
+      // Unknown/malformed ?period= token → 422 (Rule 16).
+      return jsonError(c, error.message, runtimeMode, 422, { code: "invalid_period_token" });
     }
 
     if (error instanceof LedgerStoreUnavailableError || error instanceof AiRuntimeUnavailableError) {
@@ -290,11 +398,45 @@ export function createApp({
 
   app.get("/api/workspace", async (context) => context.json(await currentStore.getSnapshot()));
   app.get("/api/reviews/feed", async (context) => context.json(await currentStore.getReviewFeed()));
-  app.get("/api/reports/journal", async (context) => context.json((await currentStore.getReports()).journal));
-  const reportBalances = async (context: Context<AppEnv>) => context.json((await currentStore.getReports()).balances);
+  // Report routes accept an optional inclusive ?from=&to= day window (no
+  // params → unfiltered, the historical shape the api.spec pins rely on).
+  app.get("/api/reports/journal", async (context) =>
+    context.json((await currentStore.getReports(parseReportRange(context))).journal),
+  );
+  const reportBalances = async (context: Context<AppEnv>) =>
+    context.json((await currentStore.getReports(parseReportRange(context))).balances);
   app.get("/api/reports/general-ledger", reportBalances);
   app.get("/api/reports/trial-balance", reportBalances);
-  app.get("/api/reports/vat-prep", async (context) => context.json((await currentStore.getReports()).vat));
+  app.get("/api/reports/vat-prep", async (context) =>
+    context.json((await currentStore.getReports(parseReportRange(context))).vat),
+  );
+  // ONE ReportPack per period is the reports screen's single source object.
+  // ?period= takes the unified token grammar; default = the current calendar
+  // month. Unknown tokens surface as 422 via InvalidPeriodTokenError.
+  app.get("/api/reports/pack", async (context) => {
+    const period = context.req.query("period") ?? currentMonthToken();
+    return context.json(await currentStore.getReportPack({ period }));
+  });
+
+  // Hash-chain integrity summary (Phase 5): linkage verification over the
+  // store's event log — no LedgerStore interface change (plan finding 6).
+  app.get("/api/integrity", async (context) =>
+    context.json(summarizeEventIntegrity(await currentStore.getEvents(), { verifiedAt: nowIso() })),
+  );
+
+  // Runtime AI transparency for the About-this-AI panel (EU AI Act Art. 50).
+  // Provider/model/endpoint host only — never keys.
+  app.get("/api/runtime-info", (context) =>
+    context.json({
+      runtimeMode,
+      ai: {
+        operational: isAiRuntimeOperational(aiRuntime),
+        provider: aiMetadata.provider,
+        ...(aiMetadata.model !== undefined ? { model: aiMetadata.model } : {}),
+        ...(aiMetadata.endpointHost !== undefined ? { endpointHost: aiMetadata.endpointHost } : {}),
+      },
+    }),
+  );
 
   app.post("/api/evidence", async (context) => {
     const input = await parseBody(context.req.raw, evidenceCreateInputSchema);
@@ -312,8 +454,20 @@ export function createApp({
     return context.json(result);
   });
 
+  if (blobUploader.kind === "stub") {
+    // Accept-and-discard PUT target for stub uploadUrls. The bytes genuinely travel over the wire
+    // (so the client pipeline is exercised end-to-end) but storage is out of scope for stub mode —
+    // previews come from the client-side evidence blob cache instead. `x-ms-blob-type` is NOT
+    // required here: the web api-proxy strips it, and Azure PUTs go direct to the SAS URL anyway.
+    app.put("/api/uploads/:uploadId", async (context) => {
+      await context.req.arrayBuffer();
+      return context.json({ ok: true, uploadId: context.req.param("uploadId") }, 201);
+    });
+  }
+
   app.post("/api/evidence/:id/extract", async (context) => {
-    const extraction = await currentStore.getEvidenceContext(context.req.param("id"));
+    const evidenceId = context.req.param("id");
+    const extraction = await currentStore.getEvidenceContext(evidenceId);
     if (!extraction) throw new HTTPException(404, { message: "Evidence not found" });
 
     // Only run Document Intelligence on uploads that actually live in blob storage. Demo/seed
@@ -330,11 +484,16 @@ export function createApp({
         // Mint a short-lived read SAS so Document Intelligence can fetch the blob without
         // storage account keys. StubBlobUploader returns a placeholder URL DocIntel cannot
         // fetch — that's intentional and harmless because the demo DocumentIntelligenceClient
-        // also returns a stub. Real OCR requires AzureBlobUploader + the live DocIntel client.
+        // also returns a stub (seeded from the hints below). Real OCR requires
+        // AzureBlobUploader + the live DocIntel client.
         const sas = await blobUploader.mintReadSas(extraction.evidence.blobPath);
         liveExtraction = await documentIntelligence.extract({
           modelId,
           urlSource: sas.url,
+          hints: {
+            filename: extraction.evidence.originalFilename,
+            sizeBytes: extraction.evidence.sizeBytes,
+          },
         });
       } catch (error) {
         // Fail-soft: surface the error in logs but keep returning the stored extraction so the
@@ -351,11 +510,56 @@ export function createApp({
       }
     }
 
+    // Persist the refreshed extraction instead of discarding it (Phase 3). The response stays a
+    // superset of the pre-persistence shape ({extracted, evidence, packet?, voucher?, liveExtraction?})
+    // and now also carries the regenerated `review`.
+    if (liveExtraction && liveExtraction.fields.length > 0) {
+      const updated = await currentStore.updateEvidenceExtraction(evidenceId, {
+        modelId: liveExtraction.modelId,
+        fields: liveExtraction.fields,
+        extractedAt: nowIso(),
+      });
+      return context.json({
+        extracted: Boolean((updated ?? extraction).voucher),
+        ...(updated ?? extraction),
+        liveExtraction,
+      });
+    }
+
     return context.json({
       extracted: Boolean(extraction.voucher),
       ...extraction,
       ...(liveExtraction ? { liveExtraction } : {}),
     });
+  });
+
+  // Read-only evidence context (no extraction side-effect): evidence joined to packet/voucher/review.
+  app.get("/api/evidence/:id", async (context) => {
+    const evidenceContext = await currentStore.getEvidenceContext(context.req.param("id"));
+    if (!evidenceContext) throw new HTTPException(404, { message: "Evidence not found" });
+    const review = evidenceContext.voucher
+      ? await currentStore.findReviewByVoucher(evidenceContext.voucher.id)
+      : undefined;
+    return context.json({
+      ...evidenceContext,
+      ...(review ? { review } : {}),
+    });
+  });
+
+  // Short-lived read SAS for previews. Only real Azure blobs qualify: the stub uploader discards
+  // bytes (previews come from the client-side blob cache) and legacy/seed evidence has a synthetic
+  // blobPath, so both answer 404 preview_unavailable.
+  app.get("/api/evidence/:id/file-url", async (context) => {
+    const evidenceContext = await currentStore.getEvidenceContext(context.req.param("id"));
+    if (!evidenceContext) throw new HTTPException(404, { message: "Evidence not found" });
+    const { blobPath } = evidenceContext.evidence;
+    if (blobUploader.kind !== "azure" || !blobPath.startsWith("evidence-uploads/")) {
+      return jsonError(context, "No file preview is available for this evidence.", runtimeMode, 404, {
+        code: "preview_unavailable",
+      });
+    }
+    const sas = await blobUploader.mintReadSas(blobPath);
+    return context.json({ url: sas.url, expiresInSeconds: sas.expiresInSeconds });
   });
 
   app.post("/api/vouchers/:id/suggest", async (context) => {
@@ -372,45 +576,42 @@ export function createApp({
   app.post("/api/reviews/:id/book-without-vat", (c) => postReviewDecision(c, c.req.param("id"), "book-without-vat"));
 
   app.post("/api/imports/sie", async (context) => {
-    const body = await context.req.text();
-    return context.json({
-      accepted: true,
-      importedTransactions: body.split("\n").filter((line) => line.startsWith("#TRANS")).length,
-    });
+    // Raw file bytes, not JSON: decode (strict UTF-8 → CP437 fallback), parse
+    // the SIE 4 subset, and let the store append VoucherImported events.
+    // Deferred-auth identity matches the rest of the demo pipeline; override
+    // via ?actorId= until real auth attribution lands.
+    const bytes = new Uint8Array(await context.req.arrayBuffer());
+    const parsed = parseSie(decodeSieBuffer(bytes));
+    const actorId = context.req.query("actorId") ?? "user_founder";
+    const result = await currentStore.importSie({ actorId, file: parsed });
+    return context.json(result);
   });
 
   app.get("/api/exports/sie", async (context) => {
-    context.header("content-type", "text/plain; charset=utf-8");
-    return context.body(await buildSIEExport(currentStore));
+    const [reports, settings] = await Promise.all([currentStore.getReports(), currentStore.getCompanySettings()]);
+    const text = buildSieExport({ journal: reports.journal, settings, generatedAt: nowIso() });
+    // Spec-valid PC8 (CP437) bytes — NOT UTF-8. `charset=ibm437` is the IANA
+    // name browsers/tools recognize for CP437.
+    context.header("content-type", "text/plain; charset=ibm437");
+    context.header("content-disposition", `attachment; filename="jpx-export-${today()}.se"`);
+    return context.body(encodePc8(text));
   });
 
-  app.post("/api/assistant/sessions", async (context) => {
-    const input = await parseBody(context.req.raw, assistantRequestSchema);
-    const snapshot = await currentStore.getSnapshot();
-    const citations = snapshot.reviews[0]?.suggestion?.citations ?? [
-      {
-        id: "internal_arch",
-        title: "Internal architecture policy",
-        sourceType: "internal",
-        excerpt: "AI suggestions require human review before posting.",
-      },
-    ];
-    const answer = await aiRuntime.answerQuestion(input.question, citations);
-    return context.json(answer, 201);
-  });
+  // `POST /api/assistant/sessions` (one-shot Q&A) was retired in Phase 6 —
+  // superseded by the streaming `/api/advisor/chat` below.
+
+  // Advisor chat (Task 5.7): AI SDK 7 UI-message SSE. Deterministic demo
+  // stream or Azure streamText — both route tool approvals through the
+  // existing review decision. Inherits the full mutation middleware stack
+  // (body limit, rate limiter, JWT when configured) like every /api/* POST.
+  app.post("/api/advisor/chat", (context) => advisorChat(context.req.raw));
 
   app.post("/api/knowledge/query", async (context) => {
     const input = await parseBody(context.req.raw, knowledgeQuerySchema);
-    // Knowledge query is a placeholder until the Azure AI Search index ships
-    // (foundation in migration 0003 + knowledge.documents table). Returning
-    // citations from any other flow's data is wrong provenance in an audit
-    // context (CONVENTIONS Rule 10). Return [] until real retrieval lands.
-    return context.json({
-      query: input.query,
-      citations: [],
-      answer:
-        "Knowledge queries are routed through the same grounded advisory stack; next step is wiring the knowledge.documents table (0003 migration) to Azure AI Search.",
-    });
+    // Real sourced retrieval (Task 5.7): BM25-lite over the bundled corpus —
+    // passages carry verbatim source provenance (Rule 10). Vector mode lands
+    // with the pgvector ingestion loop in Task 5.11.
+    return context.json(await queryKnowledge(input.query));
   });
 
   app.post("/api/simulations/run", async (context) => {

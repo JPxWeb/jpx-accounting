@@ -1,4 +1,5 @@
 import { createAiRuntime } from "@jpx-accounting/ai-core";
+import type { AiProvider } from "@jpx-accounting/contracts";
 import { createDocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import type { LedgerStore } from "@jpx-accounting/domain";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
@@ -6,6 +7,36 @@ import { createPostgresClient, PostgresLedgerStore } from "@jpx-accounting/persi
 
 import { createBlobUploader } from "./blob";
 import type { ApiRuntimeConfig } from "./config";
+
+/**
+ * Transparency metadata for `GET /api/runtime-info` (advisory pivot Phase 5).
+ * Derived once at boot from the same config the AI runtime factory reads:
+ * demo → local-demo; normal + configured → azure-openai (+ model/endpoint
+ * host); else unavailable. Never carries secrets.
+ */
+export type AiRuntimeMetadata = {
+  provider: AiProvider;
+  model?: string | undefined;
+  endpointHost?: string | undefined;
+};
+
+function buildAiMetadata(config: ApiRuntimeConfig): AiRuntimeMetadata {
+  if (config.runtimeMode === "demo") {
+    return { provider: "local-demo" };
+  }
+  const { endpoint, apiKey, model } = config.azureOpenAi;
+  // Mirrors createAiRuntime's selection: endpoint + apiKey → ResponsesAiRuntime.
+  if (endpoint && apiKey) {
+    let endpointHost: string | undefined;
+    try {
+      endpointHost = new URL(endpoint).host;
+    } catch {
+      endpointHost = undefined;
+    }
+    return { provider: "azure-openai", model, endpointHost };
+  }
+  return { provider: "unavailable" };
+}
 
 // Wires LedgerStore + AI implementations from `ApiRuntimeConfig`. Demo always uses MemoryLedgerStore; normal mode intentionally uses an unavailable stub until persistence lands.
 export class LedgerStoreUnavailableError extends Error {
@@ -34,6 +65,14 @@ export class UnavailableLedgerStore implements LedgerStore {
     return this.fail();
   }
 
+  async updateEvidenceExtraction() {
+    return this.fail();
+  }
+
+  async importSie() {
+    return this.fail();
+  }
+
   async findReviewByVoucher() {
     return this.fail();
   }
@@ -43,6 +82,10 @@ export class UnavailableLedgerStore implements LedgerStore {
   }
 
   async getReports() {
+    return this.fail();
+  }
+
+  async getReportPack() {
     return this.fail();
   }
 
@@ -101,6 +144,14 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
     apiKey: config.azureDocumentIntelligence.apiKey,
   });
 
+  // Advisor chat wiring (Task 5.7): approval-signing secret + the Azure
+  // OpenAI slice the normal-mode model factory reads. Same env surface as
+  // ai-core — createApp decides per runtime mode whether to build the model.
+  const advisor = {
+    toolApprovalSecret: config.advisor.toolApprovalSecret,
+    azureOpenAi: config.azureOpenAi,
+  };
+
   if (config.runtimeMode === "demo") {
     return {
       runtimeMode: config.runtimeMode,
@@ -111,6 +162,8 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
       }),
       blobUploader,
       documentIntelligence,
+      aiMetadata: buildAiMetadata(config),
+      advisor,
       jwksUrl: config.auth.jwksUrl,
     };
   }
@@ -140,6 +193,8 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
     }),
     blobUploader,
     documentIntelligence,
+    aiMetadata: buildAiMetadata(config),
+    advisor,
     jwksUrl: config.auth.jwksUrl,
   };
 }

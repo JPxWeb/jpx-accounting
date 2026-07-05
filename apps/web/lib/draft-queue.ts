@@ -2,18 +2,29 @@
 
 import { openDB } from "idb";
 
-import { createDraftQueue, type CaptureDraft, type DraftQueueAdapter } from "./draft-queue-core";
+import { createDraftQueue, stripDraftFile, type CaptureDraft, type DraftQueueAdapter } from "./draft-queue-core";
 
 const databaseName = "jpx-accounting-drafts";
+const databaseVersion = 2;
 const storeName = "capture-drafts";
 const sessionStorageKey = "jpx-accounting-drafts:session";
 const inMemoryDrafts = new Map<string, CaptureDraft>();
 
-async function getDatabase() {
-  return openDB(databaseName, 1, {
+/**
+ * Object store for promoted-evidence file blobs (previews), added in v2.
+ * Records are `{ evidenceId, blob, storedAt }` keyed by `evidenceId` — see `evidence-blob-cache.ts`.
+ */
+export const EVIDENCE_BLOB_STORE = "evidence-blobs";
+
+export async function getDraftDatabase() {
+  return openDB(databaseName, databaseVersion, {
     upgrade(db) {
+      // Idempotent: v1 databases already have `capture-drafts` (untouched by v2); only create what's missing.
       if (!db.objectStoreNames.contains(storeName)) {
         db.createObjectStore(storeName, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(EVIDENCE_BLOB_STORE)) {
+        db.createObjectStore(EVIDENCE_BLOB_STORE, { keyPath: "evidenceId" });
       }
     },
   });
@@ -21,7 +32,8 @@ async function getDatabase() {
 
 const indexedDbAdapter: DraftQueueAdapter = {
   async save(draft) {
-    const db = await getDatabase();
+    const db = await getDraftDatabase();
+    // IndexedDB structured-clones Blobs, so `file` persists with the draft here.
     await db.put(storeName, draft);
     return {
       storage: "indexeddb",
@@ -29,11 +41,11 @@ const indexedDbAdapter: DraftQueueAdapter = {
     };
   },
   async list() {
-    const db = await getDatabase();
+    const db = await getDraftDatabase();
     return db.getAll(storeName);
   },
   async remove(id) {
-    const db = await getDatabase();
+    const db = await getDraftDatabase();
     await db.delete(storeName, id);
   },
 };
@@ -71,7 +83,9 @@ async function writeSessionDrafts() {
 
 const sessionAdapter: DraftQueueAdapter = {
   async save(draft) {
-    inMemoryDrafts.set(draft.id, draft);
+    // The fallback tiers round-trip through JSON, which cannot carry a Blob —
+    // degrade to a metadata-only draft (surfaced by the existing session/memory status messages).
+    inMemoryDrafts.set(draft.id, stripDraftFile(draft));
 
     try {
       const storage = await writeSessionDrafts();

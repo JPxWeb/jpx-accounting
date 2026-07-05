@@ -2,7 +2,17 @@ const cachePrefix = "jpx-accounting-static-";
 
 export const staticAssetCacheName = `${cachePrefix}v2`;
 
-const exactCacheablePaths = new Set(["/manifest.webmanifest", "/favicon.ico", "/apple-icon.png", "/icon.png"]);
+// Keep in sync with the precache list in apps/web/public/sw.js.
+const exactCacheablePaths = new Set([
+  "/manifest.webmanifest",
+  "/icon.svg",
+  "/brand/logo.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-192.png",
+  "/icons/icon-maskable-512.png",
+  "/apple-touch-icon.png",
+]);
 
 type HeaderShape = Headers | Record<string, string | undefined>;
 

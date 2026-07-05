@@ -1,0 +1,24 @@
+---
+description: jpx-accounting project rules (cross-tool contract lives in AGENTS.md)
+globs:
+alwaysApply: true
+---
+
+Read `AGENTS.md` first — it is the cross-tool agent contract (JPx ADR DL-001) and wins on
+conflict. `CLAUDE.md` carries the deep project memory; `docs/CONVENTIONS.md` the 28
+incident-derived rules.
+
+Non-negotiables while editing here:
+
+- Append-only ledger events; never rewrite history. The review queue is the only path to a
+  posted voucher — AI output executes nothing without explicit human approval.
+- Keep `MemoryLedgerStore` and `PostgresLedgerStore` behavior-identical; shared logic goes
+  in `packages/domain`.
+- `packages/contracts` (Zod v4) is the single source of truth for API shapes — change the
+  schema first, then both stores, then the UI.
+- Every `messages/en.json` key needs its `sv.json` twin.
+- `@dnd-kit` only in `sortable-grid.tsx`; `ai`/`@ai-sdk` only under `components/advisor/` +
+  `services/api/src/advisor/`; recharts only via the reports lazy barrel.
+- Windows shell: prepend `$env:LOCALAPPDATA\corepack-shims` to PATH before any pnpm call.
+- Gate before merge: `pnpm check`, then E2E via `pnpm build:e2e` (never plain build), then
+  visual diffs reviewed before any `--update-snapshots`.

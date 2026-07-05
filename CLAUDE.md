@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Cross-tool contract:** [`AGENTS.md`](AGENTS.md) is the compact agent contract shared by all coding tools (JPx ADR DL-001) and wins on conflict; this file is the deeper Claude-specific project memory.
+
 Prefer **official docs**: use Context7 (e.g. `/vercel/next.js` pinned to the repo Next version) or vendor docs before relying on recalled API details — especially ESLint flat config, pnpm lifecycle policy, Playwright wiring, Azure deploy.
 
 ## Build & Dev Commands
@@ -15,10 +17,12 @@ pnpm lint                     # ESLint (root eslint.config.mjs)
 pnpm lint:fix
 pnpm format                   # Prettier write
 pnpm format:check             # Prettier CI check
-pnpm typecheck                # TypeScript check across all 10 workspace packages
+pnpm typecheck                # TypeScript check across all 11 workspace packages
 pnpm typecheck:tests          # Typecheck the tests/ directory (separate tsconfig — added in PR-B)
 pnpm build                    # Build web + API (`services/api` is typecheck-only; deploy bundles API with esbuild)
 pnpm check                    # lint + format:check + typecheck + typecheck:tests + unit tests + build
+pnpm build:knowledge          # Regenerate packages/advisor/src/corpus.generated.ts from docs/knowledge/sv (generated file is checked in — commit the diff)
+pnpm ingest:knowledge         # Embed + upsert the knowledge corpus into Postgres pgvector (needs SUPABASE_DB_URL + AZURE_OPENAI_*)
 
 # Testing
 pnpm test:unit                # Unit tests: tsx --test 'tests/unit/**/*.test.ts'
@@ -27,8 +31,12 @@ pnpm test:e2e                 # Playwright E2E (builds first, starts both server
 pnpm test:e2e:headed          # E2E with visible browser
 pnpm test:e2e:install          # Install Chromium for Playwright
 
-# Run a single E2E test
-pnpm build && npx playwright test tests/e2e/home.spec.ts
+# Run a single E2E test (build:e2e bakes the demo/proxy env the specs assume)
+pnpm build:e2e && npx playwright test tests/e2e/home.spec.ts
+
+# Visual baselines (20 themed screenshots; [data-visual-mask] regions are masked)
+pnpm test:e2e:visual          # compare against baselines
+pnpm test:e2e:visual:update   # re-baseline — only after reviewing every diff image
 
 # Run a single unit test
 tsx --test tests/unit/some-file.test.ts
@@ -48,20 +56,21 @@ pnpm monorepo (Node >=24, pnpm 10.29.2) — mobile-first Swedish accounting PWA 
 ### Workspace layout
 
 - **apps/web** — Next.js 16 PWA (React 19, TailwindCSS 4, React Query 5, Motion 12, shadcn/ui via `@base-ui/react`, Sonner toaster, react-hook-form, nuqs, @tanstack/react-table). Swedish locale throughout. `@/*` path alias resolves to `apps/web/*` (see `apps/web/tsconfig.json` and `components.json`).
-- **services/api** — Hono HTTP server (port 3001). Routes in `src/app.ts`, dependency injection in `src/runtime.ts`, blob SAS minting in `src/blob.ts`. `GET /health` = liveness; `GET /ready` = readiness (`ledger` + `ai` checks). JSON errors carry `requestId`; `400`s use `code: "validation_error"` + `issues[]`. Mutating routes go through `hono-rate-limiter` and (when `SUPABASE_JWKS_URL` is set) `hono/jwk`.
+- **services/api** — Hono HTTP server (port 3001). Routes in `src/app.ts`, dependency injection in `src/runtime.ts`, blob SAS minting in `src/blob.ts`. `GET /health` = liveness; `GET /ready` = readiness (`ledger` + `ai` checks). JSON errors carry `requestId`; `400`s use `code: "validation_error"` + `issues[]`. Mutating routes go through `hono-rate-limiter` and (when `SUPABASE_JWKS_URL` is set) `hono/jwk` — `POST /api/advisor/chat` (AI SDK 7 UI-message SSE, `src/advisor/`) inherits that same stack. `GET /api/integrity` + `GET /api/runtime-info` are the Phase-5 trust endpoints; `src/knowledge.ts` serves `POST /api/knowledge/query` (keyword always, pgvector in normal mode with keyword fallback).
 - **packages/contracts** — Zod v4 schemas: the single source of truth for all API shapes and domain types.
-- **packages/domain** — Core accounting logic: `LedgerStore` interface (**async**), append-only event sourcing with hash chain, BAS accounts, Swedish rules, projections, `MemoryLedgerStore` reference impl.
-- **packages/persistence-postgres** — `PostgresLedgerStore` against Supabase Postgres using `postgres-js`. Each mutation runs in `sql.begin(...)` with `SELECT … FOR UPDATE` on the workspace tail row to keep the hash chain serializable.
+- **packages/domain** — Core accounting logic: `LedgerStore` interface (**async**), append-only event sourcing with hash chain, BAS accounts, Swedish rules (incl. `confidenceBand()` 0.85/0.6 — the ONE confidence-tier source), projections, statutory tax calendar (`src/tax/calendar.ts`), hash-chain integrity summary (`src/integrity.ts`, linkage-only), `MemoryLedgerStore` reference impl.
+- **packages/persistence-postgres** — `PostgresLedgerStore` against Supabase Postgres using `postgres-js`. Each mutation runs in `sql.begin(...)` with `SELECT … FOR UPDATE` on the workspace tail row to keep the hash chain serializable. Also `src/knowledge.ts`: `upsertKnowledgeDocuments` + `queryKnowledgeByEmbedding` (cosine `<=>` on `halfvec(1536)`) for the RAG loop.
 - **packages/document-intelligence** — Adapter for `@azure-rest/ai-document-intelligence` (REST client, GA `2024-11-30`). `pickModelForDocument` picks `prebuilt-invoice` for Swedish _fakturer_, falls back to `prebuilt-receipt` for till receipts. Uses `getLongRunningPoller` for all calls.
-- **packages/ai-core** — Provider-agnostic AI abstraction. Factory selects `LocalAiRuntime` (demo), `ResponsesAiRuntime` (Azure OpenAI), or `UnavailableAiRuntime` based on runtime mode + config. Exposes `embed()` for retrieval (default `text-embedding-3-small`, 1536 dims).
+- **packages/ai-core** — Provider-agnostic AI abstraction. Factory selects `LocalAiRuntime` (demo), `ResponsesAiRuntime` (Azure OpenAI), or `UnavailableAiRuntime` based on runtime mode + config. Exposes `embed()` for retrieval (default `text-embedding-3-small`, 1536 dims). Advisor **chat** does not go through ai-core — it uses AI SDK 7 in `services/api/src/advisor/`; both read the same `AZURE_OPENAI_*` env.
+- **packages/advisor** — Pure, isomorphic advisor brain (deps: contracts + reporting only — **never** ai-core, whose `openai` import must not reach the web bundle). Bundled sourced Swedish knowledge corpus (`src/corpus.generated.ts`, regenerated via `pnpm build:knowledge` from `docs/knowledge/sv`), BM25-lite retrieval, grounding builder, deterministic demo advisor turns, suggested prompts. One brain, two thin adapters: the API wraps it in UI-message SSE; the web replays it via `LocalDemoChatTransport`.
 - **packages/api-client** — TypeScript client with demo-mode fallback to in-memory store. `initUpload` + `uploadBlob` cover the two-step Azure Blob signed-upload flow.
-- **packages/reporting** — Report summarization helpers (journal, balances, VAT).
+- **packages/reporting** — Report summarization helpers (journal, balances, VAT) + the deterministic six-detector observation engine (`src/observations.ts`) feeding the dashboard, advisor grounding, and suggested prompts.
 - **packages/ui-tokens** — Design tokens (colors, fonts, formatters). Theme: Manrope + IBM Plex Mono, teal accent.
 
 ### Key design rules
 
 - **Append-only events** are the source of truth; never overwrite evidence or ledger history. The hash chain (`previous_hash → event_hash`) is global per workspace; mutations lock the latest event row with `SELECT … FOR UPDATE` before appending.
-- **AI suggests, never mutates** — AI outputs (LLM responses, Document Intelligence extractions) require human review before affecting ledger state. The review queue stays the only path to a posted voucher.
+- **AI suggests, never mutates** — AI outputs (LLM responses, Document Intelligence extractions) require human review before affecting ledger state. The review queue stays the only path to a posted voucher. The advisor's `proposeReviewAction` tool is no exception: it executes only the existing `applyReviewDecision(...)` and only after an explicit, HMAC-signed human tool-approval (`ADVISOR_TOOL_APPROVAL_SECRET`).
 - **`LedgerStore` is async** — every method returns `Promise<T>`. Postgres + future async stores were the driver; `MemoryLedgerStore` matches the interface by wrapping its sync logic.
 - **Runtime mode is explicit**: `demo` uses scaffold fallbacks (`MemoryLedgerStore`, `LocalAiRuntime`, `StubBlobUploader`, `StubDocumentIntelligenceClient`); `normal` fails closed if `SUPABASE_DB_URL` / Azure config is missing (`UnavailableLedgerStore` + `/ready.checks.ledger=false`).
 - **Use User-Delegation SAS for blob uploads, not account keys** — the API mints a 10-minute write-only SAS via Managed Identity (`DefaultAzureCredential`). Bicep grants `Storage Blob Delegator` + `Storage Blob Data Contributor` to the API's system-assigned identity; without both, SAS minting returns 403.
@@ -71,7 +80,7 @@ pnpm monorepo (Node >=24, pnpm 10.29.2) — mobile-first Swedish accounting PWA 
 
 ### Web app routing
 
-The web app uses Next.js App Router with a `(shell)` route group for the main tab-based layout. API calls proxy through `app/api-proxy/[...path]/route.ts` to the Hono API.
+The web app uses Next.js App Router with a `(shell)` route group for the main tab-based layout. API calls proxy through `app/api-proxy/[...path]/route.ts` to the Hono API. The proxy **streams** `response.body` through unbuffered and forwards the `x-vercel-ai-ui-message-stream` header — advisor SSE hangs behind an `arrayBuffer()` drain, so don't reintroduce buffering (streaming is byte-identical for buffered JSON routes).
 
 `apps/web/next.config.ts` sets baseline security **`headers()`** (CSP is stricter in production than in dev because of `unsafe-eval` / websocket needs). **`output: "standalone"`** targets container deploys; prefer the standalone `server.js` entry when running production images, not `next start`.
 
@@ -79,14 +88,15 @@ The web app uses Next.js App Router with a `(shell)` route group for the main ta
 
 Reuse before reinventing — the following modules already exist in `apps/web/`:
 
-- **Focus trap for modals** — `apps/web/lib/focus-trap.ts` exports `useDialogFocusTrap(containerRef, open, onClose, initialFocusRef?)` which handles Escape, Tab/Shift+Tab wrap, and initial focus. Used by the capture sheet (`app-shell.tsx`) and the command palette. New modals should use this hook, not roll their own keyboard logic.
-- **Account & notification menus** — both follow the same controlled-open + invisible-backdrop-button pattern in `app-shell.tsx` (`AccountMenu`, `AccountRailCard`, `NotificationMenu`). Don't use `<details>`/`<summary>` for menu overlays — they don't close on Escape or outside click.
+- **Focus trap for modals** — `apps/web/lib/focus-trap.ts` exports `useDialogFocusTrap(containerRef, open, onClose, initialFocusRef?)` which handles Escape, Tab/Shift+Tab wrap, and initial focus. Used by the command palette, the capture sheet in `app-shell.tsx`, the review edit sheet, and the reports drill drawer. New modals should use this hook, not roll their own keyboard logic.
+- **Menu overlays** — don't use `<details>`/`<summary>` for menu overlays; they don't close on Escape or outside click. Use a controlled-open + invisible-backdrop-button pattern instead. (The former `AccountMenu`/`NotificationMenu` components this section used to describe no longer exist in `app-shell.tsx`.)
 - **Command palette** — `apps/web/components/command-palette.tsx`. Globally bound to `Cmd+K` / `Ctrl+K` in `AppShell`. Searches vouchers, reviews, and account balances from the workspace snapshot; `buildHits` builds an O(R) `Map` of reviews-by-voucher, **don't** scan `data.reviews` per voucher. Shortcut hint label switches between `⌘K` and `Ctrl K` via `navigator.platform` detection.
-- **Report period helpers** — `apps/web/lib/report-period.ts` (`getPeriodDayRange`, `journalEntryInPeriod`, `ReportPeriodPreset`). Date formatting uses **local calendar parts**, not `toISOString().slice(0, 10)` — that path silently mis-bucketed entries at month edges in non-UTC timezones (the bug is documented in the file).
-- **Assistant thread history** — `apps/web/lib/assistant-thread-storage.ts`. `prependAssistantThread(session)` writes to localStorage and **returns** the merged array; callers should consume that return value instead of calling `loadAssistantThreads()` again. Capped at `MAX_THREADS = 30`.
+- **Period model** — ONE fiscal-aware period system: `resolvePeriodToken`/`currentMonthToken` in `packages/domain/src/reports/period.ts` (tokens `YYYY-MM`, `YYYY-QN` fiscal quarters, `fy-YYYY`, `ytd`, `all`) consumed by `apps/web/hooks/use-period-scope.ts` (nuqs `?period=`) and the period-scoped report routes. Date formatting uses **local calendar parts**, never `toISOString().slice(0, 10)` — the old UTC path silently mis-bucketed month-edge entries (regression-pinned in `tests/unit/report-period.test.ts`). The former `apps/web/lib/report-period.ts` helpers are deleted.
+- **Assistant thread history** — `apps/web/lib/assistant-thread-storage.ts`, storage **v2** (key `jpx.accounting.assistantThreads.v2`): threads are whole `UIMessage[]` conversations (`{id, title, messages, savedAt}`) so a reopened thread replays text, provenance, and tool-approval parts exactly as streamed; old v1 `{question, answer}` rows are read-migrated once. `prependAssistantThread(thread)` writes to localStorage and **returns** the merged array; callers should consume that return value instead of calling `loadAssistantThreads()` again. Capped at `MAX_THREADS = 30`.
+- **Advisor chat** — `apps/web/components/advisor/` on `@ai-sdk/react` `useChat` (AI SDK 7, exact-pinned). Transport: `DefaultChatTransport` against `/api/advisor/chat`, or `LocalDemoChatTransport` (`local-demo-transport.ts`) when the demo fallback store is active — it replays the same `buildDemoAdvisorTurn` parts client-side, mirroring the server's chunk protocol. Tool approvals render as approval cards and execute only through the review gate ("AI suggests, never mutates" is unchanged). Article 50 labeling: persistent assistant badge + per-message `ai-generated-marker`. Grep gate: `ai`/`@ai-sdk` imports live only in `components/advisor/*` (web) and `services/api/src/advisor/*` (API).
 - **Mobile dock + capture-pill clearance** — `.workspace-canvas` in `apps/web/app/globals.css` reserves `calc(env(safe-area-inset-bottom) + 144px)` of bottom padding on mobile and resets to `24px` at the `≥1024px` breakpoint. Locked by `tests/e2e/mobile-bottom-clearance.spec.ts`. Do not lower the mobile padding without updating both the CSS and the regression test.
 - **Primary nav labels** are `Today / Capture / Books / Reports / Settings` (5-tab IA landed in PR-D3). The mobile project on Pixel 7 shares the dock semantics with desktop — both surfaces consume the same `navigation` array in `app-shell.tsx`. `/` redirects to `/today`.
-- **Ambient digest** is a Next.js parallel route at `apps/web/app/(shell)/@digest/` (slot prop `digest`). The shell layout receives both `children` and `digest` and passes the latter to `AppShell`. When adding new pages under `(shell)/`, the digest slot continues to render unless you provide a per-segment `@digest/default.tsx`.
+- **Dashboard foundation** — `/today` is a drag-&-drop widget dashboard (the former ambient-digest parallel route is **deleted**). Layout model is `apps/web/lib/dashboard-layout-core.ts` (pure: `WIDGET_IDS` ×10 — new widgets append LAST so persisted layouts migrate; `order` + `hidden`, immutable helpers) persisted by `dashboard-layout-storage.ts` (`useDashboardLayout()` — localStorage key `jpx.accounting.dashboardLayout.v1`, BroadcastChannel sync, one `useSyncExternalStore`; client-side only, no server persistence). `components/dashboard/sortable-grid.tsx` is THE dnd abstraction — every `@dnd-kit` import lives in that one file (exit-gate grep enforces it). Widgets get uniform chrome with testids `widget-<id>`, `widget-handle-<id>`, `widget-drill-<id>`, `widget-remove-<id>`; the grid is `dashboard-canvas`. View switch via nuqs `?view=` on `/today` (`dashboard` default); the full review queue lives verbatim in `components/today/review-queue-view.tsx` at `/today?view=queue`, and a present `?review=` deep-link forces the queue. Widget mini-visuals are dependency-free inline SVG (`mini-sparkline`/`mini-bars`) — never import the recharts kit into the dashboard.
 - **URL state via nuqs** — `NuqsAdapter` (from `nuqs/adapters/next/app`) is mounted in the root layout (`apps/web/app/layout.tsx`) so any client component can call `useQueryState`. Example: `apps/web/hooks/use-period-scope.ts` parses `?period=YYYY-MM` for the Books / Reports period selector. Don't wrap `useQueryState` results in `useMemo` — React Compiler errors on it; use plain functions outside the hook.
 - **shadcn/ui primitives** live in `apps/web/components/ui/` alongside bespoke project components. Distinguishing them by import is the convention: shadcn primitives import `cn` from `@/lib/utils` and `cva` from `class-variance-authority`; bespoke components (`icons.tsx`, `metric-card.tsx`, `screen-header.tsx`, `section-label.tsx`, `status-badge.tsx`, `unavailable-state.tsx`) don't. Add new shadcn primitives via `pnpm dlx shadcn@latest add <name>` (config in `apps/web/components.json` is style `base-nova` / baseColor `neutral` / lucide). Skeleton is the merged exception — exports both shadcn `Skeleton` and bespoke `ScreenSkeleton`.
 - **Sonner toaster + Skip-to-content link** are mounted at the root layout (`apps/web/app/layout.tsx`). Call `toast("...")` from anywhere; the toaster surfaces bottom-right. The skip-to-content link targets `#main-content` — when adding new top-level routes, render an element with `id="main-content"` to make the link functional for keyboard users.
@@ -94,14 +104,16 @@ Reuse before reinventing — the following modules already exist in `apps/web/`:
 
 ### E2E test setup
 
-Playwright runs sequentially (1 worker) against dedicated test servers: API on port 3201 (demo mode, test reset enabled), web on port 3200. Both desktop and mobile (Pixel 7) projects. Tests must `pnpm build` first since the web server uses `next start`.
+Playwright runs sequentially (1 worker) against dedicated test servers: API on port 3201 (demo mode, test reset enabled), web on port 3200. Both desktop and mobile (Pixel 7) projects. Tests must `pnpm build:e2e` first since the web server uses `next start`.
+
+Visual regression (`tests/e2e/visual-regression.spec.ts`, 20 themed full-page baselines): clock-derived UI — topbar timestamp, journal/archive dates, event hashes, activity dates — must carry a `data-visual-mask` attribute; the spec masks those regions so baselines stay date-stable. Re-baseline only with `pnpm test:e2e:visual:update` after reviewing every diff image.
 
 ### Known deferred / Don't accidentally redo
 
 - **`parseBody` in `services/api/src/app.ts` is intentional, not legacy.** Phase E.1 (replace with `@hono/zod-validator`) was deferred because the current helper produces the exact `{ code: "validation_error", issues: [...] }` 400-body shape that `tests/unit/api-runtime.test.ts` asserts on. Don't swap it without a parity test first.
 - **Phase E.4 (`hono-openapi`) is deferred** because the existing `parseBody` works and `@hono/zod-openapi` has an open Zod v4 incompatibility (issue #1177). Switching needs a deeper Zod v4 sweep — not a one-line dep add.
 - **5 deploy-only perf/cleanup ideas already on main's PostgresLedgerStore** — projection-aggregate triggers, parallel queries on `getEvidenceContext`, batched suggestion lookups on `getReviewFeed`, org-scoped-first gate on `suggestVoucher`, settings audit attribution. PR-F was opened to port them and closed as a no-op once verified present. No action needed.
-- **Track A forward-looking plans** live under [`docs/superpowers/plans/`](docs/superpowers/plans/). **Landed:** Phase 5 Capture (real `/capture` with quick-add, drafts, archive, evidence detail route). **Remaining:** Phase 6 Advisor (Cmd-K still a basic palette — real AI advisor pending), Phase 7 Reports drill-downs, Phase 8 Settings depth (PR-D2 layout landed; 7 sub-pages still stubs), unified radius refactor.
+- **Track A forward-looking plans** live under [`docs/superpowers/plans/`](docs/superpowers/plans/). **Landed:** Phase 5 Capture (real `/capture` with quick-add, drafts, archive, evidence detail route); Phase 6 Advisor (superseded by pivot Phase 5 — real AI advisor shipped; Cmd-K remains a search palette); Phase 7 Reports drill-downs (superseded by pivot Phase 4 `?drill=` grammar); unified radius (pivot Phase 1). **Remaining:** Phase 8 Settings depth (company, about, and ai-posture are real; compliance/fiscal-year/integrations/retention/team — 5 of 8 sub-pages — still header-only stubs). **These are superseded where they conflict by the advisory pivot** — spec: [`docs/superpowers/specs/2026-07-03-advisory-pivot-design.md`](docs/superpowers/specs/2026-07-03-advisory-pivot-design.md), master plan: [`docs/superpowers/plans/2026-07-03-advisory-pivot-master-plan.md`](docs/superpowers/plans/2026-07-03-advisory-pivot-master-plan.md) (branch `feat/advisory-pivot`).
 - **CI E2E is opt-in on PRs** (`.github/workflows/ci.yml`). It runs automatically on **pushes to `main`** (final pre-deploy gate) and via **workflow_dispatch**, but on PRs only when the `run-e2e` label is applied. Apply the label and either push a new commit or re-run the workflow to fire it; remove the label to skip. Background: the job intermittently hung (~1h for what should be 1m20s), so routine PRs land on typecheck + unit + build only. Use `gh pr edit <N> --add-label run-e2e` before merging anything user-facing where regressions would be hard to catch otherwise.
 - **Local `pnpm dev:web` port 3002 may collide** with the user's CultureDNA dev server (Vite + React Router 7). When visual inspection is needed and 3002 is taken, fall back to E2E for regression detection or coordinate the port collision before starting dev.
 
@@ -141,7 +153,8 @@ Key env vars (see `.env.example` for full list):
 
 **AI / extraction / retrieval (Phases C–D)**
 
-- `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_MODEL`: Required for normal-mode chat + embeddings.
+- `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_MODEL`: Required for normal-mode chat + embeddings (both ai-core and the AI SDK advisor path read these).
+- `ADVISOR_TOOL_APPROVAL_SECRET`: HMAC secret signing AI SDK tool-approval requests on `/api/advisor/chat`. A demo default is baked into `services/api/src/config.ts` so offline runs work — **production must set this**.
 - `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`, `AZURE_DOCUMENT_INTELLIGENCE_API_KEY`: Required for live OCR via `@azure-rest/ai-document-intelligence`. Without them the adapter returns the stub.
 
 **Storage (Phase B)**
@@ -154,9 +167,9 @@ Key env vars (see `.env.example` for full list):
 
 See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for trust boundaries, the env matrix, and build/deploy subtleties.
 
-**Conventions / anti-patterns:** see [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for 26 rules distilled from past incidents — schema-contract sync, partial-index pitfalls, store parity between `MemoryLedgerStore` and `PostgresLedgerStore`, citation provenance, audit attribution sentinels, bounded accumulation. Consult before changes that touch contracts, migrations, or `LedgerStore` implementations.
+**Conventions / anti-patterns:** see [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for 28 rules distilled from past incidents — schema-contract sync, partial-index pitfalls, store parity between `MemoryLedgerStore` and `PostgresLedgerStore`, citation provenance, audit attribution sentinels, bounded accumulation. Consult before changes that touch contracts, migrations, or `LedgerStore` implementations.
 
-**Development status / port progress:** see [docs/DEV_STATUS.md](docs/DEV_STATUS.md) for the Phase 7 + PR-D1 port status (PR-A/B/C/D1 MERGED; PR-D2/D3 pending) and the UI follow-ups the new API surfaces will need once landed.
+**Development status / port progress:** see [docs/DEV_STATUS.md](docs/DEV_STATUS.md) for the advisory-pivot phase status (Phases 0–5 COMPLETE on `feat/advisory-pivot`, each with its documented limitations), the 2026-05-27 deploy→main port history, and the remaining UI follow-ups.
 
 **Session handovers:**
 

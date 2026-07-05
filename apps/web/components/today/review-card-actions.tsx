@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from "next-intl";
+
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import type { ReviewAction } from "./filter-types";
@@ -10,14 +12,16 @@ type Props = {
 };
 
 export function ReviewCardActions({ onAction, disabled }: Props) {
+  const t = useTranslations("today.actions");
+
   return (
     <fieldset className="mt-4 flex flex-wrap gap-2 border-0 p-0 m-0">
-      <legend className="sr-only">Review actions</legend>
+      <legend className="sr-only">{t("legend")}</legend>
       <Button onClick={() => onAction("accept")} disabled={disabled} data-testid="review-accept">
-        Accept <Kbd>Y</Kbd>
+        {t("accept")} <Kbd>Y</Kbd>
       </Button>
       <Button variant="secondary" onClick={() => onAction("edit")} disabled={disabled} data-testid="review-edit">
-        Edit <Kbd>E</Kbd>
+        {t("edit")} <Kbd>E</Kbd>
       </Button>
       <Button
         variant="ghost"
@@ -25,10 +29,10 @@ export function ReviewCardActions({ onAction, disabled }: Props) {
         disabled={disabled}
         data-testid="review-book-without-vat"
       >
-        Book w/o VAT <Kbd>B</Kbd>
+        {t("bookWithoutVat")} <Kbd>B</Kbd>
       </Button>
       <Button variant="destructive" onClick={() => onAction("reject")} disabled={disabled} data-testid="review-reject">
-        Reject <Kbd>N</Kbd>
+        {t("reject")} <Kbd>N</Kbd>
       </Button>
     </fieldset>
   );

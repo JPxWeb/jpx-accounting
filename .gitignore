@@ -17,6 +17,14 @@ pw-debug*.log
 *.jpg
 *.jpeg
 
+# …but shipped assets and visual-regression baselines MUST be tracked
+# (the blanket *.png above silently dropped the Phase 0 baselines).
+!apps/web/public/**/*.png
+!tests/e2e/*-snapshots/*.png
+
+# …and the E2E capture fixtures (tiny real files driven via setInputFiles).
+!tests/fixtures/*.jpg
+
 # Playwright MCP
 .playwright-mcp/
 

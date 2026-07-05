@@ -1,13 +1,14 @@
+import { getTranslations } from "next-intl/server";
+
+import { ComplianceIntegrityPanel } from "../../../../components/settings/compliance-integrity-panel";
 import { ScreenHeader } from "../../../../components/ui/screen-header";
 
-export default function ComplianceSettingsPage() {
+export default async function ComplianceSettingsPage() {
+  const t = await getTranslations("settings.compliance");
   return (
     <div className="space-y-6">
-      <ScreenHeader
-        eyebrow="Settings / Compliance watch"
-        title="Rule sources and alert history."
-        description="Subscribed rule sources (Skatteverket, BFN, BAS) and the alert detail drawer. Full compliance watch lands in Phase 8."
-      />
+      <ScreenHeader eyebrow={t("eyebrow")} title={t("title")} description={t("description")} />
+      <ComplianceIntegrityPanel />
     </div>
   );
 }

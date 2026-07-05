@@ -16,6 +16,8 @@ import type { UploadInit, UploadInitResult } from "@jpx-accounting/contracts";
 // /api/evidence with the same uploadId so the server can record the blob path.
 
 export interface BlobUploader {
+  /** Which implementation backs this uploader — the API branches on it for the stub PUT route and file-url minting. */
+  readonly kind: "stub" | "azure";
   initUpload(input: UploadInit): Promise<UploadInitResult>;
   /**
    * Mint a short-lived read-only SAS URL for an existing blob path. Used by
@@ -31,6 +33,9 @@ const DEFAULT_SAS_EXPIRY_SECONDS = 600;
 // briefly keeps init latency low without making revocation hard to reason about.
 const DELEGATION_KEY_LIFETIME_MS = 50 * 60 * 1000;
 
+/** Shared upload ceiling — the stub PUT route in app.ts mounts a body limit matching this value. */
+export const MAX_UPLOAD_BYTES = 16 * 1024 * 1024;
+
 const ALLOWED_CONTENT_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -40,7 +45,6 @@ const ALLOWED_CONTENT_TYPES = new Set([
   "application/pdf",
   "text/csv",
 ]);
-const MAX_UPLOAD_BYTES = 16 * 1024 * 1024;
 
 export class UploadValidationError extends Error {
   readonly code = "upload_validation_error" as const;
@@ -64,14 +68,18 @@ function validateInput(input: UploadInit): void {
 }
 
 export class StubBlobUploader implements BlobUploader {
+  readonly kind = "stub" as const;
+
   // Demo / unconfigured normal mode: returns a shape compatible with the contract so the web app
-  // does not branch on runtime mode. The URL is a fake same-origin path; no actual upload happens.
+  // does not branch on runtime mode. The URL is a same-origin path served by the API's stub PUT
+  // route (accept-and-discard); the blobPath is canonical so the create flow is exercised for real.
   async initUpload(input: UploadInit): Promise<UploadInitResult> {
     validateInput(input);
     const uploadId = crypto.randomUUID();
     return {
       uploadId,
       filename: input.filename,
+      blobPath: `evidence-uploads/${uploadId}/${sanitizeFilename(input.filename)}`,
       uploadUrl: `/api/uploads/${uploadId}`,
       requiredContentType: input.mimeType,
       requiredBlobType: "BlockBlob",
@@ -97,6 +105,8 @@ export type AzureBlobUploaderConfig = {
 };
 
 export class AzureBlobUploader implements BlobUploader {
+  readonly kind = "azure" as const;
+
   private readonly serviceClient: BlobServiceClient;
   private readonly accountName: string;
   private readonly containerName: string;
@@ -151,6 +161,7 @@ export class AzureBlobUploader implements BlobUploader {
     return {
       uploadId,
       filename: input.filename,
+      blobPath: blobName,
       uploadUrl: `${blobUrl}?${sas}`,
       requiredContentType: input.mimeType,
       requiredBlobType: "BlockBlob",

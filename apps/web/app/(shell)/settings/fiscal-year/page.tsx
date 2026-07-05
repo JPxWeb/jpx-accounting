@@ -1,13 +1,14 @@
+import { getTranslations } from "next-intl/server";
+
+import { FiscalYearForm } from "../../../../components/settings/fiscal-year-form";
 import { ScreenHeader } from "../../../../components/ui/screen-header";
 
-export default function FiscalYearSettingsPage() {
+export default async function FiscalYearSettingsPage() {
+  const t = await getTranslations("settings.fiscalYear");
   return (
     <div className="space-y-6">
-      <ScreenHeader
-        eyebrow="Settings / Fiscal year & VAT"
-        title="Fiscal year and VAT reporting cadence."
-        description="Configure fiscal year start month and VAT reporting period (monthly / quarterly / annually). Full form lands in Phase 8."
-      />
+      <ScreenHeader eyebrow={t("eyebrow")} title={t("title")} description={t("description")} />
+      <FiscalYearForm />
     </div>
   );
 }

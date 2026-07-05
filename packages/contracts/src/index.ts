@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import { countryCodeSchema, countryValidationRegistry } from "./countries";
+
+export * from "./countries";
+
 export const roleSchema = z.enum(["Preparer", "Approver", "Accountant", "Admin", "Auditor", "Advisor"]);
 
 export const accountingMethodSchema = z.enum(["invoice", "cash"]);
@@ -28,12 +32,14 @@ export const eventTypeSchema = z.enum([
   "EvidenceReceived",
   "EvidenceClassified",
   "FieldsExtracted",
+  "ExtractionRefreshed",
   "VoucherCreated",
   "RuleSetApplied",
   "SuggestionGenerated",
   "ReviewApproved",
   "ReviewRejected",
   "PostedToLedger",
+  "VoucherImported",
   "CorrectionPosted",
   "PeriodLocked",
   "PolicyVersionActivated",
@@ -96,6 +102,8 @@ export const evidenceObjectSchema = z.object({
   mimeType: z.string(),
   blobPath: z.string(),
   hash: z.string(),
+  /** File size in bytes. Optional so pre-Phase-3 rows/payloads keep parsing unchanged. */
+  sizeBytes: z.number().int().nonnegative().optional(),
   trustLevel: trustLevelSchema.default("user-upload"),
 });
 
@@ -151,11 +159,21 @@ export const reviewTaskSchema = z.object({
   ),
 });
 
+export const aggregateTypeSchema = z.enum([
+  "evidence",
+  "voucher",
+  "review",
+  "ledger",
+  "policy",
+  "simulation",
+  "export",
+]);
+
 export const ledgerEventSchema = z.object({
   id: z.string(),
   organizationId: z.string(),
   workspaceId: z.string(),
-  aggregateType: z.enum(["evidence", "voucher", "review", "ledger", "policy", "simulation", "export"]),
+  aggregateType: aggregateTypeSchema,
   aggregateId: z.string(),
   eventType: eventTypeSchema,
   actorId: z.string(),
@@ -255,6 +273,125 @@ export const reportBundleSchema = z.object({
   vat: z.array(vatProjectionSchema),
 });
 
+/**
+ * Report pack family (advisory-pivot Phase 4). ONE `ReportPack` per period is
+ * the single source object for the reports screen: every number in prose,
+ * KPI, chart, and table renders from the same fetched pack. Lives in
+ * contracts (not domain) so `packages/reporting` can consume it without a
+ * domain↔reporting cycle. `reportBundleSchema` above stays UNCHANGED.
+ */
+
+/**
+ * One statement row. Sign conventions (fixed by the domain builders):
+ * P&L lines are credit−debit (revenue positive, costs negative); balance-sheet
+ * assets are debit−credit; equity/liabilities are credit−debit.
+ */
+export const statementLineSchema = z.object({
+  accountNumber: z.string(),
+  accountName: z.string(),
+  amount: z.number(),
+});
+
+/** Group keys are client i18n keys — the server ships keys, never labels. */
+export const statementGroupKeySchema = z.enum([
+  "revenue",
+  "materials",
+  "externalCost",
+  "personnel",
+  "financial",
+  "assets",
+  "equityAndLiabilities",
+]);
+
+export const statementGroupSchema = z.object({
+  key: statementGroupKeySchema,
+  lines: z.array(statementLineSchema),
+  total: z.number(),
+});
+
+/**
+ * Resultatrapport. `personnel` includes 78xx depreciation per the bas-2026
+ * template's account classes (documented limitation of the 68-account subset).
+ */
+export const profitLossStatementSchema = z.object({
+  period: z.object({ from: z.string(), to: z.string() }),
+  groups: z.array(statementGroupSchema),
+  operatingResult: z.number(),
+  financialNet: z.number(),
+  periodResult: z.number(),
+});
+
+/**
+ * Balansrapport as of a day. `computedResult` is the cumulative P&L result not
+ * yet booked to equity (no closing entries exist); `balanced` asserts
+ * assets ≈ equity/liabilities + computedResult within ±0.005.
+ */
+export const balanceSheetStatementSchema = z.object({
+  asOf: z.string(),
+  assets: statementGroupSchema,
+  equityAndLiabilities: statementGroupSchema,
+  computedResult: z.number(),
+  balanced: z.boolean(),
+});
+
+/** One momsdeklaration box row (labels come from the VAT regime data). */
+export const vatReturnBoxSchema = z.object({
+  box: z.string(),
+  label: z.string(),
+  amount: z.number(),
+});
+
+/**
+ * Cash movement bridge over the period. Invariant (asserted by unit tests and
+ * held by construction in the builder): opening + Σ drivers + other.amount
+ * = closing = the independent 19xx balance at the period's `to` day.
+ */
+export const cashBridgeSchema = z.object({
+  /** 19xx balance before the period's first day. */
+  opening: z.number(),
+  /** Top movers by absolute attributed cash impact. */
+  drivers: z.array(z.object({ accountNumber: z.string(), accountName: z.string(), amount: z.number() })).max(4),
+  /** Everything the drivers don't carry (incl. rounding residue). */
+  other: z.object({ amount: z.number(), accountNumbers: z.array(z.string()) }),
+  /** 19xx balance at the period's last day. */
+  closing: z.number(),
+});
+
+export const monthlyPointSchema = z.object({
+  /** Calendar month `YYYY-MM`. */
+  month: z.string(),
+  cashIn: z.number(),
+  cashOut: z.number(),
+  /** Cumulative 19xx balance at month end (includes pre-series history). */
+  cashClosing: z.number(),
+  revenue: z.number(),
+  result: z.number(),
+});
+
+export const reportPeriodKindSchema = z.enum(["month", "quarter", "fiscal-year", "ytd", "all"]);
+
+/** Resolved period the pack was built for (token grammar lives in domain). */
+export const reportPeriodSchema = z.object({
+  token: z.string(),
+  kind: reportPeriodKindSchema,
+  from: z.string(),
+  to: z.string(),
+});
+
+export const reportPackSchema = z.object({
+  period: reportPeriodSchema,
+  /** Equal-kind preceding window (absent for `all`). */
+  previousPeriod: z.object({ from: z.string(), to: z.string() }).optional(),
+  profitLoss: profitLossStatementSchema,
+  previousProfitLoss: profitLossStatementSchema.optional(),
+  balanceSheet: balanceSheetStatementSchema,
+  vatReturn: z.array(vatReturnBoxSchema),
+  cashBridge: cashBridgeSchema,
+  /** Trailing 12 calendar months ending at the period's last month. */
+  monthly: z.array(monthlyPointSchema).max(12),
+  generatedAt: z.string(),
+});
+
 export const evidenceCreateResultSchema = z.object({
   evidence: evidenceObjectSchema,
   packet: evidencePacketSchema,
@@ -262,6 +399,23 @@ export const evidenceCreateResultSchema = z.object({
   review: reviewTaskSchema,
   voucherId: z.string(),
 });
+
+/** Result of one Document Intelligence (or stub) extraction run, as persisted by `updateEvidenceExtraction`. */
+export const extractionResultSchema = z.object({
+  modelId: z.string(),
+  fields: z.array(extractedFieldSchema).min(1),
+  extractedAt: z.string(),
+});
+export type ExtractionResult = z.infer<typeof extractionResultSchema>;
+
+/** Evidence joined to its packet/voucher/review — shape of `GET /api/evidence/:id`. */
+export const evidenceContextSchema = z.object({
+  evidence: evidenceObjectSchema,
+  packet: evidencePacketSchema.optional(),
+  voucher: voucherSchema.optional(),
+  review: reviewTaskSchema.optional(),
+});
+export type EvidenceContext = z.infer<typeof evidenceContextSchema>;
 
 export const evidenceCreateInputSchema = z.object({
   organizationId: z.string(),
@@ -273,6 +427,20 @@ export const evidenceCreateInputSchema = z.object({
   modalities: z.array(evidenceModalitySchema),
   note: z.string().optional(),
   extractedText: z.string().optional(),
+  /** Real file size in bytes. Presence gates deterministic file-seeded extraction (absent → legacy canned fields). */
+  sizeBytes: z.number().int().nonnegative().optional(),
+  /** Client-computed SHA-256 of the uploaded bytes (Web Crypto), lowercase hex. */
+  sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+  /** The uploadId minted by POST /api/uploads/init that this evidence registers. */
+  uploadId: z.string().optional(),
+  /** Canonical blob path echoed from uploadInitResult. Schema-level guard: clients cannot point at arbitrary paths. */
+  blobPath: z
+    .string()
+    .regex(/^evidence-uploads\/[A-Za-z0-9-]+\/[^/]{1,200}$/)
+    .optional(),
 });
 
 export const evidenceComposeInputSchema = z.object({
@@ -288,9 +456,28 @@ export const suggestionRequestSchema = z.object({
   actorId: z.string(),
 });
 
+/**
+ * Reviewer corrections applied at decision time (advisory pivot Phase 3).
+ * Append-only: the stored voucher/suggestion rows are never rewritten — the
+ * edit only shapes the posted lines and the review read model. Amounts are
+ * all-or-nothing: when any of gross/net/VAT is given, all three must be
+ * present and net + VAT must equal gross (±0.01) — enforced by the stores via
+ * `InvalidReviewEditError` (HTTP 422).
+ */
+export const reviewDecisionEditSchema = z.object({
+  accountNumber: z.string().min(1),
+  accountName: z.string().min(1),
+  vatCode: z.string().min(1),
+  grossAmount: z.number().positive().optional(),
+  netAmount: z.number().nonnegative().optional(),
+  vatAmount: z.number().nonnegative().optional(),
+});
+export type ReviewDecisionEdit = z.infer<typeof reviewDecisionEditSchema>;
+
 export const reviewDecisionInputSchema = z.object({
   actorId: z.string(),
   notes: z.string().optional(),
+  edited: reviewDecisionEditSchema.optional(),
 });
 
 export const assistantRequestSchema = z.object({
@@ -312,19 +499,88 @@ export const simulationRequestSchema = z.object({
   action: z.enum(["approve", "book-without-vat"]),
 });
 
-export const companySettingsSchema = z.object({
-  organizationId: z.string(),
-  organizationName: z.string().min(1),
-  organizationNumber: z.string().regex(/^\d{6}-\d{4}$/, "Swedish org number format is XXXXXX-XXXX"),
-  addressLine1: z.string().min(1),
-  addressLine2: z.string().optional(),
-  postalCode: z.string().regex(/^\d{3}\s?\d{2}$/, "Swedish postal code format is XXX XX"),
-  city: z.string().min(1),
-  contactEmail: z.email(),
-  contactPhone: z.string().optional(),
-  bankIban: z.string().optional(),
-  bankBic: z.string().optional(),
+/**
+ * VAT reporting cadence (advisory pivot Phase 5). Drives the statutory tax
+ * calendar (`buildTaxTimeline` in domain) and the VAT dashboard widgets.
+ * Quarterly is the Swedish SMB default.
+ */
+export const vatPeriodSchema = z.enum(["monthly", "quarterly", "yearly"]);
+export type VatPeriod = z.infer<typeof vatPeriodSchema>;
+
+/**
+ * Workspace profile — country/locale/currency/fiscal-year seam for the
+ * European abstractions (advisory pivot Phase 2). Lives on the org-level
+ * company settings until multi-workspace lands.
+ */
+export const workspaceProfileSchema = z.object({
+  country: countryCodeSchema.default("SE"),
+  /** BCP-47; drives Intl formatting + the message catalog. */
+  locale: z.string().min(2).default("sv-SE"),
+  /** ISO-4217 display currency. Voucher-level multi-currency is out of scope. */
+  currency: z.string().length(3).default("SEK"),
+  /** MM-DD start of the fiscal year. */
+  fiscalYearStart: z
+    .string()
+    .regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/)
+    .default("01-01"),
+  /** VAT reporting cadence — defaulted so pre-Phase-5 payloads keep parsing (no migration). */
+  vatPeriod: vatPeriodSchema.default("quarterly"),
 });
+export type WorkspaceProfile = z.infer<typeof workspaceProfileSchema>;
+export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = workspaceProfileSchema.parse({});
+
+/**
+ * Per-feature AI posture (advisory pivot Phase 5, EU AI Act Article 50
+ * transparency). Human review stays mandatory regardless — these toggles only
+ * gate the AI *surfaces* (advisor chat, suggestion chips), never the review
+ * gate itself. Org-level jsonb + Zod defaults → no migration needed.
+ */
+export const aiPostureSchema = z.object({
+  advisorEnabled: z.boolean().default(true),
+  suggestionsEnabled: z.boolean().default(true),
+});
+export type AiPosture = z.infer<typeof aiPostureSchema>;
+export const DEFAULT_AI_POSTURE: AiPosture = aiPostureSchema.parse({});
+
+export const companySettingsSchema = z
+  .object({
+    organizationId: z.string(),
+    organizationName: z.string().min(1),
+    organizationNumber: z.string().min(1),
+    addressLine1: z.string().min(1),
+    addressLine2: z.string().optional(),
+    postalCode: z.string().min(1),
+    city: z.string().min(1),
+    contactEmail: z.email(),
+    contactPhone: z.string().optional(),
+    bankIban: z.string().optional(),
+    bankBic: z.string().optional(),
+    profile: workspaceProfileSchema.default(DEFAULT_WORKSPACE_PROFILE),
+    aiPosture: aiPostureSchema.default(DEFAULT_AI_POSTURE),
+  })
+  .superRefine((value, ctx) => {
+    // Validation is looked up per country — Sweden is a registry entry, not a hardcode.
+    const rules = countryValidationRegistry[value.profile.country];
+    if (!rules.organizationNumber.pattern.test(value.organizationNumber)) {
+      ctx.addIssue({ code: "custom", message: rules.organizationNumber.message, path: ["organizationNumber"] });
+    }
+    if (!rules.postalCode.pattern.test(value.postalCode)) {
+      ctx.addIssue({ code: "custom", message: rules.postalCode.message, path: ["postalCode"] });
+    }
+  });
+
+/**
+ * Result of `POST /api/imports/sie` / `LedgerStore.importSie`. Per-voucher
+ * isolation: invalid vouchers land in `skipped` with a reason instead of
+ * failing the whole import; re-imports skip duplicates as `"duplicate"`.
+ */
+export const sieImportResultSchema = z.object({
+  accepted: z.boolean(),
+  importedVouchers: z.number().int().nonnegative(),
+  importedTransactions: z.number().int().nonnegative(),
+  skipped: z.array(z.object({ reference: z.string(), reason: z.string() })).default([]),
+});
+export type SieImportResult = z.infer<typeof sieImportResultSchema>;
 
 export const uploadInitSchema = z.object({
   filename: z.string(),
@@ -338,6 +594,8 @@ export const uploadInitSchema = z.object({
 export const uploadInitResultSchema = z.object({
   uploadId: z.string(),
   filename: z.string(),
+  /** Server-minted canonical path (`evidence-uploads/{uploadId}/{sanitizedFilename}`) the client echoes back at create time. */
+  blobPath: z.string(),
   /** Absolute URL for the PUT. In normal mode the SAS query string is already appended. */
   uploadUrl: z.string(),
   /** PUT request must echo this Content-Type to match what the SAS was minted for. */
@@ -355,6 +613,130 @@ export const workspaceSnapshotSchema = z.object({
   assistantExamples: z.array(assistantSessionSchema),
   closeRun: closeRunSchema,
   alerts: z.array(complianceAlertSchema),
+  /**
+   * Evidence packets (advisory-pivot Phase 4): the voucher→evidence join
+   * (`voucher.evidencePacketId` → `packet.evidenceIds`) resolves client-side
+   * from the snapshot alone. Defaulted so pre-Phase-4 payloads keep parsing.
+   */
+  packets: z.array(evidencePacketSchema).default([]),
+});
+
+/**
+ * Advisory-layer vocabulary (advisory pivot Phase 5): statutory tax deadlines,
+ * deterministic observations, ledger integrity, knowledge retrieval, and
+ * runtime AI transparency. Schemas live here (not domain/reporting) so the
+ * web, the API, and the pure packages all speak the same shapes.
+ */
+
+export const taxDeadlineKindSchema = z.enum(["vat-return", "employer-declaration", "f-skatt", "annual-report"]);
+
+export const taxDeadlineSchema = z.object({
+  /** Deterministic id, e.g. `tax_vat_2026-Q2`. */
+  id: z.string(),
+  kind: taxDeadlineKindSchema,
+  /** YYYY-MM-DD (weekend-shifted where the statute allows). */
+  dueDate: z.string(),
+  /** Deterministic human-readable period reference (e.g. `2026-Q2`, `2026-05`). */
+  periodLabel: z.string(),
+  /** Unified period token when the deadline maps to a report window (VAT only). */
+  periodToken: z.string().optional(),
+  /**
+   * Which pack figure carries the amount. Only VAT deadlines are computable
+   * (box 49); employer/F-skatt render date-only — `null` is honest.
+   */
+  amountRef: z.enum(["box49"]).nullable(),
+  /** Key into `TAX_DEADLINE_SOURCES` (verbatim Swedish source strings in domain). */
+  sourceKey: z.string(),
+});
+
+export const observationDetectorSchema = z.enum([
+  "cash-runway",
+  "expense-anomaly",
+  "vat-set-aside",
+  "deadline-proximity",
+  "missing-evidence",
+  "supplier-spike",
+]);
+
+export const observationSeveritySchema = z.enum(["info", "warning", "critical"]);
+
+export const observationProvenanceKindSchema = z.enum(["account", "voucher", "evidence", "report", "deadline"]);
+
+/**
+ * One deterministic observation. The server never ships prose: `titleKey`
+ * resolves in the web's `observations` message namespace with `params`
+ * (every number in `params` is copied from the detector's inputs — the
+ * reconciliation guard tests pin this).
+ */
+export const observationSchema = z.object({
+  id: z.string(),
+  detector: observationDetectorSchema,
+  severity: observationSeveritySchema,
+  titleKey: z.string(),
+  params: z.record(z.string(), z.union([z.string(), z.number()])),
+  provenance: z.array(z.object({ kind: observationProvenanceKindSchema, target: z.string() })),
+  action: z.object({ labelKey: z.string(), href: z.string() }).optional(),
+});
+
+/**
+ * Hash-chain integrity summary (`GET /api/integrity`). Linkage verification
+ * only: genesis + `previousHash === predecessor.eventHash` — detects removal,
+ * reordering, and insertion. Payload recomputation is a documented future
+ * note (Postgres jsonb normalizes key order, so recomputed hashes are not
+ * byte-stable).
+ */
+export const integritySummarySchema = z.object({
+  eventCount: z.number().int().nonnegative(),
+  chainLinked: z.boolean(),
+  headHash: z.string().nullable(),
+  lastEventAt: z.string().nullable(),
+  verifiedAt: z.string(),
+  recentEvents: z
+    .array(
+      z.object({
+        id: z.string(),
+        eventType: eventTypeSchema,
+        aggregateType: aggregateTypeSchema,
+        occurredAt: z.string(),
+        actorId: z.string(),
+      }),
+    )
+    .max(8),
+  bas: z.object({ template: z.string(), accountCount: z.number().int().nonnegative() }),
+});
+
+/** One retrieved knowledge chunk with its source provenance. */
+export const knowledgePassageSchema = z.object({
+  id: z.string(),
+  docId: z.string(),
+  title: z.string(),
+  excerpt: z.string(),
+  source: z.string(),
+  url: z.string().optional(),
+  score: z.number(),
+});
+
+export const knowledgeQueryResultSchema = z.object({
+  query: z.string(),
+  mode: z.enum(["keyword", "vector"]),
+  passages: z.array(knowledgePassageSchema),
+});
+
+/**
+ * Runtime AI transparency (`GET /api/runtime-info`) — feeds the About-this-AI
+ * settings panel (EU AI Act Article 50). Never carries secrets: model name +
+ * endpoint host only.
+ */
+export const aiProviderSchema = z.enum(["azure-openai", "local-demo", "unavailable"]);
+
+export const runtimeInfoSchema = z.object({
+  runtimeMode: runtimeModeSchema,
+  ai: z.object({
+    operational: z.boolean(),
+    provider: aiProviderSchema,
+    model: z.string().optional(),
+    endpointHost: z.string().optional(),
+  }),
 });
 
 export type Role = z.infer<typeof roleSchema>;
@@ -379,6 +761,17 @@ export type SimulationRun = z.infer<typeof simulationRunSchema>;
 export type CloseRun = z.infer<typeof closeRunSchema>;
 export type ComplianceAlert = z.infer<typeof complianceAlertSchema>;
 export type ReportBundle = z.infer<typeof reportBundleSchema>;
+export type StatementLine = z.infer<typeof statementLineSchema>;
+export type StatementGroupKey = z.infer<typeof statementGroupKeySchema>;
+export type StatementGroup = z.infer<typeof statementGroupSchema>;
+export type ProfitLossStatement = z.infer<typeof profitLossStatementSchema>;
+export type BalanceSheetStatement = z.infer<typeof balanceSheetStatementSchema>;
+export type VatReturnBox = z.infer<typeof vatReturnBoxSchema>;
+export type CashBridge = z.infer<typeof cashBridgeSchema>;
+export type MonthlyPoint = z.infer<typeof monthlyPointSchema>;
+export type ReportPeriodKind = z.infer<typeof reportPeriodKindSchema>;
+export type ReportPeriod = z.infer<typeof reportPeriodSchema>;
+export type ReportPack = z.infer<typeof reportPackSchema>;
 export type EvidenceCreateResult = z.infer<typeof evidenceCreateResultSchema>;
 export type WorkspaceSnapshot = z.infer<typeof workspaceSnapshotSchema>;
 export type EvidenceCreateInput = z.infer<typeof evidenceCreateInputSchema>;
@@ -391,5 +784,17 @@ export type SuggestionRequest = z.infer<typeof suggestionRequestSchema>;
 export type UploadInit = z.infer<typeof uploadInitSchema>;
 export type UploadInitResult = z.infer<typeof uploadInitResultSchema>;
 export type CompanySettings = z.infer<typeof companySettingsSchema>;
+export type AggregateType = z.infer<typeof aggregateTypeSchema>;
+export type TaxDeadlineKind = z.infer<typeof taxDeadlineKindSchema>;
+export type TaxDeadline = z.infer<typeof taxDeadlineSchema>;
+export type ObservationDetector = z.infer<typeof observationDetectorSchema>;
+export type ObservationSeverity = z.infer<typeof observationSeveritySchema>;
+export type ObservationProvenanceKind = z.infer<typeof observationProvenanceKindSchema>;
+export type Observation = z.infer<typeof observationSchema>;
+export type IntegritySummary = z.infer<typeof integritySummarySchema>;
+export type KnowledgePassage = z.infer<typeof knowledgePassageSchema>;
+export type KnowledgeQueryResult = z.infer<typeof knowledgeQueryResultSchema>;
+export type AiProvider = z.infer<typeof aiProviderSchema>;
+export type RuntimeInfo = z.infer<typeof runtimeInfoSchema>;
 
 export type { ApiJsonErrorBody, ApiJsonErrorRuntimeMode, ApiValidationIssue } from "./api-errors";

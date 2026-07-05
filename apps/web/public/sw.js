@@ -1,5 +1,14 @@
 const staticAssetCacheName = "jpx-accounting-static-v2";
-const exactCacheablePaths = new Set(["/manifest.webmanifest", "/favicon.ico", "/apple-icon.png", "/icon.png"]);
+const exactCacheablePaths = new Set([
+  "/manifest.webmanifest",
+  "/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-192.png",
+  "/icons/icon-maskable-512.png",
+  "/apple-touch-icon.png",
+  "/brand/logo.svg",
+]);
 
 function shouldCacheStaticAsset(request) {
   if (request.method !== "GET") {

@@ -5,11 +5,11 @@ type StatusBadgeProps = {
 };
 
 const variantStyles = {
-  accent: "bg-[var(--color-accent-soft)] text-[var(--color-accent)]",
-  success: "bg-[var(--color-success-soft)] text-[var(--color-success)]",
-  warning: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
-  danger: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
-  info: "bg-[var(--color-info-soft)] text-[var(--color-info)]",
+  accent: "bg-primary-soft text-primary",
+  success: "bg-success-soft text-success",
+  warning: "bg-warning-soft text-warning",
+  danger: "bg-danger-soft text-danger",
+  info: "bg-info-soft text-info",
 };
 
 export function StatusBadge({ status, variant, testId }: StatusBadgeProps) {

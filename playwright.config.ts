@@ -12,6 +12,10 @@ export default defineConfig({
   timeout: 45_000,
   expect: {
     timeout: 10_000,
+    toHaveScreenshot: {
+      animations: "disabled",
+      caret: "hide",
+    },
   },
   reporter: process.env.CI ? [["dot"], ["html", { open: "never" }]] : [["list"]],
   use: {
@@ -36,10 +40,9 @@ export default defineConfig({
       url: baseURL,
       reuseExistingServer: false,
       env: {
+        // NEXT_PUBLIC_* values are inlined at BUILD time (see the build:e2e
+        // script) — setting them here would have no effect on the client.
         ACCOUNTING_API_BASE_URL: apiBaseUrl,
-        NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE: "demo",
-        NEXT_PUBLIC_API_BASE_URL: "/api-proxy",
-        NEXT_PUBLIC_DISABLE_SW: "true",
         NEXT_TELEMETRY_DISABLED: "1",
       },
     },

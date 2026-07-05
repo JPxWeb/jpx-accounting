@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
 
 import { Input } from "../ui/input";
@@ -8,6 +9,11 @@ import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 import { type ConfidenceFilter, confidenceFilters, type StatusFilter, statusFilters } from "./filter-types";
 
 export function ReviewFilters() {
+  const t = useTranslations("today.filters");
+  // Same H/M/L vocabulary as the review-card chip and the dashboard widget —
+  // the bands come from the shared `confidenceBand()` (0.85/0.6), so the old
+  // hardcoded ≥95%/80–94%/<80% labels would lie about the cut-offs.
+  const tBand = useTranslations("today.card.band");
   const [status, setStatus] = useQueryState(
     "status",
     parseAsStringEnum<StatusFilter>([...statusFilters]).withDefault("all"),
@@ -36,38 +42,38 @@ export function ReviewFilters() {
         value={toggleValue}
         onValueChange={handleStatusChange}
         variant="outline"
-        aria-label="Filter by status"
+        aria-label={t("statusAria")}
       >
-        <ToggleGroupItem value="all" aria-label="All">
-          All
+        <ToggleGroupItem value="all" aria-label={t("all")}>
+          {t("all")}
         </ToggleGroupItem>
-        <ToggleGroupItem value="needs-review" aria-label="Needs review">
-          Needs review
+        <ToggleGroupItem value="needs-review" aria-label={t("needsReview")}>
+          {t("needsReview")}
         </ToggleGroupItem>
-        <ToggleGroupItem value="blocked" aria-label="Blocked">
-          Blocked
+        <ToggleGroupItem value="blocked" aria-label={t("blocked")}>
+          {t("blocked")}
         </ToggleGroupItem>
-        <ToggleGroupItem value="approved" aria-label="Approved">
-          Approved
+        <ToggleGroupItem value="approved" aria-label={t("approved")}>
+          {t("approved")}
         </ToggleGroupItem>
       </ToggleGroup>
       <Input
         type="search"
-        placeholder="Filter by supplier..."
+        placeholder={t("supplierPlaceholder")}
         value={supplier}
         onChange={(e) => void setSupplier((e.target as HTMLInputElement).value || null)}
         className="w-56"
         data-testid="supplier-filter"
       />
       <Select value={confidence} onValueChange={(value) => void setConfidence(value as ConfidenceFilter)}>
-        <SelectTrigger className="w-44" data-testid="confidence-filter" aria-label="Filter by confidence">
+        <SelectTrigger className="w-44" data-testid="confidence-filter" aria-label={t("confidenceAria")}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All confidence</SelectItem>
-          <SelectItem value="high">≥95%</SelectItem>
-          <SelectItem value="medium">80–94%</SelectItem>
-          <SelectItem value="low">&lt;80%</SelectItem>
+          <SelectItem value="all">{t("allConfidence")}</SelectItem>
+          <SelectItem value="high">{tBand("high")}</SelectItem>
+          <SelectItem value="medium">{tBand("medium")}</SelectItem>
+          <SelectItem value="low">{tBand("low")}</SelectItem>
         </SelectContent>
       </Select>
     </div>

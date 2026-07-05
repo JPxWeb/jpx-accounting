@@ -2,6 +2,7 @@ import DocumentIntelligence, { getLongRunningPoller, isUnexpected } from "@azure
 import { AzureKeyCredential } from "@azure/core-auth";
 
 import type { ExtractedField } from "@jpx-accounting/contracts";
+import { deriveDeterministicExtraction, today } from "@jpx-accounting/domain";
 
 // Document Intelligence adapter. Per Azure docs as of 2024-11-30 GA:
 // - Package is `@azure-rest/ai-document-intelligence` (REST client). The older `@azure/ai-form-recognizer`
@@ -26,6 +27,12 @@ export interface DocumentIntelligenceClient {
 
 export type ExtractInput = {
   modelId: DocumentIntelligenceModel;
+  /**
+   * Optional file provenance. The stub client seeds its deterministic
+   * extraction from these so create-time fields and refreshed fields agree
+   * (idempotent refresh); the Azure client ignores them.
+   */
+  hints?: { filename: string; sizeBytes?: number | undefined };
 } & ({ urlSource: string } | { base64Source: string });
 
 export class DocumentIntelligenceUnavailableError extends Error {
@@ -46,23 +53,18 @@ export function pickModelForDocument(input: { filename?: string; mimeType?: stri
 }
 
 class StubDocumentIntelligenceClient implements DocumentIntelligenceClient {
-  // Returned in demo mode and when DocIntel env vars are unset. Mirrors the canned
-  // shape used by MemoryLedgerStore's seed evidence so the UI gets the same fields.
+  // Returned in demo mode and when DocIntel env vars are unset. Derives the same
+  // deterministic file-seeded fields as `createEvidence` (shared derivation in
+  // @jpx-accounting/domain), so an extraction refresh over freshly-created
+  // evidence is a stable no-op on values.
   async extract(input: ExtractInput): Promise<DocumentExtractionResult> {
+    const fields = deriveDeterministicExtraction(
+      { filename: input.hints?.filename ?? "unknown", sizeBytes: input.hints?.sizeBytes ?? 0 },
+      today(),
+    );
     return {
       modelId: input.modelId,
-      fields: [
-        { key: "supplierName", label: "Supplier", value: "Demo Supplier AB", confidence: 0.7, required: true },
-        { key: "invoiceNumber", label: "Invoice number", value: "DEMO-0001", confidence: 0.6, required: false },
-        {
-          key: "transactionDate",
-          label: "Transaction date",
-          value: new Date().toISOString().slice(0, 10),
-          confidence: 0.85,
-          required: true,
-        },
-        { key: "grossAmount", label: "Gross amount", value: "1249.00", confidence: 0.8, required: true },
-      ],
+      fields,
       rawFields: { _stub: true },
     };
   }

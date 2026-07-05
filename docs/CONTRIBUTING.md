@@ -87,6 +87,24 @@ pnpm test:integration         # skips silently when SUPABASE_DB_URL is unset
 
 `tests/integration/postgres-ledger.test.ts` exercises evidence-create, hash-chain integrity, review approval, and replay idempotency against the live DB. CI keeps it optional / nightly to avoid PR flake.
 
+## Knowledge retrieval (RAG)
+
+`POST /api/knowledge/query` answers in one of two modes (the response's `mode` field reports which one actually ran):
+
+- **keyword** — BM25-lite over the bundled sourced corpus (`packages/advisor`). Always available and the only mode in `demo`.
+- **vector** — pgvector cosine search over `knowledge.documents` (migration `0003_pgvector.sql`). Active only in `normal` mode when **both** `SUPABASE_DB_URL` and Azure OpenAI (`AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`) are configured. **Any** vector failure — embedding call, DB query, or an empty index — falls back to keyword with a structured `console.warn` (`component: "api.knowledge"`); retrieval never 500s the advisor.
+
+Populate the vector index with the ingestion script (idempotent upserts keyed on chunk id — re-running refreshes content + embeddings in place):
+
+```bash
+export SUPABASE_DB_URL=...        # migrations 0001–0003 applied
+export AZURE_OPENAI_ENDPOINT=...  # embeddings use text-embedding-3-small (1536 dims = halfvec(1536))
+export AZURE_OPENAI_API_KEY=...
+pnpm ingest:knowledge
+```
+
+Rows land scoped to the fixed normal-mode workspace (`org_jpx` / `workspace_main`, mirroring `services/api/src/runtime.ts`). `tests/integration/knowledge-query.test.ts` covers the upsert + nearest-neighbour loop with fixture embeddings and skips silently without `SUPABASE_DB_URL`.
+
 ## Production web (`standalone`)
 
 [`apps/web`](../apps/web) builds with **`output: "standalone"`** for Docker/Azure. Prefer running the traced server from `.next/standalone` per Next.js standalone docs (`node server.js`), not **`next start`**, which logs a mismatch with `standalone`.

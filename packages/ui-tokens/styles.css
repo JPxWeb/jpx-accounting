@@ -1,76 +1,67 @@
+/*
+ * JPX Accounting — canonical design tokens (single source of truth).
+ *
+ * Three layers:
+ *   1. PRIMITIVES  — raw OKLCH ramps, fonts, radius, spacing, shadows.
+ *   2. SEMANTICS   — the shadcn vocabulary (background/foreground pairs),
+ *                    product semantics (money, confidence), and the legacy
+ *                    --color-* aliases still consumed by pre-pivot screens.
+ *   3. DARK REMAP  — .dark overrides semantic tokens only; components never
+ *                    hardcode dark variants.
+ *
+ * apps/web bridges these into Tailwind utilities via the @theme inline block
+ * in apps/web/app/globals.css. Do not add color literals anywhere else —
+ * ESLint bans bg-[#...]/var(--color-*) arbitrary classes in app code.
+ *
+ * All OKLCH values are culori conversions of the pre-pivot hex/rgba palette
+ * (2026-07-03), so the light theme is pixel-faithful to the captured
+ * visual-regression baselines.
+ */
+
 :root {
+  /* ---------------------------------------------------------------- */
+  /* 1 — PRIMITIVES                                                    */
+  /* ---------------------------------------------------------------- */
+
   /* Typography */
   --font-sans: "Manrope", "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
 
-  /* Backgrounds */
-  --color-bg: #e9eff2;
-  --color-bg-alt: #f8fbfd;
-  --color-bg-strong: #dfe7eb;
+  /* Neutral ramp (cool slate, from the legacy palette) */
+  --neutral-0: oklch(1 0 0);
+  --neutral-50: oklch(0.9864 0.0042 236.5); /* #f8fbfd */
+  --neutral-100: oklch(0.9484 0.0076 228.86); /* #e9eff2 */
+  --neutral-200: oklch(0.9231 0.0102 228.9); /* #dfe7eb */
+  --neutral-500: oklch(0.6435 0.0256 236.22); /* #7f909b */
+  --neutral-600: oklch(0.5424 0.0307 241.58); /* #607280 */
+  --neutral-800: oklch(0.2529 0.0226 238); /* #18242c */
+  --neutral-900: oklch(0.1981 0.025 242); /* #0b1720 */
 
-  /* Surfaces */
-  --color-surface: rgba(255, 255, 255, 0.78);
-  --color-surface-strong: rgba(255, 255, 255, 0.95);
-  --color-surface-muted: rgba(244, 248, 250, 0.82);
-  --color-surface-inset: rgba(11, 23, 32, 0.045);
-  --color-chrome: rgba(255, 255, 255, 0.66);
+  /* Brand teal ramp */
+  --teal-50: oklch(0.9836 0.0142 180.72); /* #f0fdfa */
+  --teal-500: oklch(0.5109 0.0861 186.39); /* #0f766e — WCAG AA on bg + white */
+  --teal-600: oklch(0.437 0.0705 188.22); /* #115e59 */
 
-  /* Borders */
-  --color-border: rgba(24, 36, 44, 0.11);
-  --color-border-strong: rgba(24, 36, 44, 0.12);
+  /* Status bases */
+  --green-50: oklch(0.9819 0.0181 155.83); /* #f0fdf4 */
+  --green-600: oklch(0.4479 0.1083 151.33); /* #166534 — AA on bg */
+  --blue-50: oklch(0.9705 0.0142 254.6); /* #eff6ff */
+  --blue-700: oklch(0.4244 0.1809 265.64); /* #1e40af — AAA on white */
+  --red-50: oklch(0.9705 0.0129 17.38); /* #fef2f2 */
+  --red-700: oklch(0.4437 0.1613 26.9); /* #991b1b — AAA on white */
+  --amber-50: oklch(0.9869 0.0214 95.28); /* #fffbeb */
+  --amber-700: oklch(0.4732 0.1247 46.2); /* #92400e — AA on bg */
 
-  /* Text */
-  --color-text: #0b1720;
-  --color-text-muted: #607280;
-  --color-text-soft: #7f909b;
-
-  /* Accent — WCAG AA on #e9eff2 (4.72:1) and white (5.47:1) */
-  --color-accent: #0f766e;
-  --color-accent-strong: #115e59;
-  --color-accent-soft: rgba(15, 118, 110, 0.12);
-  --color-accent-bg: #f0fdfa;
-
-  /* Success — WCAG AA on #e9eff2 (6.14:1) */
-  --color-success: #166534;
-  --color-success-soft: rgba(22, 101, 52, 0.12);
-  --color-success-bg: #f0fdf4;
-
-  /* Info — WCAG AAA on white (8.72:1) */
-  --color-info: #1e40af;
-  --color-info-soft: rgba(30, 64, 175, 0.1);
-  --color-info-bg: #eff6ff;
-
-  /* Danger — WCAG AAA on white (8.31:1) */
-  --color-danger: #991b1b;
-  --color-danger-soft: rgba(153, 27, 27, 0.12);
-  --color-danger-bg: #fef2f2;
-
-  /* Warning — WCAG AA on #e9eff2 (6.11:1) */
-  --color-warning: #92400e;
-  --color-warning-soft: rgba(146, 64, 14, 0.12);
-  --color-warning-bg: #fffbeb;
-
-  /* Shadows — layered for realistic depth */
-  --shadow-xs: 0 1px 2px rgba(11, 20, 28, 0.04);
-  --shadow-sm: 0 1px 2px rgba(11, 20, 28, 0.06), 0 2px 4px rgba(11, 20, 28, 0.04);
-  --shadow-md: 0 4px 8px rgba(11, 20, 28, 0.04), 0 8px 16px rgba(11, 20, 28, 0.06);
-  --shadow-lg: 0 8px 16px rgba(11, 20, 28, 0.04), 0 16px 32px rgba(11, 20, 28, 0.06);
-  --shadow-panel: 0 14px 36px rgba(11, 20, 28, 0.09);
-  --shadow-chrome: 0 18px 55px rgba(11, 20, 28, 0.12);
-  --shadow-accent: 0 16px 30px rgba(15, 118, 110, 0.22);
-  --shadow-accent-lg: 0 24px 45px rgba(15, 118, 110, 0.28);
-
-  /* Effects */
-  --glass-blur: 24px;
-
-  /* Border radius — aligned with Mercury/Linear scale */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 22px;
-  --radius-3xl: 28px;
-  --radius-4xl: 32px;
+  /* Radius — ONE base value, everything else derived (the unified-radius
+     refactor). 3xl/4xl are retired: the bridge removes their utilities and
+     ESLint bans the class names. */
+  --radius: 0.75rem; /* 12px */
+  --radius-sm: calc(var(--radius) - 4px); /* 8px  — chips, kbd */
+  --radius-md: calc(var(--radius) - 2px); /* 10px — small controls */
+  --radius-lg: var(--radius); /* 12px — buttons, inputs */
+  --radius-xl: calc(var(--radius) + 4px); /* 16px — panels, cards */
+  --radius-2xl: calc(var(--radius) + 10px); /* 22px — overlays, sheets */
+  --radius-full: 9999px;
 
   /* Spacing — 4px base unit */
   --space-1: 4px;
@@ -86,4 +77,216 @@
   --duration-fast: 100ms;
   --duration-normal: 200ms;
   --duration-slow: 300ms;
+
+  /* Effects */
+  --glass-blur: 24px;
+
+  /* ---------------------------------------------------------------- */
+  /* 2 — SEMANTICS (light)                                             */
+  /* ---------------------------------------------------------------- */
+
+  color-scheme: light;
+
+  /* shadcn vocabulary — values unified onto the legacy-derived primitives so
+     the app keeps ONE palette (the pre-pivot cool-slate look), not two. */
+  --background: var(--neutral-100);
+  --foreground: var(--neutral-900);
+  --card: oklch(0.995 0.001 264);
+  --card-foreground: var(--neutral-900);
+  --popover: oklch(0.995 0.001 264);
+  --popover-foreground: var(--neutral-900);
+  --primary: var(--teal-500);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.968 0.005 264);
+  --secondary-foreground: oklch(0.205 0.012 265);
+  --muted: oklch(0.968 0.005 264);
+  --muted-foreground: var(--neutral-600);
+  --accent: oklch(0.968 0.005 264);
+  --accent-foreground: oklch(0.205 0.012 265);
+  --destructive: var(--red-700);
+  --border: oklch(0.2529 0.0226 238 / 0.11);
+  --input: oklch(0.2529 0.0226 238 / 0.11);
+  --ring: var(--teal-500);
+  --chart-1: var(--teal-500);
+  --chart-2: oklch(0.6 0.08 175);
+  --chart-3: oklch(0.4 0.07 265);
+  --chart-4: oklch(0.7 0.06 175);
+  --chart-5: oklch(0.3 0.05 265);
+  --sidebar: oklch(0.985 0.002 264);
+  --sidebar-foreground: oklch(0.145 0.014 265);
+  --sidebar-primary: var(--teal-500);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.968 0.005 264);
+  --sidebar-accent-foreground: oklch(0.205 0.012 265);
+  --sidebar-border: oklch(0.91 0.006 264);
+  --sidebar-ring: var(--teal-500);
+
+  /* Product semantics — money and AI-confidence colors. Money amounts render
+     in tabular mono; red is reserved for negative/error states only. */
+  --positive: var(--green-600);
+  --positive-soft: oklch(0.4479 0.1083 151.33 / 0.12);
+  --negative: var(--red-700);
+  --negative-soft: oklch(0.4437 0.1613 26.9 / 0.12);
+  --pending: var(--amber-700);
+  --pending-soft: oklch(0.4732 0.1247 46.2 / 0.12);
+  --confidence-high: var(--green-600);
+  --confidence-medium: var(--amber-700);
+  --confidence-low: var(--red-700);
+
+  /* Glass surface recipes (formerly literal rgba in globals.css) */
+  --surface-glass-strong: oklch(1 0 0 / 0.8);
+  --surface-glass-soft: oklch(0.9877 0.0035 225 / 0.58); /* rgba(245,249,251,.58) */
+  --surface-glass-border: oklch(1 0 0 / 0.62);
+  --surface-panel-tint: oklch(0.9842 0.0034 247.86 / 0.92); /* rgba(248,250,252,.92) */
+  --color-border-faint: oklch(0.2529 0.0226 238 / 0.06);
+  --page-glow-accent: oklch(0.5109 0.0861 186.39 / 0.22);
+  --page-glow-info: oklch(0.4244 0.1809 265.64 / 0.14);
+  --page-glow-light: oklch(1 0 0 / 0.68);
+  --shadow-accent-ring: 0 18px 42px oklch(0.5109 0.0861 186.39 / 0.22);
+
+  /* Legacy aliases — consumed by pre-pivot screens; the Phase 1 sweep moves
+     consumers onto semantic Tailwind classes, after which these collapse. */
+  --color-bg: var(--neutral-100);
+  --color-bg-alt: var(--neutral-50);
+  --color-bg-strong: var(--neutral-200);
+  --color-surface: oklch(1 0 0 / 0.78);
+  --color-surface-strong: oklch(1 0 0 / 0.95);
+  --color-surface-muted: oklch(0.9805 0.0048 220 / 0.82); /* rgba(244,248,250,.82) */
+  --color-surface-inset: oklch(0.1981 0.025 242 / 0.045);
+  --color-chrome: oklch(1 0 0 / 0.66);
+  --color-border: var(--border);
+  --color-border-strong: oklch(0.2529 0.0226 238 / 0.12);
+  --color-text: var(--foreground);
+  --color-text-muted: var(--muted-foreground);
+  --color-text-soft: var(--neutral-500);
+  --color-accent: var(--teal-500);
+  --color-accent-strong: var(--teal-600);
+  --color-accent-soft: oklch(0.5109 0.0861 186.39 / 0.12);
+  --color-accent-bg: var(--teal-50);
+  --color-success: var(--green-600);
+  --color-success-soft: oklch(0.4479 0.1083 151.33 / 0.12);
+  --color-success-bg: var(--green-50);
+  --color-info: var(--blue-700);
+  --color-info-soft: oklch(0.4244 0.1809 265.64 / 0.1);
+  --color-info-bg: var(--blue-50);
+  --color-danger: var(--red-700);
+  --color-danger-soft: oklch(0.4437 0.1613 26.9 / 0.12);
+  --color-danger-bg: var(--red-50);
+  --color-warning: var(--amber-700);
+  --color-warning-soft: oklch(0.4732 0.1247 46.2 / 0.12);
+  --color-warning-bg: var(--amber-50);
+
+  /* Shadows — layered recipes (shadow base #0b141c) */
+  --shadow-xs: 0 1px 2px oklch(0.1865 0.0213 246.07 / 0.04);
+  --shadow-sm: 0 1px 2px oklch(0.1865 0.0213 246.07 / 0.06), 0 2px 4px oklch(0.1865 0.0213 246.07 / 0.04);
+  --shadow-md: 0 4px 8px oklch(0.1865 0.0213 246.07 / 0.04), 0 8px 16px oklch(0.1865 0.0213 246.07 / 0.06);
+  --shadow-lg: 0 8px 16px oklch(0.1865 0.0213 246.07 / 0.04), 0 16px 32px oklch(0.1865 0.0213 246.07 / 0.06);
+  --shadow-panel: 0 14px 36px oklch(0.1865 0.0213 246.07 / 0.09);
+  --shadow-chrome: 0 18px 55px oklch(0.1865 0.0213 246.07 / 0.12);
+  --shadow-accent: 0 16px 30px oklch(0.5109 0.0861 186.39 / 0.22);
+  --shadow-accent-lg: 0 24px 45px oklch(0.5109 0.0861 186.39 / 0.28);
+}
+
+/* ------------------------------------------------------------------ */
+/* 3 — DARK REMAP (semantic tokens only)                               */
+/* ------------------------------------------------------------------ */
+
+.dark {
+  color-scheme: dark;
+
+  /* shadcn vocabulary (moved verbatim from apps/web globals.css) */
+  --background: oklch(0.16 0.014 265);
+  --foreground: oklch(0.985 0.002 264);
+  --card: oklch(0.22 0.012 265);
+  --card-foreground: oklch(0.985 0.002 264);
+  --popover: oklch(0.22 0.012 265);
+  --popover-foreground: oklch(0.985 0.002 264);
+  --primary: oklch(0.65 0.12 175.8);
+  --primary-foreground: oklch(0.16 0.014 265);
+  --secondary: oklch(0.27 0.01 265);
+  --secondary-foreground: oklch(0.985 0.002 264);
+  --muted: oklch(0.27 0.01 265);
+  --muted-foreground: oklch(0.708 0.008 264);
+  --accent: oklch(0.27 0.01 265);
+  --accent-foreground: oklch(0.985 0.002 264);
+  --destructive: oklch(0.65 0.2 25);
+  --border: oklch(0.27 0.01 265);
+  --input: oklch(0.32 0.01 265);
+  --ring: oklch(0.65 0.12 175.8);
+  --chart-1: oklch(0.65 0.12 175.8);
+  --chart-2: oklch(0.55 0.09 175);
+  --chart-3: oklch(0.5 0.07 265);
+  --chart-4: oklch(0.7 0.08 175);
+  --chart-5: oklch(0.4 0.06 265);
+  --sidebar: oklch(0.22 0.012 265);
+  --sidebar-foreground: oklch(0.985 0.002 264);
+  --sidebar-primary: oklch(0.65 0.12 175.8);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.27 0.01 265);
+  --sidebar-accent-foreground: oklch(0.985 0.002 264);
+  --sidebar-border: oklch(0.27 0.01 265);
+  --sidebar-ring: oklch(0.65 0.12 175.8);
+
+  /* Product semantics — lightened for dark backgrounds */
+  --positive: oklch(0.72 0.14 152);
+  --positive-soft: oklch(0.72 0.14 152 / 0.16);
+  --negative: oklch(0.68 0.17 25);
+  --negative-soft: oklch(0.68 0.17 25 / 0.16);
+  --pending: oklch(0.75 0.13 70);
+  --pending-soft: oklch(0.75 0.13 70 / 0.16);
+  --confidence-high: oklch(0.72 0.14 152);
+  --confidence-medium: oklch(0.75 0.13 70);
+  --confidence-low: oklch(0.68 0.17 25);
+
+  /* Glass surfaces become dark translucents */
+  --surface-glass-strong: oklch(0.22 0.012 265 / 0.85);
+  --surface-glass-soft: oklch(0.2 0.012 265 / 0.6);
+  --surface-glass-border: oklch(1 0 0 / 0.08);
+  --surface-panel-tint: oklch(0.24 0.012 265 / 0.92);
+  --color-border-faint: oklch(0.985 0.002 264 / 0.06);
+  --page-glow-accent: oklch(0.65 0.12 175.8 / 0.1);
+  --page-glow-info: oklch(0.5 0.12 265 / 0.08);
+  --page-glow-light: oklch(0.3 0.01 265 / 0.4);
+  --shadow-accent-ring: 0 18px 42px oklch(0.65 0.12 175.8 / 0.16);
+
+  /* Legacy aliases */
+  --color-bg: var(--background);
+  --color-bg-alt: oklch(0.19 0.014 265);
+  --color-bg-strong: oklch(0.13 0.014 265);
+  --color-surface: oklch(0.22 0.012 265 / 0.78);
+  --color-surface-strong: oklch(0.24 0.012 265 / 0.95);
+  --color-surface-muted: oklch(0.26 0.012 265 / 0.82);
+  --color-surface-inset: oklch(0.985 0.002 264 / 0.05);
+  --color-chrome: oklch(0.22 0.012 265 / 0.7);
+  --color-border: var(--border);
+  --color-border-strong: oklch(0.985 0.002 264 / 0.14);
+  --color-text: var(--foreground);
+  --color-text-muted: var(--muted-foreground);
+  --color-text-soft: oklch(0.6 0.01 264);
+  --color-accent: oklch(0.65 0.12 175.8);
+  --color-accent-strong: oklch(0.72 0.12 175.8);
+  --color-accent-soft: oklch(0.65 0.12 175.8 / 0.16);
+  --color-accent-bg: oklch(0.22 0.03 180);
+  --color-success: oklch(0.72 0.14 152);
+  --color-success-soft: oklch(0.72 0.14 152 / 0.16);
+  --color-success-bg: oklch(0.22 0.03 152);
+  --color-info: oklch(0.68 0.12 262);
+  --color-info-soft: oklch(0.68 0.12 262 / 0.14);
+  --color-info-bg: oklch(0.22 0.04 262);
+  --color-danger: oklch(0.68 0.17 25);
+  --color-danger-soft: oklch(0.68 0.17 25 / 0.16);
+  --color-danger-bg: oklch(0.22 0.05 25);
+  --color-warning: oklch(0.75 0.13 70);
+  --color-warning-soft: oklch(0.75 0.13 70 / 0.16);
+  --color-warning-bg: oklch(0.22 0.04 70);
+
+  /* Shadows deepen in dark mode */
+  --shadow-xs: 0 1px 2px oklch(0 0 0 / 0.2);
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.28), 0 2px 4px oklch(0 0 0 / 0.2);
+  --shadow-md: 0 4px 8px oklch(0 0 0 / 0.2), 0 8px 16px oklch(0 0 0 / 0.28);
+  --shadow-lg: 0 8px 16px oklch(0 0 0 / 0.2), 0 16px 32px oklch(0 0 0 / 0.28);
+  --shadow-panel: 0 14px 36px oklch(0 0 0 / 0.4);
+  --shadow-chrome: 0 18px 55px oklch(0 0 0 / 0.5);
+  --shadow-accent: 0 16px 30px oklch(0.65 0.12 175.8 / 0.18);
+  --shadow-accent-lg: 0 24px 45px oklch(0.65 0.12 175.8 / 0.22);
 }

@@ -3,7 +3,29 @@ export type CaptureDraft = {
   mode: string;
   title: string;
   createdAt: string;
+  filename?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  text?: string;
+  sourceUrl?: string;
+  file?: Blob;
 };
+
+/**
+ * Session/memory fallbacks JSON-serialize drafts, and `JSON.stringify` cannot carry a `Blob`
+ * (it would serialize as `{}` and no longer be a usable file). Stripping the `file` field keeps
+ * the fallback copy a valid metadata-only draft — the existing session/memory capture-status
+ * messaging already tells the user this storage tier is degraded.
+ */
+export function stripDraftFile(draft: CaptureDraft): CaptureDraft {
+  if (draft.file === undefined) {
+    return draft;
+  }
+
+  const metadataOnly = { ...draft };
+  delete metadataOnly.file;
+  return metadataOnly;
+}
 
 export type DraftQueueStorage = "indexeddb" | "session" | "memory";
 export type DraftQueueScope = "persistent" | "tab";

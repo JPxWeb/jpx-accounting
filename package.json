@@ -18,10 +18,15 @@
     "test:unit": "tsx --test \"tests/unit/**/*.test.ts\"",
     "test:integration": "tsx --test \"tests/integration/**/*.test.ts\"",
     "build": "pnpm --filter @jpx-accounting/web build && pnpm --filter @jpx-accounting/api build",
+    "build:knowledge": "tsx scripts/build-knowledge-corpus.mjs",
+    "ingest:knowledge": "tsx scripts/ingest-knowledge.mjs",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm typecheck:tests && pnpm test:unit && pnpm build",
-    "test:e2e": "pnpm build && playwright test",
-    "test:e2e:headed": "pnpm build && playwright test --headed",
+    "build:e2e": "cross-env NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE=demo NEXT_PUBLIC_API_BASE_URL=/api-proxy pnpm build",
+    "test:e2e": "pnpm build:e2e && playwright test",
+    "test:e2e:headed": "pnpm build:e2e && playwright test --headed",
     "test:e2e:install": "playwright install chromium",
+    "test:e2e:visual": "pnpm build:e2e && playwright test tests/e2e/visual-regression.spec.ts",
+    "test:e2e:visual:update": "pnpm build:e2e && playwright test tests/e2e/visual-regression.spec.ts --update-snapshots",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -32,6 +37,7 @@
     "@axe-core/playwright": "^4.11.3",
     "@playwright/test": "^1.58.2",
     "@types/node": "25.5.0",
+    "cross-env": "^10.1.0",
     "eslint": "^9.39.4",
     "eslint-config-next": "16.2.0",
     "eslint-config-prettier": "^10.1.8",
@@ -39,6 +45,7 @@
     "lint-staged": "^17.0.5",
     "next": "16.2.0",
     "prettier": "^3.8.3",
+    "sharp": "^0.35.3",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.59.2"

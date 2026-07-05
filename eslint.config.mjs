@@ -44,6 +44,44 @@ export default defineConfig([
       "@next/next/no-html-link-for-pages": ["error", webPagesRoot],
     },
   },
+  {
+    // Design-system guardrails (advisory pivot, Phase 1): the canonical tokens
+    // live in packages/ui-tokens/styles.css and are bridged to utilities in
+    // apps/web/app/globals.css. App code must not bypass them.
+    files: WEB_FILES,
+    ignores: ["apps/web/app/globals.css"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Literal[value=/rounded-(3xl|4xl)/]",
+          message: "rounded-3xl/4xl are retired — panels use rounded-xl, overlays rounded-2xl (unified radius scale).",
+        },
+        {
+          selector: "TemplateElement[value.raw=/rounded-(3xl|4xl)/]",
+          message: "rounded-3xl/4xl are retired — panels use rounded-xl, overlays rounded-2xl (unified radius scale).",
+        },
+        {
+          selector: "Literal[value=/-\\[#/]",
+          message: "No hex color literals in classes — add a token to ui-tokens and bridge it in globals.css.",
+        },
+        {
+          selector: "TemplateElement[value.raw=/-\\[#/]",
+          message: "No hex color literals in classes — add a token to ui-tokens and bridge it in globals.css.",
+        },
+        {
+          selector: "Literal[value=/-\\[(var\\(--color-|rgba\\(|color-mix)/]",
+          message:
+            "No arbitrary-value color classes — use the bridged semantic utilities (text-foreground, bg-primary-soft, bg-surface-muted, …).",
+        },
+        {
+          selector: "TemplateElement[value.raw=/-\\[(var\\(--color-|rgba\\(|color-mix)/]",
+          message:
+            "No arbitrary-value color classes — use the bridged semantic utilities (text-foreground, bg-primary-soft, bg-surface-muted, …).",
+        },
+      ],
+    },
+  },
   ...tseslint.config({
     files: ["services/**/*.ts", "packages/**/*.ts", "tests/**/*.ts"],
     extends: [tseslint.configs.recommended],

@@ -12,6 +12,7 @@
       "@jpx-accounting/api-client": ["packages/api-client/src/index.ts"],
       "@jpx-accounting/ai-core": ["packages/ai-core/src/index.ts"],
       "@jpx-accounting/reporting": ["packages/reporting/src/index.ts"],
+      "@jpx-accounting/advisor": ["packages/advisor/src/index.ts"],
       "@jpx-accounting/ui-tokens": ["packages/ui-tokens/src/index.ts"],
       "@jpx-accounting/persistence-postgres": ["packages/persistence-postgres/src/index.ts"],
       "@jpx-accounting/document-intelligence": ["packages/document-intelligence/src/index.ts"]

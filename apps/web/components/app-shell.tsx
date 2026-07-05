@@ -1,100 +1,91 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { MouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { useScrollDirection } from "../hooks/use-scroll-direction";
-import { saveCaptureDraft } from "../lib/draft-queue";
 import type { DraftQueueSaveResult } from "../lib/draft-queue-core";
+import { useDialogFocusTrap } from "../lib/focus-trap";
+import { CAPTURE_ACCEPT, captureFiles } from "../lib/promotion";
 import { formatRuntimeModeLabel } from "../lib/presentation";
 import { webRuntimeConfig } from "../lib/runtime-config";
 import { CommandPalette } from "./command-palette";
-import { CaptureIcon, ControlIcon, InboxIcon, ReportsIcon, SparkIcon } from "./ui/icons";
+import { useWorkspaceProfile } from "./providers/workspace-profile-provider";
+import { ThemeToggle } from "./theme-toggle";
+import { AdvisorIcon, BooksIcon, CaptureIcon, ControlIcon, InboxIcon, ReportsIcon, SparkIcon } from "./ui/icons";
 import { StatusBadge } from "./ui/status-badge";
 
 const navigation = [
-  { href: "/today", label: "Today", summary: "Today's review queue", icon: InboxIcon },
-  { href: "/capture", label: "Capture", summary: "Evidence & drafts", icon: CaptureIcon },
-  { href: "/books", label: "Books", summary: "Journal, accounts, close", icon: ReportsIcon },
-  { href: "/reports", label: "Reports", summary: "P&L, BS, VAT, exports", icon: ReportsIcon },
-  { href: "/settings", label: "Settings", summary: "Company & integrations", icon: ControlIcon },
-];
+  { href: "/today", key: "today", icon: InboxIcon },
+  { href: "/capture", key: "capture", icon: CaptureIcon },
+  { href: "/books", key: "books", icon: BooksIcon },
+  { href: "/reports", key: "reports", icon: ReportsIcon },
+  { href: "/settings", key: "settings", icon: ControlIcon },
+] as const;
 
-const draftModes = [
-  { key: "camera", label: "Camera", hint: "Snap a receipt with the device camera" },
-  { key: "upload", label: "Upload", hint: "Pick a PDF or image from disk" },
-  { key: "paste", label: "Paste", hint: "Paste an image from clipboard" },
-  { key: "share", label: "Share", hint: "Receive from another app via PWA share" },
-];
+// Rail-only: the Advisor entry lives in the desktop rail, not the 5-tab mobile dock.
+const advisorNavItem = { href: "/assistant", key: "advisor", icon: AdvisorIcon } as const;
+const railNavigation = [...navigation, advisorNavItem] as const;
+
+const draftModeKeys = ["camera", "upload", "paste", "share"] as const;
 
 type CaptureStatus = {
   tone: "success" | "warning" | "error";
   message: string;
 };
 
-const focusableSelector = [
-  "button:not([disabled])",
-  "a[href]",
-  "input:not([disabled])",
-  "textarea:not([disabled])",
-  "select:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
-].join(", ");
-
-function buildCaptureStatusMessage(modeLabel: string, result: DraftQueueSaveResult): CaptureStatus {
-  if (result.storage === "indexeddb") {
-    return {
-      tone: "success",
-      message: `${modeLabel} draft saved locally in IndexedDB.`,
-    };
-  }
-
-  if (result.storage === "session") {
-    return {
-      tone: "warning",
-      message: `${modeLabel} draft saved for this browser tab only.`,
-    };
-  }
-
-  return {
-    tone: "warning",
-    message: `${modeLabel} draft saved in temporary memory for this tab only.`,
-  };
-}
-
-function getFocusableElements(container: HTMLElement | null) {
-  if (!container) {
-    return [];
-  }
-
-  return [...container.querySelectorAll<HTMLElement>(focusableSelector)].filter(
-    (element) => !element.hasAttribute("disabled") && element.tabIndex !== -1,
-  );
-}
-
-export function AppShell({ children, digest }: { children: ReactNode; digest?: ReactNode }) {
+export function AppShell({ children }: { children: ReactNode }) {
+  const t = useTranslations("shell");
+  const tPromotion = useTranslations("capture.promotion");
+  const queryClient = useQueryClient();
   const pathname = usePathname();
   const barsHidden = useScrollDirection();
   const [captureOpen, setCaptureOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [captureStatus, setCaptureStatus] = useState<CaptureStatus | null>(null);
-  const timestamp = useMemo(() => new Intl.DateTimeFormat("sv-SE").format(new Date()), []);
+  const { locale } = useWorkspaceProfile();
+  const timestamp = useMemo(() => new Intl.DateTimeFormat(locale).format(new Date()), [locale]);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const firstDraftActionRef = useRef<HTMLButtonElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const sheetCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const sheetFileInputRef = useRef<HTMLInputElement | null>(null);
   const runtimeModeLabel = formatRuntimeModeLabel(webRuntimeConfig.runtimeMode);
   const activeNavItem = useMemo(
-    () => navigation.find((item) => pathname.startsWith(item.href)) ?? navigation[0]!,
+    () => railNavigation.find((item) => pathname.startsWith(item.href)) ?? navigation[0]!,
     [pathname],
   );
+
+  const draftModes = draftModeKeys.map((key) => ({
+    key,
+    label: t(`draftModes.${key}.label`),
+    hint: t(`draftModes.${key}.hint`),
+  }));
+
+  function buildCaptureStatusMessage(modeLabel: string, result: DraftQueueSaveResult): CaptureStatus {
+    if (result.storage === "indexeddb") {
+      return { tone: "success", message: t("captureStatus.indexeddb", { mode: modeLabel }) };
+    }
+
+    if (result.storage === "session") {
+      return { tone: "warning", message: t("captureStatus.session", { mode: modeLabel }) };
+    }
+
+    return { tone: "warning", message: t("captureStatus.memory", { mode: modeLabel }) };
+  }
 
   const closeCaptureSheet = useCallback(() => {
     setCaptureOpen(false);
     window.requestAnimationFrame(() => returnFocusRef.current?.focus());
   }, []);
+
+  useDialogFocusTrap(dialogRef, captureOpen, closeCaptureSheet, firstDraftActionRef);
 
   useEffect(() => {
     function handleGlobalKey(event: KeyboardEvent) {
@@ -116,63 +107,54 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
     return () => window.clearTimeout(timeoutId);
   }, [captureStatus]);
 
-  useEffect(() => {
-    if (!captureOpen) {
-      return undefined;
+  function handleCaptureMode(mode: { key: (typeof draftModeKeys)[number]; label: string }) {
+    if (mode.key === "camera") {
+      sheetCameraInputRef.current?.click();
+      return;
+    }
+    if (mode.key === "upload") {
+      sheetFileInputRef.current?.click();
+      return;
+    }
+    // Paste and share cannot be initiated from a button: paste needs Ctrl+V/Cmd+V on the
+    // capture page, share arrives through the OS share menu. The sheet points at them.
+    setCaptureStatus({
+      tone: "success",
+      message: mode.key === "paste" ? t("captureSheet.pasteHint") : t("captureSheet.shareHint"),
+    });
+    closeCaptureSheet();
+  }
+
+  async function handleSheetFiles(mode: { key: string; label: string }, list: FileList | null) {
+    const files = [...(list ?? [])];
+    if (files.length === 0) {
+      return;
     }
 
-    const dialog = dialogRef.current;
-    const focusableElements = getFocusableElements(dialog);
-    const initialFocusTarget = firstDraftActionRef.current ?? focusableElements[0];
-    initialFocusTarget?.focus();
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeCaptureSheet();
-        return;
-      }
-
-      if (event.key !== "Tab") {
-        return;
-      }
-
-      const currentFocusableElements = getFocusableElements(dialogRef.current);
-      if (currentFocusableElements.length === 0) {
-        event.preventDefault();
-        return;
-      }
-
-      const firstElement = currentFocusableElements[0]!;
-      const lastElement = currentFocusableElements[currentFocusableElements.length - 1]!;
-
-      if (event.shiftKey && document.activeElement === firstElement) {
-        event.preventDefault();
-        lastElement.focus();
-      } else if (!event.shiftKey && document.activeElement === lastElement) {
-        event.preventDefault();
-        firstElement.focus();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [captureOpen, closeCaptureSheet]);
-
-  async function createDraft(mode: { key: string; label: string }) {
     try {
-      const result = await saveCaptureDraft({
-        id: crypto.randomUUID(),
-        mode: mode.key,
-        title: `${mode.label} draft`,
-        createdAt: new Date().toISOString(),
+      // Same pipeline as the capture page: local draft first (status message tells the
+      // storage tier), then fire-and-forget promotion into ledger evidence.
+      const outcome = await captureFiles(files, mode.key, {
+        queryClient,
+        onPromoted: (draft) => toast.success(tPromotion("promoted", { name: draft.title })),
+        onPromoteError: (draft) => toast.error(tPromotion("promoteError", { name: draft.title })),
       });
-      setCaptureStatus(buildCaptureStatusMessage(mode.label, result));
-      closeCaptureSheet();
+
+      for (const rejection of outcome.rejected) {
+        toast.error(
+          tPromotion(rejection.reason === "size" ? "rejectedSize" : "rejectedType", { name: rejection.file.name }),
+        );
+      }
+
+      const lastSaved = outcome.saved.at(-1);
+      if (lastSaved) {
+        setCaptureStatus(buildCaptureStatusMessage(mode.label, lastSaved.save));
+        closeCaptureSheet();
+      }
     } catch {
       setCaptureStatus({
         tone: "error",
-        message: `${mode.label} draft could not be saved locally. Check browser storage permissions and try again.`,
+        message: t("captureStatus.error", { mode: mode.label }),
       });
     }
   }
@@ -184,33 +166,38 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
 
   return (
     <div className="app-shell">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.42),_transparent_45%)]" />
+      {/* print:hidden on all shell chrome (Task 4.9) is screen-inert — it only
+          strips navigation/banners from the printed report pack. */}
+      <div
+        className="pointer-events-none fixed inset-0 print:hidden"
+        style={{ background: "radial-gradient(circle at top, var(--page-glow-light), transparent 45%)" }}
+      />
       <div className="shell-layout">
-        <aside className="shell-rail" data-testid="desktop-navigation">
+        <aside className="shell-rail print:hidden" data-testid="desktop-navigation">
           <div className="shell-rail-inner">
-            <section className="glass-chrome rounded-2xl px-5 py-5">
+            <section className="glass-chrome rounded-xl px-5 py-5">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-eyebrow">JPX Accounting</p>
+                <p className="text-eyebrow">{t("brand")}</p>
                 <StatusBadge
                   status={runtimeModeLabel}
                   variant={webRuntimeConfig.runtimeMode === "demo" ? "warning" : "accent"}
                 />
               </div>
-              <h1 className="mt-3 text-2xl font-semibold leading-tight">
-                Trustworthy AI bookkeeping for Sweden-first teams.
-              </h1>
-              <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-                Compliance-critical flows stay deterministic. AI guides, cites, and accelerates the review surface.
-              </p>
+              <h1 className="mt-3 text-2xl font-semibold leading-tight">{t("marketing.headline")}</h1>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("marketing.subheadline")}</p>
               {webRuntimeConfig.runtimeMode === "demo" ? (
-                <p className="mt-4 rounded-lg bg-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]">
-                  Demo mode is intentionally using local scaffold behavior so it is never mistaken for live accounting.
+                <p className="mt-4 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">
+                  {t("marketing.demoNotice")}
                 </p>
               ) : null}
             </section>
 
-            <nav className="glass-panel rounded-2xl p-3" aria-label="Primary" data-testid="desktop-navigation-links">
-              {navigation.map((item) => {
+            <nav
+              className="glass-panel rounded-xl p-3"
+              aria-label={t("primaryNavAria")}
+              data-testid="desktop-navigation-links"
+            >
+              {railNavigation.map((item) => {
                 const Icon = item.icon;
                 const active = pathname.startsWith(item.href);
 
@@ -220,26 +207,20 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                     href={item.href}
                     aria-current={active ? "page" : undefined}
                     className={`flex items-start gap-3 rounded-lg px-4 py-4 transition ${
-                      active
-                        ? "bg-[var(--color-accent)] text-white shadow-[var(--shadow-sm)]"
-                        : "text-[var(--color-text)] hover:bg-[rgba(255,255,255,0.72)]"
+                      active ? "bg-primary text-white shadow-sm" : "text-foreground hover:bg-surface-muted"
                     }`}
                   >
                     <span
                       className={`mt-0.5 rounded-lg p-2 ${
-                        active
-                          ? "bg-white/16 text-white"
-                          : "bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]"
+                        active ? "bg-white/16 text-white" : "bg-surface-muted text-muted-foreground"
                       }`}
                     >
                       <Icon className="size-4" />
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold">{item.label}</span>
-                      <span
-                        className={`mt-1 block text-xs ${active ? "text-white/78" : "text-[var(--color-text-muted)]"}`}
-                      >
-                        {item.summary}
+                      <span className="block text-sm font-semibold">{t(`nav.${item.key}.label`)}</span>
+                      <span className={`mt-1 block text-xs ${active ? "text-white/90" : "text-muted-foreground"}`}>
+                        {t(`nav.${item.key}.summary`)}
                       </span>
                     </span>
                   </Link>
@@ -247,51 +228,48 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
               })}
             </nav>
 
-            {digest ? <div className="hidden lg:block">{digest}</div> : null}
-
-            <section className="glass-panel rounded-2xl p-4">
+            <section className="glass-panel rounded-xl p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-eyebrow">Capture lane</p>
-                  <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                    Camera, paste, upload, and share land in the same queue and show where the draft was stored.
-                  </p>
+                  <p className="text-eyebrow">{t("captureLane.eyebrow")}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{t("captureLane.description")}</p>
                 </div>
-                <StatusBadge status="Local-first" variant="accent" />
+                <StatusBadge status={t("captureLane.badge")} variant="accent" />
               </div>
               <button
                 type="button"
                 onClick={openCaptureSheet}
                 data-testid="capture-open-desktop"
-                className="capture-button-desktop mt-4 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-accent)] px-5 py-4 text-sm font-semibold text-white shadow-[var(--shadow-md)]"
+                className="capture-button-desktop mt-4 w-full items-center justify-center gap-2 rounded-md bg-primary px-5 py-4 text-sm font-semibold text-white shadow-md"
               >
                 <CaptureIcon className="size-4" />
-                Capture Evidence
+                {t("captureLane.action")}
               </button>
             </section>
 
-            <section className="glass-panel-soft mt-auto rounded-2xl p-4">
-              <div className="flex items-center gap-2 text-[var(--color-text-muted)]">
-                <SparkIcon className="size-4 text-[var(--color-accent)]" />
-                <span className="text-eyebrow">Innovation track</span>
+            <section className="glass-panel-soft mt-auto rounded-xl p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <SparkIcon className="size-4 text-primary" />
+                  <span className="text-eyebrow">{t("innovation.eyebrow")}</span>
+                </div>
+                <ThemeToggle />
               </div>
-              <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-                Voice capture, simulations, and close copilot are isolated from posting authority until they earn trust.
-              </p>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("innovation.description")}</p>
             </section>
           </div>
         </aside>
 
         <div className="shell-main">
           <header
-            className="page-shell page-shell-compact shell-topbar"
+            className="page-shell page-shell-compact shell-topbar print:hidden"
             data-testid="app-shell-header"
             data-hidden={barsHidden}
           >
             <div className="glass-chrome flex items-center justify-between gap-4 rounded-2xl px-4 py-3 sm:px-5">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-eyebrow">JPX Accounting</p>
+                  <p className="text-eyebrow">{t("brand")}</p>
                   <StatusBadge
                     status={runtimeModeLabel}
                     variant={webRuntimeConfig.runtimeMode === "demo" ? "warning" : "accent"}
@@ -299,24 +277,30 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                   />
                 </div>
                 <div className="mt-1 flex min-w-0 items-center gap-2">
-                  <p className="truncate text-sm font-semibold text-[var(--color-text)]">{activeNavItem.label}</p>
-                  <span className="hidden h-1 w-1 rounded-full bg-[var(--color-text-soft)] sm:block" />
-                  <p className="hidden truncate text-sm text-[var(--color-text-muted)] sm:block">
-                    {activeNavItem.summary}
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {t(`nav.${activeNavItem.key}.label`)}
+                  </p>
+                  <span className="hidden h-1 w-1 rounded-full bg-foreground-soft sm:block" />
+                  <p className="hidden truncate text-sm text-muted-foreground sm:block">
+                    {t(`nav.${activeNavItem.key}.summary`)}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="hidden rounded-lg glass-panel-soft px-3 py-2 text-right text-xs text-[var(--color-text-muted)] sm:block">
-                  <div className="font-medium text-[var(--color-text)]">Sweden Central / Stockholm</div>
-                  <div>{timestamp}</div>
+                <div className="hidden rounded-lg glass-panel-soft px-3 py-2 text-right text-xs text-muted-foreground sm:block">
+                  <div className="font-medium text-foreground">{t("topbar.location")}</div>
+                  {/* Clock-derived; masked in visual-regression.spec.ts so baselines stay date-stable. */}
+                  <div data-visual-mask>{timestamp}</div>
+                </div>
+                <div className="lg:hidden">
+                  <ThemeToggle />
                 </div>
                 <button
                   type="button"
                   onClick={openCaptureSheet}
                   data-testid="capture-open-mobile"
-                  aria-label="Capture evidence"
-                  className="flex size-10 items-center justify-center rounded-lg bg-[var(--color-accent)] text-white shadow-[var(--shadow-sm)] lg:hidden"
+                  aria-label={t("topbar.captureAria")}
+                  className="flex size-10 items-center justify-center rounded-lg bg-primary text-white shadow-sm lg:hidden"
                 >
                   <CaptureIcon className="size-4" />
                 </button>
@@ -324,22 +308,13 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
             </div>
           </header>
 
-          {digest ? (
-            <details className="page-shell page-shell-compact lg:hidden" data-testid="digest-mobile">
-              <summary className="glass-panel-soft cursor-pointer rounded-md px-4 py-3 text-sm font-medium">
-                Today&apos;s pulse
-              </summary>
-              <div className="mt-2">{digest}</div>
-            </details>
-          ) : null}
-
           {webRuntimeConfig.runtimeMode === "demo" ? (
-            <div className="page-shell page-shell-compact">
+            <div className="page-shell page-shell-compact print:hidden">
               <div
                 data-testid="runtime-mode-banner"
-                className="glass-panel-soft rounded-lg border border-[var(--color-warning-soft)] px-4 py-3 text-sm text-[var(--color-warning)]"
+                className="glass-panel-soft rounded-lg border border-warning-soft px-4 py-3 text-sm text-warning"
               >
-                Demo mode is active. Local demo data and local AI fallback are enabled intentionally.
+                {t("demoBanner")}
               </div>
             </div>
           ) : null}
@@ -354,12 +329,12 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
         <div
           aria-live="polite"
           data-testid="draft-notice"
-          className={`fixed left-1/2 top-24 z-40 w-[min(92vw,30rem)] -translate-x-1/2 rounded-lg px-4 py-3 text-center text-sm font-medium ${
+          className={`fixed left-1/2 top-24 z-40 w-[min(92vw,30rem)] -translate-x-1/2 rounded-lg px-4 py-3 text-center text-sm font-medium print:hidden ${
             captureStatus.tone === "error"
-              ? "bg-[var(--color-danger-soft)] text-[var(--color-danger)] shadow-[var(--shadow-md)]"
+              ? "bg-danger-soft text-danger shadow-md"
               : captureStatus.tone === "warning"
-                ? "bg-[var(--color-warning-soft)] text-[var(--color-warning)] shadow-[var(--shadow-md)]"
-                : "glass-chrome text-[var(--color-text)]"
+                ? "bg-warning-soft text-warning shadow-md"
+                : "glass-chrome text-foreground"
           }`}
         >
           {captureStatus.message}
@@ -367,9 +342,9 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
       ) : null}
 
       <nav
-        aria-label="Mobile primary"
+        aria-label={t("mobileNavAria")}
         data-testid="mobile-dock"
-        className="mobile-dock glass-chrome rounded-2xl px-2 py-2 lg:hidden"
+        className="mobile-dock glass-chrome rounded-2xl px-2 py-2 lg:hidden print:hidden"
         data-hidden={barsHidden}
       >
         <div className="grid grid-cols-5 gap-2">
@@ -380,14 +355,14 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
               <Link
                 key={item.href}
                 href={item.href}
-                aria-label={`${item.label} — ${item.summary}`}
+                aria-label={`${t(`nav.${item.key}.label`)} — ${t(`nav.${item.key}.summary`)}`}
                 aria-current={active ? "page" : undefined}
                 className={`flex flex-col items-center justify-center gap-1 rounded-lg px-2 py-3 text-center text-caption font-medium transition ${
-                  active ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-muted)]"
+                  active ? "bg-primary text-white" : "text-muted-foreground"
                 }`}
               >
                 <Icon className="size-3.5" aria-hidden="true" />
-                {item.label}
+                {t(`nav.${item.key}.label`)}
               </Link>
             );
           })}
@@ -397,7 +372,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
       <AnimatePresence>
         {captureOpen ? (
           <motion.div
-            className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(10,18,24,0.32)] p-3 backdrop-blur-sm sm:items-center"
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-3 backdrop-blur-sm sm:items-center"
             data-testid="capture-sheet-backdrop"
             onClick={() => closeCaptureSheet()}
             initial={{ opacity: 0 }}
@@ -412,7 +387,7 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
               aria-labelledby="capture-sheet-title"
               aria-describedby="capture-sheet-description"
               data-testid="capture-sheet"
-              className="glass-chrome w-full max-w-xl rounded-xl p-5"
+              className="glass-chrome w-full max-w-xl rounded-2xl p-5"
               onClick={(event) => event.stopPropagation()}
               initial={{ y: 40, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -421,25 +396,24 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="mb-5 h-1.5 w-16 rounded-full bg-[rgba(15,26,34,0.12)]" />
-                  <p className="text-eyebrow">Quick Intake</p>
+                  <div className="mb-5 h-1.5 w-16 rounded-full bg-border-strong" />
+                  <p className="text-eyebrow">{t("captureSheet.eyebrow")}</p>
                   <h2 id="capture-sheet-title" className="mt-2 text-2xl font-semibold">
-                    Add business evidence
+                    {t("captureSheet.title")}
                   </h2>
                 </div>
                 <button
                   type="button"
                   onClick={() => closeCaptureSheet()}
-                  aria-label="Close capture sheet"
+                  aria-label={t("captureSheet.closeAria")}
                   data-testid="capture-close"
-                  className="rounded-md bg-white/72 px-3 py-2 text-sm font-medium text-[var(--color-text-muted)]"
+                  className="rounded-md bg-surface px-3 py-2 text-sm font-medium text-muted-foreground"
                 >
-                  Close
+                  {t("captureSheet.close")}
                 </button>
               </div>
-              <p id="capture-sheet-description" className="mt-2 text-sm text-[var(--color-text-muted)]">
-                Capture starts locally first so the UI stays responsive. The result tells you whether the draft was
-                stored persistently or only for this tab.
+              <p id="capture-sheet-description" className="mt-2 text-sm text-muted-foreground">
+                {t("captureSheet.description")}
               </p>
               <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {draftModes.map((mode, index) => (
@@ -448,14 +422,40 @@ export function AppShell({ children, digest }: { children: ReactNode; digest?: R
                     ref={index === 0 ? firstDraftActionRef : undefined}
                     type="button"
                     data-testid={`capture-mode-${mode.key}`}
-                    onClick={() => void createDraft(mode)}
+                    onClick={() => handleCaptureMode(mode)}
                     className="glass-panel rounded-lg px-4 py-4 text-left"
                   >
-                    <p className="text-sm font-semibold text-[var(--color-text)]">{mode.label}</p>
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">{mode.hint}</p>
+                    <p className="text-sm font-semibold text-foreground">{mode.label}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{mode.hint}</p>
                   </button>
                 ))}
               </div>
+              <input
+                ref={sheetCameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                data-testid="capture-sheet-camera-input"
+                onChange={(event) => {
+                  const mode = draftModes.find((entry) => entry.key === "camera");
+                  if (mode) void handleSheetFiles(mode, event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <input
+                ref={sheetFileInputRef}
+                type="file"
+                multiple
+                accept={CAPTURE_ACCEPT}
+                className="hidden"
+                data-testid="capture-sheet-file-input"
+                onChange={(event) => {
+                  const mode = draftModes.find((entry) => entry.key === "upload");
+                  if (mode) void handleSheetFiles(mode, event.target.files);
+                  event.target.value = "";
+                }}
+              />
             </motion.div>
           </motion.div>
         ) : null}

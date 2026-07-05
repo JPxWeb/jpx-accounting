@@ -1,0 +1,858 @@
+{
+  "common": {
+    "skipToContent": "Hoppa till innehåll",
+    "theme": {
+      "groupLabel": "Tema",
+      "system": "Systemtema",
+      "light": "Ljust tema",
+      "dark": "Mörkt tema"
+    },
+    "period": {
+      "selectorAria": "Rapportperiod",
+      "groups": {
+        "months": "Månader",
+        "quarters": "Kvartal",
+        "year": "År"
+      },
+      "ytd": "Hittills i år",
+      "all": "Alla perioder",
+      "fiscalYear": "Räkenskapsår {year}",
+      "quarter": "Kv {quarter} {year}"
+    },
+    "integrityChip": {
+      "intact": "hashkedjan intakt · {template} · {count, plural, one {# händelse} other {# händelser}}",
+      "broken": "hashkedjan kunde inte verifieras · {template} · {count, plural, one {# händelse} other {# händelser}}"
+    }
+  },
+  "shell": {
+    "brand": "JPX Accounting",
+    "nav": {
+      "today": { "label": "Idag", "summary": "Dagens granskningskö" },
+      "capture": { "label": "Fånga", "summary": "Underlag & utkast" },
+      "books": { "label": "Böcker", "summary": "Journal, konton, avslut" },
+      "reports": { "label": "Rapporter", "summary": "RR, BR, moms, exporter" },
+      "settings": { "label": "Inställningar", "summary": "Företag & integrationer" },
+      "advisor": { "label": "Rådgivare", "summary": "Fråga om dina siffror" }
+    },
+    "primaryNavAria": "Primär",
+    "mobileNavAria": "Mobil primär",
+    "marketing": {
+      "headline": "AI-rådgivande redovisning för europeiska småföretag.",
+      "subheadline": "Svenskt djup först — BAS-kontoplan, moms och bokföringslagen inbyggda. AI:n råder och citerar; varje bokning godkänns av dig i en verifierbar huvudbok som aldrig skrivs om.",
+      "demoNotice": "Demoläget använder avsiktligt lokalt scaffold-beteende så att det aldrig misstas för skarp bokföring."
+    },
+    "captureLane": {
+      "eyebrow": "Insamlingsspår",
+      "description": "Varje kvitto landar som granskningsbart underlag — kamera, inklistring, uppladdning och delning går genom samma lokala utkastkö.",
+      "badge": "Lokalt först",
+      "action": "Fånga underlag"
+    },
+    "innovation": {
+      "eyebrow": "Pålitlig i grunden",
+      "description": "AI:n här är märkt och citerar sina källor (EU:s AI-förordning, artikel 50) och saknar bokföringsbehörighet — granskningskön är den enda vägen in i din huvudbok."
+    },
+    "topbar": {
+      "location": "Sweden Central / Stockholm",
+      "captureAria": "Fånga underlag"
+    },
+    "demoBanner": "Demoläge är aktivt. Lokal demodata och lokal AI-fallback är avsiktligt aktiverade.",
+    "captureSheet": {
+      "eyebrow": "Snabbinmatning",
+      "title": "Lägg till affärsunderlag",
+      "close": "Stäng",
+      "closeAria": "Stäng insamlingspanelen",
+      "description": "Insamlingen börjar lokalt så att gränssnittet förblir responsivt. Resultatet visar om utkastet sparades varaktigt eller bara för den här fliken.",
+      "pasteHint": "Inklistring fungerar på Fånga-sidan — tryck Ctrl+V (eller Cmd+V) där för att fånga en kopierad bild.",
+      "shareHint": "Använd enhetens delningsmeny och välj JPX Accounting för att skicka underlag hit."
+    },
+    "draftModes": {
+      "camera": { "label": "Kamera", "hint": "Fota ett kvitto med enhetens kamera" },
+      "upload": { "label": "Ladda upp", "hint": "Välj en PDF eller bild från disk" },
+      "paste": { "label": "Klistra in", "hint": "Klistra in en bild från urklipp" },
+      "share": { "label": "Dela", "hint": "Ta emot från en annan app via PWA-delning" }
+    },
+    "draftTitle": "{mode}-utkast",
+    "captureStatus": {
+      "indexeddb": "{mode}-utkast sparat lokalt i IndexedDB.",
+      "session": "{mode}-utkast sparat endast för den här webbläsarfliken.",
+      "memory": "{mode}-utkast sparat i tillfälligt minne endast för den här fliken.",
+      "error": "{mode}-utkastet kunde inte sparas lokalt. Kontrollera webbläsarens lagringsbehörigheter och försök igen."
+    }
+  },
+  "palette": {
+    "dialogAria": "Sök i arbetsytan",
+    "placeholder": "Sök verifikat, granskningar, konton…",
+    "askAdvisor": "Fråga rådgivaren",
+    "askAdvisorHint": "Fråga om dina siffror",
+    "noMatches": "Inga träffar",
+    "resultsAria": "Sökresultat",
+    "escHint": "Esc för att stänga · {shortcut}"
+  },
+  "today": {
+    "eyebrow": "Idag / Behöver granskas",
+    "title": "Granskningsklar bokföring, formad för mobilen först.",
+    "description": "Underlag kommer in en gång, förslagen förblir förklarbara och kön håller det verkliga bokföringsarbetet ovanför vecket i stället för att gömma det under dashboardkrom.",
+    "metricPending": "Väntande granskningar",
+    "metricBlocked": "Blockerad moms",
+    "reviewQueue": "Granskningskö",
+    "queueTitle": "Håll nästa bokföringsbeslut självklart.",
+    "queueDescription": "Korten är kompakta på mobilen, expanderar på större skärmar och håller AI-resonemang bakom sekundär visning tills det behövs.",
+    "emptyFiltered": "Inga granskningar matchar de här filtren.",
+    "emptyQueue": "Inga granskningar i kön.",
+    "clearFilters": "Rensa filter",
+    "editSheet": {
+      "eyebrow": "Redigera granskning",
+      "title": "Redigera före godkännande",
+      "description": "Justera konto, momskod eller belopp — godkännandet bokför de korrigerade raderna.",
+      "closeAria": "Stäng redigeringsarket",
+      "accountLabel": "Konto",
+      "vatCodeLabel": "Momskod",
+      "grossLabel": "Bruttobelopp",
+      "netLabel": "Nettobelopp",
+      "vatAmountLabel": "Momsbelopp",
+      "amountError": "Netto + moms måste bli brutto (inom 0,01); alla tre beloppen krävs när något av dem ändras.",
+      "submit": "Godkänn med ändringar",
+      "submitting": "Godkänner…",
+      "cancel": "Avbryt",
+      "submitError": "Det redigerade godkännandet kunde inte genomföras.",
+      "appendOnlyNote": "Godkännandet bokför nya huvudboksrader med dina korrigeringar — ursprungligt underlag, förslag och händelsehistorik är append-only och skrivs aldrig om."
+    },
+    "card": {
+      "invoiceMethod": "Fakturametod",
+      "cashMethod": "Kontantmetod",
+      "pendingVoucher": "Väntande verifikat",
+      "date": "Datum",
+      "gross": "Brutto",
+      "vat": "Moms",
+      "aiSuggestion": "AI-förslag",
+      "ruleHits": "Regelträffar och proveniens",
+      "cited": "Citerad: {title}",
+      "band": {
+        "high": "Hög konfidens",
+        "medium": "Medelhög konfidens",
+        "low": "Låg konfidens"
+      },
+      "suggestionsOff": "AI-förslag är avstängda för den här arbetsytan under AI-hållning. Underlaget, regelträffarna och alla granskningsåtgärder nedan fungerar som vanligt — besluta manuellt.",
+      "suggestionsOffCta": "Öppna inställningar för AI-hållning"
+    },
+    "actions": {
+      "legend": "Granskningsåtgärder",
+      "accept": "Godkänn",
+      "edit": "Redigera",
+      "bookWithoutVat": "Bokför utan moms",
+      "reject": "Avvisa"
+    },
+    "filters": {
+      "statusAria": "Filtrera efter status",
+      "all": "Alla",
+      "needsReview": "Behöver granskas",
+      "blocked": "Blockerade",
+      "approved": "Godkända",
+      "supplierPlaceholder": "Filtrera efter leverantör...",
+      "confidenceAria": "Filtrera efter konfidens",
+      "allConfidence": "All konfidens"
+    }
+  },
+  "evidence": {
+    "eyebrow": "Underlag",
+    "description": "Oföränderlig filpost, hashkedja och proveniens.",
+    "back": "Tillbaka till Fånga",
+    "notFound": {
+      "title": "Underlaget hittades inte",
+      "message": "Detta underlags-id finns inte i den aktuella arbetsytans ögonblicksbild."
+    },
+    "meta": {
+      "hash": "Hash",
+      "originalFilename": "Ursprungligt filnamn",
+      "mimeType": "MIME-typ",
+      "size": "Storlek",
+      "uploaded": "Uppladdad",
+      "trustLevel": "Tillitsnivå",
+      "blobPath": "Blob-sökväg"
+    },
+    "preview": {
+      "title": "Förhandsvisning",
+      "imageAlt": "Förhandsvisning av {title}",
+      "frameTitle": "Förhandsvisning av {title}",
+      "loading": "Läser in förhandsvisning…",
+      "unavailable": "Ingen förhandsvisning är tillgänglig på den här enheten.",
+      "unavailableHint": "Filen fångades på en annan enhet eller så levererar lagringsbackenden inga förhandsvisningar."
+    },
+    "fields": {
+      "title": "Extraherade fält",
+      "empty": "Inga extraherade fält ännu — kör extraktion för att fylla i dem.",
+      "headerField": "Fält",
+      "headerValue": "Värde",
+      "headerConfidence": "Konfidens"
+    },
+    "links": {
+      "title": "Granskning",
+      "voucher": "Verifikat {number}",
+      "openReview": "Öppna granskning",
+      "extract": "Kör extraktion igen",
+      "extracting": "Extraherar…",
+      "extractLocked": "Verifikatet är redan beslutat — extraktionen förblir låst så att bokföringen förblir append-only.",
+      "extractSuccess": "Extraktionen uppdaterad.",
+      "extractError": "Extraktionen misslyckades. Försök igen.",
+      "noVoucher": "Inget verifikat är kopplat till det här underlaget ännu."
+    }
+  },
+  "capture": {
+    "shared": {
+      "draftSaved": "Delat innehåll sparat som utkast.",
+      "promoted": "{count, plural, one {Delad fil lyft till bokföringsunderlag.} other {# delade filer lyfta till bokföringsunderlag.}}",
+      "pendingBanner": "{count, plural, one {En delad fil} other {# delade filer}} kunde inte läggas in som underlag. Lägg till {count, plural, one {den} other {dem}} igen från Snabbtillägg."
+    },
+    "eyebrow": "Fånga",
+    "title": "Lägg till underlag, se utkast, bläddra i arkivet.",
+    "description": "Det samlade hemmet för allt du har fångat — pågående utkast, nyss uppladdat, helt arkiverat.",
+    "quickAdd": {
+      "title": "Snabbtillägg",
+      "description": "Varje ruta skapar ett lokalt utkast som du kan lyfta till bokföringsunderlag.",
+      "tiles": {
+        "camera": { "label": "Kamera", "hint": "Fota ett kvitto med enhetens kamera" },
+        "upload": { "label": "Ladda upp", "hint": "Välj en PDF eller bild från disk" },
+        "paste": { "label": "Klistra in", "hint": "Klistra in en bild från urklipp" },
+        "share": { "label": "Dela", "hint": "Ta emot från en annan app via PWA-delning" }
+      },
+      "draftTitle": "{mode}-utkast",
+      "draftAdded": "{mode}-utkast tillagt.",
+      "draftError": "Kunde inte spara {mode}-utkastet lokalt.",
+      "pasteEmpty": "Ingen bild hittades i urklipp.",
+      "pasteUnavailable": "Urklippsåtkomst är inte tillgänglig här — tryck Ctrl+V (eller Cmd+V) på den här sidan i stället.",
+      "shareHint": "Öppna enhetens delningsmeny och välj JPX Accounting för att skicka filer hit.",
+      "importSie": "Importera SIE-fil",
+      "importing": "Importerar…",
+      "connectBank": "Anslut bankflöde"
+    },
+    "sieResult": {
+      "imported": "Importerade {vouchers} verifikat från SIE-filen.",
+      "importedWithSkipped": "Importerade {vouchers} verifikat från SIE-filen — {skipped} hoppades över.",
+      "error": "Kunde inte importera SIE-filen."
+    },
+    "dropzone": {
+      "aria": "Lägg till underlagsfiler genom att bläddra eller släppa dem här",
+      "title": "Släpp kvitton eller fakturor här",
+      "hint": "Bilder och PDF:er upp till 16 MB — klicka, tryck Enter eller dra in filer."
+    },
+    "promotion": {
+      "promoted": "{name} lyft till bokföringsunderlag.",
+      "promoteError": "Kunde inte lyfta {name}. Försök igen från utkasttabellen.",
+      "rejectedType": "{name} hoppades över — endast bilder och PDF:er stöds.",
+      "rejectedSize": "{name} hoppades över — filer måste vara högst 16 MB."
+    },
+    "drafts": {
+      "title": "Utkast som pågår",
+      "empty": "Inga lokala utkast. Använd Snabbtillägg ovan eller fångstknappen.",
+      "headerPreview": "Förhandsvisning",
+      "thumbAlt": "Förhandsvisning av {name}",
+      "headerMode": "Läge",
+      "headerTitle": "Titel",
+      "headerCreated": "Skapad",
+      "headerAction": "Åtgärd",
+      "promote": "Lyft till bokföring",
+      "promoted": "Utkast lyft till bokföringsunderlag.",
+      "promoteError": "Kunde inte lyfta utkastet."
+    },
+    "archive": {
+      "title": "Underlagsarkiv",
+      "searchPlaceholder": "Sök underlag…",
+      "empty": "Inget arkiverat underlag ännu. Lyft ett utkast ovan för att fylla arkivet.",
+      "headerTitle": "Titel",
+      "headerType": "Typ",
+      "headerHash": "Hash",
+      "headerUploaded": "Uppladdad",
+      "open": "Öppna",
+      "hashCopied": "Hash kopierad."
+    }
+  },
+  "books": {
+    "eyebrow": "Böcker",
+    "title": "Huvudboken, borrbar.",
+    "description": "Journal, huvudbok, råbalans, leverantörer och avslut — allt avgränsat till en period.",
+    "unknownSupplier": "(Okänd leverantör)",
+    "tabs": {
+      "journal": "Journal",
+      "generalLedger": "Huvudbok",
+      "trialBalance": "Råbalans",
+      "suppliers": "Leverantörer",
+      "close": "Avslut"
+    },
+    "journal": {
+      "supplierChip": "Leverantör {supplier}",
+      "clearSupplierAria": "Rensa leverantörsfiltret",
+      "emptyForSupplier": "Inga journalposter för {supplier} under den här perioden.",
+      "empty": "Inga journalposter under den här perioden.",
+      "emptyPreview": "När verifikat landar visas varje bokföringsrad här — datum, konto och belopp, med borrning ner till sitt underlag. Fånga ett kvitto eller importera din SIE-historik för att komma igång.",
+      "emptyCaptureCta": "Fånga underlag",
+      "emptyImportCta": "Importera SIE-historik",
+      "headerDate": "Datum",
+      "headerVoucher": "Verifikat",
+      "headerAccount": "Konto",
+      "headerDescription": "Beskrivning",
+      "headerDebit": "Debet",
+      "headerCredit": "Kredit"
+    },
+    "generalLedger": {
+      "accountChip": "Konto {account}",
+      "clearAccountAria": "Rensa kontofiltret",
+      "emptyForAccount": "Inga huvudboksposter för konto {account} under den här perioden.",
+      "empty": "Inga huvudboksposter under den här perioden.",
+      "net": "Netto"
+    },
+    "trialBalance": {
+      "title": "Råbalans",
+      "empty": "Inga saldon ännu. Bokför ett verifikat för att fylla råbalansen.",
+      "rowTitle": "Visa {account} i huvudboken",
+      "debit": "Debet",
+      "credit": "Kredit"
+    },
+    "suppliers": {
+      "empty": "Inga leverantörer ännu. Verifikat med leverantörsnamn visas här.",
+      "headerSupplier": "Leverantör",
+      "headerVouchers": "Verifikat",
+      "headerTotal": "Totalt spenderat",
+      "viewInJournal": "Visa i journalen"
+    },
+    "close": {
+      "readOnly": "Avslutskörningar är skrivskyddade i den här versionen.",
+      "copilotLabel": "Avslutscopilot",
+      "copilotTitle": "Månadsavslutet förblir synligt medan kön rör sig.",
+      "advisoryBadge": "Endast rådgivande"
+    }
+  },
+  "reports": {
+    "eyebrow": "Rapporter",
+    "title": "Rapporter",
+    "description": "Varje siffra på den här skärmen renderas från ett och samma rapportpaket per period — prosa, nyckeltal och rapporter kan aldrig glida isär.",
+    "export": {
+      "button": "Exportera SIE",
+      "exporting": "Exporterar…",
+      "hint": "Laddar ner arbetsytans SIE-fil från API:et.",
+      "error": "SIE-exporten misslyckades."
+    },
+    "unavailable": {
+      "title": "Rapporter otillgängliga",
+      "message": "Rapporterna kunde inte läsas in. Kontrollera runtime-konfigurationen och API-tillgängligheten."
+    },
+    "kpis": {
+      "result": "Resultat",
+      "cash": "Kassa",
+      "revenue": "Intäkter",
+      "vat": "Moms netto (ruta 49)"
+    },
+    "narrative": {
+      "title": "Perioden i ord",
+      "computedFrom": "Beräknat från din bokföring — varje siffra ovan stämmer med rapporterna nedan.",
+      "empty": "Inget har bokförts under den här perioden ännu.",
+      "emptyPreview": "Så fort något bokförs fylls paketet i: periodens resultat i ord, resultaträkning, balansräkning, kassabryggan och momsdeklarationens rutor — allt från samma siffror.",
+      "emptyCta": "Fånga ditt första underlag",
+      "periodResult": "Perioden stängde på <value></value>.",
+      "periodResultWithDelta": "Perioden stängde på <value></value>, <delta></delta> jämfört med föregående period.",
+      "biggestMover": "Största kostnadsrörelsen: {accountNumber} {accountName} på <value></value> (<delta></delta> mot föregående period).",
+      "cashDelta": "Kassan gick från <opening></opening> till <closing></closing>, en förändring på <delta></delta>.",
+      "vatToPay": "Momsposition netto (ruta 49): <value></value> att betala.",
+      "vatToRefund": "Momsposition netto (ruta 49): <value></value> att få tillbaka.",
+      "chips": {
+        "period-result": "Resultatrapport",
+        "biggest-mover": "Resultatrapport",
+        "cash-delta": "Kassabrygga",
+        "vat-position": "Momsdeklaration"
+      }
+    },
+    "pnl": {
+      "title": "Resultatrapport",
+      "groups": {
+        "revenue": "Rörelsens intäkter",
+        "materials": "Råvaror och förnödenheter",
+        "externalCost": "Övriga externa kostnader",
+        "personnel": "Personalkostnader",
+        "financial": "Finansiella poster"
+      },
+      "subtotal": "Delsumma",
+      "operatingResult": "Rörelseresultat",
+      "financialNet": "Finansnetto",
+      "periodResult": "Periodens resultat"
+    },
+    "balanceSheet": {
+      "title": "Balansrapport",
+      "asOf": "Per {date}",
+      "groups": {
+        "assets": "Tillgångar",
+        "equityAndLiabilities": "Eget kapital och skulder"
+      },
+      "computedResult": "Beräknat periodresultat (ej bokslutfört)",
+      "totalAssets": "Summa tillgångar",
+      "totalEquityAndLiabilities": "Summa eget kapital och skulder",
+      "balanced": "I balans",
+      "notBalanced": "Obalans"
+    },
+    "vat": {
+      "title": "Momsdeklaration",
+      "description": "Momsdeklarationens rutor beräknade över den valda perioden.",
+      "headerBox": "Ruta",
+      "headerLabel": "Beskrivning",
+      "headerAmount": "Belopp",
+      "toPay": "Moms att betala",
+      "toRefund": "Moms att få tillbaka"
+    },
+    "taxTimeline": {
+      "title": "Lagstadgad skattekalender",
+      "description": "Kommande deadlines hos Skatteverket och Bolagsverket för arbetsytans momsperiod och räkenskapsår. Endast momsdeadlines bär ett belopp — övriga visas medvetet utan.",
+      "empty": "Inga lagstadgade deadlines de närmaste 120 dagarna.",
+      "sourcesLabel": "Källor",
+      "kinds": {
+        "vat-return": "Momsdeklaration",
+        "employer-declaration": "Arbetsgivardeklaration",
+        "f-skatt": "Debiterad preliminärskatt",
+        "annual-report": "Årsredovisning"
+      }
+    },
+    "alerts": {
+      "label": "Regelbevakning",
+      "title": "Deadlines och regulatoriska signaler",
+      "description": "Hämtat från samma compliance-flöde som inkorgens notiser."
+    },
+    "charts": {
+      "monthly": {
+        "title": "Kassa in / ut per månad",
+        "aria": "Stapeldiagram över månatliga in- och utbetalningar",
+        "cashIn": "Inbetalningar",
+        "cashOut": "Utbetalningar",
+        "headerMonth": "Månad"
+      },
+      "cashBridge": {
+        "title": "Kassabrygga",
+        "aria": "Vattenfallsdiagram över periodens kassadrivare",
+        "opening": "Ingående",
+        "closing": "Utgående",
+        "other": "Övrigt",
+        "headerStep": "Post",
+        "headerAmount": "Belopp",
+        "drillAria": "Visa verifikationsrader för konto {account}"
+      },
+      "showTable": "Visa datatabell",
+      "hideTable": "Dölj datatabell",
+      "loading": "Läser in diagram…"
+    },
+    "drill": {
+      "title": "Konto {account}",
+      "close": "Stäng",
+      "openLedger": "Öppna i huvudboken",
+      "importedBadge": "Importerad",
+      "empty": "Inga rader för det här kontot under perioden."
+    },
+    "print": {
+      "button": "Skriv ut / spara som PDF",
+      "generatedAt": "Genererad {timestamp}"
+    }
+  },
+  "dashboard": {
+    "chrome": {
+      "dragHandleAria": "Ändra ordning på {title}",
+      "removeAria": "Dölj {title}",
+      "open": "Öppna"
+    },
+    "picker": {
+      "open": "Anpassa",
+      "title": "Widgetar på översikten",
+      "description": "Välj vilka widgetar som visas. Dolda widgetar behåller sin plats och sina data — inget raderas.",
+      "shown": "Visas",
+      "hidden": "Dold",
+      "reset": "Återställ layout"
+    },
+    "header": {
+      "eyebrow": "Idag / Översikt",
+      "title": "Din ekonomi i ett svep.",
+      "description": "Widgetar över samma siffror som rapporterna skriver ut — dra för att ordna, och varje siffra går att borra ner till sin källa."
+    },
+    "view": {
+      "label": "Vy för Idag",
+      "dashboard": "Översikt",
+      "queue": "Granskningskö"
+    },
+    "loading": "Läser in…",
+    "emptyCanvas": "Alla widgetar är dolda. Använd Anpassa för att ta tillbaka dem.",
+    "widgets": {
+      "cash-position": {
+        "title": "Kassaläge",
+        "cashLabel": "Kassasaldo",
+        "noHistory": "Inte tillräcklig historik för en runway-uppskattning ännu.",
+        "empty": "Inga kassarörelser bokförda ännu."
+      },
+      "review-queue": {
+        "title": "Granskningskö",
+        "pending": "{count, plural, one {# väntande granskning} other {# väntande granskningar}}",
+        "empty": "Kön är tom — inget väntar på granskning.",
+        "approve": "Godkänn",
+        "batch": "Godkänn alla höga ({count})",
+        "batchTitle": "Godkänn {count, plural, one {# granskning med hög konfidens} other {# granskningar med hög konfidens}}?",
+        "batchDescription": "Varje granskning godkänns en och en genom den vanliga granskningsgrinden — du förblir beslutsfattare för varje bokning.",
+        "batchConfirm": "Godkänn {count}",
+        "batchCancel": "Avbryt",
+        "batchDone": "{count, plural, one {# granskning godkänd.} other {# granskningar godkända.}}",
+        "batchError": "Batchgodkännandet stoppades — {completed} av {total} godkända.",
+        "band": {
+          "high": "Hög konfidens",
+          "medium": "Medelhög konfidens",
+          "low": "Låg konfidens"
+        }
+      },
+      "tax-timeline": {
+        "title": "Skattedeadlines",
+        "empty": "Inga lagstadgade deadlines de närmaste 120 dagarna.",
+        "kinds": {
+          "vat-return": "Momsdeklaration",
+          "employer-declaration": "Arbetsgivardeklaration",
+          "f-skatt": "Debiterad preliminärskatt",
+          "annual-report": "Årsredovisning"
+        }
+      },
+      "observations": {
+        "title": "Observationer",
+        "empty": "Inget ovanligt just nu.",
+        "severity": {
+          "info": "Info",
+          "warning": "Varning",
+          "critical": "Kritisk"
+        }
+      },
+      "result": {
+        "title": "Resultat",
+        "periodResult": "Resultat denna period",
+        "delta": "mot föregående period",
+        "empty": "Inget bokfört denna period ännu."
+      },
+      "cash-bridge": {
+        "title": "Kassabrygga",
+        "opening": "Ingående",
+        "other": "Övrigt",
+        "closing": "Utgående",
+        "empty": "Inga kassarörelser denna period."
+      },
+      "vat-status": {
+        "title": "Momsläge",
+        "toPay": "Moms att betala",
+        "toRefund": "Moms att få tillbaka",
+        "period": "Period {token}",
+        "setAside": "Sätt undan detta för Skatteverket tills deklarationen förfaller.",
+        "empty": "Ingen momsaktivitet denna period."
+      },
+      "recent-activity": {
+        "title": "Senaste aktivitet",
+        "system": "System",
+        "empty": "Inga huvudbokshändelser ännu."
+      },
+      "integrity": {
+        "title": "Huvudbokens integritet",
+        "lastEvent": "Senaste händelse",
+        "headHash": "Topphash",
+        "brokenHint": "Händelsekedjan kunde inte verifieras — loggen kan ha ändrats. Utred innan du litar på rapporterna."
+      },
+      "getting-started": {
+        "title": "Kom igång",
+        "progress": "{done} av {total} klara",
+        "stepDone": "klar",
+        "steps": {
+          "capture": {
+            "label": "Fånga ditt första underlag",
+            "hint": "Kamera, uppladdning eller inklistring — det landar som ett lokalt utkast först."
+          },
+          "approve": {
+            "label": "Godkänn en granskning",
+            "hint": "Inget bokförs i huvudboken utan ditt beslut."
+          },
+          "import": {
+            "label": "Importera din SIE-historik",
+            "hint": "Ta med tidigare bokföring från vilket svenskt system som helst."
+          },
+          "advisor": {
+            "label": "Fråga rådgivaren",
+            "hint": "Grundade svar med citerade svenska källor (per webbläsare)."
+          },
+          "profile": {
+            "label": "Ange din företagsprofil",
+            "hint": "Räkenskapsår och momsperiod styr dina deadlines."
+          }
+        },
+        "allDoneTitle": "Du är igång.",
+        "allDoneHint": "Alla steg är klara. Dölj det här kortet med dess ✕ eller under Anpassa när du vill — det tar inte bort sig självt."
+      }
+    }
+  },
+  "observations": {
+    "cashRunway": {
+      "positive": "Kassan växer — {cash, number} på banken och cirka {monthlyNet, number} tillförs per månad.",
+      "burning": "Cirka {runwayMonths, number} månaders runway — {cash, number} i kassan vid en burn på {monthlyBurn, number} per månad.",
+      "action": "Öppna kassabryggan"
+    },
+    "expenseAnomaly": {
+      "spike": "{account} {accountName} ligger på {amount, number} den här månaden — normalt cirka {typicalAmount, number}.",
+      "action": "Öppna huvudboken"
+    },
+    "vatSetAside": {
+      "setAside": "Sätt undan {amount, number} för moms för {periodLabel}.",
+      "action": "Öppna momsdeklarationen"
+    },
+    "deadlineProximity": {
+      "due": "Lagstadgad deadline {dueDate} — {daysUntil, plural, =0 {förfaller idag} one {# dag kvar} other {# dagar kvar}}.",
+      "action": "Öppna skattekalendern"
+    },
+    "missingEvidence": {
+      "count": "{count, plural, one {# verifikat saknar underlag} other {# verifikat saknar underlag}} — bokföringslagen kräver en verifikation bakom varje bokning.",
+      "action": "Öppna Fånga"
+    },
+    "supplierSpike": {
+      "spike": "{supplier} ligger på {amount, number} den här månaden — normalt cirka {typicalAmount, number}.",
+      "action": "Öppna leverantörer"
+    }
+  },
+  "advisor": {
+    "eyebrow": "Rådgivare",
+    "title": "Fråga AI om dina siffror",
+    "description": "Rådgivaren förklarar, citerar svenska källor och utarbetar granskningsåtgärder — men den bokför aldrig något. Varje förslag väntar på ditt uttryckliga godkännande i granskningsgrinden.",
+    "article50": {
+      "badge": "AI-assistent",
+      "statement": "Du chattar med ett AI-system (EU:s AI-förordning, artikel 50). Svaren är AI-genererade och grundade i ditt rapportpaket; åtgärder som rådgivaren föreslår utförs först efter ditt uttryckliga godkännande via den vanliga granskningskön."
+    },
+    "aiGeneratedMarker": "AI-genererat",
+    "emptyState": "Fråga om kassaläget, momsen, deadlines eller granskningskön. Svaren citerar sina källor och förslag väntar alltid på ditt godkännande.",
+    "promptsLabel": "Föreslagna frågor",
+    "input": {
+      "label": "Ställ en grundad fråga",
+      "placeholder": "Hur ser kassaläget ut just nu?",
+      "hint": "Rådgivaren citerar svenska källor och föreslår åtgärder — ingenting bokförs utan ditt uttryckliga godkännande.",
+      "send": "Skicka",
+      "streaming": "Svarar…"
+    },
+    "threads": {
+      "title": "Konversationer",
+      "subtitle": "Sparas lokalt i den här webbläsaren.",
+      "empty": "Ställ en fråga för att starta din första konversation på den här enheten.",
+      "new": "Ny konversation",
+      "untitled": "Namnlös konversation"
+    },
+    "provenance": {
+      "aria": "Källor"
+    },
+    "approval": {
+      "awaiting": "Utkast av AI — väntar på ditt godkännande",
+      "account": "Konto",
+      "vat": "Momskod",
+      "amount": "Belopp",
+      "confidence": "Konfidens",
+      "gateNote": "Ett godkännande utför det vanliga granskningsbeslutet — granskningsgrinden förblir den enda vägen till en bokförd verifikation.",
+      "approve": "Godkänn",
+      "reject": "Avvisa",
+      "respondedApproved": "Godkännandet skickat — rådgivaren bekräftar…",
+      "respondedRejected": "Avvisningen skickad — rådgivaren bekräftar…"
+    },
+    "tool": {
+      "drafting": "Utarbetar ett förslag…",
+      "approvedRow": "Godkänt via granskningsgrinden",
+      "deniedTitle": "Ingenting bokfördes",
+      "deniedRow": "Förslaget avvisades — posten ligger kvar i granskningskön för ditt manuella beslut."
+    },
+    "error": {
+      "fallback": "Rådgivarens förfrågan kunde inte slutföras.",
+      "dismiss": "Stäng"
+    },
+    "disabled": {
+      "eyebrow": "AI-hållning",
+      "title": "AI-rådgivaren är avstängd",
+      "message": "Den här arbetsytan har rådgivaren avstängd under AI-hållning. Bokföring, insamling och granskningskön fungerar utan den — ingen AI körs i bakgrunden.",
+      "cta": "Öppna inställningar för AI-hållning"
+    },
+    "prompts": {
+      "cashRunway": "Hur ser vårt kassaläge och vår runway ut?",
+      "expenseAnomaly": "Varför är kostnaderna ovanligt höga den här månaden?",
+      "vatSetAside": "Hur mycket moms bör vi sätta undan?",
+      "deadlineProximity": "Vilka lagstadgade datum närmar sig?",
+      "missingEvidence": "Vilka verifikat saknar underlag?",
+      "supplierSpike": "Vilken leverantörskostnad har ökat mest den här månaden?",
+      "cashPosition": "Hur ser kassaläget ut just nu?",
+      "vatDeadline": "När ska nästa momsdeklaration lämnas?",
+      "representationRules": "Vad gäller för avdrag vid representation?"
+    }
+  },
+  "settings": {
+    "aiPosture": {
+      "about": {
+        "label": "Om den här AI:n",
+        "title": "Vad som körs här, och under vems beslutanderätt",
+        "runtimeMode": "Körläge",
+        "provider": "AI-leverantör",
+        "model": "Modell",
+        "host": "Endpoint-värd",
+        "status": "Status",
+        "operational": "I drift",
+        "notOperational": "Ej i drift",
+        "modes": {
+          "demo": "Demo",
+          "normal": "Normal"
+        },
+        "providers": {
+          "azure-openai": "Azure OpenAI",
+          "local-demo": "Lokal demokörning (deterministisk, ingen extern AI-tjänst)",
+          "unavailable": "Otillgänglig — ingen AI-leverantör är konfigurerad"
+        },
+        "approvalStatement": "AI:n föreslår och utarbetar — den bokför aldrig. Varje AI-förslag blir en bokföringspost först efter ditt uttryckliga godkännande i granskningskön.",
+        "loading": "Läser in körningsinformation…",
+        "unavailable": "Körningsinformationen kunde inte läsas in."
+      },
+      "article50": "Transparensmeddelande (EU:s AI-förordning, artikel 50): du informeras alltid när du interagerar med ett AI-system här, och AI-genererat innehåll är märkt som sådant.",
+      "toggles": {
+        "label": "AI-ytor",
+        "advisor": {
+          "title": "AI-rådgivarchatt",
+          "description": "Den grundade rådgivaren på rådgivarskärmen. Avstängd döljs chatten — bokföring, insamling och granskningskön fungerar utan den."
+        },
+        "suggestions": {
+          "title": "AI-förslag i granskningskön",
+          "description": "Konfidensband, föreslagna konton och AI-resonemang på granskningskort och widgetar. Avstängda förblir varje mänsklig granskningsåtgärd fullt användbar."
+        }
+      },
+      "needsCompany": "Spara företagsinställningarna först — AI-hållningen lagras tillsammans med dem.",
+      "needsCompanyCta": "Öppna företagsinställningar",
+      "saved": "AI-hållningen sparad.",
+      "saveError": "AI-hållningen kunde inte sparas."
+    },
+    "fiscalYear": {
+      "eyebrow": "Inställningar / Räkenskapsår & moms",
+      "title": "Räkenskapsår och momstakt.",
+      "description": "Räkenskapsårets startmånad styr varje kvartalsfönster i rapporterna och den lagstadgade skattetidslinjen. Momsredovisningstakten visas här och redigeras tillsammans med företagsprofilen.",
+      "startLabel": "Räkenskapsårets startmånad",
+      "previewNote": "Fönstret och deadlinen nedan följer den valda startmånaden — spara för att tillämpa den på rapporter och skattetidslinjen.",
+      "currentWindow": "Innevarande räkenskapsår",
+      "arsredovisning": "Nästa årsredovisningsdeadline",
+      "arsredovisningBody": "Årsredovisning till Bolagsverket för räkenskapsåret som slutar {fyEnd}.",
+      "vatPeriodLabel": "Momsredovisningsperiod",
+      "vatPeriods": { "monthly": "Månadsvis", "quarterly": "Kvartalsvis", "yearly": "Årsvis" },
+      "vatEditHint": "Redigeras tillsammans med företagsprofilen.",
+      "vatEditLink": "Öppna företagsinställningar",
+      "needsCompany": "Spara företagsinställningarna först — räkenskapsåret lagras på arbetsytans profil tillsammans med dem.",
+      "needsCompanyCta": "Öppna företagsinställningar",
+      "sourceLabel": "Källa",
+      "save": "Spara räkenskapsår",
+      "saving": "Sparar…",
+      "saved": "Räkenskapsåret sparat.",
+      "saveError": "Räkenskapsåret kunde inte sparas."
+    },
+    "compliance": {
+      "eyebrow": "Inställningar / Regelefterlevnad",
+      "title": "Bokföringens integritet, verifierad.",
+      "description": "Hashkedjans utlåtande för arbetsytans append-only-händelselogg, de senaste händelserna med aktörsattribution och den lagstadgade arkiveringsbas som loggen finns till för att uppfylla.",
+      "chainLabel": "Hashkedja",
+      "loading": "Verifierar händelsekedjan…",
+      "unavailable": "Integritetssammanfattningen kunde inte läsas in.",
+      "eventCount": "Händelser",
+      "basTemplate": "Kontomall",
+      "basAccounts": "{count, plural, one {# konto} other {# konton}}",
+      "headHash": "Kedjans topphash",
+      "lastEvent": "Senaste händelse",
+      "scopeNote": "Enbart länkverifiering: genesis plus föregående-hash-länkar — borttagning, omordning och insättning upptäcks. Omberäkning av innehållet är en dokumenterad uppföljning, inte något denna panel påstår.",
+      "recentTitle": "Senaste händelser",
+      "recentEmpty": "Inga händelser ännu — kedjan börjar med din första insamling.",
+      "retentionTitle": "Arkiveringsbas",
+      "retentionBody": "Räkenskapsinformation bevaras till och med det sjunde året efter utgången av det kalenderår då räkenskapsåret avslutades. Den append-only-förda huvudboken och de oföränderliga underlagen är hur arbetsytan uppfyller den skyldigheten.",
+      "sourceLabel": "Källa",
+      "retentionLink": "Öppna arkiveringspolicyn"
+    },
+    "retention": {
+      "eyebrow": "Inställningar / Arkivering",
+      "title": "Inget raderas. Det är policyn.",
+      "description": "Bokföringslagens sjuåriga arkiveringsskyldighet, och hur den append-only-förda huvudboken och den oföränderliga underlagslagringen uppfyller den i varje körläge.",
+      "ledgerTitle": "Append-only-huvudbok",
+      "ledgerBody": "Bokföringshändelser redigeras eller raderas aldrig. Rättelser läggs till som nya händelser med aktörs- och tidsstämpelproveniens, så historiken förblir komplett per konstruktion.",
+      "evidenceTitle": "Oföränderliga underlag",
+      "evidenceBody": "Underlagsfiler skrivs en gång med registrerad SHA-256-hash och skrivs aldrig över. Huvudboken refererar till dem; den ersätter dem aldrig.",
+      "statuteTitle": "Lagstadgad skyldighet — sju år",
+      "statuteBody": "Räkenskapsinformation ska bevaras till och med det sjunde året efter utgången av det kalenderår då räkenskapsåret avslutades (Bokföringslagen 7 kap. 2 §).",
+      "sourceLabel": "Källa",
+      "storageTitle": "Var dina räkenskaper finns",
+      "storageDemoTitle": "Demoläge",
+      "storageDemo1": "Bokföringshändelser ligger i API:ets minneslagring och nollställs när det startas om.",
+      "storageDemo2": "Insamlingsutkast hålls lokalt i din webbläsare (IndexedDB) tills de befordras.",
+      "storageDemo3": "Ingen demodata lämnar din maskin — och inget i demoläget uppfyller den lagstadgade arkiveringsskyldigheten.",
+      "storageNormalTitle": "Normalläge",
+      "storageNormal1": "Bokföringshändelser lagras append-only i Supabase Postgres (Stockholm).",
+      "storageNormal2": "Underlagsfiler lagras i Azure Blob Storage (Sweden Central), skrivna via kortlivade signerade URL:er.",
+      "storageNormal3": "Båda lagren håller räkenskaperna inom EU, i ordnat och åtkomligt skick.",
+      "roadmapTitle": "Vad som inte finns ännu",
+      "roadmapBody": "Reglage för legal hold per klass och verktyg för arkiveringstidens utgång är inte byggda, så det finns inga kontroller att visa här. När de landar blir varje spärr en attribuerad bokföringshändelse — inte en tyst flagga."
+    },
+    "team": {
+      "eyebrow": "Inställningar / Team & roller",
+      "title": "En arbetsyta, en aktör — ärligt.",
+      "description": "Det finns ännu inget inloggnings- eller inbjudningssystem. Varje bokföringshändelse registrerar ändå vem som gjorde den, så attributionsryggraden som fleranvändarläge kräver finns redan på plats.",
+      "currentTitle": "Aktuell aktör",
+      "currentRole": "Ägare — du",
+      "currentBody": "Varje åtgärd i den här arbetsytan — insamlingar, godkännanden, importer, inställningar — registreras i händelseloggen under detta aktörs-id.",
+      "actorsTitle": "Aktörer i senaste händelserna",
+      "actorsBody": "Attribution läst direkt från de senaste händelserna i huvudboken — de enda roller som finns i dag.",
+      "actorsLoading": "Läser senaste händelserna…",
+      "actorsUnavailable": "Attributionen från senaste händelserna kunde inte läsas in.",
+      "actorsEmpty": "Inga händelser ännu.",
+      "actorEvents": "{count, plural, one {# händelse} other {# händelser}}",
+      "seatTitle": "Redovisningskonsultplats",
+      "seatBadge": "Planerad",
+      "seatBody": "En kostnadsfri plats för din redovisningskonsult är ett designåtagande: konsulten granskar och godkänner i samma granskningsgrind som du, med eget aktörs-id på varje beslut. Händelseattributionen ovan är sömmen den kopplas in i.",
+      "inviteNote": "Inbjudningar är inte byggda ännu. Det finns medvetet inget inbjudningsformulär här — när det finns kommer det att vara på riktigt."
+    },
+    "integrations": {
+      "eyebrow": "Inställningar / Integrationer",
+      "title": "Vad som är anslutet, ärligt.",
+      "description": "Verkliga signaler från det körande systemet — inga dekorativa anslutningskort. Demoläget byter ut varje extern tjänst mot en uttrycklig lokal stubbe.",
+      "modeLine": "Webbskal: {web} · API: {api}",
+      "modeLoading": "Webbskal: {web} · API: kontrollerar…",
+      "modeUnavailable": "Webbskal: {web} · API: kan inte nås",
+      "modes": { "demo": "Demo", "normal": "Normal" },
+      "status": {
+        "available": "Tillgänglig",
+        "operational": "I drift",
+        "notOperational": "Ej i drift",
+        "notReported": "Rapporteras ej",
+        "demoStub": "Demostubbe",
+        "planned": "Planerad",
+        "notBuilt": "Ej byggd"
+      },
+      "sie": {
+        "title": "SIE 4-import & -export",
+        "body": "Spec-giltig SIE 4 i båda riktningarna (PC8/CP437). Import spelar upp verifikat genom den append-only-förda huvudboken; export serialiserar journalen.",
+        "importCta": "Importera på Insamling",
+        "exportCta": "Exportera på Rapporter"
+      },
+      "ai": {
+        "title": "AI-rådgivare (Azure OpenAI)",
+        "bodyDemo": "Demokörningen svarar deterministiskt utifrån dina projektioner — ingen extern AI-tjänst anropas.",
+        "bodyNormal": "Grundad rådgivarchatt och formulering av rapportkommentarer. Konfigurationen rapporteras av API:et — modell och värd, aldrig hemligheter.",
+        "model": "Modell",
+        "host": "Endpoint-värd",
+        "loading": "Läser körningsinformation…",
+        "unavailable": "Körningsinformationen kunde inte läsas in."
+      },
+      "blob": {
+        "title": "Underlagslagring (Azure Blob)",
+        "bodyDemo": "Demoläget lagrar ingenting i Azure — uppladdningar går till en uttrycklig lokal stubbe.",
+        "bodyNormal": "Underlagsfiler skrivs till Azure Blob Storage via kortlivade User-Delegation-SAS-URL:er utfärdade av API:ets hanterade identitet.",
+        "note": "Konfiguration per tjänst exponeras inte av dagens API-yta — kortet rapporterar körläget, inte en live-sondering av lagringen."
+      },
+      "ocr": {
+        "title": "Dokumentextraktion (Azure Document Intelligence)",
+        "bodyDemo": "Demoläget härleder deterministiska extraktionsfält från själva filen — rimligt, ärligt och offline.",
+        "bodyNormal": "Fakturor och kvitton extraheras med Azure Document Intelligence när det är konfigurerat; utan konfiguration faller API:et tillbaka på den deterministiska stubben.",
+        "note": "Konfiguration per tjänst exponeras inte av dagens API-yta — kortet rapporterar körläget, inte en live-sondering av extraktionen."
+      },
+      "peppol": {
+        "title": "Peppol-beredskap för e-faktura",
+        "what": "Peppol är EU:s nätverk för strukturerade e-fakturor — alltmer standardrälsen för B2B- och offentlig fakturering i Europa.",
+        "ready": "Arkitektoniskt redo: varje bokföring är en append-only-händelse med strukturerade, BAS-kodade verifikatrader och oföränderliga underlag — den form ett Peppol-dokument mappar mot.",
+        "honest": "Transporten är inte implementerad. JPX kan ännu inte skicka eller ta emot Peppol-dokument, och ingen accesspunkt är ansluten."
+      },
+      "email": {
+        "title": "E-postintag",
+        "body": "En intagsadress per arbetsyta som gör vidarebefordrade fakturor till insamlingsutkast. Inte byggd ännu — det finns ingen adress att visa."
+      }
+    }
+  }
+}

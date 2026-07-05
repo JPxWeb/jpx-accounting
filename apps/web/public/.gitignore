@@ -1,0 +1,6 @@
+# Re-include shipped brand/PWA assets: the root .gitignore excludes *.png as
+# "screenshots / design artifacts", but these are generated production assets
+# (see scripts/generate-brand-assets.mjs) that must be committed and deployed.
+!icons/*.png
+!apple-touch-icon.png
+!og-image.png
