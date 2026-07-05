@@ -89,5 +89,115 @@ export default defineConfig([
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   }),
+  // ── Architectural seam gates ───────────────────────────────────────────────
+  // The manual grep gates documented in AGENTS.md ("@dnd-kit only in
+  // sortable-grid.tsx", "ai/@ai-sdk only in advisor dirs", "recharts never in
+  // the dashboard") are now enforced by `pnpm lint` / CI. ESLint applies only
+  // the LAST matching `no-restricted-imports` per file, so exemptions are
+  // expressed as ordered override blocks — each listing the FULL restriction set
+  // for the files it targets — never as block-level `ignores` (which would
+  // silently clobber one another on the same rule key). Adopted from the
+  // agent-harness `no-restricted-imports` pattern; adapted to jpx's seams.
+  {
+    // Web baseline: the dnd kit and the AI SDK stay out of general web code.
+    files: WEB_FILES,
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@dnd-kit", "@dnd-kit/*"],
+              message: "@dnd-kit belongs only in components/dashboard/sortable-grid.tsx (the one dnd abstraction).",
+            },
+            {
+              group: ["ai", "ai/*", "@ai-sdk/*"],
+              message:
+                "ai / @ai-sdk (web) belong only in components/advisor/** — keeps the AI SDK out of the general web bundle.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Dashboard additionally bars recharts (it uses dependency-free inline SVG minis).
+    files: ["apps/web/components/dashboard/**/*.{js,jsx,ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@dnd-kit", "@dnd-kit/*"],
+              message: "@dnd-kit belongs only in components/dashboard/sortable-grid.tsx (the one dnd abstraction).",
+            },
+            { group: ["ai", "ai/*", "@ai-sdk/*"], message: "ai / @ai-sdk (web) belong only in components/advisor/**." },
+            {
+              group: ["recharts", "recharts/*"],
+              message: "The dashboard uses inline SVG minis — recharts stays in components/reports/charts.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // The ONE dnd abstraction: @dnd-kit allowed here; AI SDK + recharts still barred.
+    files: ["apps/web/components/dashboard/sortable-grid.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            { group: ["ai", "ai/*", "@ai-sdk/*"], message: "ai / @ai-sdk (web) belong only in components/advisor/**." },
+            {
+              group: ["recharts", "recharts/*"],
+              message: "The dashboard uses inline SVG minis — recharts stays in components/reports/charts.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Advisor (web half): the AI SDK is allowed here; @dnd-kit still barred.
+    files: ["apps/web/components/advisor/**/*.{js,jsx,ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@dnd-kit", "@dnd-kit/*"],
+              message: "@dnd-kit belongs only in components/dashboard/sortable-grid.tsx.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // API baseline: the AI SDK is confined to services/api/src/advisor.
+    files: ["services/api/src/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["ai", "ai/*", "@ai-sdk/*"],
+              message: "ai / @ai-sdk (API) belong only in services/api/src/advisor/**.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Advisor (API half): the AI SDK is allowed here.
+    files: ["services/api/src/advisor/**/*.ts"],
+    rules: { "no-restricted-imports": "off" },
+  },
   eslintConfigPrettier,
 ]);
