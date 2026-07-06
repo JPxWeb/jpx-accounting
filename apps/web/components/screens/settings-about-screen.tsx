@@ -4,6 +4,7 @@ import { formatRuntimeModeLabel } from "../../lib/presentation";
 import { webRuntimeConfig } from "../../lib/runtime-config";
 import { useWorkspaceProfile } from "../providers/workspace-profile-provider";
 import { ThemeToggle } from "../theme-toggle";
+import { OnboardingReplayPanel } from "../onboarding/micro-hints";
 import { ScreenHeader } from "../ui/screen-header";
 
 function ComingSoon({ title, body, testId }: { title: string; body: string; testId?: string }) {
@@ -83,6 +84,11 @@ export function SettingsAboutScreen() {
             </ul>
           </section>
         </div>
+      </div>
+
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold text-foreground">Guidance</h2>
+        <OnboardingReplayPanel />
       </div>
 
       <div className="space-y-4">

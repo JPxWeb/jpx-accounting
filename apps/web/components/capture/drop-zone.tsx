@@ -39,6 +39,7 @@ export function DropZone({ onFiles, inputRef }: DropZoneProps) {
       tabIndex={0}
       aria-label={t("aria")}
       data-testid="capture-dropzone"
+      data-tour="capture-dropzone"
       data-drag-active={dragActive || undefined}
       onClick={() => fileInputRef.current?.click()}
       onKeyDown={(event) => {

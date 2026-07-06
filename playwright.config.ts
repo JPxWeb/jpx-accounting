@@ -26,7 +26,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "pnpm --filter @jpx-accounting/api exec tsx src/index.ts",
+      command: "corepack pnpm --filter @jpx-accounting/api exec tsx src/index.ts",
       url: `${apiBaseUrl}/health`,
       reuseExistingServer: false,
       env: {
@@ -36,7 +36,7 @@ export default defineConfig({
       },
     },
     {
-      command: "pnpm --filter @jpx-accounting/web exec next start --hostname 127.0.0.1 --port 3200",
+      command: "corepack pnpm --filter @jpx-accounting/web exec next start --hostname 127.0.0.1 --port 3200",
       url: baseURL,
       reuseExistingServer: false,
       env: {

@@ -2,7 +2,7 @@
 
 Cross-tool contract per JPx ADR DL-001: this file wins on conflict; `CLAUDE.md` is the deep
 project memory (Claude Code loads it automatically — other tools should read it too);
-`docs/CONVENTIONS.md` holds 28 incident-derived rules; `docs/DEV_STATUS.md` is current truth.
+`docs/CONVENTIONS.md` holds 29 incident-derived rules; `docs/DEV_STATUS.md` is current truth.
 
 ## What this is
 

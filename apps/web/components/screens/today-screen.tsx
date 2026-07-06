@@ -60,6 +60,7 @@ function TodayViewToggle({ active }: { active: TodayView }) {
       <Link
         href="/today?view=queue"
         data-testid="today-view-queue"
+        data-tour="today-view-queue"
         aria-current={active === "queue" ? "page" : undefined}
         className={linkClass(active === "queue")}
       >

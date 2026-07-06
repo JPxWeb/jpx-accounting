@@ -23,6 +23,8 @@ import { TaxTimelineRow } from "../reports/tax-timeline-row";
 import { VatReturnTable } from "../reports/vat-return-table";
 import { ScreenHeader } from "../ui/screen-header";
 import { SectionLabel } from "../ui/section-label";
+import { useOnboarding } from "../onboarding/onboarding-context";
+import { MicroHintLink } from "../onboarding/micro-hints";
 import { ScreenSkeleton } from "../ui/skeleton";
 import { StatusBadge } from "../ui/status-badge";
 import { UnavailableState } from "../ui/unavailable-state";
@@ -51,6 +53,8 @@ const CashBridgeChart = dynamic(() => import("../reports/charts").then((mod) => 
 const Sparkline = dynamic(() => import("../reports/charts").then((mod) => mod.Sparkline), { ssr: false });
 export function ReportsScreen() {
   const t = useTranslations("reports");
+  const tOnboarding = useTranslations("onboarding.replay");
+  const { startTour } = useOnboarding();
   const { raw } = usePeriodScope();
   const [exporting, setExporting] = useState(false);
   // The drill drawer's open account IS the ?drill= URL param (Task 4.8); the
@@ -74,6 +78,9 @@ export function ReportsScreen() {
   });
 
   const pack = packQuery.data;
+  const hasDrillLines =
+    (pack?.balanceSheet.assets.lines.length ?? 0) > 0 ||
+    (pack?.balanceSheet.equityAndLiabilities.lines.length ?? 0) > 0;
 
   async function exportSie() {
     setExporting(true);
@@ -127,6 +134,14 @@ export function ReportsScreen() {
             <div className="flex flex-wrap gap-3 sm:justify-end">
               <button
                 type="button"
+                data-testid="reports-onboarding-help"
+                onClick={() => startTour("reports-drill", { force: true })}
+                className="rounded-lg border border-border px-5 py-3 text-sm font-semibold text-foreground"
+              >
+                {tOnboarding("reportsHelp")}
+              </button>
+              <button
+                type="button"
                 data-testid="print-report"
                 onClick={() => window.print()}
                 className="rounded-lg bg-surface-muted px-5 py-3 text-sm font-semibold text-foreground shadow-sm"
@@ -150,6 +165,9 @@ export function ReportsScreen() {
 
       <div className="flex flex-wrap items-center gap-3 print:hidden">
         <PeriodSelector />
+        {hasDrillLines ? (
+          <MicroHintLink tourId="hint-reports-drill" testId="onboarding-reports-drill-hint" messageKey="reportsDrill" />
+        ) : null}
       </div>
 
       <KpiRow

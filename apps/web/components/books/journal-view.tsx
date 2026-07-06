@@ -42,7 +42,7 @@ export function JournalView() {
   });
 
   return (
-    <div className="space-y-3" data-testid="journal-view">
+    <div className="space-y-3" data-testid="journal-view" data-tour="books-journal">
       {supplier ? (
         <div className="flex items-center gap-2">
           <span

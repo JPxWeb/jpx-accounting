@@ -20,6 +20,7 @@ import {
 import { ReviewCard } from "./review-card";
 import { ReviewEditSheet } from "./review-edit-sheet";
 import { ReviewFilters } from "./review-filters";
+import { HotkeyStrip } from "../onboarding/hotkey-strip";
 import { MetricCard } from "../ui/metric-card";
 import { ScreenHeader } from "../ui/screen-header";
 import { SectionLabel } from "../ui/section-label";
@@ -254,6 +255,11 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
             </div>
             <ReviewFilters />
           </div>
+          {pendingReviews.length > 0 ? (
+            <div className="mt-4">
+              <HotkeyStrip />
+            </div>
+          ) : null}
           {actionError ? (
             <p className="mt-4 rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">{actionError}</p>
           ) : null}

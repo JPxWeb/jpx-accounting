@@ -4,11 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { parseAsString, useQueryState } from "nuqs";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { usePeriodScope } from "../../hooks/use-period-scope";
 import { apiClient } from "../../lib/client";
 import { useDialogFocusTrap } from "../../lib/focus-trap";
+import { registerGlobalTourBlocker } from "../onboarding/onboarding-shell";
 import { Money } from "../ui/money";
 import { SectionLabel } from "../ui/section-label";
 import { buildVoucherLookup, VoucherLink } from "./voucher-link";
@@ -32,6 +33,10 @@ export function AccountDrillDrawer() {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const close = useCallback(() => void setDrill(null), [setDrill]);
   useDialogFocusTrap(panelRef, open, close);
+
+  useEffect(() => {
+    registerGlobalTourBlocker("account-drill-drawer", open);
+  }, [open]);
 
   const journalQuery = useQuery({
     queryKey: ["reports", "journal", from, to],

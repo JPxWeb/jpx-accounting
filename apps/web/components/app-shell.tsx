@@ -15,6 +15,8 @@ import { useDialogFocusTrap } from "../lib/focus-trap";
 import { CAPTURE_ACCEPT, captureFiles } from "../lib/promotion";
 import { formatRuntimeModeLabel } from "../lib/presentation";
 import { webRuntimeConfig } from "../lib/runtime-config";
+import { registerGlobalTourBlocker } from "./onboarding/onboarding-shell";
+import { MicroHintLink } from "./onboarding/micro-hints";
 import { CommandPalette } from "./command-palette";
 import { useWorkspaceProfile } from "./providers/workspace-profile-provider";
 import { ThemeToggle } from "./theme-toggle";
@@ -107,6 +109,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timeoutId);
   }, [captureStatus]);
 
+  useEffect(() => {
+    registerGlobalTourBlocker("capture-sheet", captureOpen);
+  }, [captureOpen]);
+
+  useEffect(() => {
+    registerGlobalTourBlocker("command-palette", paletteOpen);
+  }, [paletteOpen]);
+
   function handleCaptureMode(mode: { key: (typeof draftModeKeys)[number]; label: string }) {
     if (mode.key === "camera") {
       sheetCameraInputRef.current?.click();
@@ -196,6 +206,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               className="glass-panel rounded-xl p-3"
               aria-label={t("primaryNavAria")}
               data-testid="desktop-navigation-links"
+              data-tour="primary-nav-desktop"
             >
               {railNavigation.map((item) => {
                 const Icon = item.icon;
@@ -206,6 +217,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     key={item.href}
                     href={item.href}
                     aria-current={active ? "page" : undefined}
+                    data-tour={`nav-${item.key}`}
                     className={`flex items-start gap-3 rounded-lg px-4 py-4 transition ${
                       active ? "bg-primary text-white shadow-sm" : "text-foreground hover:bg-surface-muted"
                     }`}
@@ -240,6 +252,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 type="button"
                 onClick={openCaptureSheet}
                 data-testid="capture-open-desktop"
+                data-tour="capture-open-desktop"
                 className="capture-button-desktop mt-4 w-full items-center justify-center gap-2 rounded-md bg-primary px-5 py-4 text-sm font-semibold text-white shadow-md"
               >
                 <CaptureIcon className="size-4" />
@@ -297,8 +310,33 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
                 <button
                   type="button"
+                  onClick={() => setPaletteOpen(true)}
+                  data-testid="command-palette-open"
+                  data-tour="command-palette-open"
+                  aria-label={t("topbar.searchAria")}
+                  className="inline-flex rounded-lg glass-panel-soft px-3 py-2 text-xs font-medium text-muted-foreground"
+                >
+                  {t("topbar.searchLabel")}
+                </button>
+                <Link
+                  href="/assistant"
+                  data-tour="mobile-advisor-link"
+                  className="rounded-lg glass-panel-soft px-3 py-2 text-xs font-medium text-muted-foreground lg:hidden"
+                >
+                  {t("nav.advisor.label")}
+                </Link>
+                <div className="lg:hidden">
+                  <MicroHintLink
+                    tourId="hint-mobile-advisor"
+                    testId="onboarding-mobile-advisor-hint"
+                    messageKey="mobileAdvisor"
+                  />
+                </div>
+                <button
+                  type="button"
                   onClick={openCaptureSheet}
                   data-testid="capture-open-mobile"
+                  data-tour="capture-open-mobile"
                   aria-label={t("topbar.captureAria")}
                   className="flex size-10 items-center justify-center rounded-lg bg-primary text-white shadow-sm lg:hidden"
                 >
@@ -312,6 +350,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="page-shell page-shell-compact print:hidden">
               <div
                 data-testid="runtime-mode-banner"
+                data-tour="runtime-mode-banner"
                 className="glass-panel-soft rounded-lg border border-warning-soft px-4 py-3 text-sm text-warning"
               >
                 {t("demoBanner")}
@@ -344,6 +383,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <nav
         aria-label={t("mobileNavAria")}
         data-testid="mobile-dock"
+        data-tour="primary-nav-mobile"
         className="mobile-dock glass-chrome rounded-2xl px-2 py-2 lg:hidden print:hidden"
         data-hidden={barsHidden}
       >
@@ -357,6 +397,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 aria-label={`${t(`nav.${item.key}.label`)} — ${t(`nav.${item.key}.summary`)}`}
                 aria-current={active ? "page" : undefined}
+                data-tour={`nav-${item.key}`}
                 className={`flex flex-col items-center justify-center gap-1 rounded-lg px-2 py-3 text-center text-caption font-medium transition ${
                   active ? "bg-primary text-white" : "text-muted-foreground"
                 }`}

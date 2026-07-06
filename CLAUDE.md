@@ -10,7 +10,7 @@ Prefer **official docs**: use Context7 (e.g. `/vercel/next.js` pinned to the rep
 
 ```bash
 pnpm install                  # Install all workspace dependencies (esbuild/sharp builds allowlisted — see pnpm-workspace.yaml)
-pnpm dev                     # Parallel: Next + API
+pnpm dev                     # Parallel: Next + API (root scripts use corepack pnpm when bare pnpm is not on PATH)
 pnpm dev:web                  # Start Next.js dev server (http://localhost:3002 — see apps/web/package.json)
 pnpm dev:api                  # Start Hono API with tsx watch (default http://localhost:3001)
 pnpm lint                     # ESLint (root eslint.config.mjs)
@@ -101,10 +101,11 @@ Reuse before reinventing — the following modules already exist in `apps/web/`:
 - **shadcn/ui primitives** live in `apps/web/components/ui/` alongside bespoke project components. Distinguishing them by import is the convention: shadcn primitives import `cn` from `@/lib/utils` and `cva` from `class-variance-authority`; bespoke components (`icons.tsx`, `metric-card.tsx`, `screen-header.tsx`, `section-label.tsx`, `status-badge.tsx`, `unavailable-state.tsx`) don't. Add new shadcn primitives via `pnpm dlx shadcn@latest add <name>` (config in `apps/web/components.json` is style `base-nova` / baseColor `neutral` / lucide). Skeleton is the merged exception — exports both shadcn `Skeleton` and bespoke `ScreenSkeleton`.
 - **Sonner toaster + Skip-to-content link** are mounted at the root layout (`apps/web/app/layout.tsx`). Call `toast("...")` from anywhere; the toaster surfaces bottom-right. The skip-to-content link targets `#main-content` — when adding new top-level routes, render an element with `id="main-content"` to make the link functional for keyboard users.
 - **useIsMobile hook** at `apps/web/hooks/use-mobile.ts` uses `useSyncExternalStore` (not `useState+useEffect` — ESLint's `react-hooks/set-state-in-effect` rule fails the latter). SSR-safe; returns `false` during render, real value after hydration.
+- **Onboarding (opt-in tours)** — `apps/web/components/onboarding/` + `apps/web/lib/onboarding/`. Checklist milestones are data-derived in `getting-started-widget.tsx` (`deriveMilestones`); tour completion is opt-in localStorage (`onboarding-storage.ts`). Joyride v3: use `skipBeacon: true` on steps (not v2 `disableBeacon`). `OnboardingShell` wraps `(shell)/layout.tsx`; tour blockers via `registerGlobalTourBlocker`. E2E: `tests/e2e/onboarding.spec.ts`. See CONVENTIONS rule 29.
 
 ### E2E test setup
 
-Playwright runs sequentially (1 worker) against dedicated test servers: API on port 3201 (demo mode, test reset enabled), web on port 3200. Both desktop and mobile (Pixel 7) projects. Tests must `pnpm build:e2e` first since the web server uses `next start`.
+Playwright runs sequentially (1 worker) against dedicated test servers: API on port 3201 (demo mode, test reset enabled), web on port 3200. Both desktop and mobile (Pixel 7) projects. Tests must `pnpm build:e2e` first since the web server uses `next start`. `playwright.config.ts` webServer commands use `corepack pnpm` (bare `pnpm` is not on PATH in some Windows/agent shells).
 
 Visual regression (`tests/e2e/visual-regression.spec.ts`, 20 themed full-page baselines): clock-derived UI — topbar timestamp, journal/archive dates, event hashes, activity dates — must carry a `data-visual-mask` attribute; the spec masks those regions so baselines stay date-stable. Re-baseline only with `pnpm test:e2e:visual:update` after reviewing every diff image.
 

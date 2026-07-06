@@ -5,12 +5,13 @@ import { defaultCoaTemplate, findCoaAccount } from "@jpx-accounting/domain";
 import { useMutation } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { useTranslations } from "next-intl";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { apiClient } from "../../lib/client";
 import { useDialogFocusTrap } from "../../lib/focus-trap";
 import { getErrorMessage } from "../../lib/request-errors";
 import { WORKSPACE_IDENTITY } from "../../lib/workspace-identity";
+import { registerGlobalTourBlocker } from "../onboarding/onboarding-shell";
 import { Button } from "../ui/button";
 
 const VAT_CODES = ["VAT25", "VAT12", "VAT6", "VAT0", "NA"] as const;
@@ -100,6 +101,11 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
   const accountName = findCoaAccount(defaultCoaTemplate, accountNumber)?.name ?? accountNumber;
   const submitDisabled = !amountsValid || approveWithEdits.isPending;
   const submitError = approveWithEdits.error ? getErrorMessage(approveWithEdits.error, t("submitError")) : null;
+
+  useEffect(() => {
+    registerGlobalTourBlocker("review-edit-sheet", true);
+    return () => registerGlobalTourBlocker("review-edit-sheet", false);
+  }, []);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

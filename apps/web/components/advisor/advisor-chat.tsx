@@ -85,7 +85,7 @@ export function AdvisorChat({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-tour="advisor-chat">
       {messages.length === 0 ? (
         <div className="space-y-4">
           <p className="text-sm leading-6 text-muted-foreground">{t("emptyState")}</p>

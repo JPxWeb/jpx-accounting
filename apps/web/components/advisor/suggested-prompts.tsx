@@ -22,7 +22,7 @@ export function SuggestedPrompts({ onPick, disabled }: { onPick: (text: string) 
   if (keys.length === 0) return null;
 
   return (
-    <div>
+    <div data-tour="advisor-prompts">
       <p className="text-eyebrow">{tRoot("promptsLabel")}</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {keys.map((key) => {

@@ -53,7 +53,9 @@
     },
     "topbar": {
       "location": "Sweden Central / Stockholm",
-      "captureAria": "Fånga underlag"
+      "captureAria": "Fånga underlag",
+      "searchLabel": "Sök ⌘K",
+      "searchAria": "Öppna kommandopaletten"
     },
     "demoBanner": "Demoläge är aktivt. Lokal demodata och lokal AI-fallback är avsiktligt aktiverade.",
     "captureSheet": {
@@ -560,7 +562,8 @@
           },
           "approve": {
             "label": "Godkänn en granskning",
-            "hint": "Inget bokförs i huvudboken utan ditt beslut."
+            "hint": "Inget bokförs i huvudboken utan ditt beslut.",
+            "queueHint": "Ditt underlag är klart — öppna granskningskön och godkänn en bokföring."
           },
           "import": {
             "label": "Importera din SIE-historik",
@@ -576,7 +579,33 @@
           }
         },
         "allDoneTitle": "Du är igång.",
-        "allDoneHint": "Alla steg är klara. Dölj det här kortet med dess ✕ eller under Anpassa när du vill — det tar inte bort sig självt."
+        "allDoneBadge": "Klart",
+        "allDoneHint": "Alla steg är klara. Dölj det här kortet med dess ✕ eller under Anpassa när du vill — det tar inte bort sig självt.",
+        "demoSeededNote": "Demon innehåller ett exempelkvitto — fånga ett eget för att slutföra steget.",
+        "showMeAround": "Visa mig runt",
+        "guideMe": "Guide mig",
+        "milestones": {
+          "capture": {
+            "title": "Första kvittot fångat",
+            "body": "Underlaget är i pipelinen — öppna granskningskön när du är redo."
+          },
+          "approve": {
+            "title": "Första bokföringen godkänd",
+            "body": "Ditt beslut finns i den append-only-huvudboken."
+          },
+          "import": {
+            "title": "SIE-historik importerad",
+            "body": "Tidigare verifikat finns i Bokföring och Rapporter."
+          },
+          "advisor": {
+            "title": "Rådgivarfråga ställd",
+            "body": "Tråden sparas i denna webbläsare — AI föreslår, du bestämmer."
+          },
+          "profile": {
+            "title": "Företagsprofil sparad",
+            "body": "Räkenskapsår och momsperiod styr dina deadlines."
+          }
+        }
       }
     }
   },
@@ -852,6 +881,219 @@
       "email": {
         "title": "E-postintag",
         "body": "En intagsadress per arbetsyta som gör vidarebefordrade fakturor till insamlingsutkast. Inte byggd ännu — det finns ingen adress att visa."
+      }
+    }
+  },
+  "onboarding": {
+    "controls": {
+      "back": "Tillbaka",
+      "close": "Stäng rundtur",
+      "last": "Klar",
+      "next": "Nästa",
+      "nextWithProgress": "Nästa ({current} av {total})",
+      "skip": "Hoppa över"
+    },
+    "replay": {
+      "title": "Produktrundturer",
+      "description": "Spela upp de frivilliga rundturerna när du vill fräscha upp minnet. Checklistans framsteg kommer fortfarande från din riktiga huvudbok.",
+      "orientation": "Visa mig runt",
+      "reset": "Återställ rundturshistorik",
+      "reportsHelp": "Så fungerar drill-down",
+      "booksHelp": "Så fungerar Bokföring"
+    },
+    "microHints": {
+      "mobileAdvisor": {
+        "cta": "Var finns rådgivaren?"
+      },
+      "reportsDrill": {
+        "cta": "Hur drillar jag en siffra?"
+      }
+    },
+    "hotkeys": {
+      "title": "Kortkommandon",
+      "keys": {
+        "accept": "Godkänn",
+        "edit": "Redigera",
+        "bookWithoutVat": "Bokför utan moms",
+        "reject": "Avvisa"
+      }
+    },
+    "diagrams": {
+      "capture-pipeline": {
+        "capture": "Fånga",
+        "review": "Granska",
+        "books": "Bokföring"
+      },
+      "reports-drill": {
+        "kpi": "KPI",
+        "narrative": "Kommentar",
+        "drill": "Drill"
+      }
+    },
+    "tours": {
+      "app-orientation": {
+        "steps": {
+          "checklist": {
+            "title": "Din kom-igång-checklista",
+            "content": "Varje steg markeras klart när den riktiga artefakten finns — fånga, godkänn, importera, fråga rådgivaren och ange företagsprofil."
+          },
+          "navigation": {
+            "title": "Fem arbetsytor",
+            "content": "Idag för kön, Insamling för underlag, Bokföring för journalen, Rapporter för resultat och moms, Inställningar för företagsuppgifter."
+          },
+          "capture": {
+            "title": "Fånga var som helst",
+            "content": "Öppna insamlingspanelen för kamera, uppladdning, inklistring eller delning — allt landar i samma utkastkö."
+          },
+          "demo": {
+            "title": "Demoläge är avsiktligt",
+            "content": "Lokala scaffold-data och offline-AI gör produkten utforskbar. Inget bokförs utan ditt uttryckliga godkännande."
+          },
+          "command-palette": {
+            "title": "Sök allt",
+            "content": "Tryck ⌘K eller Ctrl K för att hoppa till verifikat, granskningar och kontosaldon var som helst i appen."
+          }
+        }
+      },
+      "capture-flow": {
+        "steps": {
+          "dropzone": {
+            "title": "Släpp eller välj filer",
+            "content": "Dra kvitton hit eller klicka för att bläddra. Filer blir lokala utkast först så att gränssnittet håller sig responsivt."
+          },
+          "quick-add": {
+            "title": "Snabbknappar",
+            "content": "Kamera, uppladdning, inklistring och delning matar samma pipeline — oftast tre tryck eller färre till ett utkast."
+          },
+          "drafts": {
+            "title": "Promovera utkast",
+            "content": "Utkast stannar lokalt tills du promoverar dem till granskningsbart underlag i huvudboken."
+          },
+          "archive": {
+            "title": "Underlagsarkiv",
+            "content": "Efter godkännande visas bokfört underlag här med hash-kedjeproveniens."
+          },
+          "sie": {
+            "title": "Importera tidigare bokföring",
+            "content": "Ta med SIE 4-historik från ett annat svenskt system — importerade verifikat syns i Bokföring och Rapporter."
+          }
+        }
+      },
+      "review-gate": {
+        "steps": {
+          "queue-toggle": {
+            "title": "Granskningskö",
+            "content": "Byt till kön när du är redo att besluta. AI föreslår — du godkänner varje bokföring."
+          },
+          "review-card": {
+            "title": "Ett beslut i taget",
+            "content": "Varje kort samlar extraherade fält, föreslagna BAS-konton och citerade svenska regler."
+          },
+          "confidence": {
+            "title": "Konfidensband",
+            "content": "Hög, medel och låg visar hur starkt förslaget matchar din historik och dokumentet."
+          },
+          "accept": {
+            "title": "Uttryckligt godkännande",
+            "content": "Godkänn bokför verifikatet i den append-only-huvudboken. Inget muteras förrän du klickar eller trycker Y."
+          },
+          "actions": {
+            "title": "Andra beslut",
+            "content": "Redigera rader, bokför utan moms eller avvisa när förslaget är fel — varje väg förblir spårbar."
+          },
+          "hotkeys": {
+            "title": "Kortkommandon",
+            "content": "Y godkänn · E redigera · B bokför utan moms · N avvisa när ett kort är i fokus."
+          },
+          "empty": {
+            "title": "Kön är tom",
+            "content": "Fånga ett kvitto först — kom sedan tillbaka hit för att godkänna din första bokföring. Varje steg slutförs när det verkliga underlaget finns."
+          }
+        }
+      },
+      "books-period": {
+        "steps": {
+          "period": {
+            "title": "Periodomfång",
+            "content": "Bokföring och Rapporter delar samma periodväljare — månad, kvartal, räkenskapsår eller hittills i år."
+          },
+          "journal": {
+            "title": "Journalvy",
+            "content": "Varje bokfört verifikat visas här med leverantörsfilter och länkar tillbaka till underlag."
+          },
+          "tabs": {
+            "title": "Fler huvudboksvyer",
+            "content": "Huvudbok, trial balance och leverantörssammanställningar finns på de andra flikarna."
+          },
+          "close": {
+            "title": "Periodavslut",
+            "content": "Avslutschecklistan går igenom vad som fortfarande blockerar ett rent månadsslut."
+          }
+        }
+      },
+      "reports-drill": {
+        "steps": {
+          "period": {
+            "title": "Rapporteringsperiod",
+            "content": "Ett rapportpaket per period driver KPI:er, narrativ, diagram och rapporter — de kan inte glida isär."
+          },
+          "kpis": {
+            "title": "KPI i överblick",
+            "content": "Resultat, kassa, intäkter och netto-moms sammanfattar perioden innan du läser prosa."
+          },
+          "narrative": {
+            "title": "Perioden med ord",
+            "content": "Vardagsspråkliga punkter förklarar vad som rörde sig — varje länkar till underliggande rapport."
+          },
+          "drill": {
+            "title": "Drilla till verifikat",
+            "content": "Klicka på en kontorad för att öppna drill-lådan med journalrader för kontot."
+          },
+          "export": {
+            "title": "Exportera och skriv ut",
+            "content": "Skriv ut paketet som PDF eller ladda ner en SIE-fil till din revisor."
+          }
+        }
+      },
+      "advisor": {
+        "steps": {
+          "mobile-nav": {
+            "title": "Rådgivare på mobil",
+            "content": "Tryck Rådgivare i sidhuvudet för att ställa grundade frågor om dina siffror."
+          },
+          "rail": {
+            "title": "Rådgivare i sidorailen",
+            "content": "Det sjätte rail-valet öppnar AI-rådgivaren — grundad, citerad och kan aldrig bokföra på egen hand."
+          },
+          "prompts": {
+            "title": "Föreslagna frågor",
+            "content": "Börja med observationsdrivna frågor eller skriv egna — varje svar citerar svenska källor."
+          },
+          "article50": {
+            "title": "AI-transparens",
+            "content": "EU AI Act artikel 50-märkning syns alltid så genererad vägledning inte förväxlas med bokförda fakta."
+          },
+          "chat": {
+            "title": "Verktygsgodkännanden",
+            "content": "När rådgivaren föreslår en bokföring godkänner du den fortfarande via samma granskningsgrind."
+          }
+        }
+      },
+      "hint-mobile-advisor": {
+        "steps": {
+          "advisor": {
+            "title": "Hitta rådgivaren",
+            "content": "Tryck Rådgivare i sidhuvudet för grundad chatt — den finns ännu inte i mobildockan."
+          }
+        }
+      },
+      "hint-reports-drill": {
+        "steps": {
+          "drill": {
+            "title": "Drilla vilket konto som helst",
+            "content": "Klicka på en balans- eller resultatradsrad för att se underliggande journalrader."
+          }
+        }
       }
     }
   }

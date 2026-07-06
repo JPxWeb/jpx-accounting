@@ -81,7 +81,7 @@ export function EvidenceArchiveTable() {
   });
 
   return (
-    <section className="glass-panel rounded-xl p-5" data-testid="evidence-archive">
+    <section className="glass-panel rounded-xl p-5" data-testid="evidence-archive" data-tour="evidence-archive">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-lg font-semibold">{t("title")}</h2>
         <Input

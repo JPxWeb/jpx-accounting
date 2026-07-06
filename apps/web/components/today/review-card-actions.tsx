@@ -15,9 +15,14 @@ export function ReviewCardActions({ onAction, disabled }: Props) {
   const t = useTranslations("today.actions");
 
   return (
-    <fieldset className="mt-4 flex flex-wrap gap-2 border-0 p-0 m-0">
+    <fieldset className="mt-4 flex flex-wrap gap-2 border-0 p-0 m-0" data-tour="review-actions">
       <legend className="sr-only">{t("legend")}</legend>
-      <Button onClick={() => onAction("accept")} disabled={disabled} data-testid="review-accept">
+      <Button
+        onClick={() => onAction("accept")}
+        disabled={disabled}
+        data-testid="review-accept"
+        data-tour="review-accept"
+      >
         {t("accept")} <Kbd>Y</Kbd>
       </Button>
       <Button variant="secondary" onClick={() => onAction("edit")} disabled={disabled} data-testid="review-edit">

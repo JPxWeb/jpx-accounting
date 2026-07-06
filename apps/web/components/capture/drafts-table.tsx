@@ -46,7 +46,7 @@ export function DraftsTable() {
   const drafts = draftsQuery.data ?? [];
 
   return (
-    <section className="glass-panel rounded-xl p-5" data-testid="drafts-table">
+    <section className="glass-panel rounded-xl p-5" data-testid="drafts-table" data-tour="drafts-table">
       <h2 className="text-lg font-semibold">{t("title")}</h2>
       {drafts.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground" data-testid="drafts-empty">

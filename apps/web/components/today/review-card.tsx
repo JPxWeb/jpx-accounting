@@ -85,6 +85,7 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
     <motion.article
       ref={ref}
       data-testid="review-card"
+      data-tour="review-card"
       initial={{ opacity: 0, y: reduceMotion ? 0 : 12 }}
       animate={{ opacity: settled ? 0.75 : 1, y: 0 }}
       transition={{ delay: settled ? 0 : Math.min(index * 0.05, MAX_STAGGER_DELAY_S) }}
@@ -105,6 +106,7 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
                   <span className="text-sm font-semibold tabular-nums text-muted-foreground">{confidence}</span>
                   <span
                     data-testid="confidence-band"
+                    data-tour="confidence-band"
                     data-band={band}
                     className={`rounded-lg px-2 py-1 text-caption font-semibold ${BAND_STYLES[band]}`}
                   >

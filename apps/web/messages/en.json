@@ -53,7 +53,9 @@
     },
     "topbar": {
       "location": "Sweden Central / Stockholm",
-      "captureAria": "Capture evidence"
+      "captureAria": "Capture evidence",
+      "searchLabel": "Search ⌘K",
+      "searchAria": "Open command palette"
     },
     "demoBanner": "Demo mode is active. Local demo data and local AI fallback are enabled intentionally.",
     "captureSheet": {
@@ -560,7 +562,8 @@
           },
           "approve": {
             "label": "Approve a review",
-            "hint": "Nothing posts to the ledger without your decision."
+            "hint": "Nothing posts to the ledger without your decision.",
+            "queueHint": "Your capture is ready — open the review queue and accept a posting."
           },
           "import": {
             "label": "Import your SIE history",
@@ -576,7 +579,33 @@
           }
         },
         "allDoneTitle": "You're set up.",
-        "allDoneHint": "Every step is done. Hide this card with its ✕ or under Customize whenever you like — it won't remove itself."
+        "allDoneBadge": "Complete",
+        "allDoneHint": "Every step is done. Hide this card with its ✕ or under Customize whenever you like — it won't remove itself.",
+        "demoSeededNote": "Demo includes a sample receipt — capture one of your own to complete this step.",
+        "showMeAround": "Show me around",
+        "guideMe": "Guide me",
+        "milestones": {
+          "capture": {
+            "title": "First receipt captured",
+            "body": "Evidence is in the ledger pipeline — open the review queue when ready."
+          },
+          "approve": {
+            "title": "First posting approved",
+            "body": "Your decision is on the append-only ledger."
+          },
+          "import": {
+            "title": "SIE history imported",
+            "body": "Prior vouchers are available in Books and Reports."
+          },
+          "advisor": {
+            "title": "Advisor question asked",
+            "body": "Thread saved in this browser — AI suggests, you decide."
+          },
+          "profile": {
+            "title": "Company profile saved",
+            "body": "Fiscal year and VAT period drive your deadlines."
+          }
+        }
       }
     }
   },
@@ -852,6 +881,219 @@
       "email": {
         "title": "Email intake",
         "body": "A per-workspace intake address that turns forwarded invoices into capture drafts. Not built yet — there is no address to show."
+      }
+    }
+  },
+  "onboarding": {
+    "controls": {
+      "back": "Back",
+      "close": "Close tour",
+      "last": "Done",
+      "next": "Next",
+      "nextWithProgress": "Next ({current} of {total})",
+      "skip": "Skip tour"
+    },
+    "replay": {
+      "title": "Product tours",
+      "description": "Replay the opt-in walkthroughs whenever you want a refresher. Checklist progress still comes from your real ledger data.",
+      "orientation": "Show me around",
+      "reset": "Reset tour history",
+      "reportsHelp": "How drill-down works",
+      "booksHelp": "How Books works"
+    },
+    "microHints": {
+      "mobileAdvisor": {
+        "cta": "Where is the advisor?"
+      },
+      "reportsDrill": {
+        "cta": "How do I drill into a number?"
+      }
+    },
+    "hotkeys": {
+      "title": "Keyboard shortcuts",
+      "keys": {
+        "accept": "Accept",
+        "edit": "Edit",
+        "bookWithoutVat": "Book without VAT",
+        "reject": "Reject"
+      }
+    },
+    "diagrams": {
+      "capture-pipeline": {
+        "capture": "Capture",
+        "review": "Review",
+        "books": "Books"
+      },
+      "reports-drill": {
+        "kpi": "KPI",
+        "narrative": "Narrative",
+        "drill": "Drill"
+      }
+    },
+    "tours": {
+      "app-orientation": {
+        "steps": {
+          "checklist": {
+            "title": "Your getting-started checklist",
+            "content": "Each step completes when the real artifact exists — capture, approve, import, ask the advisor, and set your company profile."
+          },
+          "navigation": {
+            "title": "Five places to work",
+            "content": "Today for the queue, Capture for evidence, Books for the journal, Reports for P&L and VAT, and Settings for company setup."
+          },
+          "capture": {
+            "title": "Capture from anywhere",
+            "content": "Open the capture sheet for camera, upload, paste, or share intake — every path lands in the same draft queue."
+          },
+          "demo": {
+            "title": "Demo mode is intentional",
+            "content": "Local scaffold data and offline AI keep the product explorable. Nothing posts without your explicit approval."
+          },
+          "command-palette": {
+            "title": "Search anything",
+            "content": "Press ⌘K or Ctrl K to jump to vouchers, reviews, and account balances from anywhere in the app."
+          }
+        }
+      },
+      "capture-flow": {
+        "steps": {
+          "dropzone": {
+            "title": "Drop or pick files",
+            "content": "Drag receipts here or click to browse. Files become local drafts first so the UI stays responsive."
+          },
+          "quick-add": {
+            "title": "Quick-add tiles",
+            "content": "Camera, upload, paste, and share each feed the same pipeline — usually three taps or fewer to a draft."
+          },
+          "drafts": {
+            "title": "Promote drafts",
+            "content": "Drafts stay local until you promote them into reviewable evidence on the ledger."
+          },
+          "archive": {
+            "title": "Evidence archive",
+            "content": "After you approve a review, posted evidence shows up here with hash-chain provenance."
+          },
+          "sie": {
+            "title": "Import prior bookkeeping",
+            "content": "Bring SIE 4 history from another Swedish system — imported vouchers appear in Books and Reports."
+          }
+        }
+      },
+      "review-gate": {
+        "steps": {
+          "queue-toggle": {
+            "title": "Review queue",
+            "content": "Switch to the queue when you are ready to decide. AI suggests — you approve every posting."
+          },
+          "review-card": {
+            "title": "One decision at a time",
+            "content": "Each card bundles extracted fields, proposed BAS accounts, and cited Swedish rules."
+          },
+          "confidence": {
+            "title": "Confidence band",
+            "content": "High, medium, and low badges reflect how strongly the suggestion matches your history and the document."
+          },
+          "accept": {
+            "title": "Explicit approval",
+            "content": "Accept posts the voucher to the append-only ledger. Nothing mutates until you click or press Y."
+          },
+          "actions": {
+            "title": "Other decisions",
+            "content": "Edit lines, book without VAT, or reject when the suggestion is wrong — every path stays auditable."
+          },
+          "hotkeys": {
+            "title": "Keyboard shortcuts",
+            "content": "Y accept · E edit · B book without VAT · N reject while a card is focused."
+          },
+          "empty": {
+            "title": "Queue is empty",
+            "content": "Capture a receipt first — then return here to approve your first posting. Each step completes when the real artifact exists."
+          }
+        }
+      },
+      "books-period": {
+        "steps": {
+          "period": {
+            "title": "Period scope",
+            "content": "Books and Reports share the same period selector — month, quarter, fiscal year, or year-to-date."
+          },
+          "journal": {
+            "title": "Journal view",
+            "content": "Every posted voucher appears here with supplier filters and links back to evidence."
+          },
+          "tabs": {
+            "title": "More ledger views",
+            "content": "General ledger, trial balance, and supplier rollups live on the other tabs."
+          },
+          "close": {
+            "title": "Period close",
+            "content": "The close checklist walks through what still blocks a clean month-end."
+          }
+        }
+      },
+      "reports-drill": {
+        "steps": {
+          "period": {
+            "title": "Reporting period",
+            "content": "One report pack per period drives KPIs, narrative, charts, and statements — they cannot drift apart."
+          },
+          "kpis": {
+            "title": "At-a-glance KPIs",
+            "content": "Result, cash, revenue, and net VAT summarize the period before you read the prose."
+          },
+          "narrative": {
+            "title": "This period in words",
+            "content": "Plain-language bullets explain what moved — each links to the underlying statement."
+          },
+          "drill": {
+            "title": "Drill to vouchers",
+            "content": "Click any account line to open the drill drawer with journal lines for that account."
+          },
+          "export": {
+            "title": "Export and print",
+            "content": "Print the pack as PDF or download a SIE file for your accountant."
+          }
+        }
+      },
+      "advisor": {
+        "steps": {
+          "mobile-nav": {
+            "title": "Advisor on mobile",
+            "content": "Tap Advisor in the header to ask grounded questions about your numbers."
+          },
+          "rail": {
+            "title": "Advisor in the rail",
+            "content": "The sixth rail item opens the AI advisor — grounded, cited, and never able to post on its own."
+          },
+          "prompts": {
+            "title": "Suggested prompts",
+            "content": "Start from observation-driven questions or type your own — every answer cites Swedish sources."
+          },
+          "article50": {
+            "title": "AI transparency",
+            "content": "EU AI Act Article 50 labeling stays visible so generated guidance is never mistaken for a posted fact."
+          },
+          "chat": {
+            "title": "Tool approvals",
+            "content": "When the advisor proposes a posting, you still approve it through the same review gate."
+          }
+        }
+      },
+      "hint-mobile-advisor": {
+        "steps": {
+          "advisor": {
+            "title": "Find the advisor",
+            "content": "Tap Advisor in the header to open grounded chat — it is not in the mobile dock yet."
+          }
+        }
+      },
+      "hint-reports-drill": {
+        "steps": {
+          "drill": {
+            "title": "Drill any account",
+            "content": "Click a balance-sheet or P&L line to inspect the underlying journal entries."
+          }
+        }
       }
     }
   }

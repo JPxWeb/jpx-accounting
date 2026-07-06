@@ -482,3 +482,17 @@ app.post("/api/compliance-watch/refresh", async (context) => {
 
 - PR review on `package.json`: any new 0.x or new-major UI/SDK dependency uses an exact version, and the PR names the single adapter file/directory its imports live in.
 - Add the corresponding grep to the exit-gate checklist (e.g. `grep -rn "@dnd-kit" apps/web --include="*.tsx" | grep -v sortable-grid` must be empty).
+
+---
+
+## 29. Onboarding tours: react-joyride v3 API + localStorage subscription timing
+
+**Rule:** Use **react-joyride 3.x** APIs only. Steps need `skipBeacon: true` (v2's `disableBeacon` is ignored — tours stall at a click-to-open beacon and never show the tooltip). Same-tab `useSyncExternalStore` subscribers must be notified via a deferred in-process listener set (`queueMicrotask`); never dispatch synthetic `StorageEvent`s during a React event handler (causes React #185 infinite update loops). Do not call `touchTourStarted()` or other storage writes on every tour start unless the UI actually reads that field.
+
+**The incident:** The onboarding journey shipped with `disableBeacon: true` on steps, so E2E saw zero tooltips despite Joyride mounting. Separately, `touchTourStarted()` wrote localStorage and dispatched a synthetic `storage` event inside the click handler; `OnboardingProvider`'s `useSyncExternalStore` re-rendered synchronously and React crashed with error #185.
+
+**The check:**
+
+- Grep tour step definitions for `disableBeacon` — replace with `skipBeacon: true` on each step.
+- Grep onboarding storage for `dispatchEvent(new StorageEvent` — same-tab notify must use an in-memory listener set only; reserve native `storage` events for cross-tab.
+- Onboarding E2E: `tests/e2e/onboarding.spec.ts` (desktop + mobile) must pass after `pnpm build:e2e`.

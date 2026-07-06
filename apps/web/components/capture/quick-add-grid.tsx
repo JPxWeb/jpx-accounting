@@ -118,7 +118,7 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
   }
 
   return (
-    <section className="glass-panel rounded-xl p-5" data-testid="quick-add-grid">
+    <section className="glass-panel rounded-xl p-5" data-testid="quick-add-grid" data-tour="quick-add-grid">
       <h2 className="text-lg font-semibold">{t("title")}</h2>
       <p className="mt-1 text-sm text-muted-foreground">{t("description")}</p>
       <div className="mt-4">
@@ -157,6 +157,7 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
         <button
           type="button"
           data-testid="quick-add-sie"
+          data-tour="quick-add-sie"
           disabled={importing}
           onClick={() => sieInputRef.current?.click()}
           className="rounded-lg border border-border px-4 py-2 text-sm font-medium disabled:opacity-60"
