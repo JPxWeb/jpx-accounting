@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Complete tasks in order.
 
+> **Status (2026-07-05, advisory pivot):** All 8 settings sub-pages render real wired components — **0 header-only stubs remain** (`ComplianceIntegrityPanel`, `FiscalYearForm`, `IntegrationsPosture`, retention statutory policy, `TeamOverview`, plus company/about/ai-posture). Profile and Billing cards on `/settings/about` are still unbuilt placeholders. The Books simulation sub-tab tasks below remain open.
+
 **Goal:** Replace every remaining Settings stub with real content or a clearly-marked roadmap card, and surface simulations as a Books sub-tab — leaving no "Full … lands in Phase 8" / "Coming in Phase 8" copy.
 
 **Architecture:** Two persistence patterns, deliberately split (per spec §3 #8): fiscal-year and AI-posture are **field-persisted** (mirror the existing `companySettings` private field + async getter/setter); retention legal-hold is **event-sourced** (`RetentionPolicyUpdated`, folded like Phase 7's VAT filing). Team & integrations are demo-safe display/stub (team invite is a static route stub like `/api/uploads/init`, no store method). Compliance reuses the existing `/api/compliance-watch/refresh`. Forms reuse the established shadcn `Form` + `react-hook-form` + `zodResolver` + React Query mutation pattern from `company-form.tsx`.

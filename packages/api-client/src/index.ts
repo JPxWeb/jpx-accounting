@@ -7,6 +7,7 @@ import { z } from "zod";
 import type {
   AccountBalanceProjection,
   CompanySettings,
+  ComplianceAlert,
   EvidenceContext,
   EvidenceCreateInput,
   IntegritySummary,
@@ -24,6 +25,7 @@ import type {
 } from "@jpx-accounting/contracts";
 import {
   accountBalanceProjectionSchema,
+  complianceAlertSchema,
   evidenceContextSchema,
   evidenceCreateResultSchema,
   integritySummarySchema,
@@ -83,6 +85,7 @@ async function parseJsonBody<T>(response: Response, schema: ZodType<T>): Promise
 
 const journalProjectionListSchema = z.array(journalEntryProjectionSchema);
 const accountBalanceListSchema = z.array(accountBalanceProjectionSchema);
+const complianceAlertListSchema = z.array(complianceAlertSchema);
 
 /** Serialize an optional report window into `?from=&to=` (empty when unscoped). */
 function reportRangeQuery(range?: ReportRange): string {
@@ -218,6 +221,25 @@ export class AccountingApiClient {
     if (this.fallbackStore) return this.fallbackStore.runSimulation(input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.baseUrl, "/api/simulations/run", simulationRunSchema, { method: "POST", json: input });
+  }
+
+  /**
+   * Recompute compliance alerts (`POST /api/compliance-watch/refresh`). By default
+   * resolved/dismissed alerts are excluded — pass `{ includeResolved: true }` for
+   * the full set (mirrors the API query param, CONVENTIONS Rule 26).
+   */
+  async refreshComplianceAlerts(options?: { includeResolved?: boolean }): Promise<ComplianceAlert[]> {
+    const filterVisible = (alerts: ComplianceAlert[]) =>
+      options?.includeResolved ? alerts : alerts.filter((a) => a.status === "open" || a.status === "acknowledged");
+
+    if (this.fallbackStore) {
+      return filterVisible(await this.fallbackStore.refreshComplianceAlerts());
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const params = options?.includeResolved ? "?includeResolved=true" : "";
+    return requestJson(this.baseUrl, `/api/compliance-watch/refresh${params}`, complianceAlertListSchema, {
+      method: "POST",
+    });
   }
 
   /**

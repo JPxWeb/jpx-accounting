@@ -45,7 +45,7 @@ export type ApiRuntimeConfig = {
 };
 
 /** Demo fallback for ADVISOR_TOOL_APPROVAL_SECRET — not a production credential. */
-const DEMO_ADVISOR_TOOL_APPROVAL_SECRET = "jpx-demo-advisor-tool-approval-secret";
+export const DEMO_ADVISOR_TOOL_APPROVAL_SECRET = "jpx-demo-advisor-tool-approval-secret";
 
 function normalizeOptionalValue(value?: string) {
   const trimmed = value?.trim();
@@ -63,6 +63,33 @@ function resolveCorsPolicy(runtimeMode: RuntimeMode, originsEnv?: string): CorsR
       .map((segment) => segment.trim())
       .filter(Boolean) ?? [];
   return { kind: "allowlist", origins };
+}
+
+/**
+ * Demo mode keeps the baked-in default so offline advisor runs work without env
+ * wiring. Normal mode fail-closes: a missing or demo-default secret would let
+ * attackers forge HMAC-signed tool approvals on the streamText path.
+ */
+function resolveAdvisorToolApprovalSecret(runtimeMode: RuntimeMode, envValue?: string): string {
+  const configured = normalizeOptionalValue(envValue);
+
+  if (runtimeMode === "normal") {
+    if (!configured) {
+      throw new Error(
+        "ADVISOR_TOOL_APPROVAL_SECRET is required when ACCOUNTING_RUNTIME_MODE=normal. " +
+          "Fail closed: the demo default would let anyone forge HMAC-signed tool approvals.",
+      );
+    }
+    if (configured === DEMO_ADVISOR_TOOL_APPROVAL_SECRET) {
+      throw new Error(
+        "ADVISOR_TOOL_APPROVAL_SECRET must not be the demo default when ACCOUNTING_RUNTIME_MODE=normal. " +
+          "Set a unique high-entropy secret before deploying.",
+      );
+    }
+    return configured;
+  }
+
+  return configured ?? DEMO_ADVISOR_TOOL_APPROVAL_SECRET;
 }
 
 export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiRuntimeConfig {
@@ -96,7 +123,7 @@ export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiR
       jwksUrl: normalizeOptionalValue(env.SUPABASE_JWKS_URL),
     },
     advisor: {
-      toolApprovalSecret: normalizeOptionalValue(env.ADVISOR_TOOL_APPROVAL_SECRET) ?? DEMO_ADVISOR_TOOL_APPROVAL_SECRET,
+      toolApprovalSecret: resolveAdvisorToolApprovalSecret(mode, env.ADVISOR_TOOL_APPROVAL_SECRET),
     },
   };
 }

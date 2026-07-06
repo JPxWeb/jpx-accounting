@@ -1,7 +1,12 @@
 name: Deploy
 
+# Push-to-main deploys are gated on a green CI run (workflow_run) so broken code cannot
+# reach Azure in parallel with typecheck/unit/build/E2E. Manual workflow_dispatch bypasses
+# the gate for hotfixes — use sparingly.
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -30,7 +35,7 @@ on:
           - "true"
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-${{ github.event.workflow_run.head_branch || github.ref }}
   cancel-in-progress: false
 
 env:
@@ -38,8 +43,11 @@ env:
   PNPM_VERSION: "10.29.2"
   REGISTRY: ghcr.io
   WEB_IMAGE: ghcr.io/jpxweb/jpx-accounting-web
+  # Must stay in sync with main.bicep namePrefix + environmentName for dev.
+  WEB_ORIGIN: https://jpxacct-dev-web.azurewebsites.net
 
 permissions:
+  actions: read
   contents: read
   packages: write
 
@@ -47,8 +55,15 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    # workflow_run fires on every CI completion — skip failed runs unless manually dispatched.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # workflow_run supplies the SHA CI validated; dispatch uses the selected ref.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       # ---- Web: Build & push Docker image to GHCR ----
       - name: Log in to GitHub Container Registry
@@ -64,8 +79,10 @@ jobs:
           context: .
           file: apps/web/Dockerfile
           push: true
+          build-args: |
+            NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE=${{ github.event_name == 'workflow_dispatch' && inputs.runtimeMode || 'normal' }}
           tags: |
-            ${{ env.WEB_IMAGE }}:${{ github.sha }}
+            ${{ env.WEB_IMAGE }}:${{ github.event.workflow_run.head_sha || github.sha }}
             ${{ env.WEB_IMAGE }}:latest
 
       # ---- API: Bundle with esbuild ----
@@ -106,11 +123,27 @@ jobs:
     environment: dev
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Azure Login
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Belt-and-suspenders with the Bicep assert — blocks normal deploys that still carry the demo HMAC.
+      - name: Reject demo advisor HMAC in normal mode
+        if: (github.event_name == 'workflow_dispatch' && inputs.runtimeMode == 'normal') || (github.event_name == 'workflow_run')
+        run: |
+          DEMO_SECRET="jpx-demo-advisor-tool-approval-secret"
+          DEPLOY_SECRET="${{ secrets.ADVISOR_TOOL_APPROVAL_SECRET }}"
+          RUNTIME="${{ github.event_name == 'workflow_dispatch' && inputs.runtimeMode || 'normal' }}"
+          if [ "$RUNTIME" = "normal" ]; then
+            if [ -z "$DEPLOY_SECRET" ] || [ "$DEPLOY_SECRET" = "$DEMO_SECRET" ]; then
+              echo "::error::ADVISOR_TOOL_APPROVAL_SECRET must be set to a non-demo value for normal mode (configure the GitHub secret)."
+              exit 1
+            fi
+          fi
 
       - name: Deploy Bicep infrastructure
         uses: azure/arm-deploy@a1361c2c2cd398621955b16ca32e01c65ea340f5 # v2
@@ -121,16 +154,22 @@ jobs:
           template: infra/azure/main.bicep
           parameters: >-
             environmentName=dev
-            runtimeMode=${{ inputs.runtimeMode || 'normal' }}
-            assignStorageRoles=${{ inputs.assignStorageRoles || 'false' }}
-            webDockerImage=${{ env.WEB_IMAGE }}:${{ github.sha }}
+            runtimeMode=${{ github.event_name == 'workflow_dispatch' && inputs.runtimeMode || 'normal' }}
+            assignStorageRoles=${{ github.event_name == 'workflow_dispatch' && inputs.assignStorageRoles || 'false' }}
+            webDockerImage=${{ env.WEB_IMAGE }}:${{ github.event.workflow_run.head_sha || github.sha }}
             supabaseDbUrl=${{ secrets.SUPABASE_DB_URL }}
             azureOpenaiEndpoint=${{ secrets.AZURE_OPENAI_ENDPOINT }}
             azureOpenaiApiKey=${{ secrets.AZURE_OPENAI_API_KEY }}
             azureOpenaiModel=${{ secrets.AZURE_OPENAI_MODEL }}
             azureDocumentIntelligenceEndpoint=${{ secrets.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT }}
             azureDocumentIntelligenceApiKey=${{ secrets.AZURE_DOCUMENT_INTELLIGENCE_API_KEY }}
-          failOnStdErr: false
+            advisorToolApprovalSecret=${{ secrets.ADVISOR_TOOL_APPROVAL_SECRET }}
+            supabaseJwksUrl=${{ secrets.SUPABASE_JWKS_URL }}
+            accountingCorsOrigins=${{ env.WEB_ORIGIN }}
+            storageCorsAllowedOrigins=${{ env.WEB_ORIGIN }},http://localhost:3002,http://localhost:3200
+            supabasePoolerTransactionMode=false
+          # failOnStdErr was masking ARM/Bicep validation errors — let stderr fail the step.
+          failOnStdErr: true
 
       # ---- Deploy API (zip deploy, unchanged) ----
       - name: Download API artifact
@@ -157,7 +196,7 @@ jobs:
             --docker-registry-server-url https://ghcr.io \
             --docker-registry-server-user ${{ github.actor }} \
             --docker-registry-server-password ${{ secrets.GITHUB_TOKEN }} \
-            --docker-custom-image-name "${{ env.WEB_IMAGE }}:${{ github.sha }}"
+            --docker-custom-image-name "${{ env.WEB_IMAGE }}:${{ github.event.workflow_run.head_sha || github.sha }}"
 
       - name: Restart web app to pull new image
         run: |
@@ -183,19 +222,20 @@ jobs:
           echo "API health check failed after 5 attempts"
           exit 1
 
-      - name: Smoke test API readiness shape
+      - name: Smoke test API readiness
         run: |
           API_READY="${{ steps.bicep.outputs.apiAppUrl }}/ready"
           for i in 1 2 3 4 5; do
             READY_JSON=$(curl -sf "$API_READY" || true)
-            if echo "$READY_JSON" | jq -e 'has("ready") and has("checks") and has("runtimeMode")' >/dev/null 2>&1; then
-              echo "/ready probe passed"
+            if echo "$READY_JSON" | jq -e '.ready == true and (.checks.ledger == true) and (.checks.ai == true)' >/dev/null 2>&1; then
+              echo "/ready probe passed (ready=true, ledger+ai checks green)"
               exit 0
             fi
-            echo "Attempt $i: /ready not valid yet, retrying in 10s..."
+            echo "Attempt $i: /ready not green yet, retrying in 10s..."
+            echo "Last payload: $READY_JSON"
             sleep 10
           done
-          echo "/ready probe failed; last payload:"
+          echo "/ready probe failed — API is fail-closed or still starting"
           echo "$READY_JSON"
           exit 1
 

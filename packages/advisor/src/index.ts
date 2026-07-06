@@ -7,6 +7,7 @@
  * builder lives in `./corpus-source` and is deliberately NOT re-exported.
  */
 export { KNOWLEDGE_CORPUS } from "./corpus.generated";
+export * from "./excerpt";
 export * from "./retrieval";
 export * from "./context";
 export * from "./demo-turn";

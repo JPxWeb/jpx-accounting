@@ -6,7 +6,6 @@ import { HTTPException } from "hono/http-exception";
 import { jwk } from "hono/jwk";
 import { secureHeaders } from "hono/secure-headers";
 import { rateLimiter } from "hono-rate-limiter";
-import type { ZodType } from "zod";
 
 import {
   companySettingsSchema,
@@ -14,10 +13,10 @@ import {
   evidenceCreateInputSchema,
   knowledgeQuerySchema,
   reviewDecisionInputSchema,
+  type ReviewDecisionInput,
   simulationRequestSchema,
   suggestionRequestSchema,
   type ApiJsonErrorBody,
-  type ApiValidationIssue,
   type RuntimeMode,
   uploadInitSchema,
 } from "@jpx-accounting/contracts";
@@ -49,6 +48,7 @@ import type { CorsRuntimePolicy } from "./config";
 import { queryKnowledge } from "./knowledge";
 import type { AiRuntimeMetadata } from "./runtime";
 import { isLedgerStoreOperational, LedgerStoreUnavailableError } from "./runtime";
+import { ApiValidationError, jsonValidated } from "./validation";
 
 type CreateAppOptions = {
   store: LedgerStore;
@@ -81,42 +81,6 @@ type AppEnv = { Variables: AppVariables };
 
 const DEFAULT_JSON_BODY_BYTES = 512 * 1024;
 const SIE_IMPORT_BODY_BYTES = 32 * 1024 * 1024;
-
-class ApiValidationError extends Error {
-  readonly code = "validation_error" as const;
-
-  constructor(
-    message: string,
-    readonly issues: ApiValidationIssue[],
-  ) {
-    super(message);
-    this.name = "ApiValidationError";
-  }
-}
-
-async function parseBody<T>(request: Request, schema: ZodType<T>): Promise<T> {
-  let payload: unknown;
-  try {
-    payload = await request.json();
-  } catch {
-    throw new HTTPException(400, { message: "Request body must be valid JSON." });
-  }
-  const parsed = schema.safeParse(payload);
-
-  if (!parsed.success) {
-    const issues: ApiValidationIssue[] = parsed.error.issues.map((issue) => ({
-      path: issue.path.map((segment) => String(segment)),
-      message: issue.message,
-    }));
-    const summary =
-      issues.map((i) => (i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message)).join("; ") ||
-      "Invalid request body";
-
-    throw new ApiValidationError(summary, issues);
-  }
-
-  return parsed.data;
-}
 
 const REPORT_DAY_PARAM = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -192,11 +156,10 @@ export function createApp({
     toolApprovalSecret: advisor.toolApprovalSecret,
   });
 
-  async function postReviewDecision(c: Context<AppEnv>, reviewId: string, outcome: ReviewAction) {
-    const input = await parseBody(c.req.raw, reviewDecisionInputSchema);
+  async function postReviewDecision(input: ReviewDecisionInput, reviewId: string, outcome: ReviewAction) {
     const review = await currentStore.applyReviewDecision(reviewId, outcome, input);
     if (!review) throw new HTTPException(404, { message: "Review not found" });
-    return c.json(review);
+    return review;
   }
 
   app.use("*", async (c, next) => {
@@ -438,18 +401,18 @@ export function createApp({
     }),
   );
 
-  app.post("/api/evidence", async (context) => {
-    const input = await parseBody(context.req.raw, evidenceCreateInputSchema);
+  app.post("/api/evidence", jsonValidated(evidenceCreateInputSchema), async (context) => {
+    const input = context.req.valid("json");
     return context.json(await currentStore.createEvidence(input), 201);
   });
 
-  app.post("/api/evidence/compose", async (context) => {
-    const input = await parseBody(context.req.raw, evidenceComposeInputSchema);
+  app.post("/api/evidence/compose", jsonValidated(evidenceComposeInputSchema), async (context) => {
+    const input = context.req.valid("json");
     return context.json(await currentStore.composeEvidence(input), 201);
   });
 
-  app.post("/api/uploads/init", async (context) => {
-    const input = await parseBody(context.req.raw, uploadInitSchema);
+  app.post("/api/uploads/init", jsonValidated(uploadInitSchema), async (context) => {
+    const input = context.req.valid("json");
     const result = await blobUploader.initUpload(input);
     return context.json(result);
   });
@@ -562,18 +525,24 @@ export function createApp({
     return context.json({ url: sas.url, expiresInSeconds: sas.expiresInSeconds });
   });
 
-  app.post("/api/vouchers/:id/suggest", async (context) => {
-    await parseBody(context.req.raw, suggestionRequestSchema);
+  app.post("/api/vouchers/:id/suggest", jsonValidated(suggestionRequestSchema), async (context) => {
+    context.req.valid("json");
     const suggestion = await currentStore.suggestVoucher(context.req.param("id"));
     if (!suggestion) throw new HTTPException(404, { message: "Voucher not found" });
     return context.json(suggestion);
   });
 
-  app.post("/api/reviews/:id/approve", (c) => postReviewDecision(c, c.req.param("id"), "approve"));
+  app.post("/api/reviews/:id/approve", jsonValidated(reviewDecisionInputSchema), async (c) =>
+    c.json(await postReviewDecision(c.req.valid("json"), c.req.param("id"), "approve")),
+  );
 
-  app.post("/api/reviews/:id/reject", (c) => postReviewDecision(c, c.req.param("id"), "reject"));
+  app.post("/api/reviews/:id/reject", jsonValidated(reviewDecisionInputSchema), async (c) =>
+    c.json(await postReviewDecision(c.req.valid("json"), c.req.param("id"), "reject")),
+  );
 
-  app.post("/api/reviews/:id/book-without-vat", (c) => postReviewDecision(c, c.req.param("id"), "book-without-vat"));
+  app.post("/api/reviews/:id/book-without-vat", jsonValidated(reviewDecisionInputSchema), async (c) =>
+    c.json(await postReviewDecision(c.req.valid("json"), c.req.param("id"), "book-without-vat")),
+  );
 
   app.post("/api/imports/sie", async (context) => {
     // Raw file bytes, not JSON: decode (strict UTF-8 → CP437 fallback), parse
@@ -606,26 +575,31 @@ export function createApp({
   // (body limit, rate limiter, JWT when configured) like every /api/* POST.
   app.post("/api/advisor/chat", (context) => advisorChat(context.req.raw));
 
-  app.post("/api/knowledge/query", async (context) => {
-    const input = await parseBody(context.req.raw, knowledgeQuerySchema);
+  app.post("/api/knowledge/query", jsonValidated(knowledgeQuerySchema), async (context) => {
+    const input = context.req.valid("json");
     // Real sourced retrieval (Task 5.7): BM25-lite over the bundled corpus —
     // passages carry verbatim source provenance (Rule 10). Vector mode lands
     // with the pgvector ingestion loop in Task 5.11.
     return context.json(await queryKnowledge(input.query));
   });
 
-  app.post("/api/simulations/run", async (context) => {
-    const input = await parseBody(context.req.raw, simulationRequestSchema);
+  app.post("/api/simulations/run", jsonValidated(simulationRequestSchema), async (context) => {
+    const input = context.req.valid("json");
     return context.json(await currentStore.runSimulation(input), 201);
   });
 
   app.post("/api/close-runs", async (context) => context.json(await currentStore.getCloseRun(), 201));
-  app.get("/api/close-runs/:id", async (context) =>
-    context.json({
-      ...(await currentStore.getCloseRun()),
-      id: context.req.param("id"),
-    }),
-  );
+
+  // Only the store's current close-run id is valid — arbitrary ids 404 instead
+  // of echoing synthetic checklist data (Phase 3.5 / §A N14).
+  app.get("/api/close-runs/:id", async (context) => {
+    const closeRun = await currentStore.getCloseRun();
+    const id = context.req.param("id");
+    if (closeRun.id !== id) {
+      throw new HTTPException(404, { message: "Close run not found" });
+    }
+    return context.json(closeRun);
+  });
 
   app.post("/api/compliance-watch/refresh", async (context) => {
     // Default-exclude resolved/dismissed (CONVENTIONS Rule 26); ?includeResolved=true for all.
@@ -641,8 +615,8 @@ export function createApp({
     return context.json(settings);
   });
 
-  app.put("/api/settings/company", async (context) => {
-    const input = await parseBody(context.req.raw, companySettingsSchema);
+  app.put("/api/settings/company", jsonValidated(companySettingsSchema), async (context) => {
+    const input = context.req.valid("json");
     const saved = await currentStore.putCompanySettings(input);
     return context.json(saved);
   });

@@ -32,15 +32,17 @@ Implementation changes that touch frameworks or toolchain should cross-check aga
 
 ### Env matrix (normal mode)
 
-| Concern                     | Env var(s)                                                                           | Required for                                       |
-| --------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------- |
-| Postgres write path         | `SUPABASE_DB_URL` (+ optional `SUPABASE_POOLER_TRANSACTION_MODE=true` for port 6543) | `PostgresLedgerStore`; `/ready.checks.ledger=true` |
-| Azure Blob signed upload    | `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_CONTAINER`                                   | `AzureBlobUploader` instead of stub                |
-| Azure OpenAI (chat + embed) | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_MODEL`                | `ResponsesAiRuntime` instead of `Unavailable…`     |
-| Document Intelligence       | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`, `AZURE_DOCUMENT_INTELLIGENCE_API_KEY`        | `AzureDocumentIntelligenceClient` instead of stub  |
-| JWT auth on mutating routes | `SUPABASE_JWKS_URL` (typically `${SUPABASE_URL}/auth/v1/keys`)                       | `hono/jwk` middleware on POST/PUT/PATCH/DELETE     |
+| Concern                     | Env var(s)                                                                                        | Required for                                               |
+| --------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Postgres write path         | `SUPABASE_DB_URL` (+ optional `SUPABASE_POOLER_TRANSACTION_MODE=true` for port 6543)              | `PostgresLedgerStore`; `/ready.checks.ledger=true`         |
+| Azure Blob signed upload    | `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_CONTAINER`                                                | `AzureBlobUploader` instead of stub                        |
+| Azure OpenAI (chat + embed) | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_MODEL`                             | `ResponsesAiRuntime` instead of `Unavailable…`             |
+| Document Intelligence       | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`, `AZURE_DOCUMENT_INTELLIGENCE_API_KEY`                     | `AzureDocumentIntelligenceClient` instead of stub          |
+| JWT auth on mutating routes | `SUPABASE_JWKS_URL` (typically `${SUPABASE_URL}/auth/v1/keys`)                                    | `hono/jwk` middleware on POST/PUT/PATCH/DELETE             |
+| Advisor tool-approval HMAC  | `ADVISOR_TOOL_APPROVAL_SECRET` (must not be the demo default in `normal`)                         | AI SDK `experimental_toolApprovalSecret` signing           |
+| Browser CORS (direct API)   | `ACCOUNTING_CORS_ORIGINS` (comma-separated; Bicep defaults to the deployed web origin when unset) | Browser calls to `/api/*` outside same-origin `/api-proxy` |
 
-When deploying to Azure, [`infra/azure/main.bicep`](../infra/azure/main.bicep) sets these in the API App Service `appSettings` and grants the Managed Identity the two RBAC roles needed for User-Delegation SAS minting (`Storage Blob Delegator`, `Storage Blob Data Contributor`).
+When deploying to Azure, [`infra/azure/main.bicep`](../infra/azure/main.bicep) wires the API App Service `appSettings` above (including `ADVISOR_TOOL_APPROVAL_SECRET`, `SUPABASE_JWKS_URL`, `ACCOUNTING_CORS_ORIGINS`, `SUPABASE_POOLER_TRANSACTION_MODE`), configures storage blob CORS for the live web origin (`storageCorsAllowedOrigins` param — defaults to the deployed web App Service origin plus localhost dev ports), and grants the Managed Identity the two RBAC roles needed for User-Delegation SAS minting (`Storage Blob Delegator`, `Storage Blob Data Contributor`). The Bicep template **asserts** that `runtimeMode=normal` cannot deploy with the demo HMAC secret.
 
 ## Build trivia
 
@@ -68,11 +70,12 @@ Baseline **`secureHeaders`** and **`bodyLimit`** are configured in [`services/ap
 
 Migrations live in [`infra/supabase/migrations`](../infra/supabase/migrations) and are applied in numeric order:
 
-| File                        | Adds                                                                                                             |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `0001_init.sql`             | Schemas `ledger` + `projections`, all entity tables, hash-chain columns, vat/balance projection tables.          |
-| `0002_schema_alignment.sql` | `ledger.evidence_objects.modalities text[]` and `ledger.review_tasks.title text` (closes gaps vs. domain types). |
-| `0003_pgvector.sql`         | `vector` extension, `knowledge.documents` with `halfvec(1536)` + HNSW index using `halfvec_cosine_ops`.          |
+| File                               | Adds                                                                                                                           |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `0001_init.sql`                    | Schemas `ledger` + `projections`, all entity tables, hash-chain columns, vat/balance projection tables.                        |
+| `0002_schema_alignment.sql`        | `ledger.evidence_objects.modalities text[]` and `ledger.review_tasks.title text` (closes gaps vs. domain types).               |
+| `0003_pgvector.sql`                | `vector` extension, `knowledge.documents` with `halfvec(1536)` + HNSW index using `halfvec_cosine_ops`.                        |
+| `0004_compliance_and_settings.sql` | `ledger.compliance_alerts`, `ledger.assistant_sessions`, `ledger.organization_settings` (compliance watch + company settings). |
 
 Local development against a real DB:
 
@@ -81,6 +84,7 @@ supabase start
 psql "$SUPABASE_DB_URL" -f infra/supabase/migrations/0001_init.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/migrations/0002_schema_alignment.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/migrations/0003_pgvector.sql
+psql "$SUPABASE_DB_URL" -f infra/supabase/migrations/0004_compliance_and_settings.sql
 export SUPABASE_DB_URL=...    # exported for the API + integration tests
 pnpm test:integration         # skips silently when SUPABASE_DB_URL is unset
 ```
@@ -97,7 +101,7 @@ pnpm test:integration         # skips silently when SUPABASE_DB_URL is unset
 Populate the vector index with the ingestion script (idempotent upserts keyed on chunk id — re-running refreshes content + embeddings in place):
 
 ```bash
-export SUPABASE_DB_URL=...        # migrations 0001–0003 applied
+export SUPABASE_DB_URL=...        # migrations 0001–0004 applied
 export AZURE_OPENAI_ENDPOINT=...  # embeddings use text-embedding-3-small (1536 dims = halfvec(1536))
 export AZURE_OPENAI_API_KEY=...
 pnpm ingest:knowledge
@@ -108,6 +112,17 @@ Rows land scoped to the fixed normal-mode workspace (`org_jpx` / `workspace_main
 ## Production web (`standalone`)
 
 [`apps/web`](../apps/web) builds with **`output: "standalone"`** for Docker/Azure. Prefer running the traced server from `.next/standalone` per Next.js standalone docs (`node server.js`), not **`next start`**, which logs a mismatch with `standalone`.
+
+### Docker image tags (demo vs production)
+
+The [`apps/web/Dockerfile`](../apps/web/Dockerfile) accepts build-arg **`NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE`** (default **`normal`**). The deploy workflow passes `normal` for CI-gated production pushes and honors `workflow_dispatch` `runtimeMode` for demo stacks.
+
+| Image tag / build                                            | `NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE` | When to use                                                           |
+| ------------------------------------------------------------ | ------------------------------------- | --------------------------------------------------------------------- |
+| `ghcr.io/jpxweb/jpx-accounting-web:latest` (deploy workflow) | `normal` (default)                    | Azure App Service production                                          |
+| Local / demo-only build                                      | `demo`                                | `docker build --build-arg NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE=demo …` |
+
+The web container also receives runtime env from Bicep (`ACCOUNTING_RUNTIME_MODE`, `NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE`) at deploy time; the build-arg must match so the client bundle is not demo-inlined in production images.
 
 ## Local development: ports and a single dev stack
 

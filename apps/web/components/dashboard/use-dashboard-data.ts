@@ -8,7 +8,7 @@ import type {
   TaxDeadline,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
-import { buildTaxTimeline, currentMonthToken, currentVatPeriodToken } from "@jpx-accounting/domain";
+import { buildTaxTimeline, currentMonthToken, currentVatPeriodToken, localTodayIso } from "@jpx-accounting/domain";
 import { buildObservations } from "@jpx-accounting/reporting";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -28,13 +28,6 @@ import { useWorkspaceProfile } from "../providers/workspace-profile-provider";
  * Observations and the statutory tax timeline are client-computed from those
  * fetched inputs (no endpoint — plan finding 5), memoized per input identity.
  */
-
-/** Local calendar day (`YYYY-MM-DD`) — never `toISOString().slice` (UTC bug). */
-function localTodayIso(): string {
-  const now = new Date();
-  const pad2 = (value: number) => String(value).padStart(2, "0");
-  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-}
 
 export type DashboardData = {
   snapshot: WorkspaceSnapshot | undefined;

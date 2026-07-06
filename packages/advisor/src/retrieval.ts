@@ -1,4 +1,7 @@
 import { KNOWLEDGE_CORPUS } from "./corpus.generated";
+import { buildExcerpt, toFlowingText } from "./excerpt";
+
+export { EXCERPT_TARGET_CHARS } from "./excerpt";
 
 /**
  * One retrievable chunk of the bundled Swedish knowledge corpus. Chunks are
@@ -52,9 +55,6 @@ export interface RetrieveKnowledgeOptions {
 export const BM25_K1 = 1.2;
 /** BM25 length normalization. */
 export const BM25_B = 0.75;
-/** Target excerpt length in characters (approximate — cut at word boundaries). */
-export const EXCERPT_TARGET_CHARS = 300;
-
 const TOKEN_PATTERN = /[a-z0-9åäöéü]+/g;
 
 /**
@@ -79,15 +79,6 @@ interface CorpusIndex {
   chunks: IndexedChunk[];
   documentFrequencies: Map<string, number>;
   averageLength: number;
-}
-
-/** Collapse a markdown section body into one flowing line for excerpts. */
-function toFlowingText(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => line.replace(/^\s*[-*]\s+/, "").trim())
-    .filter((line) => line.length > 0)
-    .join(" ");
 }
 
 function indexChunk(chunk: KnowledgeChunk): IndexedChunk {
@@ -128,37 +119,6 @@ function inverseDocumentFrequency(corpusSize: number, documentFrequency: number)
 }
 
 /**
- * Build a ~300-character excerpt centered on the earliest query-term match.
- * Cuts at word boundaries and marks truncation with an ellipsis on the
- * clipped side(s). Falls back to the start of the chunk when nothing matches.
- */
-function buildExcerpt(flowingText: string, queryTokens: string[]): string {
-  const lower = flowingText.toLowerCase();
-  let matchAt = -1;
-  for (const token of queryTokens) {
-    const at = lower.indexOf(token);
-    if (at !== -1 && (matchAt === -1 || at < matchAt)) matchAt = at;
-  }
-
-  let start = 0;
-  if (matchAt > 100) {
-    start = flowingText.lastIndexOf(" ", matchAt - 80);
-    if (start === -1) start = 0;
-    else start += 1;
-  }
-
-  if (flowingText.length - start <= EXCERPT_TARGET_CHARS) {
-    const tail = flowingText.slice(start);
-    return start > 0 ? `…${tail}` : tail;
-  }
-
-  let end = flowingText.lastIndexOf(" ", start + EXCERPT_TARGET_CHARS);
-  if (end <= start) end = start + EXCERPT_TARGET_CHARS;
-  const body = flowingText.slice(start, end);
-  return `${start > 0 ? "…" : ""}${body}…`;
-}
-
-/**
  * BM25-lite retrieval over the bundled corpus (k1 = 1.2, b = 0.75). Fully
  * deterministic: unique query tokens, a fixed idf formula, and a stable
  * tie-break on chunk id make the ranking a pure function of (query, corpus).
@@ -195,7 +155,7 @@ export function retrieveKnowledge(query: string, options: RetrieveKnowledgeOptio
     id: entry.chunk.id,
     docId: entry.chunk.docId,
     title: entry.chunk.title,
-    excerpt: buildExcerpt(entry.flowingText, queryTokens),
+    excerpt: buildExcerpt(entry.chunk.text, queryTokens),
     source: entry.chunk.source,
     url: entry.chunk.url,
     score: Math.round(score * 10000) / 10000,

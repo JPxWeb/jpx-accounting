@@ -17,7 +17,9 @@ test("workspace, reporting, export, compliance, and MCP endpoints respond", asyn
   expect(workspace.ok()).toBeTruthy();
   const snapshot = await workspace.json();
   expect(snapshot.reviews).toHaveLength(1);
-  expect(snapshot.closeRun.period).toBe("2026-03");
+  expect(snapshot.closeRun.id).toBe("close_unavailable");
+  expect(snapshot.closeRun.period).toMatch(/^\d{4}-\d{2}$/);
+  expect(snapshot.closeRun.checklist).toHaveLength(0);
 
   for (const path of [
     "/api/reports/journal",
@@ -254,11 +256,18 @@ test("knowledge, simulation, close, and import endpoints round-trip", async ({ r
   const closeRun = await request.post(`${apiBaseUrl}/api/close-runs`);
   expect(closeRun.ok()).toBeTruthy();
   const closeRunData = await closeRun.json();
-  expect(closeRunData.checklist.length).toBeGreaterThan(0);
+  expect(closeRunData).toMatchObject({
+    id: "close_unavailable",
+    checklist: [],
+  });
+  expect(closeRunData.period).toMatch(/^\d{4}-\d{2}$/);
 
-  const closeRunById = await request.get(`${apiBaseUrl}/api/close-runs/playwright-close`);
+  const closeRunById = await request.get(`${apiBaseUrl}/api/close-runs/close_unavailable`);
   expect(closeRunById.ok()).toBeTruthy();
-  expect((await closeRunById.json()).id).toBe("playwright-close");
+  expect((await closeRunById.json()).id).toBe("close_unavailable");
+
+  const wrongCloseRun = await request.get(`${apiBaseUrl}/api/close-runs/playwright-close`);
+  expect(wrongCloseRun.status()).toBe(404);
 
   // SIE import: a real #VER block (the parser ignores bare #TRANS lines — the
   // old placeholder fixture posted those and would import nothing).

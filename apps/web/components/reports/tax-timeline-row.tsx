@@ -1,6 +1,6 @@
 "use client";
 
-import { buildTaxTimeline, currentVatPeriodToken, TAX_DEADLINE_SOURCES } from "@jpx-accounting/domain";
+import { buildTaxTimeline, currentVatPeriodToken, localTodayIso, TAX_DEADLINE_SOURCES } from "@jpx-accounting/domain";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useMemo } from "react";
@@ -10,13 +10,6 @@ import { useWorkspaceProfile } from "../providers/workspace-profile-provider";
 import { Money } from "../ui/money";
 
 const VISIBLE_DEADLINES = 5;
-
-/** Local calendar day (`YYYY-MM-DD`) — never `toISOString().slice` (UTC bug). */
-function localTodayIso(): string {
-  const now = new Date();
-  const pad2 = (value: number) => String(value).padStart(2, "0");
-  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-}
 
 /**
  * Statutory tax timeline on the Reports screen (Task 5.10): the next upcoming
@@ -83,7 +76,7 @@ export function TaxTimelineRow() {
                   <p className="mt-0.5 text-caption text-muted-foreground">{deadline.periodLabel}</p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="text-sm font-semibold tabular-nums">
+                  <p className="text-sm font-semibold tabular-nums" data-visual-mask>
                     {dateFormatter.format(new Date(deadline.dueDate))}
                   </p>
                   {amount !== null ? (

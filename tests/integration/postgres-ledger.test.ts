@@ -579,11 +579,13 @@ test("PostgresLedgerStore.getSnapshot exposes org/workspace-scoped packets + Mem
     assert.deepEqual(composedPacket?.evidenceIds, [created.evidence.id]);
     assert.equal(composedPacket?.note, "Bundled for the drill join");
 
-    // The voucher→evidence join resolves from the snapshot alone (finding 5).
+    // After composeEvidence relink (§A N9), the voucher points at the newest packet.
     const voucher = snapshot.vouchers.find((candidate) => candidate.id === created.voucher.id);
     assert.ok(voucher);
+    assert.equal(voucher.evidencePacketId, composed.id, "composeEvidence must relink the voucher");
     const joined = snapshot.packets.find((packet) => packet.id === voucher.evidencePacketId);
     assert.deepEqual(joined?.evidenceIds, [created.evidence.id]);
+    assert.equal(joined?.id, composed.id);
 
     // Memory parity (Rule 11): the same create resolves the same join shape.
     const memory = new MemoryLedgerStore();
@@ -595,6 +597,139 @@ test("PostgresLedgerStore.getSnapshot exposes org/workspace-scoped packets + Mem
     const memSnapshot = await memory.getSnapshot();
     const memPacket = memSnapshot.packets.find((packet) => packet.id === memCreated.voucher.evidencePacketId);
     assert.deepEqual(memPacket?.evidenceIds, [memCreated.evidence.id]);
+  } finally {
+    await client`delete from ledger.events where organization_id = ${orgId}`;
+    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+  }
+});
+
+test(
+  "PostgresLedgerStore.composeEvidence relinks voucher + converges getEvidenceContext and getSnapshot (§A N9/N10)",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+      const created = await store.createEvidence({
+        organizationId: orgId,
+        workspaceId: wsId,
+        actorId: "user_test",
+        title: "Relink target receipt",
+        originalFilename: "relink.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["camera"],
+      });
+
+      const composed = await store.composeEvidence({
+        organizationId: orgId,
+        workspaceId: wsId,
+        actorId: "user_test",
+        evidenceIds: [created.evidence.id],
+        note: "Rebundled packet",
+      });
+
+      // EvidencePacket shape parity (§A N10): optional keys always present.
+      assert.ok("note" in composed);
+      assert.ok("voiceTranscript" in composed);
+      assert.equal(composed.note, "Rebundled packet");
+
+      const context = await store.getEvidenceContext(created.evidence.id);
+      assert.equal(context?.packet?.id, composed.id, "getEvidenceContext picks newest packet");
+      assert.equal(context?.voucher?.evidencePacketId, composed.id, "voucher relinked to newest packet");
+
+      const snapshot = await store.getSnapshot();
+      const snapshotVoucher = snapshot.vouchers.find((candidate) => candidate.id === created.voucher.id);
+      assert.equal(snapshotVoucher?.evidencePacketId, composed.id, "getSnapshot voucher link matches context");
+
+      const snapshotPacket = snapshot.packets.find((packet) => packet.id === composed.id);
+      assert.ok(snapshotPacket);
+      assert.ok("note" in snapshotPacket);
+      assert.ok("voiceTranscript" in snapshotPacket);
+      assert.equal(snapshotPacket.note, "Rebundled packet");
+
+      // Read-model UPDATE only — composeEvidence must not append hash-chain events.
+      const events = await store.getEvents();
+      assert.equal(events.length, 4, "composeEvidence relink is not an append-only event");
+    } finally {
+      await client`delete from ledger.events where organization_id = ${orgId}`;
+      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_packet_items
+        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+      await closePostgresClient(client);
+    }
+  },
+);
+
+test("PostgresLedgerStore.getSnapshot sources alerts from compliance_alerts (§2.2)", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+    const emptySnapshot = await store.getSnapshot();
+    assert.deepEqual(emptySnapshot.alerts, []);
+    assert.deepEqual(emptySnapshot.assistantExamples, []);
+
+    const refreshed = await store.refreshComplianceAlerts();
+    const snapshot = await store.getSnapshot();
+    assert.deepEqual(
+      snapshot.alerts.map((alert) => alert.id).sort(),
+      refreshed.map((alert) => alert.id).sort(),
+      "getSnapshot alerts must mirror compliance_alerts table",
+    );
+    assert.deepEqual(snapshot.assistantExamples, [], "assistantExamples stays empty until a read model lands");
+  } finally {
+    await client`delete from ledger.compliance_alerts where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+  }
+});
+
+test("PostgresLedgerStore.getReviewFeed orders by created_at DESC, id DESC (§A N12)", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+    const first = await store.createEvidence({
+      organizationId: orgId,
+      workspaceId: wsId,
+      actorId: "user_test",
+      title: "First in feed",
+      originalFilename: "first.jpg",
+      mimeType: "image/jpeg",
+      modalities: ["camera"],
+    });
+    const second = await store.createEvidence({
+      organizationId: orgId,
+      workspaceId: wsId,
+      actorId: "user_test",
+      title: "Second in feed",
+      originalFilename: "second.jpg",
+      mimeType: "image/jpeg",
+      modalities: ["camera"],
+    });
+
+    const feed = await store.getReviewFeed();
+    assert.equal(feed.length, 2);
+    assert.equal(feed[0]?.id, second.review.id, "newest review first");
+    assert.equal(feed[1]?.id, first.review.id);
   } finally {
     await client`delete from ledger.events where organization_id = ${orgId}`;
     await client`delete from ledger.review_tasks where organization_id = ${orgId}`;

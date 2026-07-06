@@ -56,6 +56,7 @@ test("saves the VAT period and persists it across reload", async ({ page }) => {
   await expect(page.getByTestId("company-vat-period")).toContainText("Quarterly");
 
   await fillCompanyBasics(page);
+  await pickSelectOption(page, "company-profile-locale", "English");
   await pickSelectOption(page, "company-vat-period", "Monthly");
 
   await page.getByTestId("company-form-submit").click();

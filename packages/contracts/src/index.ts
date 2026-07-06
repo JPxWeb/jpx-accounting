@@ -18,13 +18,6 @@ export const evidenceModalitySchema = z.enum([
   "share",
   "email-forward",
 ]);
-export const reviewDecisionSchema = z.enum([
-  "approve",
-  "reject",
-  "book-without-vat",
-  "request-more-evidence",
-  "split-posting",
-]);
 export const suggestionKindSchema = z.enum(["explanation", "recommendation", "automation-request"]);
 export const reviewStatusSchema = z.enum(["needs-review", "approved", "rejected", "booked-without-vat"]);
 export const trustLevelSchema = z.enum(["official", "internal", "user-upload"]);

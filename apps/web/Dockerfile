@@ -15,6 +15,11 @@ COPY . .
 # Install dependencies
 RUN pnpm install --frozen-lockfile
 
+# Production images bake `normal` so the client bundle matches Azure App Service settings.
+# Override at build time for demo-only image tags (see docs/CONTRIBUTING.md).
+ARG NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE=normal
+ENV NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE=${NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE}
+
 # Build all workspace packages (contracts, domain, ui-tokens, etc.) then web
 RUN pnpm build
 

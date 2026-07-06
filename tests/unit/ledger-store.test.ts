@@ -553,3 +553,47 @@ test("MemoryLedgerStore.getSnapshot carries evidence packets so the voucher→ev
   const { packets: _packets, ...legacyShape } = snapshot;
   assert.deepEqual(workspaceSnapshotSchema.parse(legacyShape).packets, []);
 });
+
+test("MemoryLedgerStore.getSnapshot returns defensive copies of assistantExamples and alerts (Rule 17)", async () => {
+  const store = new MemoryLedgerStore();
+  const before = await store.getSnapshot();
+  const examplesLen = before.assistantExamples.length;
+  const alertsLen = before.alerts.length;
+
+  await store.answerAssistantQuestion("What is moms?");
+  await store.refreshComplianceAlerts();
+
+  assert.equal(before.assistantExamples.length, examplesLen, "prior snapshot assistantExamples must not grow");
+  assert.equal(before.alerts.length, alertsLen, "prior snapshot alerts array must not be replaced in place");
+
+  const after = await store.getSnapshot();
+  assert.ok(after.assistantExamples.length > examplesLen, "store gained a new assistant example");
+  assert.notEqual(before.assistantExamples, after.assistantExamples, "snapshot arrays must not alias store internals");
+  assert.notEqual(before.alerts, after.alerts, "snapshot alerts must not alias store internals");
+});
+
+test("MemoryLedgerStore.applyReviewDecision does not mutate a previously returned snapshot (Rule 17)", async () => {
+  const store = new MemoryLedgerStore();
+  const snapshotBefore = await store.getSnapshot();
+  const [reviewInSnapshot] = snapshotBefore.reviews.filter((review) => review.status === "needs-review");
+  assert.ok(reviewInSnapshot, "seed review in needs-review required");
+
+  const voucherInSnapshot = snapshotBefore.vouchers.find((voucher) => voucher.id === reviewInSnapshot.voucherId);
+  assert.ok(voucherInSnapshot);
+  assert.equal(reviewInSnapshot.status, "needs-review");
+  assert.equal(voucherInSnapshot.status, "needs-review");
+  const timelineLen = reviewInSnapshot.provenanceTimeline.length;
+
+  const [review] = await store.getReviewFeed();
+  assert.equal(review?.id, reviewInSnapshot.id);
+
+  await store.applyReviewDecision(review!.id, "approve", { actorId: "user_founder" });
+
+  assert.equal(reviewInSnapshot.status, "needs-review", "captured review object must stay unchanged");
+  assert.equal(voucherInSnapshot.status, "needs-review", "captured voucher object must stay unchanged");
+  assert.equal(
+    reviewInSnapshot.provenanceTimeline.length,
+    timelineLen,
+    "captured provenance timeline must not grow in place",
+  );
+});

@@ -38,6 +38,7 @@ import {
   buildReportPack,
   buildVat,
   createId,
+  currentMonthToken,
   deriveVoucherFields,
   detectComplianceIssues,
   evaluateVoucherRules,
@@ -193,13 +194,14 @@ function rowToEvidence(row: EvidenceRow): EvidenceObject {
 }
 
 function rowToPacket(row: PacketRow, evidenceIds: string[]): EvidencePacket {
-  const packet: EvidencePacket = {
+  // Pin the exact EvidencePacket shape (§A N10): optional keys are always present,
+  // matching MemoryLedgerStore.composeEvidence even when values are undefined.
+  return {
     id: row.id,
     evidenceIds,
+    note: row.note ?? undefined,
+    voiceTranscript: row.voice_transcript ?? undefined,
   };
-  if (row.note !== null) packet.note = row.note;
-  if (row.voice_transcript !== null) packet.voiceTranscript = row.voice_transcript;
-  return packet;
 }
 
 function rowToVoucher(row: VoucherRow): Voucher {
@@ -247,6 +249,88 @@ function rowToEvent(row: EventRow): LedgerEvent {
     eventHash: row.event_hash,
     digestDate: toDateOnlyIso(row.digest_date),
   };
+}
+
+type ComplianceAlertRow = {
+  id: string;
+  title: string;
+  source: string;
+  detected_at: string;
+  impact_summary: string;
+  kind: string;
+  severity: string;
+  status: string;
+  target_id: string | null;
+  body: string | null;
+};
+
+function rowToComplianceAlert(row: ComplianceAlertRow): ComplianceAlert {
+  return {
+    id: row.id,
+    title: row.title,
+    source: row.source,
+    detectedAt: row.detected_at,
+    impactSummary: row.impact_summary,
+    kind: row.kind,
+    severity: row.severity as ComplianceAlert["severity"],
+    status: row.status as ComplianceAlert["status"],
+    targetId: row.target_id ?? undefined,
+    body: row.body ?? undefined,
+  };
+}
+
+type PacketWithEvidenceIds = PacketRow & { evidence_object_ids: string[] };
+
+type ResolvedPacketVoucher = {
+  packet?: EvidencePacket;
+  voucher?: Voucher;
+};
+
+/**
+ * Shared evidence→packet→voucher join (§A N11). Accepts the top-level client or
+ * a transaction handle from `begin()` — both expose the same tagged-template API.
+ * Picks the newest packet containing the evidence (`ORDER BY created_at DESC`).
+ */
+async function resolvePacketAndVoucher(
+  runner: PostgresClient,
+  scope: { organizationId: string; workspaceId: string },
+  evidenceId: string,
+): Promise<ResolvedPacketVoucher> {
+  const packetRows = await runner<PacketWithEvidenceIds[]>`
+    SELECT p.id, p.organization_id, p.workspace_id, p.note, p.voice_transcript, p.created_at,
+           COALESCE(
+             (SELECT array_agg(i2.evidence_object_id ORDER BY i2.evidence_object_id)
+              FROM ledger.evidence_packet_items i2
+              WHERE i2.evidence_packet_id = p.id),
+             '{}'::text[]
+           ) AS evidence_object_ids
+    FROM ledger.evidence_packets p
+    JOIN ledger.evidence_packet_items i ON i.evidence_packet_id = p.id
+    WHERE i.evidence_object_id = ${evidenceId}
+      AND p.organization_id = ${scope.organizationId}
+      AND p.workspace_id = ${scope.workspaceId}
+    ORDER BY p.created_at DESC
+    LIMIT 1
+  `;
+  const packetRow = packetRows[0];
+  if (!packetRow) return {};
+
+  const packet = rowToPacket(packetRow, packetRow.evidence_object_ids);
+
+  const voucherRows = await runner<VoucherRow[]>`
+    SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
+           accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+    FROM ledger.vouchers
+    WHERE evidence_packet_id = ${packetRow.id}
+      AND organization_id = ${scope.organizationId}
+      AND workspace_id = ${scope.workspaceId}
+    LIMIT 1
+  `;
+  const voucher = voucherRows[0] ? rowToVoucher(voucherRows[0]) : undefined;
+
+  const result: ResolvedPacketVoucher = { packet };
+  if (voucher) result.voucher = voucher;
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -618,9 +702,9 @@ export class PostgresLedgerStore implements LedgerStore {
       const packet: EvidencePacket = {
         id: createId("packet"),
         evidenceIds: input.evidenceIds,
+        note: input.note,
+        voiceTranscript: input.voiceTranscript,
       };
-      if (input.note !== undefined) packet.note = input.note;
-      if (input.voiceTranscript !== undefined) packet.voiceTranscript = input.voiceTranscript;
 
       await tx`
         INSERT INTO ledger.evidence_packets (
@@ -648,6 +732,37 @@ export class PostgresLedgerStore implements LedgerStore {
         `;
       }
 
+      // Voucher relink read-model fix (Memory parity §A N9): when evidence is
+      // re-bundled into a new packet, repoint vouchers.evidence_packet_id so
+      // getEvidenceContext (newest packet) and getSnapshot (voucher link) agree.
+      // Read-model UPDATE only — no hash-chain event, no tail lock.
+      let voucherIdToRelink: string | undefined;
+      for (const evidenceId of input.evidenceIds) {
+        const linkedRows = await tx<Array<{ voucher_id: string }>>`
+          SELECT v.id AS voucher_id
+          FROM ledger.vouchers v
+          JOIN ledger.evidence_packet_items i ON i.evidence_packet_id = v.evidence_packet_id
+          WHERE i.evidence_object_id = ${evidenceId}
+            AND i.evidence_packet_id != ${packet.id}
+            AND v.organization_id = ${input.organizationId}
+            AND v.workspace_id = ${input.workspaceId}
+          LIMIT 1
+        `;
+        if (linkedRows[0]?.voucher_id && !voucherIdToRelink) {
+          voucherIdToRelink = linkedRows[0].voucher_id;
+        }
+      }
+
+      if (voucherIdToRelink) {
+        await tx`
+          UPDATE ledger.vouchers
+          SET evidence_packet_id = ${packet.id}
+          WHERE id = ${voucherIdToRelink}
+            AND organization_id = ${input.organizationId}
+            AND workspace_id = ${input.workspaceId}
+        `;
+      }
+
       return packet;
     });
   }
@@ -668,45 +783,7 @@ export class PostgresLedgerStore implements LedgerStore {
     if (!evidenceRow) return undefined;
 
     const evidence = rowToEvidence(evidenceRow);
-
-    // Find the packet (if any) that contains this evidence. We pick the most
-    // recently created packet to match the typical 1-evidence-1-packet flow.
-    const packetRows = await this.client<(PacketRow & { evidence_object_ids: string[] })[]>`
-      SELECT p.id, p.organization_id, p.workspace_id, p.note, p.voice_transcript, p.created_at,
-             COALESCE(
-               (SELECT array_agg(i2.evidence_object_id ORDER BY i2.evidence_object_id)
-                FROM ledger.evidence_packet_items i2
-                WHERE i2.evidence_packet_id = p.id),
-               '{}'::text[]
-             ) AS evidence_object_ids
-      FROM ledger.evidence_packets p
-      JOIN ledger.evidence_packet_items i ON i.evidence_packet_id = p.id
-      WHERE i.evidence_object_id = ${evidenceId}
-        AND p.organization_id = ${this.defaults.organizationId}
-        AND p.workspace_id = ${this.defaults.workspaceId}
-      ORDER BY p.created_at DESC
-      LIMIT 1
-    `;
-    const packetRow = packetRows[0];
-
-    let packet: EvidencePacket | undefined;
-    let voucher: Voucher | undefined;
-
-    if (packetRow) {
-      packet = rowToPacket(packetRow, packetRow.evidence_object_ids);
-
-      const voucherRows = await this.client<VoucherRow[]>`
-        SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
-        FROM ledger.vouchers
-        WHERE evidence_packet_id = ${packetRow.id}
-          AND organization_id = ${this.defaults.organizationId}
-          AND workspace_id = ${this.defaults.workspaceId}
-        LIMIT 1
-      `;
-      const voucherRow = voucherRows[0];
-      if (voucherRow) voucher = rowToVoucher(voucherRow);
-    }
+    const { packet, voucher } = await resolvePacketAndVoucher(this.client, this.defaults, evidenceId);
 
     const result: { evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } = { evidence };
     if (packet) result.packet = packet;
@@ -737,38 +814,7 @@ export class PostgresLedgerStore implements LedgerStore {
       if (!evidenceRow) return undefined;
       const evidence = rowToEvidence(evidenceRow);
 
-      const packetRows = await tx<(PacketRow & { evidence_object_ids: string[] })[]>`
-        SELECT p.id, p.organization_id, p.workspace_id, p.note, p.voice_transcript, p.created_at,
-               COALESCE(
-                 (SELECT array_agg(i2.evidence_object_id ORDER BY i2.evidence_object_id)
-                  FROM ledger.evidence_packet_items i2
-                  WHERE i2.evidence_packet_id = p.id),
-                 '{}'::text[]
-               ) AS evidence_object_ids
-        FROM ledger.evidence_packets p
-        JOIN ledger.evidence_packet_items i ON i.evidence_packet_id = p.id
-        WHERE i.evidence_object_id = ${evidenceId}
-          AND p.organization_id = ${this.defaults.organizationId}
-          AND p.workspace_id = ${this.defaults.workspaceId}
-        ORDER BY p.created_at DESC
-        LIMIT 1
-      `;
-      const packetRow = packetRows[0];
-      const packet = packetRow ? rowToPacket(packetRow, packetRow.evidence_object_ids) : undefined;
-
-      let voucher: Voucher | undefined;
-      if (packetRow) {
-        const voucherRows = await tx<VoucherRow[]>`
-          SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-                 accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
-          FROM ledger.vouchers
-          WHERE evidence_packet_id = ${packetRow.id}
-            AND organization_id = ${this.defaults.organizationId}
-            AND workspace_id = ${this.defaults.workspaceId}
-          LIMIT 1
-        `;
-        if (voucherRows[0]) voucher = rowToVoucher(voucherRows[0]);
-      }
+      const { packet, voucher } = await resolvePacketAndVoucher(tx, this.defaults, evidenceId);
 
       if (!voucher) {
         const result: EvidenceContext = { evidence };
@@ -985,7 +1031,7 @@ export class PostgresLedgerStore implements LedgerStore {
       FROM ledger.review_tasks
       WHERE organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
-      ORDER BY id DESC
+      ORDER BY created_at DESC, id DESC
     `;
     return rows.map(rowToReview);
   }
@@ -1075,10 +1121,18 @@ export class PostgresLedgerStore implements LedgerStore {
       ORDER BY p.created_at ASC
     `;
 
-    const [reviews, reports, closeRun] = await Promise.all([
+    const [reviews, reports, closeRun, alertRows] = await Promise.all([
       this.getReviewFeed(),
       this.getReports(),
       this.getCloseRun(),
+      this.client<ComplianceAlertRow[]>`
+        SELECT id, title, source, detected_at, impact_summary, kind, severity,
+               status, target_id, body
+        FROM ledger.compliance_alerts
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+        ORDER BY detected_at DESC
+      `,
     ]);
 
     return {
@@ -1086,9 +1140,12 @@ export class PostgresLedgerStore implements LedgerStore {
       vouchers: voucherRows.map(rowToVoucher),
       reviews,
       reports,
+      // Contract decision: assistantExamples has no Postgres read model yet.
+      // answerAssistantQuestion persists to ledger.assistant_sessions, but the
+      // snapshot's AssistantSession[] shape is Memory-only until wired.
       assistantExamples: [],
       closeRun,
-      alerts: [],
+      alerts: alertRows.map(rowToComplianceAlert),
       packets: packetRows.map((row) => rowToPacket(row, row.evidence_object_ids)),
     };
   }
@@ -1375,15 +1432,13 @@ export class PostgresLedgerStore implements LedgerStore {
   }
 
   async getCloseRun(): Promise<CloseRun> {
+    // Store parity with MemoryLedgerStore — honest empty shell until period-close
+    // persistence lands (Phase 3.5 / §A C2).
     return {
-      id: "close_current",
-      period: "2026-03",
+      id: "close_unavailable",
+      period: currentMonthToken(),
       generatedAt: nowIso(),
-      checklist: [
-        { id: "close_1", label: "Confirm all uploaded evidence has a linked voucher", status: "ready" },
-        { id: "close_2", label: "Review blocked VAT deductions", status: "open" },
-        { id: "close_3", label: "Export SIE package for accountant review", status: "ready" },
-      ],
+      checklist: [],
     };
   }
 
@@ -1464,20 +1519,7 @@ export class PostgresLedgerStore implements LedgerStore {
         `;
       }
 
-      const allRows = await tx<
-        Array<{
-          id: string;
-          title: string;
-          source: string;
-          detected_at: string;
-          impact_summary: string;
-          kind: string;
-          severity: string;
-          status: string;
-          target_id: string | null;
-          body: string | null;
-        }>
-      >`
+      const allRows = await tx<ComplianceAlertRow[]>`
         SELECT id, title, source, detected_at, impact_summary, kind, severity,
                status, target_id, body
         FROM ledger.compliance_alerts
@@ -1485,18 +1527,7 @@ export class PostgresLedgerStore implements LedgerStore {
           AND workspace_id = ${this.defaults.workspaceId}
         ORDER BY detected_at DESC
       `;
-      return allRows.map((r) => ({
-        id: r.id,
-        title: r.title,
-        source: r.source,
-        detectedAt: r.detected_at,
-        impactSummary: r.impact_summary,
-        kind: r.kind,
-        severity: r.severity as ComplianceAlert["severity"],
-        status: r.status as ComplianceAlert["status"],
-        targetId: r.target_id ?? undefined,
-        body: r.body ?? undefined,
-      }));
+      return allRows.map(rowToComplianceAlert);
     });
   }
 
