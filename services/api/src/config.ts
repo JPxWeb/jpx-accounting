@@ -32,6 +32,13 @@ export type ApiRuntimeConfig = {
   auth: {
     /** Full JWKS URL — typically `${SUPABASE_URL}/auth/v1/keys`. When set, /api/* mutations require a valid JWT. */
     jwksUrl?: string | undefined;
+    /**
+     * Asymmetric algorithms the JWKS verifier accepts (comma-separated via SUPABASE_JWT_ALGS).
+     * Defaults to RS256 + ES256: Supabase's original asymmetric default plus its newer signing-key
+     * default — a hardcoded RS256-only allowlist would 401 every legitimate user once a project's
+     * JWKS rotates to ES256.
+     */
+    jwtAlgs?: SupabaseJwtAlgorithm[] | undefined;
   };
   advisor: {
     /**
@@ -46,6 +53,22 @@ export type ApiRuntimeConfig = {
 
 /** Demo fallback for ADVISOR_TOOL_APPROVAL_SECRET — not a production credential. */
 export const DEMO_ADVISOR_TOOL_APPROVAL_SECRET = "jpx-demo-advisor-tool-approval-secret";
+
+/** Mirrors `hono/jwk`'s `AsymmetricAlgorithm` union — kept local so config.ts stays framework-import-free. */
+export type SupabaseJwtAlgorithm =
+  | "RS256"
+  | "RS384"
+  | "RS512"
+  | "PS256"
+  | "PS384"
+  | "PS512"
+  | "ES256"
+  | "ES384"
+  | "ES512"
+  | "EdDSA";
+
+/** RS256 covers Supabase's original asymmetric keys; ES256 covers its newer default. */
+export const DEFAULT_SUPABASE_JWT_ALGS: SupabaseJwtAlgorithm[] = ["RS256", "ES256"];
 
 function normalizeOptionalValue(value?: string) {
   const trimmed = value?.trim();
@@ -63,6 +86,15 @@ function resolveCorsPolicy(runtimeMode: RuntimeMode, originsEnv?: string): CorsR
       .map((segment) => segment.trim())
       .filter(Boolean) ?? [];
   return { kind: "allowlist", origins };
+}
+
+/** Comma-separated SUPABASE_JWT_ALGS → trimmed list; falls back to DEFAULT_SUPABASE_JWT_ALGS when unset/empty. */
+function resolveJwtAlgs(algsEnv?: string): SupabaseJwtAlgorithm[] {
+  const algs = algsEnv
+    ?.split(",")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  return algs && algs.length > 0 ? (algs as SupabaseJwtAlgorithm[]) : [...DEFAULT_SUPABASE_JWT_ALGS];
 }
 
 /**
@@ -121,6 +153,7 @@ export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiR
     },
     auth: {
       jwksUrl: normalizeOptionalValue(env.SUPABASE_JWKS_URL),
+      jwtAlgs: resolveJwtAlgs(env.SUPABASE_JWT_ALGS),
     },
     advisor: {
       toolApprovalSecret: resolveAdvisorToolApprovalSecret(mode, env.ADVISOR_TOOL_APPROVAL_SECRET),

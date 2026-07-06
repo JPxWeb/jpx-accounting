@@ -3,7 +3,11 @@ import test from "node:test";
 
 import { createAdvisorChatHandler, type AdvisorChatHandlerOptions } from "../../services/api/src/advisor/chat";
 import { createApp } from "../../services/api/src/app";
-import { DEMO_ADVISOR_TOOL_APPROVAL_SECRET, readApiRuntimeConfig } from "../../services/api/src/config";
+import {
+  DEFAULT_SUPABASE_JWT_ALGS,
+  DEMO_ADVISOR_TOOL_APPROVAL_SECRET,
+  readApiRuntimeConfig,
+} from "../../services/api/src/config";
 import { createApiRuntimeDependencies } from "../../services/api/src/runtime";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
 
@@ -92,6 +96,34 @@ test("JSON validation failures return structured issues and requestId", async ()
   assert.equal(body.requestId, "test-fixture-id");
 });
 
+test("GET /api/close-runs/:id returns the run when the id matches the store's close run", async () => {
+  const app = createTestApiApp("demo");
+
+  const created = await app.request("http://localhost/api/close-runs", { method: "POST" });
+  assert.equal(created.status, 201);
+  const closeRun = (await created.json()) as { id: string; period: string; checklist: unknown[] };
+
+  const response = await app.request(`http://localhost/api/close-runs/${closeRun.id}`);
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { id: string; period: string; checklist: unknown[] };
+  // generatedAt is freshly computed per getCloseRun() call, so compare the stable fields only —
+  // the route must not override `id` with the path param (it already matches here).
+  assert.equal(body.id, closeRun.id);
+  assert.equal(body.period, closeRun.period);
+  assert.deepEqual(body.checklist, closeRun.checklist);
+});
+
+test("GET /api/close-runs/:id 404s when the id does not match the store's close run", async () => {
+  const app = createTestApiApp("demo");
+
+  const response = await app.request("http://localhost/api/close-runs/does-not-exist");
+  assert.equal(response.status, 404);
+  const body = (await response.json()) as { error: string; runtimeMode: string; requestId: string };
+  assert.match(body.error, /not found/i);
+  assert.equal(body.runtimeMode, "demo");
+  assert.ok(typeof body.requestId === "string" && body.requestId.length > 0);
+});
+
 // Phase 1.1 (§A C8): normal mode must not boot with a missing or demo-default HMAC secret.
 test("readApiRuntimeConfig keeps the demo tool-approval fallback in demo mode", () => {
   const config = readApiRuntimeConfig({
@@ -129,6 +161,36 @@ test("readApiRuntimeConfig accepts a custom tool-approval secret in normal mode"
     ADVISOR_TOOL_APPROVAL_SECRET: "production-only-secret",
   });
   assert.equal(config.advisor.toolApprovalSecret, "production-only-secret");
+});
+
+// Fix (§A finding): Supabase's newer projects sign JWKS keys with ES256, not just RS256.
+test("readApiRuntimeConfig defaults SUPABASE_JWT_ALGS to RS256 and ES256 when unset", () => {
+  const config = readApiRuntimeConfig({ ACCOUNTING_RUNTIME_MODE: "demo" });
+  assert.deepEqual(config.auth.jwtAlgs, DEFAULT_SUPABASE_JWT_ALGS);
+});
+
+test("readApiRuntimeConfig parses a custom comma-separated SUPABASE_JWT_ALGS", () => {
+  const config = readApiRuntimeConfig({
+    ACCOUNTING_RUNTIME_MODE: "demo",
+    SUPABASE_JWT_ALGS: " RS256 , PS256 ,ES384",
+  });
+  assert.deepEqual(config.auth.jwtAlgs, ["RS256", "PS256", "ES384"]);
+});
+
+test("createApiRuntimeDependencies forwards jwtAlgs from config to the app wiring", () => {
+  const dependencies = createApiRuntimeDependencies({
+    port: 0,
+    runtimeMode: "demo",
+    allowTestReset: false,
+    corsPolicy: { kind: "wildcard" },
+    azureOpenAi: {},
+    supabase: { poolerTransactionMode: false },
+    azureStorage: {},
+    azureDocumentIntelligence: {},
+    auth: { jwtAlgs: ["ES256"] },
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret" },
+  });
+  assert.deepEqual(dependencies.jwtAlgs, ["ES256"]);
 });
 
 // Minimal LanguageModel stub for streamText — avoids `ai/test` (not a root test dep).

@@ -44,7 +44,7 @@ import { AdvisorDisabledError, AdvisorValidationError, createAdvisorChatHandler 
 import { createAdvisorModel, type AdvisorModelConfig } from "./advisor/model";
 import type { BlobUploader } from "./blob";
 import { MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
-import type { CorsRuntimePolicy } from "./config";
+import { DEFAULT_SUPABASE_JWT_ALGS, type CorsRuntimePolicy, type SupabaseJwtAlgorithm } from "./config";
 import { queryKnowledge } from "./knowledge";
 import type { AiRuntimeMetadata } from "./runtime";
 import { isLedgerStoreOperational, LedgerStoreUnavailableError } from "./runtime";
@@ -73,6 +73,8 @@ type CreateAppOptions = {
    * require a valid JWT. When absent, mutations stay open — current demo + pilot behavior.
    */
   jwksUrl?: string | undefined;
+  /** Asymmetric algorithms the JWKS verifier accepts — see SUPABASE_JWT_ALGS in config.ts. Defaults to RS256 + ES256. */
+  jwtAlgs?: SupabaseJwtAlgorithm[] | undefined;
   allowTestReset?: boolean;
 };
 
@@ -143,6 +145,7 @@ export function createApp({
   aiMetadata,
   advisor,
   jwksUrl,
+  jwtAlgs = DEFAULT_SUPABASE_JWT_ALGS,
   allowTestReset,
 }: CreateAppOptions) {
   const app = new Hono<AppEnv>();
@@ -257,11 +260,13 @@ export function createApp({
   });
 
   // JWKS-backed JWT auth on mutating routes when configured. The middleware ships with Hono
-  // (`hono/jwk`); against Supabase the JWKS URL is `${SUPABASE_URL}/auth/v1/keys`. Default alg is
-  // RS256 — the most common asymmetric setting; ES256 projects can fork via env if needed.
-  // Skipped when unset so demo / unauthenticated pilots keep working — production sets the env.
+  // (`hono/jwk`); against Supabase the JWKS URL is `${SUPABASE_URL}/auth/v1/keys`. Accepted
+  // algorithms default to RS256 + ES256 (SUPABASE_JWT_ALGS overrides) since Supabase's newer
+  // asymmetric signing keys default to ES256 — a hardcoded RS256-only allowlist would 401 every
+  // legitimate user on such a project. Skipped when unset so demo / unauthenticated pilots keep
+  // working — production sets the env.
   if (jwksUrl) {
-    const verifyJwt = jwk({ jwks_uri: jwksUrl, alg: ["RS256"] });
+    const verifyJwt = jwk({ jwks_uri: jwksUrl, alg: jwtAlgs });
     app.use("/api/*", async (c, next) => {
       if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
         return next();

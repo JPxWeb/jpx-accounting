@@ -165,6 +165,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
       aiMetadata: buildAiMetadata(config),
       advisor,
       jwksUrl: config.auth.jwksUrl,
+      jwtAlgs: config.auth.jwtAlgs,
     };
   }
 
@@ -196,5 +197,6 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
     aiMetadata: buildAiMetadata(config),
     advisor,
     jwksUrl: config.auth.jwksUrl,
+    jwtAlgs: config.auth.jwtAlgs,
   };
 }
