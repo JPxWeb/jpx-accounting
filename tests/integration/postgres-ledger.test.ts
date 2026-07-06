@@ -854,3 +854,36 @@ test("PostgresLedgerStore.getCompanySettings normalizes legacy jsonb rows withou
     await closePostgresClient(client);
   }
 });
+
+test(
+  "PostgresLedgerStore.getCloseRun returns the honest empty shell: close_unavailable, real local month, empty checklist + Memory parity",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+      const closeRun = await store.getCloseRun();
+
+      assert.equal(closeRun.id, "close_unavailable");
+      assert.deepEqual(closeRun.checklist, [], "no synthetic checklist items");
+
+      // Independently derive the expected `YYYY-MM` from LOCAL calendar parts
+      // rather than exercising the same helper the store uses under the hood.
+      const now = new Date();
+      const expectedPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      assert.equal(closeRun.period, expectedPeriod);
+
+      // Memory/Postgres parity (CONVENTIONS Rule 11), modulo generatedAt.
+      const memory = new MemoryLedgerStore();
+      const memCloseRun = await memory.getCloseRun();
+      assert.equal(memCloseRun.id, closeRun.id);
+      assert.equal(memCloseRun.period, closeRun.period);
+      assert.deepEqual(memCloseRun.checklist, closeRun.checklist);
+    } finally {
+      await closePostgresClient(client);
+    }
+  },
+);

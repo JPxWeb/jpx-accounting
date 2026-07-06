@@ -806,7 +806,12 @@ export class MemoryLedgerStore implements LedgerStore {
   }
 
   async getReviewFeed(): Promise<ReviewTask[]> {
-    return [...this.reviews.values()].sort((left, right) => right.id.localeCompare(left.id));
+    // Newest-first: the reviews Map preserves creation order (an existing key
+    // is never re-inserted, only `.set()`-updated in place), so reversing it
+    // gives newest-first deterministically. Sorting by `review.id` (a random
+    // UUID) here was arbitrary and diverged from PostgresLedgerStore's
+    // `ORDER BY created_at DESC, id DESC` (CONVENTIONS Rule 11 / §A N12).
+    return [...this.reviews.values()].reverse();
   }
 
   async getReports(range?: ReportRange): Promise<ReportBundle> {

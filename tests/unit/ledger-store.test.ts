@@ -597,3 +597,85 @@ test("MemoryLedgerStore.applyReviewDecision does not mutate a previously returne
     "captured provenance timeline must not grow in place",
   );
 });
+
+test("MemoryLedgerStore.getReviewFeed orders newest review first (parity with Postgres created_at DESC, id DESC)", async () => {
+  const store = new MemoryLedgerStore();
+  // Constructor already seeds one review; two more pushes it to the back.
+  const first = await store.createEvidence({
+    organizationId: "org_jpx",
+    workspaceId: "workspace_main",
+    actorId: "user_founder",
+    title: "First in feed",
+    originalFilename: "first.jpg",
+    mimeType: "image/jpeg",
+    modalities: ["camera"],
+  });
+  const second = await store.createEvidence({
+    organizationId: "org_jpx",
+    workspaceId: "workspace_main",
+    actorId: "user_founder",
+    title: "Second in feed",
+    originalFilename: "second.jpg",
+    mimeType: "image/jpeg",
+    modalities: ["camera"],
+  });
+
+  const feed = await store.getReviewFeed();
+  assert.equal(feed.length, 3, "seeded review + two created");
+  assert.equal(feed[0]?.id, second.review.id, "newest review first");
+  assert.equal(feed[1]?.id, first.review.id);
+  assert.equal(feed[2]?.title, "Approve AI subscription posting", "seeded review is oldest, sorts last");
+});
+
+test("MemoryLedgerStore.composeEvidence relinks the voucher to the newest packet and keeps optional-key packet shape", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await store.createEvidence({
+    organizationId: "org_jpx",
+    workspaceId: "workspace_main",
+    actorId: "user_founder",
+    title: "Relink target receipt",
+    originalFilename: "relink.jpg",
+    mimeType: "image/jpeg",
+    modalities: ["camera"],
+  });
+
+  const composed = await store.composeEvidence({
+    organizationId: "org_jpx",
+    workspaceId: "workspace_main",
+    actorId: "user_founder",
+    evidenceIds: [created.evidence.id],
+    note: "Rebundled packet",
+  });
+
+  // Packet shape parity with PostgresLedgerStore (§A N10): optional keys are
+  // always present on the object, even when undefined.
+  assert.ok("note" in composed, "note key present even when set");
+  assert.ok("voiceTranscript" in composed, "voiceTranscript key present even when undefined");
+  assert.equal(composed.note, "Rebundled packet");
+  assert.equal(composed.voiceTranscript, undefined);
+
+  // Relink (§A N9): getEvidenceContext must resolve to the newest packet, and
+  // the voucher's evidencePacketId must agree so getSnapshot doesn't disagree.
+  const context = await store.getEvidenceContext(created.evidence.id);
+  assert.equal(context?.packet?.id, composed.id, "getEvidenceContext picks the newest packet");
+  assert.equal(context?.voucher?.evidencePacketId, composed.id, "voucher relinked to the newest packet");
+
+  const snapshot = await store.getSnapshot();
+  const snapshotVoucher = snapshot.vouchers.find((voucher) => voucher.id === created.voucher.id);
+  assert.equal(snapshotVoucher?.evidencePacketId, composed.id, "getSnapshot voucher link matches getEvidenceContext");
+});
+
+test("MemoryLedgerStore.getCloseRun returns the honest empty shell: close_unavailable, real local month, empty checklist", async () => {
+  const store = new MemoryLedgerStore();
+  const closeRun = await store.getCloseRun();
+
+  assert.equal(closeRun.id, "close_unavailable");
+  assert.deepEqual(closeRun.checklist, [], "no synthetic checklist items");
+
+  // Independently derive the expected `YYYY-MM` from LOCAL calendar parts
+  // (not toISOString().slice, which UTC-shifts near midnight) to avoid
+  // exercising the same helper the store uses under the hood.
+  const now = new Date();
+  const expectedPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  assert.equal(closeRun.period, expectedPeriod);
+});
