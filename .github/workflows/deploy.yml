@@ -101,13 +101,14 @@ jobs:
       - name: Bundle API for production
         run: |
           mkdir -p api-deploy
+          # CommonJS, not ESM: @azure/identity → `open` uses __dirname; https-proxy-agent dynamic-
+          # require() also breaks under esbuild --format=esm (Azure API 503 / crash loop).
           pnpm dlx esbuild services/api/src/index.ts \
             --bundle \
             --platform=node \
-            --format=esm \
-            --outfile=api-deploy/server.mjs \
-            --banner:js="import { createRequire } from 'module'; const require = createRequire(import.meta.url);"
-          echo '{"type": "module"}' > api-deploy/package.json
+            --format=cjs \
+            --outfile=api-deploy/server.cjs
+          echo '{}' > api-deploy/package.json
 
       - name: Upload API artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -188,15 +189,23 @@ jobs:
           package: api.zip
 
       # ---- Configure web container to pull from GHCR ----
+      # GITHUB_TOKEN expires when the workflow ends; Azure restarts need a persistent PAT
+      # (GitHub → Settings → Developer settings → PAT classic → read:packages) in GHCR_PULL_TOKEN.
       - name: Configure web app container
+        env:
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
         run: |
+          if [ -z "$GHCR_PULL_TOKEN" ]; then
+            echo "::error::GHCR_PULL_TOKEN is required — Azure App Service cannot pull the private ghcr.io/jpxweb/jpx-accounting-web image with an expired GITHUB_TOKEN. Create a PAT with read:packages and add it as a GitHub Actions secret."
+            exit 1
+          fi
           az webapp config container set \
             --name ${{ steps.bicep.outputs.webAppName }} \
             --resource-group jpx-main-rg \
-            --docker-registry-server-url https://ghcr.io \
-            --docker-registry-server-user ${{ github.actor }} \
-            --docker-registry-server-password ${{ secrets.GITHUB_TOKEN }} \
-            --docker-custom-image-name "${{ env.WEB_IMAGE }}:${{ github.event.workflow_run.head_sha || github.sha }}"
+            --container-registry-url https://ghcr.io \
+            --container-registry-user ${{ github.repository_owner }} \
+            --container-registry-password "$GHCR_PULL_TOKEN" \
+            --container-image-name "${{ env.WEB_IMAGE }}:${{ github.event.workflow_run.head_sha || github.sha }}"
 
       - name: Restart web app to pull new image
         run: |

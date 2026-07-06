@@ -162,7 +162,7 @@ resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
     serverFarmId: existingPlan.id
     siteConfig: {
       linuxFxVersion: 'NODE|24-lts'
-      appCommandLine: 'node server.mjs'
+      appCommandLine: 'node server.cjs'
       alwaysOn: false
       httpLoggingEnabled: true
       appSettings: [

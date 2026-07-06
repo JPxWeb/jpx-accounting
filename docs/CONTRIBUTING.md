@@ -46,10 +46,10 @@ When deploying to Azure, [`infra/azure/main.bicep`](../infra/azure/main.bicep) w
 
 ## Build trivia
 
-| Command                                        | Meaning                                                           |
-| ---------------------------------------------- | ----------------------------------------------------------------- |
-| `pnpm build` (API package)                     | `tsc --noEmit` for `services/api` — typecheck only.               |
-| Deploy workflow `.github/workflows/deploy.yml` | Bundles API with **esbuild** for Azure zip deploy (`server.mjs`). |
+| Command                                        | Meaning                                                                                                          |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `pnpm build` (API package)                     | `tsc --noEmit` for `services/api` — typecheck only.                                                              |
+| Deploy workflow `.github/workflows/deploy.yml` | Bundles API with **esbuild** for Azure zip deploy (`server.cjs`, CommonJS — `@azure/identity` breaks under ESM). |
 
 Keeping those aligned avoids drift between “does it typecheck locally?” vs “does the bundle compile?”.
 

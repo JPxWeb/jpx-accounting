@@ -16,8 +16,10 @@ serve(
   {
     fetch: app.fetch,
     port: config.port,
+    // Azure App Service routes inbound traffic to PORT; bind all interfaces, not loopback-only.
+    hostname: "0.0.0.0",
   },
   (info) => {
-    console.log(`JPX Accounting API (${config.runtimeMode}) listening on http://localhost:${info.port}`);
+    console.log(`JPX Accounting API (${config.runtimeMode}) listening on http://${info.address}:${info.port}`);
   },
 );
