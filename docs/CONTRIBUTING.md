@@ -115,7 +115,7 @@ Rows land scoped to the fixed normal-mode workspace (`org_jpx` / `workspace_main
 
 ### Docker image tags (demo vs production)
 
-The [`apps/web/Dockerfile`](../apps/web/Dockerfile) accepts build-arg **`NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE`** (default **`normal`**). The deploy workflow passes `normal` for CI-gated production pushes and honors `workflow_dispatch` `runtimeMode` for demo stacks.
+The [`apps/web/Dockerfile`](../apps/web/Dockerfile) accepts build-args **`NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE`** (default **`normal`**) and **`NEXT_PUBLIC_API_BASE_URL`** (default **`/api-proxy`**, the same-origin proxy path — `NEXT_PUBLIC_*` values inline at build time, so runtime app settings alone cannot change the client bundle). The deploy workflow passes `normal` for CI-gated production pushes and honors `workflow_dispatch` `runtimeMode` for demo stacks.
 
 | Image tag / build                                            | `NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE` | When to use                                                           |
 | ------------------------------------------------------------ | ------------------------------------- | --------------------------------------------------------------------- |

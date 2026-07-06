@@ -81,6 +81,7 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE=${{ github.event_name == 'workflow_dispatch' && inputs.runtimeMode || 'normal' }}
+            NEXT_PUBLIC_API_BASE_URL=/api-proxy
           tags: |
             ${{ env.WEB_IMAGE }}:${{ github.event.workflow_run.head_sha || github.sha }}
             ${{ env.WEB_IMAGE }}:latest

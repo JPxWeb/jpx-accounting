@@ -20,6 +20,11 @@ RUN pnpm install --frozen-lockfile
 ARG NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE=normal
 ENV NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE=${NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE}
 
+# Same-origin API proxy path (see .env.example / infra/azure/main.bicep webApp appSettings);
+# default matches local/demo behavior since NEXT_PUBLIC_* vars inline at build time only.
+ARG NEXT_PUBLIC_API_BASE_URL=/api-proxy
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+
 # Build all workspace packages (contracts, domain, ui-tokens, etc.) then web
 RUN pnpm build
 
