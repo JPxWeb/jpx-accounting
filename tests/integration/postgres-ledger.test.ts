@@ -14,8 +14,8 @@ import {
 import { closePostgresClient, createPostgresClient, PostgresLedgerStore } from "@jpx-accounting/persistence-postgres";
 
 // Integration test: gated on `SUPABASE_DB_URL`. Skips silently when not set so CI without a live DB
-// still passes. Run locally with `supabase start` + `psql -f infra/supabase/migrations/0001_init.sql`
-// + `psql -f infra/supabase/migrations/0002_schema_alignment.sql`, then export SUPABASE_DB_URL.
+// still passes. Requires migrations 0001–0005 applied in order — see scripts/integration-db.md for
+// the exact docker + psql + run commands (pgvector/pgvector:pg17 container on port 54329).
 
 const databaseUrl = process.env.SUPABASE_DB_URL;
 const skip = !databaseUrl;
@@ -75,6 +75,87 @@ test("PostgresLedgerStore round-trips evidence creation, review approval, and re
     assert.equal((await store.getReports()).journal.length, journalAfter, "replay must not duplicate ledger lines");
   } finally {
     // Clean up the test workspace so re-runs are deterministic.
+    await client`delete from ledger.events where organization_id = ${orgId}`;
+    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+  }
+});
+
+test("migration 0005: ledger.events.id is text and created_at orders same-transaction batches", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    // Schema pin: 0001 shipped id as `uuid default gen_random_uuid()`, which
+    // rejected every `createId('evt')` insert with 22P02. 0005 aligns it.
+    const idColumn = await client<Array<{ data_type: string; column_default: string | null }>>`
+      SELECT data_type, column_default FROM information_schema.columns
+      WHERE table_schema = 'ledger' AND table_name = 'events' AND column_name = 'id'
+    `;
+    assert.equal(idColumn[0]?.data_type, "text", "ledger.events.id must be text (migration 0005)");
+    assert.equal(idColumn[0]?.column_default, null, "uuid default must be dropped (migration 0005)");
+
+    // Schema pin: created_at must default to clock_timestamp() — now() is
+    // frozen per transaction, which left same-transaction event batches with
+    // tied (occurred_at, created_at) and made getEvents ordering and the
+    // lockWorkspaceTail hash-chain tail pick nondeterministic.
+    const createdAtColumn = await client<Array<{ column_default: string | null }>>`
+      SELECT column_default FROM information_schema.columns
+      WHERE table_schema = 'ledger' AND table_name = 'events' AND column_name = 'created_at'
+    `;
+    assert.match(
+      createdAtColumn[0]?.column_default ?? "",
+      /clock_timestamp\(\)/,
+      "created_at must default to clock_timestamp() (migration 0005)",
+    );
+
+    // Behavior pin: one createEvidence transaction appends four events whose
+    // text ids insert cleanly and whose created_at values are strictly
+    // increasing in insertion order.
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+    await store.createEvidence({
+      organizationId: orgId,
+      workspaceId: wsId,
+      actorId: "user_test",
+      title: "Events id/order regression",
+      originalFilename: "events-id.pdf",
+      mimeType: "application/pdf",
+      modalities: ["pdf"],
+    });
+
+    // Microsecond epoch (float8 is exact out to ~2^53, far beyond µs epochs) —
+    // JS Date would truncate clock_timestamp()'s µs resolution to ms and flake.
+    const rows = await client<Array<{ id: string; event_type: string; epoch_us: number }>>`
+      SELECT id, event_type, (extract(epoch from created_at) * 1e6)::float8 AS epoch_us
+      FROM ledger.events
+      WHERE organization_id = ${orgId} AND workspace_id = ${wsId}
+      ORDER BY created_at ASC
+    `;
+    assert.equal(rows.length, 4);
+    assert.ok(
+      rows.every((row) => row.id.startsWith("evt_")),
+      "createId('evt') text ids must round-trip",
+    );
+    assert.deepEqual(
+      rows.map((row) => row.event_type),
+      ["EvidenceReceived", "FieldsExtracted", "VoucherCreated", "SuggestionGenerated"],
+      "created_at must reproduce insertion order within one transaction",
+    );
+    for (let i = 1; i < rows.length; i += 1) {
+      const previous = rows[i - 1];
+      const current = rows[i];
+      assert.ok(
+        previous !== undefined && current !== undefined && current.epoch_us > previous.epoch_us,
+        "created_at strictly increases across the batch",
+      );
+    }
+  } finally {
     await client`delete from ledger.events where organization_id = ${orgId}`;
     await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
     await client`delete from ledger.vouchers where organization_id = ${orgId}`;
