@@ -8,6 +8,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 
 import { apiClient } from "../../lib/client";
+import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { SectionLabel } from "../ui/section-label";
 import { ScreenSkeleton } from "../ui/skeleton";
 
@@ -36,6 +37,8 @@ export function AiPostureForm() {
     mutationFn: (input: CompanySettings) => apiClient.saveCompanySettings(input),
     onSuccess: (saved) => {
       queryClient.setQueryData(["company-settings"], saved);
+      // Settings saves are ledger-audited writes — keep derived views honest (R18).
+      invalidateLedgerDerived(queryClient);
       toast.success(t("saved"));
     },
     onError: () => {

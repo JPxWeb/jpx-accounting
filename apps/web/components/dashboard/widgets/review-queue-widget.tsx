@@ -2,12 +2,13 @@
 
 import type { ReviewTask } from "@jpx-accounting/contracts";
 import { confidenceBand, type ConfidenceBand } from "@jpx-accounting/domain";
-import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { apiClient } from "../../../lib/client";
+import { invalidateLedgerDerived } from "../../../lib/query-invalidation";
 import { applyReviewSnapshotUpdate } from "../../today/review-queue-view";
 import { Money } from "../../ui/money";
 import type { DashboardData } from "../use-dashboard-data";
@@ -38,7 +39,7 @@ export function ReviewQueueWidget({ data }: { data: DashboardData }) {
     mutationFn: (id: string) => apiClient.approveReview(id, { actorId: ACTOR_ID }),
     onSuccess: (review) => {
       applyReviewSnapshotUpdate(queryClient, review);
-      invalidateDerived(queryClient);
+      invalidateLedgerDerived(queryClient);
     },
   });
 
@@ -70,7 +71,7 @@ export function ReviewQueueWidget({ data }: { data: DashboardData }) {
       toast.error(t("batchError", { completed: approved, total: targets.length }));
     } finally {
       setBatchRunning(false);
-      invalidateDerived(queryClient);
+      invalidateLedgerDerived(queryClient);
     }
   }
 
@@ -164,10 +165,4 @@ export function ReviewQueueWidget({ data }: { data: DashboardData }) {
       ) : null}
     </div>
   );
-}
-
-/** Approvals change events + reports; refresh the widgets built on them. */
-function invalidateDerived(queryClient: QueryClient) {
-  void queryClient.invalidateQueries({ queryKey: ["integrity"] });
-  void queryClient.invalidateQueries({ queryKey: ["reports", "pack"] });
 }

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { apiClient } from "../../lib/client";
 import { captureFiles } from "../../lib/promotion";
+import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { DropZone } from "./drop-zone";
 
 const TILE_MODES = ["camera", "upload", "paste", "share"] as const;
@@ -108,8 +109,9 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
           ? tSie("importedWithSkipped", { vouchers: result.importedVouchers, skipped: result.skipped.length })
           : tSie("imported", { vouchers: result.importedVouchers }),
       );
-      // Imported vouchers land directly in the journal — refresh the snapshot-backed views.
-      void queryClient.invalidateQueries({ queryKey: ["workspace"] });
+      // Imported vouchers land directly in the journal — refresh every
+      // ledger-derived view (snapshot, journal, reports, integrity), R18.
+      invalidateLedgerDerived(queryClient);
     } catch {
       toast.error(tSie("error"));
     } finally {

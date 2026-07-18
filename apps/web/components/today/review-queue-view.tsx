@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReviewKeyboard } from "../../hooks/use-review-keyboard";
 import { apiClient } from "../../lib/client";
 import { AccountingApiError } from "@jpx-accounting/api-client";
+import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { getErrorMessage } from "../../lib/request-errors";
 import {
   type ConfidenceFilter,
@@ -105,7 +106,10 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
 
   const onMutationSuccess = useCallback(
     (review: ReviewTask | undefined) => {
+      // Optimistic snapshot update for instant queue feedback, then the shared
+      // R18 sweep so journal/balances/reports/integrity views refresh too.
       applyReviewSnapshotUpdate(queryClient, review);
+      invalidateLedgerDerived(queryClient);
     },
     [queryClient],
   );

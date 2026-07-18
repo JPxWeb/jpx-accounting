@@ -22,6 +22,41 @@ import { WORKSPACE_IDENTITY } from "../../lib/workspace-identity";
 const MAX_SHARE_FILES = 5;
 /** Mirror of the API's `MAX_UPLOAD_BYTES` and the client pipeline's `MAX_CAPTURE_FILE_BYTES`. */
 const MAX_SHARE_FILE_BYTES = 16 * 1024 * 1024;
+/** Cap on the whole multipart body before it is parsed — this route forwards server-side. */
+const MAX_SHARE_BODY_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Reject cross-site form POSTs before touching the body. This route is a
+ * navigation endpoint (no CORS preflight protects it), so a foreign page could
+ * otherwise auto-submit a form here and push attacker-chosen files through the
+ * server-side evidence pipeline.
+ */
+function rejectDisallowedShareRequest(request: Request): Response | undefined {
+  // Modern browsers label the requester: same-origin form posts and
+  // browser-initiated share-target navigations ("none") are legitimate;
+  // "cross-site"/"same-site" are not. An absent header (older browsers,
+  // non-browser clients like Playwright's request fixture) falls through to
+  // the Origin backstop.
+  const secFetchSite = request.headers.get("sec-fetch-site");
+  if (secFetchSite && secFetchSite !== "same-origin" && secFetchSite !== "none") {
+    return new Response("Cross-site share submissions are not accepted.", { status: 403 });
+  }
+
+  // Origin backstop for browsers without Sec-Fetch-Site. "null" stays allowed:
+  // a share-target POST is a browser-initiated navigation without an
+  // initiating document, so some browsers send an opaque origin for it.
+  const origin = request.headers.get("origin");
+  if (origin && origin !== "null" && origin !== new URL(request.url).origin) {
+    return new Response("Cross-origin share submissions are not accepted.", { status: 403 });
+  }
+
+  const contentLength = request.headers.get("content-length");
+  if (contentLength !== null && Number(contentLength) > MAX_SHARE_BODY_BYTES) {
+    return new Response("Shared payload is too large.", { status: 413 });
+  }
+
+  return undefined;
+}
 
 /** Same allowlist as the client promotion pipeline: images + PDF, 16 MB cap. */
 function isAcceptedShareFile(file: File): boolean {
@@ -127,6 +162,11 @@ async function forwardSharedFiles(
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const rejection = rejectDisallowedShareRequest(request);
+  if (rejection) {
+    return rejection;
+  }
+
   const params = new URLSearchParams();
   try {
     const form = await request.formData();

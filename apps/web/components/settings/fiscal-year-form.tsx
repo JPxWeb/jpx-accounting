@@ -9,6 +9,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { apiClient } from "../../lib/client";
+import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { Button } from "../ui/button";
 import { SectionLabel } from "../ui/section-label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
@@ -92,6 +93,8 @@ function FiscalYearFields({ settings }: { settings: CompanySettings | null }) {
       // Shared query key: the workspace profile provider (and with it every
       // fiscal-quarter report window and tax-timeline widget) updates live.
       queryClient.setQueryData(["company-settings"], saved);
+      // Fiscal-window changes reshape report packs and audit-visible state (R18).
+      invalidateLedgerDerived(queryClient);
       toast.success(t("saved"));
     },
     onError: () => {

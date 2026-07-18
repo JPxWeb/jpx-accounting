@@ -8,6 +8,7 @@ import { removeCaptureDraft, saveCaptureDraft } from "./draft-queue";
 import type { CaptureDraft, DraftQueueSaveResult } from "./draft-queue-core";
 import { putEvidenceBlob } from "./evidence-blob-cache";
 import { sha256Hex } from "./hash";
+import { invalidateLedgerDerived } from "./query-invalidation";
 import { WORKSPACE_IDENTITY } from "./workspace-identity";
 
 /**
@@ -65,8 +66,11 @@ function invalidateCaptureQueries(queryClient: QueryClient | undefined) {
   if (!queryClient) {
     return;
   }
+  // Narrow extra: the local draft queue is not ledger-derived.
   void queryClient.invalidateQueries({ queryKey: ["capture-drafts"] });
-  void queryClient.invalidateQueries({ queryKey: ["workspace"] });
+  // Promotion creates evidence + voucher + review — refresh everything derived
+  // from the ledger (R18), not just the workspace snapshot.
+  invalidateLedgerDerived(queryClient);
 }
 
 export type PromoteDraftOptions = {

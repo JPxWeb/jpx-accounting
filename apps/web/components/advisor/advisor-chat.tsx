@@ -11,6 +11,7 @@ import {
   prependAssistantThread,
   type StoredAssistantThread,
 } from "../../lib/assistant-thread-storage";
+import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { getErrorMessage } from "../../lib/request-errors";
 import { webRuntimeConfig } from "../../lib/runtime-config";
 import { SectionLabel } from "../ui/section-label";
@@ -68,9 +69,7 @@ export function AdvisorChat({
         (part) => part.type === PROPOSE_REVIEW_ACTION_PART_TYPE && part.state === "output-available",
       );
       if (executedReviewAction) {
-        void queryClient.invalidateQueries({ queryKey: ["workspace"] });
-        void queryClient.invalidateQueries({ queryKey: ["integrity"] });
-        void queryClient.invalidateQueries({ queryKey: ["reports", "pack"] });
+        invalidateLedgerDerived(queryClient);
       }
     },
   });
