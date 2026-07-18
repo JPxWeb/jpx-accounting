@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Cross-tool contract:** [`AGENTS.md`](AGENTS.md) is the compact agent contract shared by all coding tools (JPx ADR DL-001) and wins on conflict; this file is the deeper Claude-specific project memory.
+**Cross-tool contract:** [`AGENTS.md`](AGENTS.md) is the compact agent contract shared by all coding tools and wins on conflict; this file is the deeper Claude-specific project memory. (Per JPx ADR DL-001 — the ADR ledger lives in the private JPx brain repo, external to this public repo.)
 
 Prefer **official docs**: use Context7 (e.g. `/vercel/next.js` pinned to the repo Next version) or vendor docs before relying on recalled API details — especially ESLint flat config, pnpm lifecycle policy, Playwright wiring, Azure deploy.
 
@@ -111,10 +111,10 @@ Visual regression (`tests/e2e/visual-regression.spec.ts`, 20 themed full-page ba
 
 ### Known deferred / Don't accidentally redo
 
-- **`parseBody` in `services/api/src/app.ts` is intentional, not legacy.** Phase E.1 (replace with `@hono/zod-validator`) was deferred because the current helper produces the exact `{ code: "validation_error", issues: [...] }` 400-body shape that `tests/unit/api-runtime.test.ts` asserts on. Don't swap it without a parity test first.
-- **Phase E.4 (`hono-openapi`) is deferred** because the existing `parseBody` works and `@hono/zod-openapi` has an open Zod v4 incompatibility (issue #1177). Switching needs a deeper Zod v4 sweep — not a one-line dep add.
+- **Phase E.1 (`@hono/zod-validator`) has landed.** Body validation goes through `jsonValidated(schema)` in `services/api/src/validation.ts`, which wraps `@hono/zod-validator` 0.8 with a hook that throws `ApiValidationError` so `app.onError` keeps emitting the contract-pinned `{ code: "validation_error", issues: [...] }` 400 body that `tests/unit/api-runtime.test.ts` asserts on. The old `parseBody` helper is gone — don't reintroduce per-route ad-hoc parsing.
+- **Phase E.4 (`hono-openapi`) is still deferred** — `@hono/zod-openapi` has an open Zod v4 incompatibility (issue #1177). Switching needs a deeper Zod v4 sweep — not a one-line dep add.
 - **5 deploy-only perf/cleanup ideas already on main's PostgresLedgerStore** — projection-aggregate triggers, parallel queries on `getEvidenceContext`, batched suggestion lookups on `getReviewFeed`, org-scoped-first gate on `suggestVoucher`, settings audit attribution. PR-F was opened to port them and closed as a no-op once verified present. No action needed.
-- **Track A forward-looking plans** live under [`docs/superpowers/plans/`](docs/superpowers/plans/). **Landed:** Phase 5 Capture (real `/capture` with quick-add, drafts, archive, evidence detail route); Phase 6 Advisor (superseded by pivot Phase 5 — real AI advisor shipped; Cmd-K remains a search palette); Phase 7 Reports drill-downs (superseded by pivot Phase 4 `?drill=` grammar); Phase 8 Settings depth (all 8 sub-pages render real wired components — **0 header-only stubs remain**; Profile and Billing cards on `/settings/about` are still unbuilt placeholders); unified radius (pivot Phase 1). **These are superseded where they conflict by the advisory pivot** — spec: [`docs/superpowers/specs/2026-07-03-advisory-pivot-design.md`](docs/superpowers/specs/2026-07-03-advisory-pivot-design.md), master plan: [`docs/superpowers/plans/2026-07-03-advisory-pivot-master-plan.md`](docs/superpowers/plans/2026-07-03-advisory-pivot-master-plan.md) (branch `feat/advisory-pivot`).
+- **Track A forward-looking plans** live under [`docs/superpowers/plans/`](docs/superpowers/plans/). **Landed:** Phase 5 Capture (real `/capture` with quick-add, drafts, archive, evidence detail route); Phase 6 Advisor (superseded by pivot Phase 5 — real AI advisor shipped; Cmd-K remains a search palette); Phase 7 Reports drill-downs (superseded by pivot Phase 4 `?drill=` grammar); Phase 8 Settings depth (all 8 sub-pages render real wired components — **0 header-only stubs remain**; Profile and Billing cards on `/settings/about` are still unbuilt placeholders); unified radius (pivot Phase 1). **These are superseded where they conflict by the advisory pivot** — spec: [`docs/superpowers/specs/2026-07-03-advisory-pivot-design.md`](docs/superpowers/specs/2026-07-03-advisory-pivot-design.md), master plan: [`docs/superpowers/plans/2026-07-03-advisory-pivot-master-plan.md`](docs/superpowers/plans/2026-07-03-advisory-pivot-master-plan.md) (landed on main; the `feat/advisory-pivot` branch is merged and deleted).
 - **CI E2E is opt-in on PRs** (`.github/workflows/ci.yml`). It runs automatically on **pushes to `main`** (final pre-deploy gate) and via **workflow_dispatch**, but on PRs only when the `run-e2e` label is applied. Apply the label and either push a new commit or re-run the workflow to fire it; remove the label to skip. Background: the job intermittently hung (~1h for what should be 1m20s), so routine PRs land on typecheck + unit + build only. Use `gh pr edit <N> --add-label run-e2e` before merging anything user-facing where regressions would be hard to catch otherwise.
 - **Local `pnpm dev:web` port 3002 may collide** with the user's CultureDNA dev server (Vite + React Router 7). When visual inspection is needed and 3002 is taken, fall back to E2E for regression detection or coordinate the port collision before starting dev.
 
@@ -122,7 +122,7 @@ Visual regression (`tests/e2e/visual-regression.spec.ts`, 20 themed full-page ba
 
 - **Shared posting helpers** moved to [`packages/domain/src/evidence-defaults.ts`](packages/domain/src/evidence-defaults.ts): `buildExtractedFields`, `guessSupplier`, `guessAccountingMethod`, `initialLedgerLines`. Both `MemoryLedgerStore` and `PostgresLedgerStore` now import from there. `buildPostingLines` is also imported from `@jpx-accounting/domain` by both stores.
 - **`LedgerLine` type** is exported from [`packages/domain/src/projections.ts`](packages/domain/src/projections.ts) (previously local).
-- **`BlobUploader.mintReadSas(blobPath)`** added to [`services/api/src/blob.ts`](services/api/src/blob.ts) (both Stub + Azure). `/api/evidence/:id/extract` now mints a real User-Delegation SAS instead of the `https://placeholder/${blobPath}` URL. Real OCR still pending: `LedgerStore.updateEvidenceExtraction()` + `ExtractionRefreshed` event type would persist the result.
+- **`BlobUploader.mintReadSas(blobPath)`** added to [`services/api/src/blob.ts`](services/api/src/blob.ts) (both Stub + Azure). `/api/evidence/:id/extract` now mints a real User-Delegation SAS instead of the `https://placeholder/${blobPath}` URL. Extraction persistence landed with pivot Phase 3: `LedgerStore.updateEvidenceExtraction()` (`packages/domain/src/store.ts`) appends an `ExtractionRefreshed` event and regenerates suggestions in both stores.
 - **PWA manifest share_target** is POST + multipart with file accept; [`apps/web/app/share/route.ts`](apps/web/app/share/route.ts) is the intake handler that redirects to `/capture?…`. The old `/share/page.tsx` is deleted.
 - **Bicep + deploy.yml** now wire `SUPABASE_DB_URL`, `AZURE_OPENAI_*`, and `AZURE_DOCUMENT_INTELLIGENCE_*` secrets through to the API App Service env. Unused Supabase REST keys (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) removed since `@supabase/supabase-js` is not on the write path.
 
@@ -134,7 +134,7 @@ SQL migrations live in `infra/supabase/migrations/000N_*.sql` and are applied in
 
 ### Deploy
 
-Production deploy runs through `.github/workflows/deploy.yml`: web is a Docker image (Next.js standalone), API is bundled with `esbuild` into `server.mjs` and zip-deployed (`WEBSITE_RUN_FROM_PACKAGE=1`). Bicep in `infra/azure/main.bicep` provisions both App Services on the existing `jpx-app-plan` and grants the API's Managed Identity the `Storage Blob Delegator` + `Storage Blob Data Contributor` RBAC roles required for User-Delegation SAS minting.
+Production deploy runs through `.github/workflows/deploy.yml`: web is a Docker image (Next.js standalone), API is bundled with `esbuild` into `server.cjs` (CJS output) and zip-deployed (`WEBSITE_RUN_FROM_PACKAGE=1`). Bicep in `infra/azure/main.bicep` provisions both App Services on the existing `jpx-app-plan` and grants the API's Managed Identity the `Storage Blob Delegator` + `Storage Blob Data Contributor` RBAC roles required for User-Delegation SAS minting.
 
 ## Environment
 
@@ -164,13 +164,13 @@ Key env vars (see `.env.example` for full list):
 
 **Hardening (Phase E)**
 
-- `SUPABASE_JWKS_URL`: Optional. When set (e.g. `${SUPABASE_URL}/auth/v1/keys`), `/api/*` mutating routes require a JWT verifiable against this JWKS endpoint. Default algorithm is `RS256`.
+- `SUPABASE_JWKS_URL`: Optional. When set (e.g. `${SUPABASE_URL}/auth/v1/keys`), `/api/*` mutating routes require a JWT verifiable against this JWKS endpoint. Accepted algorithms default to `RS256` + `ES256` and are overridable via comma-separated `SUPABASE_JWT_ALGS` (see `services/api/src/config.ts`).
 
 See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for trust boundaries, the env matrix, and build/deploy subtleties.
 
-**Conventions / anti-patterns:** see [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for 28 rules distilled from past incidents — schema-contract sync, partial-index pitfalls, store parity between `MemoryLedgerStore` and `PostgresLedgerStore`, citation provenance, audit attribution sentinels, bounded accumulation. Consult before changes that touch contracts, migrations, or `LedgerStore` implementations.
+**Conventions / anti-patterns:** see [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for 29 rules distilled from past incidents — schema-contract sync, partial-index pitfalls, store parity between `MemoryLedgerStore` and `PostgresLedgerStore`, citation provenance, audit attribution sentinels, bounded accumulation. Consult before changes that touch contracts, migrations, or `LedgerStore` implementations.
 
-**Development status / port progress:** see [docs/DEV_STATUS.md](docs/DEV_STATUS.md) for the advisory-pivot phase status (Phases 0–5 COMPLETE on `feat/advisory-pivot`, each with its documented limitations), the 2026-05-27 deploy→main port history, and the remaining UI follow-ups.
+**Development status / port progress:** see [docs/DEV_STATUS.md](docs/DEV_STATUS.md) for the advisory-pivot phase status (Phases 0–5 COMPLETE, landed on main via PR #30, each with its documented limitations), the 2026-05-27 deploy→main port history, and the remaining UI follow-ups.
 
 **Session handovers:**
 

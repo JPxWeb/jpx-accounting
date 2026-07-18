@@ -1,5 +1,7 @@
 # Architecture Overview
 
+_Last verified against code: 2026-07-18._
+
 ## Runtime shape
 
 - `apps/web` is the mobile-first PWA shell.
@@ -65,16 +67,16 @@ The storage account also carries a CORS rule allowing `PUT, OPTIONS, GET` from `
 
 `packages/document-intelligence` wraps `@azure-rest/ai-document-intelligence`. The adapter is constructed in `createApiRuntimeDependencies`; when `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` + `_API_KEY` are absent, a stub is wired so demo flows continue to render canned fields.
 
-`/api/evidence/:id/extract` calls the adapter when the evidence's `blobPath` looks real (starts with `evidence-uploads/`); the result is returned alongside the stored extraction but is not yet persisted — the trust boundary keeps the review queue as the only path to a posted voucher. Persisting OCR results to `voucher.extracted_fields` requires a new `LedgerStore.updateEvidenceExtraction` method and an `ExtractionRefreshed` event type, both planned for a follow-up.
+`/api/evidence/:id/extract` calls the adapter when the evidence's `blobPath` looks real (starts with `evidence-uploads/`); the result is persisted via `LedgerStore.updateEvidenceExtraction` (`packages/domain/src/store.ts`), which appends an `ExtractionRefreshed` event to the hash chain and regenerates the suggestion — append-only, with a decided-voucher guard. The trust boundary is unchanged: extractions only feed suggestions, and the review queue remains the only path to a posted voucher.
 
 ## Retrieval (pgvector)
 
-[`infra/supabase/migrations/0003_pgvector.sql`](../infra/supabase/migrations/0003_pgvector.sql) installs `pgvector` and creates `knowledge.documents` with a `halfvec(1536)` embedding column and an HNSW index using `halfvec_cosine_ops`. Inserts/queries use the same `postgres-js` client as the ledger store; the Python `vecs` library is irrelevant here. `AiRuntime.embed()` produces vectors via Azure OpenAI in normal mode and deterministic mock vectors in demo so indexing tests stay deterministic offline. The grounded query pipeline is wired to the same adapter — concrete ingestion + retrieval routes are next.
+[`infra/supabase/migrations/0003_pgvector.sql`](../infra/supabase/migrations/0003_pgvector.sql) installs `pgvector` and creates `knowledge.documents` with a `halfvec(1536)` embedding column and an HNSW index using `halfvec_cosine_ops`. Inserts/queries use the same `postgres-js` client as the ledger store; the Python `vecs` library is irrelevant here. `AiRuntime.embed()` produces vectors via Azure OpenAI in normal mode and deterministic mock vectors in demo so indexing tests stay deterministic offline. Retrieval is live: `POST /api/knowledge/query` (`services/api/src/knowledge.ts`) serves keyword search always and pgvector cosine search in normal mode with a keyword fallback that never 500s; ingestion runs via `pnpm ingest:knowledge` (`upsertKnowledgeDocuments` in `packages/persistence-postgres/src/knowledge.ts`).
 
 ## API and edge behavior
 
 - Browser traffic is usually **same-origin** to Next, then [`apps/web/app/api-proxy/[...path]/route.ts`](../apps/web/app/api-proxy/[...path]/route.ts) forwards to the Hono API (see the trust diagram in [CONTRIBUTING.md](CONTRIBUTING.md)).
 - **`demo`** uses permissive CORS on `/api/*`; **`normal`** restricts direct browser origins via **`ACCOUNTING_CORS_ORIGINS`**.
 - The API sets **`x-request-id`**, structured validation errors, bounded request bodies, and default security headers; the Next app applies baseline **`headers()`** (CSP differs in dev vs prod; `/sw.js` uses `no-store`).
-- **Mutating routes** (`POST/PUT/PATCH/DELETE` on `/api/*`) are rate-limited via `hono-rate-limiter` (60 requests/minute per IP). When `SUPABASE_JWKS_URL` is set, the same routes also pass through `hono/jwk` JWT verification (RS256). Both are layered no-ops in demo mode without the env var.
+- **Mutating routes** (`POST/PUT/PATCH/DELETE` on `/api/*`) are rate-limited via `hono-rate-limiter` (60 requests/minute per IP). When `SUPABASE_JWKS_URL` is set, the same routes also pass through `hono/jwk` JWT verification — accepted algorithms default to `RS256` + `ES256`, overridable via comma-separated `SUPABASE_JWT_ALGS` (see `services/api/src/config.ts`). Both are layered no-ops in demo mode without the env var.
 - **JSON 4xx/5xx** carry `error`, `runtimeMode`, `requestId`. Validation 400s add `code: "validation_error"` + `issues[]`. Rate-limit 429s carry the `draft-7` standard headers (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`).

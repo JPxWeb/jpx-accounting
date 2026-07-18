@@ -1,3 +1,5 @@
+> **Archived 2026-07-18 — fully landed.** The stabilization sweep this plan describes (explicit runtime modes, real `LedgerStore` interface, DI in the API, PWA/service-worker fixes, repo hygiene) shipped; current state lives in [`../architecture.md`](../architecture.md) and [`../DEV_STATUS.md`](../DEV_STATUS.md).
+
 # Pilot-Ready Stabilization Sweep
 
 ## Summary

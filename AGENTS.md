@@ -1,7 +1,9 @@
 # AGENTS.md — jpx-accounting agent contract
 
-Cross-tool contract per JPx ADR DL-001: this file wins on conflict; `CLAUDE.md` is the deep
-project memory (Claude Code loads it automatically — other tools should read it too);
+Cross-tool contract per JPx ADR DL-001 — "AGENTS.md is the cross-tool agent contract and wins
+on conflict; CLAUDE.md is Claude-specific project memory" (the ADR ledger lives in the private
+JPx brain repo, external to this public repo): this file wins on conflict; `CLAUDE.md` is the
+deep project memory (Claude Code loads it automatically — other tools should read it too);
 `docs/CONVENTIONS.md` holds 29 incident-derived rules; `docs/DEV_STATUS.md` is current truth.
 
 ## What this is
@@ -35,7 +37,7 @@ contracts, Postgres/Memory ledger stores, AI SDK 7 advisor, pgvector RAG.
 ## Commands
 
 - `pnpm install` · `pnpm dev` (web 3002 + API 3001) · `pnpm check` (lint + format + typecheck
-  ×12 workspaces + unit + build) — the merge gate.
+  ×11 workspaces + unit + build) — the merge gate.
 - Unit: `pnpm test:unit` (single file: `tsx --test tests/unit/<file>.test.ts`).
 - E2E: `pnpm build:e2e && npx playwright test --grep-invert "visual:"` — NEVER plain
   `pnpm build` for E2E (misses `NEXT_PUBLIC_*` demo/proxy inlining).
