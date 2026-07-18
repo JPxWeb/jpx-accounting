@@ -13,6 +13,13 @@ import { localTodayIso, resolvePeriodToken } from "../reports/period";
  *   the 12th of the SECOND month after the period (17th when the due month is
  *   January or August). The > 40 MSEK variant (26th of the next month) is NOT
  *   encoded.
+ * - Quarterly moms periods are CALENDAR quarters (kalenderkvartal, 26 kap.
+ *   skatteförfarandelagen (2011:1244)) — statutory momsredovisning periods are
+ *   calendar-anchored regardless of the company's fiscal year. For broken
+ *   fiscal years that are not calendar-quarter-aligned, the statutory window
+ *   has no token in the unified period grammar (fiscal quarters only), so
+ *   those deadline rows are date-only: no `periodToken`, `amountRef: null` —
+ *   honest over approximate.
  * - Yearly moms (no EU trade): 26th of the second month after the fiscal-year
  *   end (27th when the due month is December).
  * - Arbetsgivardeklaration + debiterad preliminärskatt (F-skatt): the 12th of
@@ -131,28 +138,61 @@ function fiscalYearContaining(day: string, fiscalYearStart: string): number {
   return day >= sameYearStart ? date.year : date.year - 1;
 }
 
+/** Inclusive window of CALENDAR quarter `quarter` (1–4) of `year`. */
+function calendarQuarterWindow(year: number, quarter: number): { from: CalendarDate; to: CalendarDate } {
+  const endMonth = quarter * 3;
+  return {
+    from: { year, month: endMonth - 2, day: 1 },
+    to: { year, month: endMonth, day: daysInMonth(year, endMonth) },
+  };
+}
+
+/**
+ * The unified `YYYY-QN` (fiscal-grammar) token that resolves to EXACTLY the
+ * calendar quarter, or undefined when none exists. A token exists precisely
+ * when the fiscal year is calendar-quarter-aligned (starts on the 1st of
+ * January, April, July, or October — then every calendar quarter is some
+ * fiscal quarter). Verified against `resolvePeriodToken` windows rather than
+ * re-deriving the grammar's month/day-clamp rules here.
+ */
+function calendarQuarterPeriodToken(year: number, quarter: number, fiscalYearStart: string): string | undefined {
+  const window = calendarQuarterWindow(year, quarter);
+  const from = formatDay(window.from);
+  const to = formatDay(window.to);
+  for (const fyYear of [year, year - 1]) {
+    for (let fiscalQuarter = 1; fiscalQuarter <= 4; fiscalQuarter += 1) {
+      const token = `${fyYear}-Q${fiscalQuarter}`;
+      const resolved = resolvePeriodToken(token, { fiscalYearStart });
+      if (resolved.from === from && resolved.to === to) {
+        return token;
+      }
+    }
+  }
+  return undefined;
+}
+
 /**
  * The unified period token of the VAT period containing `today` — keys the
  * ONE extra `ReportPack` fetch the VAT widget/timeline make (plan finding 15).
+ *
+ * Quarterly cadence resolves the CALENDAR quarter containing `today` (the
+ * statutory momsredovisning period — see module doc). When the fiscal year is
+ * not calendar-quarter-aligned that window has no unified-grammar token; we
+ * fall back to the current MONTH token: a resolvable, honestly-labeled subset
+ * of the statutory quarter. The deadline rows carry no `periodToken` in that
+ * case, so the box-49 join never attributes the month figure to a quarter.
  */
 export function currentVatPeriodToken(vatPeriod: VatPeriod, fiscalYearStart: string, today?: string): string {
   const day = today ?? localTodayIso();
   if (vatPeriod === "monthly") {
     return day.slice(0, 7);
   }
-  const fyYear = fiscalYearContaining(day, fiscalYearStart);
   if (vatPeriod === "yearly") {
-    return `fy-${fyYear}`;
+    return `fy-${fiscalYearContaining(day, fiscalYearStart)}`;
   }
-  for (let quarter = 1; quarter <= 4; quarter += 1) {
-    const token = `${fyYear}-Q${quarter}`;
-    const window = resolvePeriodToken(token, { fiscalYearStart, today: day });
-    if (day >= window.from && day <= window.to) {
-      return token;
-    }
-  }
-  // Unreachable: the four quarters tile the fiscal year.
-  return `${fyYear}-Q4`;
+  const date = parseDay(day);
+  const quarter = Math.floor((date.month - 1) / 3) + 1;
+  return calendarQuarterPeriodToken(date.year, quarter, fiscalYearStart) ?? day.slice(0, 7);
 }
 
 export type BuildTaxTimelineInput = {
@@ -231,29 +271,36 @@ export function buildTaxTimeline(input: BuildTaxTimelineInput): TaxDeadline[] {
     });
   }
 
+  // Quarterly moms: CALENDAR quarters (statutory kalenderkvartal — see module
+  // doc), independent of the fiscal year. Iterate calendar years covering the
+  // window; `include` filters. The `YYYY-QN` id/label names the CALENDAR
+  // quarter (Skatteverket numbering); `periodToken` is the fiscal-grammar
+  // token only when one resolves to the same window (calendar-aligned fiscal
+  // years), otherwise the row is date-only (`amountRef: null` — honest).
+  if (vatPeriod === "quarterly") {
+    const lastYear = parseDay(horizonEnd).year;
+    for (let year = todayDate.year - 1; year <= lastYear; year += 1) {
+      for (let quarter = 1; quarter <= 4; quarter += 1) {
+        const quarterEnd = calendarQuarterWindow(year, quarter).to;
+        const token = calendarQuarterPeriodToken(year, quarter, fiscalYearStart);
+        include({
+          id: `tax_vat_${year}-Q${quarter}`,
+          kind: "vat-return",
+          dueDate: formatDay(skatteverketDueDate(quarterEnd, 2, twelfthRuleDay)),
+          periodLabel: `${year}-Q${quarter}`,
+          ...(token !== undefined ? { periodToken: token, amountRef: "box49" as const } : { amountRef: null }),
+          sourceKey: "sv-vat-12",
+        });
+      }
+    }
+  }
+
   // Fiscal-year-anchored deadlines: iterate nearby fiscal years (cheap) and
   // let the window filter keep what is actually upcoming.
   for (let fyYear = todayDate.year - 2; fyYear <= todayDate.year + 1; fyYear += 1) {
     const fyToken = `fy-${fyYear}`;
     const window = resolvePeriodToken(fyToken, { fiscalYearStart, today: todayDay });
     const fyEnd = parseDay(window.to);
-
-    if (vatPeriod === "quarterly") {
-      for (let quarter = 1; quarter <= 4; quarter += 1) {
-        const token = `${fyYear}-Q${quarter}`;
-        const quarterWindow = resolvePeriodToken(token, { fiscalYearStart, today: todayDay });
-        const quarterEnd = parseDay(quarterWindow.to);
-        include({
-          id: `tax_vat_${token}`,
-          kind: "vat-return",
-          dueDate: formatDay(skatteverketDueDate(quarterEnd, 2, twelfthRuleDay)),
-          periodLabel: token,
-          periodToken: token,
-          amountRef: "box49",
-          sourceKey: "sv-vat-12",
-        });
-      }
-    }
 
     if (vatPeriod === "yearly") {
       include({

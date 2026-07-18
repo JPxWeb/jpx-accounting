@@ -90,6 +90,62 @@ test("buildVatReturnBoxes emits every regime box, reverse-charge boxes stay 0", 
   }
 });
 
+test("box 05 attributes by the LINE's vatCode: off-template revenue counts, momsfri line on a rated account does not", () => {
+  assert.equal(findCoaAccount(bas2026, "3011"), undefined, "precondition: 3011 must be off-template");
+  const boxes = buildVatReturnBoxes([
+    // Off-template revenue account (SIE import / manual edit) with a rated
+    // vatCode on the line — must land in box 05 via the BAS 3xxx fallback.
+    line({ accountNumber: "3011", debit: 0, credit: 500, vatCode: "VAT12", deductible: false }),
+    line({ accountNumber: "2620", debit: 0, credit: 60, vatCode: "VAT12", deductible: false }),
+    line({ accountNumber: "1930", debit: 560, credit: 0, vatCode: "NA", deductible: false }),
+    // Momsfri sale booked on the normally-rated 3001: the line's own vatCode
+    // wins over the template default (VAT25), so it stays OUT of box 05.
+    line({ accountNumber: "3001", debit: 0, credit: 200, vatCode: "VAT0", deductible: false }),
+    line({ accountNumber: "1930", debit: 200, credit: 0, vatCode: "NA", deductible: false }),
+  ]);
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  assert.equal(amount("05"), 500);
+  assert.equal(amount("11"), 60);
+});
+
+test("declaration boundary is whole kronor: öre truncated, box 49 derived from the truncated boxes", () => {
+  // Öre-exact internals: base 103.60, output VAT 25.90, input VAT 20.95.
+  const boxes = buildVatReturnBoxes([
+    line({ accountNumber: "3001", debit: 0, credit: 103.6, deductible: false }),
+    line({ accountNumber: "2610", debit: 0, credit: 25.9, deductible: false }),
+    line({ accountNumber: "1930", debit: 129.5, credit: 0, vatCode: "NA", deductible: false }),
+    line({ accountNumber: "6540", debit: 83.8, credit: 0 }),
+    line({ accountNumber: "2641", debit: 20.95, credit: 0 }),
+    line({ accountNumber: "1930", debit: 0, credit: 104.75, vatCode: "NA", deductible: false }),
+  ]);
+  for (const box of boxes) {
+    assert.ok(Number.isInteger(box.amount), `box ${box.box} must be whole kronor, got ${box.amount}`);
+  }
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  assert.equal(amount("05"), 103, "öretal faller bort on the sales base");
+  assert.equal(amount("10"), 25);
+  assert.equal(amount("48"), 20);
+  // Sum consistency: box 49 comes from the DECLARED whole-krona boxes
+  // (25 − 20 = 5), not from truncating the öre-exact net
+  // (trunc(25.90 − 20.95) = trunc(4.95) = 4).
+  assert.equal(amount("49"), 5);
+});
+
+test("whole-krona truncation is toward zero for negative declaration amounts", () => {
+  // Credit-note-heavy period: negative sales base; refund-side box 49.
+  const boxes = buildVatReturnBoxes([
+    line({ accountNumber: "3001", debit: 100.5, credit: 0, deductible: false }),
+    line({ accountNumber: "6540", debit: 402.4, credit: 0 }),
+    line({ accountNumber: "2641", debit: 100.6, credit: 0 }),
+    line({ accountNumber: "1930", debit: 0, credit: 603.5, vatCode: "NA", deductible: false }),
+  ]);
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  // "Öretal faller bort": −100.50 declares as −100 (toward zero), never −101.
+  assert.equal(amount("05"), -100);
+  assert.equal(amount("48"), 100);
+  assert.equal(amount("49"), -100);
+});
+
 test("deductibility rules resolve to existing bas-2026 accounts and back-reference by id", () => {
   for (const rule of swedishVatRegime.deductibility) {
     assert.ok(rule.appliesToAccounts.length > 0);
