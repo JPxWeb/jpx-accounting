@@ -22,6 +22,7 @@ jobs:
   check:
     name: Typecheck & Unit Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -41,6 +42,10 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # Mirrors root `pnpm check` — a missing sv/en key must fail CI, not first surface at runtime.
+      - name: Check i18n parity
+        run: corepack pnpm check:i18n
+
       - name: Prettier check
         run: pnpm format:check
 
@@ -58,6 +63,7 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     needs: check
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -76,10 +82,26 @@ jobs:
       - name: Build all
         run: pnpm build
 
+  bicep:
+    name: Bicep Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # az is preinstalled on ubuntu runners. Compiling here means a template that dies at the
+      # ARM step (like the former invalid assert()) can never merge again.
+      - name: Compile Bicep template
+        run: az bicep build --file infra/azure/main.bicep --stdout > /dev/null
+
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
     needs: build
+    timeout-minutes: 30
+    # pw:webserver logs make the documented intermittent webserver hang diagnosable from the run log.
+    env:
+      DEBUG: pw:webserver
     # Opt-in on PRs (apply the `run-e2e` label), automatic on main pushes (final pre-deploy gate),
     # and manually triggerable via the Actions UI. Avoids burning ~5 min per push on routine PRs.
     if: |
@@ -118,3 +140,29 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
+
+  # Closes the "failed silently for weeks" hole: any red job files/updates a tracking issue.
+  notify-failure:
+    name: Notify on failure
+    runs-on: ubuntu-latest
+    needs: [check, build, bicep, e2e]
+    if: failure()
+    timeout-minutes: 15
+    permissions:
+      issues: write
+    steps:
+      - name: Create or update failure issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TITLE="CI/deploy failure on ${{ github.workflow }}"
+          BODY="Workflow **${{ github.workflow }}** failed on \`${{ github.ref_name }}\` at ${{ github.sha }}.
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          EXISTING=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi

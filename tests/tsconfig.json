@@ -18,6 +18,6 @@
       "@jpx-accounting/document-intelligence": ["packages/document-intelligence/src/index.ts"]
     }
   },
-  "include": ["unit/**/*.ts", "integration/**/*.ts"],
-  "exclude": ["e2e/**/*", "**/node_modules/**"]
+  "include": ["unit/**/*.ts", "integration/**/*.ts", "e2e/**/*.ts"],
+  "exclude": ["**/node_modules/**"]
 }
