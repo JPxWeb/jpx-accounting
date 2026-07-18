@@ -92,6 +92,57 @@ type EventInput = {
 // `@jpx-accounting/domain` so the memory and postgres stores stay in lockstep.
 
 // ---------------------------------------------------------------------------
+// Hash-chain fork guard (WS-B R15)
+// ---------------------------------------------------------------------------
+
+/** Migration 0006's UNIQUE (organization_id, workspace_id, previous_hash). */
+const CHAIN_FORK_CONSTRAINT = "ledger_events_chain_fork_key";
+
+/**
+ * Raised when a workspace's hash chain forked twice in a row: the appending
+ * transaction lost the (org, workspace, previous_hash) unique race even after
+ * one full internal retry against a freshly re-read tail. Reaching this means
+ * some writer is appending WITHOUT the per-workspace advisory lock (every
+ * chain append in this store takes it first) — the constraint turned what
+ * used to be silent chain corruption into a loud, retryable conflict.
+ *
+ * Error-vocabulary note: services/api deliberately detects Postgres failures
+ * structurally (`name === "PostgresError"` + SQLSTATE `code`, WS-A5 — it
+ * never imports a driver), and W1 mapped 23505 → HTTP 409 `conflict` in
+ * `app.onError`. This class presents that same structural face on purpose so
+ * an exhausted chain-fork retry surfaces to clients as the retryable 409 the
+ * vocabulary already defines, not an opaque 500 — while staying a distinct,
+ * `instanceof`-testable type carrying the underlying driver error as `cause`.
+ */
+export class HashChainForkError extends Error {
+  override readonly name = "PostgresError";
+  readonly code = "23505";
+  readonly constraint_name = CHAIN_FORK_CONSTRAINT;
+  readonly retryable = true;
+
+  constructor(scope: { organizationId: string; workspaceId: string }, cause: unknown) {
+    super(
+      `Hash-chain fork detected for workspace ${scope.organizationId}/${scope.workspaceId}: ` +
+        `another writer appended concurrently and the retry lost the race again. ` +
+        `The ledger chain is intact (the fork was rejected); retry the request.`,
+      { cause },
+    );
+  }
+}
+
+/**
+ * True when `error` is the driver-level unique violation raised by
+ * `ledger_events_chain_fork_key` — the ONLY 23505 that means "chain fork".
+ * Other unique violations (voucher numbers, alert dedup, …) must keep their
+ * own semantics and are never retried here.
+ */
+function isChainForkViolation(error: unknown): boolean {
+  if (!(error instanceof Error) || error.name !== "PostgresError") return false;
+  const { code, constraint_name } = error as Error & { code?: unknown; constraint_name?: unknown };
+  return code === "23505" && constraint_name === CHAIN_FORK_CONSTRAINT;
+}
+
+// ---------------------------------------------------------------------------
 // Row → domain mapping helpers
 // ---------------------------------------------------------------------------
 
@@ -349,21 +400,69 @@ export class PostgresLedgerStore implements LedgerStore {
   // ---------------- internal helpers ----------------
 
   /**
-   * Read the current tail event hash for the workspace and lock that row for
-   * the duration of the transaction. Mirrors `MemoryLedgerStore`'s
-   * `events.at(-1)?.eventHash ?? "GENESIS"`.
+   * Serialize the workspace's hash chain, then read the current tail hash.
+   * Mirrors `MemoryLedgerStore`'s `events.at(-1)?.eventHash ?? "GENESIS"`
+   * (which is fork-safe by construction: its tail read and push happen
+   * synchronously with no await between them).
+   *
+   * MUST be the FIRST statement of every transaction that appends chain
+   * events (WS-B R15): `pg_advisory_xact_lock` on the workspace key blocks
+   * until any concurrent appender COMMITS/aborts, and only then is the tail
+   * read — so the tail is always fresh. This replaces the old
+   * `SELECT … FOR UPDATE` tail-row lock, which is dropped as redundant AND
+   * insufficient: a waiter blocked on FOR UPDATE resumed with its original
+   * snapshot (EvalPlanQual rechecks the locked row, it does not re-run the
+   * query), so it chained onto a STALE tail; and at GENESIS there was no row
+   * to lock at all, so two first-appenders raced freely. With the advisory
+   * lock serializing every store appender and migration 0006's UNIQUE
+   * (org, workspace, previous_hash) rejecting any out-of-band fork, the row
+   * lock adds nothing. Taking the lock before ALL reads also serializes the
+   * voucher-number COUNT(*) in createEvidence as a side benefit.
+   *
+   * `hashtextextended` (64-bit) is used over 32-bit `hashtext` to make
+   * cross-workspace advisory-key collisions (harmless but serializing)
+   * negligible. Collisions never affect correctness, only concurrency.
    */
   private async lockWorkspaceTail(tx: Tx): Promise<string> {
+    await tx`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended(${`${this.defaults.organizationId}/${this.defaults.workspaceId}`}, 0)
+      )
+    `;
     const rows = await tx<{ event_hash: string }[]>`
       SELECT event_hash
       FROM ledger.events
       WHERE organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
-      ORDER BY occurred_at DESC, created_at DESC
+      ORDER BY occurred_at DESC, created_at DESC, seq DESC
       LIMIT 1
-      FOR UPDATE
     `;
     return rows[0]?.event_hash ?? "GENESIS";
+  }
+
+  /**
+   * Run one chain-appending transaction; if it dies on the chain-fork unique
+   * constraint (23505 on `ledger_events_chain_fork_key`), re-run it ONCE —
+   * the retry re-enters `lockWorkspaceTail`, re-reads the now-fresh tail and
+   * re-derives every id/hash, so a transient out-of-band append is absorbed
+   * invisibly. A second fork means a writer is persistently bypassing the
+   * advisory lock → surface the typed retryable error (→ HTTP 409 via the
+   * existing W1 23505 mapping in services/api). Every `run` closure must be
+   * re-entrant: it derives all state inside the transaction (they all do —
+   * ids, hashes and read models are computed after `lockWorkspaceTail`).
+   */
+  private async withChainForkRetry<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      if (!isChainForkViolation(error)) throw error;
+      try {
+        return await run();
+      } catch (retryError) {
+        if (!isChainForkViolation(retryError)) throw retryError;
+        throw new HashChainForkError(this.defaults, retryError);
+      }
+    }
   }
 
   /**
@@ -372,8 +471,11 @@ export class PostgresLedgerStore implements LedgerStore {
    * `eventHash`) so the caller can chain it forward as the next predecessor.
    */
   private async appendEvent(tx: Tx, event: EventInput, previousHash: string): Promise<LedgerEvent> {
-    const payloadJson = JSON.stringify(event.payload);
-    const eventHash = buildEventHash(previousHash, payloadJson);
+    // SHA-256 over canonicalJson of (previousHash, payload) — pass the RAW
+    // payload so the hash survives the jsonb round trip and re-verification
+    // recomputes the identical bytes (WS-B R14; parity with MemoryLedgerStore
+    // — both stores MUST keep importing buildEventHash from domain).
+    const eventHash = buildEventHash(previousHash, event.payload);
     const digestDate = new Date().toISOString().slice(0, 10);
     const id = createId("evt");
 
@@ -437,38 +539,39 @@ export class PostgresLedgerStore implements LedgerStore {
   // ---------------- LedgerStore API ----------------
 
   async createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult> {
-    return this.client.begin(async (tx) => {
-      const tailHash = await this.lockWorkspaceTail(tx);
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
 
-      const createdAt = nowIso();
-      const evidenceId = createId("evidence");
-      const packetId = createId("packet");
-      const voucherId = createId("voucher");
+        const createdAt = nowIso();
+        const evidenceId = createId("evidence");
+        const packetId = createId("packet");
+        const voucherId = createId("voucher");
 
-      const evidence: EvidenceObject = {
-        id: evidenceId,
-        organizationId: input.organizationId,
-        workspaceId: input.workspaceId,
-        createdAt,
-        createdBy: input.actorId,
-        title: input.title,
-        modalities: input.modalities,
-        originalFilename: input.originalFilename,
-        mimeType: input.mimeType,
-        // Honest upload metadata when the client went through init→PUT→create;
-        // legacy synthetic path + derived hash preserved when no upload happened.
-        blobPath: input.blobPath ?? `evidence/${evidenceId}/${input.originalFilename}`,
-        hash: input.sha256 ?? buildEventHash("file", `${input.originalFilename}:${input.title}:${createdAt}`),
-        sizeBytes: input.sizeBytes,
-        trustLevel: "user-upload",
-      };
+        const evidence: EvidenceObject = {
+          id: evidenceId,
+          organizationId: input.organizationId,
+          workspaceId: input.workspaceId,
+          createdAt,
+          createdBy: input.actorId,
+          title: input.title,
+          modalities: input.modalities,
+          originalFilename: input.originalFilename,
+          mimeType: input.mimeType,
+          // Honest upload metadata when the client went through init→PUT→create;
+          // legacy synthetic path + derived hash preserved when no upload happened.
+          blobPath: input.blobPath ?? `evidence/${evidenceId}/${input.originalFilename}`,
+          hash: input.sha256 ?? buildEventHash("file", `${input.originalFilename}:${input.title}:${createdAt}`),
+          sizeBytes: input.sizeBytes,
+          trustLevel: "user-upload",
+        };
 
-      // Evidence-level upload provenance lives in the existing metadata jsonb —
-      // no schema change (Phase 3 plan, finding 2).
-      const metadata: { sizeBytes?: number } = {};
-      if (input.sizeBytes !== undefined) metadata.sizeBytes = input.sizeBytes;
+        // Evidence-level upload provenance lives in the existing metadata jsonb —
+        // no schema change (Phase 3 plan, finding 2).
+        const metadata: { sizeBytes?: number } = {};
+        if (input.sizeBytes !== undefined) metadata.sizeBytes = input.sizeBytes;
 
-      await tx`
+        await tx`
         INSERT INTO ledger.evidence_objects (
           id,
           organization_id,
@@ -500,14 +603,14 @@ export class PostgresLedgerStore implements LedgerStore {
         )
       `;
 
-      const packet: EvidencePacket = {
-        id: packetId,
-        evidenceIds: [evidenceId],
-      };
-      if (input.note !== undefined) packet.note = input.note;
-      if (input.extractedText !== undefined) packet.voiceTranscript = input.extractedText;
+        const packet: EvidencePacket = {
+          id: packetId,
+          evidenceIds: [evidenceId],
+        };
+        if (input.note !== undefined) packet.note = input.note;
+        if (input.extractedText !== undefined) packet.voiceTranscript = input.extractedText;
 
-      await tx`
+        await tx`
         INSERT INTO ledger.evidence_packets (
           id,
           organization_id,
@@ -525,38 +628,38 @@ export class PostgresLedgerStore implements LedgerStore {
         )
       `;
 
-      await tx`
+        await tx`
         INSERT INTO ledger.evidence_packet_items (evidence_packet_id, evidence_object_id)
         VALUES (${packet.id}, ${evidence.id})
       `;
 
-      // Voucher number sequencing: COUNT(*) inside the workspace, just like
-      // MemoryLedgerStore which uses `this.vouchers.size + 1001`.
-      const voucherCountRows = await tx<{ count: string }[]>`
+        // Voucher number sequencing: COUNT(*) inside the workspace, just like
+        // MemoryLedgerStore which uses `this.vouchers.size + 1001`.
+        const voucherCountRows = await tx<{ count: string }[]>`
         SELECT COUNT(*)::text AS count
         FROM ledger.vouchers
         WHERE organization_id = ${input.organizationId}
           AND workspace_id = ${input.workspaceId}
       `;
-      const voucherCount = Number(voucherCountRows[0]?.count ?? "0");
-      const voucherNumber = `V-${voucherCount + 1001}`;
+        const voucherCount = Number(voucherCountRows[0]?.count ?? "0");
+        const voucherNumber = `V-${voucherCount + 1001}`;
 
-      const extractedFields = buildExtractedFields(input);
-      const voucher: Voucher = {
-        id: voucherId,
-        organizationId: input.organizationId,
-        workspaceId: input.workspaceId,
-        evidencePacketId: packetId,
-        voucherNumber,
-        status: "needs-review",
-        accountingMethod: guessAccountingMethod(input),
-        extractedFields,
-        voucherFields: deriveVoucherFields(extractedFields, input),
-        createdAt,
-        createdBy: input.actorId,
-      };
+        const extractedFields = buildExtractedFields(input);
+        const voucher: Voucher = {
+          id: voucherId,
+          organizationId: input.organizationId,
+          workspaceId: input.workspaceId,
+          evidencePacketId: packetId,
+          voucherNumber,
+          status: "needs-review",
+          accountingMethod: guessAccountingMethod(input),
+          extractedFields,
+          voucherFields: deriveVoucherFields(extractedFields, input),
+          createdAt,
+          createdBy: input.actorId,
+        };
 
-      await tx`
+        await tx`
         INSERT INTO ledger.vouchers (
           id,
           organization_id,
@@ -584,33 +687,33 @@ export class PostgresLedgerStore implements LedgerStore {
         )
       `;
 
-      const ruleHits = evaluateVoucherRules(voucher);
-      const suggestion = buildDeterministicSuggestion(voucher, ruleHits);
-      const reviewId = createId("review");
-      const blocked = ruleHits.some((rule) => rule.severity === "blocking");
+        const ruleHits = evaluateVoucherRules(voucher);
+        const suggestion = buildDeterministicSuggestion(voucher, ruleHits);
+        const reviewId = createId("review");
+        const blocked = ruleHits.some((rule) => rule.severity === "blocking");
 
-      const review: ReviewTask = {
-        id: reviewId,
-        voucherId,
-        title: `Review ${voucher.voucherNumber}`,
-        status: "needs-review",
-        suggestedAction: blocked
-          ? "Request more evidence or post without VAT deduction."
-          : "Approve the proposed posting.",
-        suggestion,
-        provenanceTimeline: [
-          { id: createId("step"), label: "Evidence received", timestamp: createdAt, actor: input.actorId },
-          { id: createId("step"), label: "Fields extracted", timestamp: createdAt, actor: "system-extractor" },
-          { id: createId("step"), label: "Rules applied", timestamp: createdAt, actor: "system-rules" },
-          { id: createId("step"), label: "Suggestion generated", timestamp: createdAt, actor: "system-ai" },
-        ],
-      };
-      if (blocked) {
-        review.blockedReason =
-          "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
-      }
+        const review: ReviewTask = {
+          id: reviewId,
+          voucherId,
+          title: `Review ${voucher.voucherNumber}`,
+          status: "needs-review",
+          suggestedAction: blocked
+            ? "Request more evidence or post without VAT deduction."
+            : "Approve the proposed posting.",
+          suggestion,
+          provenanceTimeline: [
+            { id: createId("step"), label: "Evidence received", timestamp: createdAt, actor: input.actorId },
+            { id: createId("step"), label: "Fields extracted", timestamp: createdAt, actor: "system-extractor" },
+            { id: createId("step"), label: "Rules applied", timestamp: createdAt, actor: "system-rules" },
+            { id: createId("step"), label: "Suggestion generated", timestamp: createdAt, actor: "system-ai" },
+          ],
+        };
+        if (blocked) {
+          review.blockedReason =
+            "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
+        }
 
-      await tx`
+        await tx`
         INSERT INTO ledger.review_tasks (
           id,
           organization_id,
@@ -638,86 +741,96 @@ export class PostgresLedgerStore implements LedgerStore {
         )
       `;
 
-      // Append the four events that mirror MemoryLedgerStore exactly. We thread
-      // the previous_hash forward so the chain stays consistent.
-      let prev = tailHash;
-      const evt1 = await this.appendEvent(
-        tx,
-        {
-          organizationId: input.organizationId,
-          workspaceId: input.workspaceId,
-          aggregateType: "evidence",
-          aggregateId: evidenceId,
-          eventType: "EvidenceReceived",
-          actorId: input.actorId,
-          occurredAt: createdAt,
-          payload: evidence as unknown as Record<string, unknown>,
-        },
-        prev,
-      );
-      prev = evt1.eventHash;
+        // Append the four events that mirror MemoryLedgerStore exactly. We thread
+        // the previous_hash forward so the chain stays consistent.
+        let prev = tailHash;
+        const evt1 = await this.appendEvent(
+          tx,
+          {
+            organizationId: input.organizationId,
+            workspaceId: input.workspaceId,
+            aggregateType: "evidence",
+            aggregateId: evidenceId,
+            eventType: "EvidenceReceived",
+            actorId: input.actorId,
+            occurredAt: createdAt,
+            payload: evidence as unknown as Record<string, unknown>,
+          },
+          prev,
+        );
+        prev = evt1.eventHash;
 
-      const evt2 = await this.appendEvent(
-        tx,
-        {
-          organizationId: input.organizationId,
-          workspaceId: input.workspaceId,
-          aggregateType: "voucher",
-          aggregateId: voucherId,
-          eventType: "FieldsExtracted",
-          actorId: "system-extractor",
-          occurredAt: createdAt,
-          payload: { extractedFields },
-        },
-        prev,
-      );
-      prev = evt2.eventHash;
+        const evt2 = await this.appendEvent(
+          tx,
+          {
+            organizationId: input.organizationId,
+            workspaceId: input.workspaceId,
+            aggregateType: "voucher",
+            aggregateId: voucherId,
+            eventType: "FieldsExtracted",
+            actorId: "system-extractor",
+            occurredAt: createdAt,
+            payload: { extractedFields },
+          },
+          prev,
+        );
+        prev = evt2.eventHash;
 
-      const evt3 = await this.appendEvent(
-        tx,
-        {
-          organizationId: input.organizationId,
-          workspaceId: input.workspaceId,
-          aggregateType: "voucher",
-          aggregateId: voucherId,
-          eventType: "VoucherCreated",
-          actorId: input.actorId,
-          occurredAt: createdAt,
-          payload: voucher as unknown as Record<string, unknown>,
-        },
-        prev,
-      );
-      prev = evt3.eventHash;
+        const evt3 = await this.appendEvent(
+          tx,
+          {
+            organizationId: input.organizationId,
+            workspaceId: input.workspaceId,
+            aggregateType: "voucher",
+            aggregateId: voucherId,
+            eventType: "VoucherCreated",
+            actorId: input.actorId,
+            occurredAt: createdAt,
+            payload: voucher as unknown as Record<string, unknown>,
+          },
+          prev,
+        );
+        prev = evt3.eventHash;
 
-      await this.appendEvent(
-        tx,
-        {
-          organizationId: input.organizationId,
-          workspaceId: input.workspaceId,
-          aggregateType: "review",
-          aggregateId: review.id,
-          eventType: "SuggestionGenerated",
-          actorId: "system-ai",
-          occurredAt: createdAt,
-          payload: suggestion as unknown as Record<string, unknown>,
-        },
-        prev,
-      );
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: input.organizationId,
+            workspaceId: input.workspaceId,
+            aggregateType: "review",
+            aggregateId: review.id,
+            eventType: "SuggestionGenerated",
+            actorId: "system-ai",
+            occurredAt: createdAt,
+            payload: suggestion as unknown as Record<string, unknown>,
+          },
+          prev,
+        );
 
-      return { evidence, packet, voucher, review, voucherId };
-    });
+        return { evidence, packet, voucher, review, voucherId };
+      }),
+    );
   }
 
+  // composeEvidence appends an EvidenceRelinked chain event when a voucher is
+  // repointed at the new packet (WS-B B6b), so it takes the workspace chain
+  // lock + fork retry like every other appender. suggestVoucher,
+  // answerAssistantQuestion, refreshComplianceAlerts and putCompanySettings
+  // below stay lock-free: they mutate read models only and append NO chain
+  // events — the chain lock's scope is chain appends.
   async composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket> {
-    return this.client.begin(async (tx) => {
-      const packet: EvidencePacket = {
-        id: createId("packet"),
-        evidenceIds: input.evidenceIds,
-        note: input.note,
-        voiceTranscript: input.voiceTranscript,
-      };
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
 
-      await tx`
+        const packet: EvidencePacket = {
+          id: createId("packet"),
+          evidenceIds: input.evidenceIds,
+          note: input.note,
+          voiceTranscript: input.voiceTranscript,
+        };
+
+        await tx`
         INSERT INTO ledger.evidence_packets (
           id,
           organization_id,
@@ -735,22 +848,22 @@ export class PostgresLedgerStore implements LedgerStore {
         )
       `;
 
-      for (const evidenceId of input.evidenceIds) {
-        await tx`
+        for (const evidenceId of input.evidenceIds) {
+          await tx`
           INSERT INTO ledger.evidence_packet_items (evidence_packet_id, evidence_object_id)
           VALUES (${packet.id}, ${evidenceId})
           ON CONFLICT DO NOTHING
         `;
-      }
+        }
 
-      // Voucher relink read-model fix (Memory parity §A N9): when evidence is
-      // re-bundled into a new packet, repoint vouchers.evidence_packet_id so
-      // getEvidenceContext (newest packet) and getSnapshot (voucher link) agree.
-      // Read-model UPDATE only — no hash-chain event, no tail lock.
-      let voucherIdToRelink: string | undefined;
-      for (const evidenceId of input.evidenceIds) {
-        const linkedRows = await tx<Array<{ voucher_id: string }>>`
-          SELECT v.id AS voucher_id
+        // Voucher relink read-model fix (Memory parity §A N9): when evidence is
+        // re-bundled into a new packet, repoint vouchers.evidence_packet_id so
+        // getEvidenceContext (newest packet) and getSnapshot (voucher link) agree.
+        let voucherIdToRelink: string | undefined;
+        let previousPacketId: string | undefined;
+        for (const evidenceId of input.evidenceIds) {
+          const linkedRows = await tx<Array<{ voucher_id: string; evidence_packet_id: string }>>`
+          SELECT v.id AS voucher_id, v.evidence_packet_id
           FROM ledger.vouchers v
           JOIN ledger.evidence_packet_items i ON i.evidence_packet_id = v.evidence_packet_id
           WHERE i.evidence_object_id = ${evidenceId}
@@ -759,23 +872,48 @@ export class PostgresLedgerStore implements LedgerStore {
             AND v.workspace_id = ${input.workspaceId}
           LIMIT 1
         `;
-        if (linkedRows[0]?.voucher_id && !voucherIdToRelink) {
-          voucherIdToRelink = linkedRows[0].voucher_id;
+          if (linkedRows[0]?.voucher_id && !voucherIdToRelink) {
+            voucherIdToRelink = linkedRows[0].voucher_id;
+            previousPacketId = linkedRows[0].evidence_packet_id;
+          }
         }
-      }
 
-      if (voucherIdToRelink) {
-        await tx`
+        if (voucherIdToRelink) {
+          await tx`
           UPDATE ledger.vouchers
           SET evidence_packet_id = ${packet.id}
           WHERE id = ${voucherIdToRelink}
             AND organization_id = ${input.organizationId}
             AND workspace_id = ${input.workspaceId}
         `;
-      }
 
-      return packet;
-    });
+          // WS-B B6b: a relink changes which evidence backs a voucher — that
+          // must be visible in the audit chain, not a silent repoint (payload
+          // parity with MemoryLedgerStore.composeEvidence).
+          await this.appendEvent(
+            tx,
+            {
+              organizationId: input.organizationId,
+              workspaceId: input.workspaceId,
+              aggregateType: "voucher",
+              aggregateId: voucherIdToRelink,
+              eventType: "EvidenceRelinked",
+              actorId: input.actorId,
+              occurredAt: nowIso(),
+              payload: {
+                voucherId: voucherIdToRelink,
+                packetId: packet.id,
+                previousPacketId,
+                evidenceIds: [...input.evidenceIds],
+              },
+            },
+            tailHash,
+          );
+        }
+
+        return packet;
+      }),
+    );
   }
 
   async getEvidenceContext(
@@ -807,12 +945,13 @@ export class PostgresLedgerStore implements LedgerStore {
     extraction: ExtractionResult,
   ): Promise<EvidenceContext | undefined> {
     // Mirrors MemoryLedgerStore.updateEvidenceExtraction step-for-step; one
-    // transaction with the workspace tail locked so both events chain atomically.
-    return this.client.begin(async (tx) => {
-      const tailHash = await this.lockWorkspaceTail(tx);
+    // transaction with the workspace chain lock held so both events chain atomically.
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
 
-      // 1. Resolve evidence→packet→voucher (same join as getEvidenceContext, on tx).
-      const evidenceRows = await tx<EvidenceRow[]>`
+        // 1. Resolve evidence→packet→voucher (same join as getEvidenceContext, on tx).
+        const evidenceRows = await tx<EvidenceRow[]>`
         SELECT id, organization_id, workspace_id, title, created_by, created_at,
                original_filename, mime_type, blob_path, hash, trust_level, metadata, modalities
         FROM ledger.evidence_objects
@@ -821,19 +960,19 @@ export class PostgresLedgerStore implements LedgerStore {
           AND workspace_id = ${this.defaults.workspaceId}
         LIMIT 1
       `;
-      const evidenceRow = evidenceRows[0];
-      if (!evidenceRow) return undefined;
-      const evidence = rowToEvidence(evidenceRow);
+        const evidenceRow = evidenceRows[0];
+        if (!evidenceRow) return undefined;
+        const evidence = rowToEvidence(evidenceRow);
 
-      const { packet, voucher } = await resolvePacketAndVoucher(tx, this.defaults, evidenceId);
+        const { packet, voucher } = await resolvePacketAndVoucher(tx, this.defaults, evidenceId);
 
-      if (!voucher) {
-        const result: EvidenceContext = { evidence };
-        if (packet) result.packet = packet;
-        return result;
-      }
+        if (!voucher) {
+          const result: EvidenceContext = { evidence };
+          if (packet) result.packet = packet;
+          return result;
+        }
 
-      const reviewRows = await tx<ReviewRow[]>`
+        const reviewRows = await tx<ReviewRow[]>`
         SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
                suggested_action, suggestion, provenance_timeline, title, created_at
         FROM ledger.review_tasks
@@ -842,57 +981,57 @@ export class PostgresLedgerStore implements LedgerStore {
           AND workspace_id = ${this.defaults.workspaceId}
         LIMIT 1
       `;
-      const review = reviewRows[0] ? rowToReview(reviewRows[0]) : undefined;
+        const review = reviewRows[0] ? rowToReview(reviewRows[0]) : undefined;
 
-      // 2. Decided-voucher guard (append-only): no mutation, no event.
-      if (voucher.status !== "needs-review") {
-        const result: EvidenceContext = { evidence, voucher };
-        if (packet) result.packet = packet;
-        if (review) result.review = review;
-        return result;
-      }
+        // 2. Decided-voucher guard (append-only): no mutation, no event.
+        if (voucher.status !== "needs-review") {
+          const result: EvidenceContext = { evidence, voucher };
+          if (packet) result.packet = packet;
+          if (review) result.review = review;
+          return result;
+        }
 
-      const occurredAt = nowIso();
+        const occurredAt = nowIso();
 
-      // 3. Merge by key; 4. recompute voucher fields preserving description/currency.
-      const mergedFields = mergeExtractedFields(voucher.extractedFields, extraction.fields);
-      const voucherFields = recomputeVoucherFields(mergedFields, voucher.voucherFields);
-      const updatedVoucher: Voucher = { ...voucher, extractedFields: mergedFields, voucherFields };
+        // 3. Merge by key; 4. recompute voucher fields preserving description/currency.
+        const mergedFields = mergeExtractedFields(voucher.extractedFields, extraction.fields);
+        const voucherFields = recomputeVoucherFields(mergedFields, voucher.voucherFields);
+        const updatedVoucher: Voucher = { ...voucher, extractedFields: mergedFields, voucherFields };
 
-      // 5. Update the voucher read model (events stay the source of truth).
-      await tx`
+        // 5. Update the voucher read model (events stay the source of truth).
+        await tx`
         UPDATE ledger.vouchers
         SET extracted_fields = ${tx.json(mergedFields as unknown as Parameters<typeof tx.json>[0])},
             voucher_fields = ${tx.json(voucherFields as Parameters<typeof tx.json>[0])}
         WHERE id = ${voucher.id}
       `;
 
-      // 6. Re-run rules, regenerate the suggestion, update the review read model.
-      const ruleHits = evaluateVoucherRules(updatedVoucher);
-      const suggestion = buildDeterministicSuggestion(updatedVoucher, ruleHits);
-      const blocked = ruleHits.some((rule) => rule.severity === "blocking");
-      let updatedReview: ReviewTask | undefined;
-      if (review) {
-        updatedReview = {
-          ...review,
-          suggestion,
-          suggestedAction: blocked
-            ? "Request more evidence or post without VAT deduction."
-            : "Approve the proposed posting.",
-          provenanceTimeline: [
-            ...review.provenanceTimeline,
-            { id: createId("step"), label: "Fields re-extracted", timestamp: occurredAt, actor: "system-extractor" },
-            { id: createId("step"), label: "Suggestion regenerated", timestamp: occurredAt, actor: "system-ai" },
-          ],
-        };
-        if (blocked) {
-          updatedReview.blockedReason =
-            "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
-        } else {
-          delete updatedReview.blockedReason;
-        }
+        // 6. Re-run rules, regenerate the suggestion, update the review read model.
+        const ruleHits = evaluateVoucherRules(updatedVoucher);
+        const suggestion = buildDeterministicSuggestion(updatedVoucher, ruleHits);
+        const blocked = ruleHits.some((rule) => rule.severity === "blocking");
+        let updatedReview: ReviewTask | undefined;
+        if (review) {
+          updatedReview = {
+            ...review,
+            suggestion,
+            suggestedAction: blocked
+              ? "Request more evidence or post without VAT deduction."
+              : "Approve the proposed posting.",
+            provenanceTimeline: [
+              ...review.provenanceTimeline,
+              { id: createId("step"), label: "Fields re-extracted", timestamp: occurredAt, actor: "system-extractor" },
+              { id: createId("step"), label: "Suggestion regenerated", timestamp: occurredAt, actor: "system-ai" },
+            ],
+          };
+          if (blocked) {
+            updatedReview.blockedReason =
+              "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
+          } else {
+            delete updatedReview.blockedReason;
+          }
 
-        await tx`
+          await tx`
           UPDATE ledger.review_tasks
           SET suggestion = ${tx.json(suggestion as unknown as Parameters<typeof tx.json>[0])},
               blocked_reason = ${updatedReview.blockedReason ?? null},
@@ -900,56 +1039,57 @@ export class PostgresLedgerStore implements LedgerStore {
               provenance_timeline = ${tx.json(updatedReview.provenanceTimeline as unknown as Parameters<typeof tx.json>[0])}
           WHERE id = ${review.id}
         `;
-      }
+        }
 
-      // 7. Append the two hash-chained events (full snapshot payload, Rule 13).
-      let prev = tailHash;
-      const refreshedEvt = await this.appendEvent(
-        tx,
-        {
-          organizationId: updatedVoucher.organizationId,
-          workspaceId: updatedVoucher.workspaceId,
-          aggregateType: "voucher",
-          aggregateId: updatedVoucher.id,
-          eventType: "ExtractionRefreshed",
-          actorId: "system-extractor",
-          occurredAt,
-          payload: {
-            evidenceId,
-            voucherId: updatedVoucher.id,
-            modelId: extraction.modelId,
-            extractedAt: extraction.extractedAt,
-            fields: mergedFields,
-            voucherFields,
-          },
-        },
-        prev,
-      );
-      prev = refreshedEvt.eventHash;
-
-      if (updatedReview) {
-        await this.appendEvent(
+        // 7. Append the two hash-chained events (full snapshot payload, Rule 13).
+        let prev = tailHash;
+        const refreshedEvt = await this.appendEvent(
           tx,
           {
             organizationId: updatedVoucher.organizationId,
             workspaceId: updatedVoucher.workspaceId,
-            aggregateType: "review",
-            aggregateId: updatedReview.id,
-            eventType: "SuggestionGenerated",
-            actorId: "system-ai",
+            aggregateType: "voucher",
+            aggregateId: updatedVoucher.id,
+            eventType: "ExtractionRefreshed",
+            actorId: "system-extractor",
             occurredAt,
-            payload: suggestion as unknown as Record<string, unknown>,
+            payload: {
+              evidenceId,
+              voucherId: updatedVoucher.id,
+              modelId: extraction.modelId,
+              extractedAt: extraction.extractedAt,
+              fields: mergedFields,
+              voucherFields,
+            },
           },
           prev,
         );
-      }
+        prev = refreshedEvt.eventHash;
 
-      // 8. Fresh copies for the caller.
-      const result: EvidenceContext = { evidence, voucher: updatedVoucher };
-      if (packet) result.packet = packet;
-      if (updatedReview) result.review = updatedReview;
-      return result;
-    });
+        if (updatedReview) {
+          await this.appendEvent(
+            tx,
+            {
+              organizationId: updatedVoucher.organizationId,
+              workspaceId: updatedVoucher.workspaceId,
+              aggregateType: "review",
+              aggregateId: updatedReview.id,
+              eventType: "SuggestionGenerated",
+              actorId: "system-ai",
+              occurredAt,
+              payload: suggestion as unknown as Record<string, unknown>,
+            },
+            prev,
+          );
+        }
+
+        // 8. Fresh copies for the caller.
+        const result: EvidenceContext = { evidence, voucher: updatedVoucher };
+        if (packet) result.packet = packet;
+        if (updatedReview) result.review = updatedReview;
+        return result;
+      }),
+    );
   }
 
   async importSie(input: SieImportInput): Promise<SieImportResult> {
@@ -957,22 +1097,23 @@ export class PostgresLedgerStore implements LedgerStore {
     // isolation into `skipped`) keeps Memory and Postgres in lockstep.
     const { vouchers, skipped } = planSieImport(input.file);
 
-    return this.client.begin(async (tx) => {
-      const tailHash = await this.lockWorkspaceTail(tx);
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
 
-      const result: SieImportResult = {
-        accepted: true,
-        importedVouchers: 0,
-        importedTransactions: 0,
-        skipped: [...skipped],
-      };
+        const result: SieImportResult = {
+          accepted: true,
+          importedVouchers: 0,
+          importedTransactions: 0,
+          skipped: [...skipped],
+        };
 
-      // Idempotency: skip vouchers whose aggregate id was already imported.
-      const candidateIds = vouchers.map((planned) => planned.aggregateId);
-      const existingRows =
-        candidateIds.length === 0
-          ? []
-          : await tx<{ aggregate_id: string }[]>`
+        // Idempotency: skip vouchers whose aggregate id was already imported.
+        const candidateIds = vouchers.map((planned) => planned.aggregateId);
+        const existingRows =
+          candidateIds.length === 0
+            ? []
+            : await tx<{ aggregate_id: string }[]>`
         SELECT aggregate_id
         FROM ledger.events
         WHERE event_type = 'VoucherImported'
@@ -980,45 +1121,83 @@ export class PostgresLedgerStore implements LedgerStore {
           AND workspace_id = ${this.defaults.workspaceId}
           AND aggregate_id = ANY(${candidateIds})
       `;
-      const alreadyImported = new Set(existingRows.map((row) => row.aggregate_id));
+        const alreadyImported = new Set(existingRows.map((row) => row.aggregate_id));
 
-      const occurredAt = nowIso();
-      let prev = tailHash;
-      for (const planned of vouchers) {
-        if (alreadyImported.has(planned.aggregateId)) {
-          result.skipped.push({ reference: planned.reference, reason: "duplicate" });
-          continue;
+        const occurredAt = nowIso();
+        const digestDate = new Date().toISOString().slice(0, 10);
+
+        // Chain every hash in JS first, then bulk-insert (WS-B R15). The old
+        // shape was one awaited INSERT per SIE voucher — ~500 sequential round
+        // trips held under the workspace chain lock. Hash chaining only needs
+        // the PREVIOUS event's hash, which is pure JS (buildEventHash), so the
+        // rows can be fully materialized before Postgres sees any of them.
+        type PlannedEventRow = {
+          id: string;
+          aggregateId: string;
+          payload: Record<string, unknown>;
+          previousHash: string;
+          eventHash: string;
+        };
+        const batch: PlannedEventRow[] = [];
+        let prev = tailHash;
+        for (const planned of vouchers) {
+          if (alreadyImported.has(planned.aggregateId)) {
+            result.skipped.push({ reference: planned.reference, reason: "duplicate" });
+            continue;
+          }
+
+          const payload: Record<string, unknown> = {
+            source: "sie",
+            series: planned.series,
+            number: planned.number,
+            date: planned.date,
+            text: planned.text,
+            lines: planned.lines as unknown as Record<string, unknown>[],
+          };
+          const eventHash = buildEventHash(prev, payload);
+          batch.push({ id: createId("evt"), aggregateId: planned.aggregateId, payload, previousHash: prev, eventHash });
+          prev = eventHash;
+
+          result.importedVouchers += 1;
+          result.importedTransactions += planned.lines.length;
         }
 
-        const evt = await this.appendEvent(
-          tx,
-          {
-            organizationId: this.defaults.organizationId,
-            workspaceId: this.defaults.workspaceId,
-            aggregateType: "ledger",
-            aggregateId: planned.aggregateId,
-            eventType: "VoucherImported",
-            actorId: input.actorId,
-            occurredAt,
-            payload: {
-              source: "sie",
-              series: planned.series,
-              number: planned.number,
-              date: planned.date,
-              text: planned.text,
-              lines: planned.lines as unknown as Record<string, unknown>[],
-            },
-          },
-          prev,
-        );
-        prev = evt.eventHash;
+        if (batch.length > 0) {
+          // One multi-row INSERT … SELECT. WITH ORDINALITY + ORDER BY ord pins
+          // the physical insert order to the JS chain order, so 0006's `seq`
+          // identity is assigned in chain order. created_at (clock_timestamp)
+          // can tie between rows of a single statement at µs resolution — which
+          // is exactly why `seq` is the final ORDER BY key on every read.
+          // Constant-per-batch columns ride as scalar params; per-row values
+          // come out of one jsonb array param.
+          await tx`
+          INSERT INTO ledger.events (
+            id, organization_id, workspace_id, aggregate_type, aggregate_id,
+            event_type, actor_id, occurred_at, payload, previous_hash,
+            event_hash, digest_date
+          )
+          SELECT
+            e.doc->>'id',
+            ${this.defaults.organizationId},
+            ${this.defaults.workspaceId},
+            'ledger',
+            e.doc->>'aggregateId',
+            'VoucherImported',
+            ${input.actorId},
+            ${occurredAt},
+            e.doc->'payload',
+            e.doc->>'previousHash',
+            e.doc->>'eventHash',
+            ${digestDate}
+          FROM jsonb_array_elements(${tx.json(batch as unknown as Parameters<typeof tx.json>[0])}::jsonb)
+            WITH ORDINALITY AS e(doc, ord)
+          ORDER BY e.ord
+        `;
+        }
 
-        result.importedVouchers += 1;
-        result.importedTransactions += planned.lines.length;
-      }
-
-      return result;
-    });
+        return result;
+      }),
+    );
   }
 
   async findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined> {
@@ -1036,6 +1215,10 @@ export class PostgresLedgerStore implements LedgerStore {
   }
 
   async getReviewFeed(): Promise<ReviewTask[]> {
+    // Ordering note (R15 sweep): this reads ledger.review_tasks, which has no
+    // `seq` column (0006 added it to ledger.events only); `id DESC` is already
+    // the deterministic tiebreak here. Ditto for the other non-events
+    // created_at orderings in this file (packets, evidence, vouchers, alerts).
     const rows = await this.client<ReviewRow[]>`
       SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
              suggested_action, suggestion, provenance_timeline, title, created_at
@@ -1064,7 +1247,7 @@ export class PostgresLedgerStore implements LedgerStore {
       WHERE event_type = ANY(${["PostedToLedger", "VoucherImported"]})
         AND organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
-      ORDER BY occurred_at ASC, created_at ASC
+      ORDER BY occurred_at ASC, created_at ASC, seq ASC
     `;
 
     for (const row of rows) {
@@ -1162,13 +1345,16 @@ export class PostgresLedgerStore implements LedgerStore {
   }
 
   async getEvents(): Promise<LedgerEvent[]> {
+    // `seq` (0006 identity) is the FINAL tiebreak on every ledger.events read:
+    // occurred_at and created_at are both wall-clock and can tie inside a
+    // multi-row insert (importSie batch) or across appends on the same µs.
     const rows = await this.client<EventRow[]>`
       SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
              actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
       FROM ledger.events
       WHERE organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
-      ORDER BY occurred_at ASC, created_at ASC
+      ORDER BY occurred_at ASC, created_at ASC, seq ASC
     `;
     return rows.map(rowToEvent);
   }
@@ -1191,12 +1377,19 @@ export class PostgresLedgerStore implements LedgerStore {
       const ruleHits = evaluateVoucherRules(voucher);
       const suggestion = buildDeterministicSuggestion(voucher, ruleHits);
 
+      // Store parity (WS-B B7b): persist the regenerated suggestion onto the
+      // review read model only while the review is still open — a decided
+      // review's suggestion records what was actually posted (an edited
+      // approval writes the posted suggestion there) and must never be
+      // clobbered by a later regeneration. MemoryLedgerStore applies the
+      // identical needs-review gate.
       await tx`
         UPDATE ledger.review_tasks
         SET suggestion = ${tx.json(suggestion as unknown as Parameters<typeof tx.json>[0])}
         WHERE voucher_id = ${voucherId}
           AND organization_id = ${this.defaults.organizationId}
           AND workspace_id = ${this.defaults.workspaceId}
+          AND status = 'needs-review'
       `;
 
       return suggestion;
@@ -1208,10 +1401,11 @@ export class PostgresLedgerStore implements LedgerStore {
     action: ReviewAction,
     input: ReviewDecisionInput,
   ): Promise<ReviewTask | undefined> {
-    return this.client.begin(async (tx) => {
-      const tailHashStart = await this.lockWorkspaceTail(tx);
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHashStart = await this.lockWorkspaceTail(tx);
 
-      const reviewRows = await tx<ReviewRow[]>`
+        const reviewRows = await tx<ReviewRow[]>`
         SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
                suggested_action, suggestion, provenance_timeline, title, created_at
         FROM ledger.review_tasks
@@ -1220,12 +1414,12 @@ export class PostgresLedgerStore implements LedgerStore {
           AND workspace_id = ${this.defaults.workspaceId}
         LIMIT 1
       `;
-      const reviewRow = reviewRows[0];
-      if (!reviewRow) return undefined;
+        const reviewRow = reviewRows[0];
+        if (!reviewRow) return undefined;
 
-      const review = rowToReview(reviewRow);
+        const review = rowToReview(reviewRow);
 
-      const voucherRows = await tx<VoucherRow[]>`
+        const voucherRows = await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
                accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
         FROM ledger.vouchers
@@ -1234,62 +1428,62 @@ export class PostgresLedgerStore implements LedgerStore {
           AND workspace_id = ${this.defaults.workspaceId}
         LIMIT 1
       `;
-      const voucherRow = voucherRows[0];
-      if (!voucherRow) return undefined;
+        const voucherRow = voucherRows[0];
+        if (!voucherRow) return undefined;
 
-      const voucher = rowToVoucher(voucherRow);
+        const voucher = rowToVoucher(voucherRow);
 
-      // Idempotency: replays should not re-post lines.
-      if (review.status !== "needs-review") return review;
+        // Idempotency: replays should not re-post lines.
+        if (review.status !== "needs-review") return review;
 
-      // Decision-time derivation for edited approvals: validates (throwing
-      // InvalidReviewEditError BEFORE any mutation — the transaction would
-      // roll back anyway, but ordering keeps the two stores step-identical)
-      // and derives the effective posting inputs. Append-only: the stored
-      // voucher row is NOT rewritten.
-      const edited = action !== "reject" ? input.edited : undefined;
-      let postingSuggestion = review.suggestion;
-      let postingVoucher = voucher;
-      if (edited) {
-        const resolved = resolveReviewDecisionEdit(voucher, review.suggestion, edited);
-        postingSuggestion = resolved.effectiveSuggestion;
-        postingVoucher = resolved.effectiveVoucher;
-      }
+        // Decision-time derivation for edited approvals: validates (throwing
+        // InvalidReviewEditError BEFORE any mutation — the transaction would
+        // roll back anyway, but ordering keeps the two stores step-identical)
+        // and derives the effective posting inputs. Append-only: the stored
+        // voucher row is NOT rewritten.
+        const edited = action !== "reject" ? input.edited : undefined;
+        let postingSuggestion = review.suggestion;
+        let postingVoucher = voucher;
+        if (edited) {
+          const resolved = resolveReviewDecisionEdit(voucher, review.suggestion, edited);
+          postingSuggestion = resolved.effectiveSuggestion;
+          postingVoucher = resolved.effectiveVoucher;
+        }
 
-      const occurredAt = nowIso();
-      const newStatus: ReviewTask["status"] =
-        action === "approve" ? "approved" : action === "reject" ? "rejected" : "booked-without-vat";
+        const occurredAt = nowIso();
+        const newStatus: ReviewTask["status"] =
+          action === "approve" ? "approved" : action === "reject" ? "rejected" : "booked-without-vat";
 
-      const stepLabel =
-        action === "approve"
-          ? edited
-            ? "Approved with edits"
-            : "Review approved"
-          : action === "reject"
-            ? "Review rejected"
-            : edited
-              ? "Booked without VAT deduction (edited)"
-              : "Booked without VAT deduction";
+        const stepLabel =
+          action === "approve"
+            ? edited
+              ? "Approved with edits"
+              : "Review approved"
+            : action === "reject"
+              ? "Review rejected"
+              : edited
+                ? "Booked without VAT deduction (edited)"
+                : "Booked without VAT deduction";
 
-      const updatedTimeline: ReviewTask["provenanceTimeline"] = [
-        ...review.provenanceTimeline,
-        {
-          id: createId("step"),
-          label: stepLabel,
-          timestamp: occurredAt,
-          actor: input.actorId,
-        },
-      ];
+        const updatedTimeline: ReviewTask["provenanceTimeline"] = [
+          ...review.provenanceTimeline,
+          {
+            id: createId("step"),
+            label: stepLabel,
+            timestamp: occurredAt,
+            actor: input.actorId,
+          },
+        ];
 
-      review.status = newStatus;
-      review.provenanceTimeline = updatedTimeline;
-      voucher.status = newStatus;
-      if (edited && postingSuggestion) {
-        // Review read model reflects what was actually posted.
-        review.suggestion = postingSuggestion;
-      }
+        review.status = newStatus;
+        review.provenanceTimeline = updatedTimeline;
+        voucher.status = newStatus;
+        if (edited && postingSuggestion) {
+          // Review read model reflects what was actually posted.
+          review.suggestion = postingSuggestion;
+        }
 
-      await tx`
+        await tx`
         UPDATE ledger.review_tasks
         SET status = ${newStatus},
             provenance_timeline = ${tx.json(updatedTimeline as unknown as Parameters<typeof tx.json>[0])},
@@ -1297,58 +1491,65 @@ export class PostgresLedgerStore implements LedgerStore {
         WHERE id = ${review.id}
       `;
 
-      await tx`
+        await tx`
         UPDATE ledger.vouchers
         SET status = ${newStatus}
         WHERE id = ${voucher.id}
       `;
 
-      let prev = tailHashStart;
-      const decisionEventType: EventTypeName = action === "approve" ? "ReviewApproved" : "ReviewRejected";
-      const decisionPayload: Record<string, unknown> = { action };
-      if (input.notes !== undefined) decisionPayload.notes = input.notes;
-      if (edited) decisionPayload.edited = edited;
+        let prev = tailHashStart;
+        // Honest decision vocabulary (WS-B B6a): book-without-vat gets its own
+        // decision event. Legacy streams recorded ReviewRejected +
+        // PostedToLedger for this decision; collectLedgerLines keys on
+        // PostedToLedger/VoucherImported lines only, so old streams keep
+        // projecting identically (backward compatible; parity with Memory).
+        const decisionEventType: EventTypeName =
+          action === "approve" ? "ReviewApproved" : action === "reject" ? "ReviewRejected" : "ReviewBookedWithoutVat";
+        const decisionPayload: Record<string, unknown> = { action };
+        if (input.notes !== undefined) decisionPayload.notes = input.notes;
+        if (edited) decisionPayload.edited = edited;
 
-      const decisionEvt = await this.appendEvent(
-        tx,
-        {
-          organizationId: voucher.organizationId,
-          workspaceId: voucher.workspaceId,
-          aggregateType: "review",
-          aggregateId: review.id,
-          eventType: decisionEventType,
-          actorId: input.actorId,
-          occurredAt,
-          payload: decisionPayload,
-        },
-        prev,
-      );
-      prev = decisionEvt.eventHash;
-
-      if (action !== "reject" && postingSuggestion) {
-        const lines = buildPostingLines(postingVoucher, postingSuggestion, action, occurredAt);
-        await this.appendEvent(
+        const decisionEvt = await this.appendEvent(
           tx,
           {
             organizationId: voucher.organizationId,
             workspaceId: voucher.workspaceId,
-            aggregateType: "ledger",
-            aggregateId: voucher.id,
-            eventType: "PostedToLedger",
+            aggregateType: "review",
+            aggregateId: review.id,
+            eventType: decisionEventType,
             actorId: input.actorId,
             occurredAt,
-            payload: {
-              action,
-              suggestion: postingSuggestion as unknown as Record<string, unknown>,
-              lines: lines as unknown as Record<string, unknown>[],
-            },
+            payload: decisionPayload,
           },
           prev,
         );
-      }
+        prev = decisionEvt.eventHash;
 
-      return review;
-    });
+        if (action !== "reject" && postingSuggestion) {
+          const lines = buildPostingLines(postingVoucher, postingSuggestion, action, occurredAt);
+          await this.appendEvent(
+            tx,
+            {
+              organizationId: voucher.organizationId,
+              workspaceId: voucher.workspaceId,
+              aggregateType: "ledger",
+              aggregateId: voucher.id,
+              eventType: "PostedToLedger",
+              actorId: input.actorId,
+              occurredAt,
+              payload: {
+                action,
+                suggestion: postingSuggestion as unknown as Record<string, unknown>,
+                lines: lines as unknown as Record<string, unknown>[],
+              },
+            },
+            prev,
+          );
+        }
+
+        return review;
+      }),
+    );
   }
 
   async answerAssistantQuestion(question: string): Promise<AssistantSession> {
@@ -1369,14 +1570,15 @@ export class PostgresLedgerStore implements LedgerStore {
   }
 
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
-    return this.client.begin(async (tx) => {
-      const tailHash = await this.lockWorkspaceTail(tx);
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
 
-      // Dedup at boundary (CONVENTIONS Rule 23). Postgres ANY(...) would dedupe
-      // anyway, but explicit dedup makes the length-check correct.
-      const reviewIds = [...new Set(input.reviewIds)];
+        // Dedup at boundary (CONVENTIONS Rule 23). Postgres ANY(...) would dedupe
+        // anyway, but explicit dedup makes the length-check correct.
+        const reviewIds = [...new Set(input.reviewIds)];
 
-      const reviewRows = await tx<ReviewRow[]>`
+        const reviewRows = await tx<ReviewRow[]>`
         SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
                suggested_action, suggestion, provenance_timeline, title, created_at
         FROM ledger.review_tasks
@@ -1384,16 +1586,16 @@ export class PostgresLedgerStore implements LedgerStore {
           AND workspace_id = ${this.defaults.workspaceId}
           AND id = ANY(${reviewIds})
       `;
-      if (reviewRows.length !== reviewIds.length) {
-        const found = new Set(reviewRows.map((r) => r.id));
-        throw new ReviewNotFoundError(reviewIds.filter((id) => !found.has(id)));
-      }
+        if (reviewRows.length !== reviewIds.length) {
+          const found = new Set(reviewRows.map((r) => r.id));
+          throw new ReviewNotFoundError(reviewIds.filter((id) => !found.has(id)));
+        }
 
-      const voucherIds = [...new Set(reviewRows.map((r) => r.voucher_id))];
-      const voucherRows =
-        voucherIds.length === 0
-          ? []
-          : await tx<VoucherRow[]>`
+        const voucherIds = [...new Set(reviewRows.map((r) => r.voucher_id))];
+        const voucherRows =
+          voucherIds.length === 0
+            ? []
+            : await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
                accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
         FROM ledger.vouchers
@@ -1402,44 +1604,45 @@ export class PostgresLedgerStore implements LedgerStore {
           AND id = ANY(${voucherIds})
       `;
 
-      const reviews = reviewRows.map(rowToReview);
-      const vouchers = voucherRows.map(rowToVoucher);
-      const suggestions = reviews.map((r) => r.suggestion).filter((s): s is AccountingSuggestion => Boolean(s));
+        const reviews = reviewRows.map(rowToReview);
+        const vouchers = voucherRows.map(rowToVoucher);
+        const suggestions = reviews.map((r) => r.suggestion).filter((s): s is AccountingSuggestion => Boolean(s));
 
-      const { balanceDelta, vatDelta, affectedAccounts } = simulateApprovals(
-        reviews,
-        suggestions,
-        vouchers,
-        input.action,
-      );
+        const { balanceDelta, vatDelta, affectedAccounts } = simulateApprovals(
+          reviews,
+          suggestions,
+          vouchers,
+          input.action,
+        );
 
-      const result: SimulationRun = {
-        id: createId("sim"),
-        title: input.title,
-        scenario: input.scenario,
-        outcomeSummary: `Simulated ${reviews.length} review(s); ${affectedAccounts.length} accounts affected. No production postings were changed.`,
-        affectedAccounts,
-        balanceDelta,
-        vatDelta,
-      };
+        const result: SimulationRun = {
+          id: createId("sim"),
+          title: input.title,
+          scenario: input.scenario,
+          outcomeSummary: `Simulated ${reviews.length} review(s); ${affectedAccounts.length} accounts affected. No production postings were changed.`,
+          affectedAccounts,
+          balanceDelta,
+          vatDelta,
+        };
 
-      await this.appendEvent(
-        tx,
-        {
-          organizationId: this.defaults.organizationId,
-          workspaceId: this.defaults.workspaceId,
-          aggregateType: "simulation",
-          aggregateId: result.id,
-          eventType: "SimulationExecuted",
-          actorId: input.actorId,
-          occurredAt: nowIso(),
-          payload: result as unknown as Record<string, unknown>,
-        },
-        tailHash,
-      );
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+            aggregateType: "simulation",
+            aggregateId: result.id,
+            eventType: "SimulationExecuted",
+            actorId: input.actorId,
+            occurredAt: nowIso(),
+            payload: result as unknown as Record<string, unknown>,
+          },
+          tailHash,
+        );
 
-      return result;
-    });
+        return result;
+      }),
+    );
   }
 
   async getCloseRun(): Promise<CloseRun> {
@@ -1482,9 +1685,17 @@ export class PostgresLedgerStore implements LedgerStore {
 
       if (detected.length > 0) {
         // Upsert via ON CONFLICT on (org, workspace, kind, target_id) — unique
-        // index with NULLS NOT DISTINCT from migration 0004. Explicitly clear
-        // resolved_at/resolved_by on every upsert so re-detected alerts don't
-        // carry stale resolution metadata (CONVENTIONS Rule 18).
+        // index with NULLS NOT DISTINCT from migration 0004.
+        //
+        // Store parity + lifecycle hooks (WS-B B7a; CONVENTIONS Rules 11, 18,
+        // 24): re-detection must NOT force-reopen user states — an alert the
+        // user acknowledged or dismissed keeps its status (and its resolution
+        // metadata) exactly like MemoryLedgerStore's rebuild, which passes
+        // acknowledged/dismissed through unchanged. Only auto states flip:
+        // open stays open, resolved reopens (with resolved_at/resolved_by
+        // cleared so reopened rows carry no stale resolution metadata).
+        // detected_at is preserved on conflict — Memory keeps the FIRST
+        // detection time across re-detections, so Postgres must too.
         for (const alert of detected) {
           await tx`
             INSERT INTO ledger.compliance_alerts
@@ -1498,10 +1709,21 @@ export class PostgresLedgerStore implements LedgerStore {
                ${alert.status}, ${alert.targetId ?? null}, ${alert.body ?? null},
                null, null)
             ON CONFLICT (organization_id, workspace_id, kind, target_id) DO UPDATE
-              SET status = EXCLUDED.status,
-                  detected_at = EXCLUDED.detected_at,
-                  resolved_at = null,
-                  resolved_by = null
+              SET status = CASE
+                    WHEN ledger.compliance_alerts.status IN ('acknowledged', 'dismissed')
+                      THEN ledger.compliance_alerts.status
+                    ELSE EXCLUDED.status
+                  END,
+                  resolved_at = CASE
+                    WHEN ledger.compliance_alerts.status IN ('acknowledged', 'dismissed')
+                      THEN ledger.compliance_alerts.resolved_at
+                    ELSE null
+                  END,
+                  resolved_by = CASE
+                    WHEN ledger.compliance_alerts.status IN ('acknowledged', 'dismissed')
+                      THEN ledger.compliance_alerts.resolved_by
+                    ELSE null
+                  END
           `;
         }
       }

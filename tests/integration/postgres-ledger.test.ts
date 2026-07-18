@@ -3,18 +3,22 @@ import test from "node:test";
 
 import type { ExtractionResult, ReportPack } from "@jpx-accounting/contracts";
 import {
+  buildEventHash,
   deriveDeterministicExtraction,
   InvalidPeriodTokenError,
   InvalidReviewEditError,
+  legacyDjb2EventHash,
   MemoryLedgerStore,
   parseSie,
   ReviewNotFoundError,
+  SHA256_EVENT_HASH_PATTERN,
+  summarizeEventIntegrity,
   today,
 } from "@jpx-accounting/domain";
 import { closePostgresClient, createPostgresClient, PostgresLedgerStore } from "@jpx-accounting/persistence-postgres";
 
 // Integration test: gated on `SUPABASE_DB_URL`. Skips silently when not set so CI without a live DB
-// still passes. Requires migrations 0001–0005 applied in order — see scripts/integration-db.md for
+// still passes. Requires migrations 0001–0007 applied in order — see scripts/integration-db.md for
 // the exact docker + psql + run commands (pgvector/pgvector:pg17 container on port 54329).
 
 const databaseUrl = process.env.SUPABASE_DB_URL;
@@ -436,6 +440,147 @@ test(
   },
 );
 
+test(
+  "PostgresLedgerStore R13: postings dated by the voucher transaction date; edited bookedAt round-trips; Memory parity",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+      const baseInput = {
+        actorId: "user_test",
+        title: "R13 prior-month receipt",
+        originalFilename: "r13-prior-month.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["camera" as const],
+      };
+      const marchExtraction = {
+        modelId: "stub-test",
+        extractedAt: new Date().toISOString(),
+        fields: [
+          { key: "receiptDate", label: "Receipt date", value: "2026-03-15", confidence: 0.97, required: true },
+          { key: "transactionDate", label: "Transaction date", value: "2026-03-15", confidence: 0.9, required: false },
+        ],
+      };
+
+      // --- Derived path: prior-month transaction date wins over the approval click.
+      const created = await store.createEvidence({ ...baseInput, organizationId: orgId, workspaceId: wsId });
+      const refreshed = await store.updateEvidenceExtraction(created.evidence.id, marchExtraction);
+      assert.equal(refreshed?.voucher?.voucherFields.transactionDate, "2026-03-15", "refresh precondition");
+
+      const beforeDecision = Date.now();
+      const decided = await store.applyReviewDecision(created.review.id, "approve", { actorId: "user_test" });
+      assert.equal(decided?.status, "approved");
+
+      const march = await store.getReports({ from: "2026-03-01", to: "2026-03-31" });
+      assert.equal(march.journal.length, 3, "expense + input VAT + bank land in the March window");
+      for (const entry of march.journal) {
+        assert.equal(entry.bookedAt, "2026-03-15");
+      }
+      assert.ok(
+        march.vat.some((entry) => entry.vatCode === "VAT25" && entry.vatAmount > 0),
+        "input VAT is claimed in the March VAT window",
+      );
+
+      // Audit trail unchanged: the decision events keep decision-time occurredAt.
+      const events = await store.getEvents();
+      const postedEvt = events.find((event) => event.eventType === "PostedToLedger");
+      assert.ok(postedEvt, "PostedToLedger event present");
+      assert.ok(
+        Date.parse(postedEvt.occurredAt) >= beforeDecision - 5000,
+        "PostedToLedger occurredAt stays at decision time, not the accounting date",
+      );
+      const postedLines = postedEvt.payload.lines as Array<Record<string, unknown>>;
+      assert.ok(Array.isArray(postedLines) && postedLines.length === 3);
+      for (const line of postedLines) {
+        assert.equal(line.bookedAt, "2026-03-15", "event payload lines carry the accounting date (replay truth)");
+      }
+
+      // --- Edited override path: bookedAt round-trips through store + events.
+      const created2 = await store.createEvidence({
+        ...baseInput,
+        organizationId: orgId,
+        workspaceId: wsId,
+        title: "R13 edited booking date",
+        originalFilename: "r13-edited.jpg",
+      });
+      const edited = {
+        accountNumber: "6110",
+        accountName: "Kontorsmateriel",
+        vatCode: "VAT25",
+        bookedAt: "2026-04-02",
+      };
+      const decided2 = await store.applyReviewDecision(created2.review.id, "approve", { actorId: "user_test", edited });
+      assert.equal(decided2?.status, "approved");
+      const april = await store.getReports({ from: "2026-04-01", to: "2026-04-30" });
+      assert.equal(april.journal.length, 3, "edited bookedAt buckets the posting into April");
+      for (const entry of april.journal) {
+        assert.equal(entry.bookedAt, "2026-04-02");
+      }
+      const approvedEvt2 = (await store.getEvents()).find(
+        (event) => event.eventType === "ReviewApproved" && event.aggregateId === created2.review.id,
+      );
+      assert.deepEqual(approvedEvt2?.payload.edited, edited, "edited bookedAt recorded on the decision event");
+
+      // --- Future bookedAt rejected before any mutation (transaction rolled back).
+      const created3 = await store.createEvidence({
+        ...baseInput,
+        organizationId: orgId,
+        workspaceId: wsId,
+        title: "R13 future booking date",
+        originalFilename: "r13-future.jpg",
+      });
+      const tomorrowDate = new Date();
+      tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+      const pad2 = (value: number) => String(value).padStart(2, "0");
+      const tomorrow = `${tomorrowDate.getFullYear()}-${pad2(tomorrowDate.getMonth() + 1)}-${pad2(tomorrowDate.getDate())}`;
+      await assert.rejects(
+        () =>
+          store.applyReviewDecision(created3.review.id, "approve", {
+            actorId: "user_test",
+            edited: { ...edited, bookedAt: tomorrow },
+          }),
+        (error) => error instanceof InvalidReviewEditError,
+      );
+      assert.equal(
+        (await store.findReviewByVoucher(created3.voucher.id))?.status,
+        "needs-review",
+        "rejected future bookedAt leaves the review decidable",
+      );
+
+      // --- Memory parity (CONVENTIONS Rule 11): identical derived flow posts
+      // identical line economics AND accounting dates.
+      const memory = new MemoryLedgerStore();
+      const memCreated = await memory.createEvidence({
+        ...baseInput,
+        organizationId: "org_jpx",
+        workspaceId: "workspace_main",
+      });
+      await memory.updateEvidenceExtraction(memCreated.evidence.id, marchExtraction);
+      await memory.applyReviewDecision(memCreated.review.id, "approve", { actorId: "user_test" });
+      const memPostedEvt = (await memory.getEvents()).find((event) => event.eventType === "PostedToLedger");
+      const memLines = memPostedEvt?.payload.lines as Array<Record<string, unknown>>;
+      assert.ok(Array.isArray(memLines) && memLines.length === 3);
+      const stableWithDate = (lines: Array<Record<string, unknown>>) =>
+        lines.map((line) => [line.accountNumber, line.debit, line.credit, line.vatCode, line.bookedAt]);
+      assert.deepEqual(stableWithDate(postedLines), stableWithDate(memLines), "bookedAt derivation parity");
+    } finally {
+      await client`delete from ledger.events where organization_id = ${orgId}`;
+      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+      await closePostgresClient(client);
+    }
+  },
+);
+
 test("PostgresLedgerStore.runSimulation real diff + ReviewNotFoundError", { skip }, async () => {
   if (!databaseUrl) return;
   const orgId = `org_test_${Date.now().toString(36)}`;
@@ -738,9 +883,44 @@ test(
       assert.ok("voiceTranscript" in snapshotPacket);
       assert.equal(snapshotPacket.note, "Rebundled packet");
 
-      // Read-model UPDATE only — composeEvidence must not append hash-chain events.
+      // WS-B B6b: the relink is chain-visible — composeEvidence appends one
+      // EvidenceRelinked event on top of createEvidence's four.
       const events = await store.getEvents();
-      assert.equal(events.length, 4, "composeEvidence relink is not an append-only event");
+      assert.equal(events.length, 5, "composeEvidence relink appends exactly one chain event");
+      const relinkEvt = events.at(-1);
+      assert.equal(relinkEvt?.eventType, "EvidenceRelinked");
+      assert.equal(relinkEvt?.aggregateType, "voucher");
+      assert.equal(relinkEvt?.aggregateId, created.voucher.id);
+      assert.equal(relinkEvt?.actorId, "user_test");
+      assert.equal(relinkEvt?.payload.packetId, composed.id);
+      assert.equal(relinkEvt?.payload.previousPacketId, created.packet.id);
+      assert.deepEqual(relinkEvt?.payload.evidenceIds, [created.evidence.id]);
+      // The relink event chains onto the prior tail (linkage intact).
+      assert.equal(relinkEvt?.previousHash, events.at(-2)?.eventHash, "EvidenceRelinked chains onto the tail");
+
+      // Memory parity (Rule 11): same flow appends the same event shape.
+      const memory = new MemoryLedgerStore();
+      const memCreated = await memory.createEvidence({
+        organizationId: "org_jpx",
+        workspaceId: "workspace_main",
+        actorId: "user_test",
+        title: "Relink target receipt",
+        originalFilename: "relink.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["camera"],
+      });
+      const memComposed = await memory.composeEvidence({
+        organizationId: "org_jpx",
+        workspaceId: "workspace_main",
+        actorId: "user_test",
+        evidenceIds: [memCreated.evidence.id],
+        note: "Rebundled packet",
+      });
+      const memRelinkEvt = (await memory.getEvents()).at(-1);
+      assert.equal(memRelinkEvt?.eventType, "EvidenceRelinked");
+      assert.equal(memRelinkEvt?.aggregateId, memCreated.voucher.id);
+      assert.equal(memRelinkEvt?.payload.packetId, memComposed.id);
+      assert.deepEqual(Object.keys(memRelinkEvt?.payload ?? {}).sort(), Object.keys(relinkEvt?.payload ?? {}).sort());
     } finally {
       await client`delete from ledger.events where organization_id = ${orgId}`;
       await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
@@ -964,6 +1144,1028 @@ test(
       assert.equal(memCloseRun.period, closeRun.period);
       assert.deepEqual(memCloseRun.checklist, closeRun.checklist);
     } finally {
+      await closePostgresClient(client);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// WS-B R14: SHA-256 hash chain over canonical JSON against the real DB
+// ---------------------------------------------------------------------------
+
+test("R14: appended events carry SHA-256 hashes that recompute from the stored jsonb payloads", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+    const created = await store.createEvidence({
+      organizationId: orgId,
+      workspaceId: wsId,
+      actorId: "user_test",
+      title: "Hash-chain integration invoice",
+      originalFilename: "hash-chain.pdf",
+      mimeType: "application/pdf",
+      modalities: ["pdf", "upload"],
+      extractedText: "Hash chain canonical serialization check 1 250,75 kr",
+    });
+    await store.applyReviewDecision(created.review.id, "approve", { actorId: "user_test" });
+
+    const events = await store.getEvents();
+    assert.ok(events.length >= 5, "createEvidence + approval should append at least five events");
+
+    // Every post-cutover hash is SHA-256-format, and the domain buildEventHash
+    // reproduces each stored hash from the jsonb-round-tripped payload — the
+    // cross-store parity seam (both stores import buildEventHash from domain)
+    // and the kill-shot for the old jsonb-key-order recompute blocker.
+    for (const event of events) {
+      assert.match(event.eventHash, SHA256_EVENT_HASH_PATTERN);
+      assert.equal(
+        buildEventHash(event.previousHash, event.payload),
+        event.eventHash,
+        `recomputed hash must match the stored hash for ${event.eventType}`,
+      );
+    }
+
+    const summary = summarizeEventIntegrity(events, { verifiedAt: new Date().toISOString(), verifyPayloads: true });
+    assert.equal(summary.chainLinked, true);
+    assert.equal(summary.payloadVerified, true);
+    assert.equal(summary.payloadMismatchCount, 0);
+    assert.equal(summary.recomputedEventCount, events.length);
+    assert.equal(summary.legacyEventCount, 0);
+  } finally {
+    await client`delete from ledger.events where organization_id = ${orgId}`;
+    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+  }
+});
+
+test("R14: a legacy djb2 prefix + new SHA-256 appends verify as one mixed chain", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    // 1. Fabricate the pre-cutover state exactly as the old append path wrote
+    //    it: djb2 over `previousHash + ":" + JSON.stringify(payload)`. These
+    //    rows model the hosted-Supabase chains that stay djb2 forever.
+    const legacyPayloads = [
+      { evidenceId: "ev_legacy_1", title: "Legacy receipt" },
+      { evidenceId: "ev_legacy_2", title: "Legacy invoice" },
+    ];
+    let previousHash = "GENESIS";
+    for (let index = 0; index < legacyPayloads.length; index += 1) {
+      const payload = legacyPayloads[index]!;
+      const eventHash = legacyDjb2EventHash(previousHash, JSON.stringify(payload));
+      const occurredAt = new Date(Date.now() - (legacyPayloads.length - index) * 60_000).toISOString();
+      await client`
+        INSERT INTO ledger.events (
+          id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+          actor_id, occurred_at, payload, previous_hash, event_hash, digest_date
+        ) VALUES (
+          ${`evt_legacy_${index + 1}_${wsId}`}, ${orgId}, ${wsId}, ${"evidence"}, ${payload.evidenceId},
+          ${"EvidenceReceived"}, ${"user_test"}, ${occurredAt}, ${client.json(payload as never)},
+          ${previousHash}, ${eventHash}, ${occurredAt.slice(0, 10)}
+        )
+      `;
+      previousHash = eventHash;
+    }
+
+    // 2. New appends go through the store and MUST chain onto the djb2 tail
+    //    with SHA-256 hashes (cutover: no rewrite, per-link schemes).
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+    await store.createEvidence({
+      organizationId: orgId,
+      workspaceId: wsId,
+      actorId: "user_test",
+      title: "Post-cutover evidence",
+      originalFilename: "post-cutover.pdf",
+      mimeType: "application/pdf",
+      modalities: ["pdf"],
+    });
+
+    const events = await store.getEvents();
+    assert.equal(events.length, 2 + 4, "two legacy rows + four store-appended events");
+    assert.equal(events[2]!.previousHash, previousHash, "first SHA-256 event must link onto the djb2 tail");
+    assert.match(events[1]!.eventHash, /^h_[0-9a-f]{8}$/);
+    assert.match(events[2]!.eventHash, SHA256_EVENT_HASH_PATTERN);
+
+    const summary = summarizeEventIntegrity(events, { verifiedAt: new Date().toISOString(), verifyPayloads: true });
+    assert.equal(summary.chainLinked, true, "mixed djb2-prefix + SHA-256-suffix chain must verify");
+    assert.equal(summary.legacyEventCount, 2);
+    assert.equal(summary.recomputedEventCount, 4);
+    assert.equal(summary.payloadMismatchCount, 0);
+    assert.equal(summary.payloadVerified, true);
+  } finally {
+    await client`delete from ledger.events where organization_id = ${orgId}`;
+    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+  }
+});
+
+test("R14: an in-place jsonb payload edit is invisible to linkage but flagged by recomputation", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+    await store.createEvidence({
+      organizationId: orgId,
+      workspaceId: wsId,
+      actorId: "user_test",
+      title: "Tamper target",
+      originalFilename: "tamper.pdf",
+      mimeType: "application/pdf",
+      modalities: ["pdf"],
+    });
+
+    // Simulate hostile DB access: rewrite one stored payload without touching
+    // any hash column (linkage cannot see this — recomputation must).
+    await client`
+      UPDATE ledger.events
+      SET payload = payload || '{"tampered": true}'::jsonb
+      WHERE organization_id = ${orgId} AND workspace_id = ${wsId} AND event_type = 'FieldsExtracted'
+    `;
+
+    const events = await store.getEvents();
+    const verifiedAt = new Date().toISOString();
+
+    const linkageOnly = summarizeEventIntegrity(events, { verifiedAt });
+    assert.equal(linkageOnly.chainLinked, true, "linkage alone must NOT detect an in-place payload edit");
+
+    const recomputed = summarizeEventIntegrity(events, { verifiedAt, verifyPayloads: true });
+    assert.equal(recomputed.chainLinked, true);
+    assert.equal(recomputed.payloadVerified, false, "recomputation must flag the tampered payload");
+    assert.equal(recomputed.payloadMismatchCount, 1);
+    assert.equal(recomputed.recomputedEventCount, events.length);
+  } finally {
+    await client`delete from ledger.events where organization_id = ${orgId}`;
+    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// WS-B R15: hash-chain forks are structurally impossible
+//
+// Serialization contract under test (PostgresLedgerStore + migration 0006):
+//   1. every chain-appending transaction takes pg_advisory_xact_lock on the
+//      workspace key BEFORE reading the tail (fixes the stale-tail re-read of
+//      the old FOR UPDATE and the no-row-to-lock GENESIS hole);
+//   2. UNIQUE (organization_id, workspace_id, previous_hash) turns any
+//      out-of-band fork into a retryable 23505;
+//   3. `seq bigint generated always as identity` is the deterministic FINAL
+//      ORDER BY key on every ledger.events read.
+//
+// Memory-parity note (Rule 11): MemoryLedgerStore.appendEvent is fork-safe by
+// construction — its tail read (`events.at(-1)`) and push are synchronous with
+// no await between them, so a single-threaded runtime cannot interleave two
+// appends. These tests pin the Postgres side to that same linearity.
+// ---------------------------------------------------------------------------
+
+test("R15: migration 0006 schema pins — seq identity, fork-guard constraint, seq index", { skip }, async () => {
+  if (!databaseUrl) return;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    // seq must be a bigint GENERATED ALWAYS identity. is_identity guards the
+    // Rule 18 caveat: ADD COLUMN IF NOT EXISTS only checks the column name,
+    // so a partial environment with a non-identity `seq` must fail loudly.
+    const seqColumn = await client<
+      Array<{ data_type: string; is_identity: string; identity_generation: string | null }>
+    >`
+      SELECT data_type, is_identity, identity_generation
+      FROM information_schema.columns
+      WHERE table_schema = 'ledger' AND table_name = 'events' AND column_name = 'seq'
+    `;
+    assert.equal(seqColumn[0]?.data_type, "bigint", "seq must be bigint (migration 0006)");
+    assert.equal(seqColumn[0]?.is_identity, "YES", "seq must be an identity column (migration 0006)");
+    assert.equal(seqColumn[0]?.identity_generation, "ALWAYS", "seq must be GENERATED ALWAYS");
+
+    const constraint = await client<Array<{ def: string }>>`
+      SELECT pg_get_constraintdef(oid) AS def
+      FROM pg_constraint
+      WHERE conrelid = 'ledger.events'::regclass AND conname = 'ledger_events_chain_fork_key'
+    `;
+    assert.equal(
+      constraint[0]?.def,
+      "UNIQUE (organization_id, workspace_id, previous_hash)",
+      "fork-guard unique constraint must exist (migration 0006)",
+    );
+
+    const index = await client<Array<{ indexdef: string }>>`
+      SELECT indexdef FROM pg_indexes
+      WHERE schemaname = 'ledger' AND tablename = 'events' AND indexname = 'ledger_events_org_ws_seq_idx'
+    `;
+    assert.match(
+      index[0]?.indexdef ?? "",
+      /\(organization_id, workspace_id, seq\)/,
+      "ORDER BY-stable (org, workspace, seq) index must exist (migration 0006)",
+    );
+  } finally {
+    await closePostgresClient(client);
+  }
+});
+
+test(
+  "R15: a second event with the same previous_hash dies as 23505 on the fork-guard constraint",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    const insertRaw = async (id: string, previousHash: string) => {
+      const payload = { raw: id };
+      await client`
+      INSERT INTO ledger.events (
+        id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+        actor_id, occurred_at, payload, previous_hash, event_hash, digest_date
+      ) VALUES (
+        ${id}, ${orgId}, ${wsId}, ${"ledger"}, ${id}, ${"VoucherImported"},
+        ${"user_test"}, ${new Date().toISOString()}, ${client.json(payload as never)},
+        ${previousHash}, ${buildEventHash(previousHash, payload)}, ${new Date().toISOString().slice(0, 10)}
+      )
+    `;
+    };
+    try {
+      await insertRaw(`evt_fork_a_${wsId}`, "GENESIS");
+      // The would-be fork: same workspace, same predecessor. Structurally rejected.
+      await assert.rejects(
+        () => insertRaw(`evt_fork_b_${wsId}`, "GENESIS"),
+        (error) => {
+          assert.ok(error instanceof Error, "driver error expected");
+          assert.equal(error.name, "PostgresError");
+          const pg = error as Error & { code?: string; constraint_name?: string };
+          assert.equal(pg.code, "23505", "fork must surface as a unique violation");
+          assert.equal(pg.constraint_name, "ledger_events_chain_fork_key");
+          return true;
+        },
+      );
+      // A different workspace may of course start its own chain at GENESIS.
+      const otherWs = `${wsId}_b`;
+      const payload = { raw: "other-ws" };
+      await client`
+      INSERT INTO ledger.events (
+        id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+        actor_id, occurred_at, payload, previous_hash, event_hash, digest_date
+      ) VALUES (
+        ${`evt_fork_c_${wsId}`}, ${orgId}, ${otherWs}, ${"ledger"}, ${"agg"}, ${"VoucherImported"},
+        ${"user_test"}, ${new Date().toISOString()}, ${client.json(payload as never)},
+        ${"GENESIS"}, ${buildEventHash("GENESIS", payload)}, ${new Date().toISOString().slice(0, 10)}
+      )
+    `;
+    } finally {
+      await client`delete from ledger.events where organization_id = ${orgId}`;
+      await closePostgresClient(client);
+    }
+  },
+);
+
+test("R15: two concurrent connections appending to one workspace produce a single linear chain", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  // Two real connections: separate postgres-js clients, one store each, SAME
+  // workspace. Under the old FOR UPDATE serialization this interleaving forked
+  // the chain (blocked waiter re-read a stale tail; nothing at all guarded
+  // GENESIS) and duplicated voucher numbers off the racing COUNT(*).
+  const clientA = createPostgresClient({ connectionString: databaseUrl });
+  const clientB = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const storeA = new PostgresLedgerStore(clientA, { organizationId: orgId, workspaceId: wsId });
+    const storeB = new PostgresLedgerStore(clientB, { organizationId: orgId, workspaceId: wsId });
+
+    const appendLoop = async (store: PostgresLedgerStore, label: string, count: number) => {
+      for (let index = 0; index < count; index += 1) {
+        await store.createEvidence({
+          organizationId: orgId,
+          workspaceId: wsId,
+          actorId: `user_${label}`,
+          title: `Concurrent ${label} #${index}`,
+          originalFilename: `concurrent-${label}-${index}.pdf`,
+          mimeType: "application/pdf",
+          modalities: ["pdf"],
+        });
+      }
+    };
+
+    // 4 createEvidence calls per connection × 4 events each = 32 events total,
+    // with both connections racing from GENESIS onward.
+    await Promise.all([appendLoop(storeA, "a", 4), appendLoop(storeB, "b", 4)]);
+
+    const events = await storeA.getEvents();
+    assert.equal(events.length, 32, "8 createEvidence transactions × 4 events");
+
+    // getEvents order must equal seq order (seq is the final tiebreak), and
+    // seq must be strictly increasing.
+    const seqRows = await clientA<Array<{ id: string; seq: string }>>`
+      SELECT id, seq::text AS seq FROM ledger.events
+      WHERE organization_id = ${orgId} AND workspace_id = ${wsId}
+      ORDER BY seq ASC
+    `;
+    assert.deepEqual(
+      events.map((event) => event.id),
+      seqRows.map((row) => row.id),
+      "getEvents order must match insertion (seq) order",
+    );
+    for (let index = 1; index < seqRows.length; index += 1) {
+      const previous = seqRows[index - 1];
+      const current = seqRows[index];
+      assert.ok(
+        previous !== undefined && current !== undefined && BigInt(current.seq) > BigInt(previous.seq),
+        "seq strictly increases",
+      );
+    }
+
+    // The chain is LINEAR: exactly one GENESIS head, every previous_hash
+    // appears exactly once, and each event links onto its predecessor.
+    let prev = "GENESIS";
+    for (const event of events) {
+      assert.equal(event.previousHash, prev, `previousHash mismatch at ${event.id}`);
+      prev = event.eventHash;
+    }
+    const previousHashes = events.map((event) => event.previousHash);
+    assert.equal(new Set(previousHashes).size, previousHashes.length, "every previous_hash appears exactly once");
+    assert.equal(previousHashes.filter((hash) => hash === "GENESIS").length, 1, "exactly one chain head");
+
+    const summary = summarizeEventIntegrity(events, { verifiedAt: new Date().toISOString(), verifyPayloads: true });
+    assert.equal(summary.chainLinked, true, "concurrent appends must never fork the chain");
+    assert.equal(summary.payloadVerified, true);
+    assert.equal(summary.payloadMismatchCount, 0);
+
+    // Advisory-lock side benefit: the voucher-number COUNT(*) serialized too.
+    const snapshot = await storeA.getSnapshot();
+    const voucherNumbers = snapshot.vouchers.map((voucher) => voucher.voucherNumber);
+    assert.equal(new Set(voucherNumbers).size, 8, "8 distinct voucher numbers under concurrency");
+  } finally {
+    await clientA`delete from ledger.events where organization_id = ${orgId}`;
+    await clientA`delete from ledger.review_tasks where organization_id = ${orgId}`;
+    await clientA`delete from ledger.vouchers where organization_id = ${orgId}`;
+    await clientA`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+    await clientA`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+    await clientA`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+    await closePostgresClient(clientA);
+    await closePostgresClient(clientB);
+  }
+});
+
+test("R15: batched importSie chains hashes in JS order and seq preserves the batch order", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+    // 5 balanced vouchers → 5 VoucherImported events in ONE multi-row INSERT.
+    const verBlocks = [42, 43, 44, 45, 46].map((num) =>
+      [`#VER A ${num} 20260315 "Batch ${num}"`, "{", `#TRANS 6110 {} ${num}.00`, `#TRANS 1930 {} -${num}.00`, "}"].join(
+        "\n",
+      ),
+    );
+    const file = parseSie(["#SIETYP 4", '#KONTO 6110 "Kontorsmateriel"', ...verBlocks].join("\n"));
+
+    const result = await store.importSie({ actorId: "user_test", file });
+    assert.equal(result.importedVouchers, 5);
+    assert.equal(result.importedTransactions, 10);
+
+    const events = await store.getEvents();
+    assert.equal(events.length, 5);
+    assert.deepEqual(
+      events.map((event) => event.aggregateId),
+      ["sie_A_42", "sie_A_43", "sie_A_44", "sie_A_45", "sie_A_46"],
+      "seq must reproduce the SIE file order for the single-statement batch",
+    );
+
+    // Per-event hash chaining survived the bulk insert: linkage AND payload
+    // recomputation (the hashes were computed in JS BEFORE the insert).
+    let prev = "GENESIS";
+    for (const event of events) {
+      assert.equal(event.previousHash, prev);
+      assert.equal(buildEventHash(event.previousHash, event.payload), event.eventHash);
+      prev = event.eventHash;
+    }
+
+    // Re-import is still a per-voucher duplicate skip, exactly like Memory.
+    const replay = await store.importSie({ actorId: "user_test", file });
+    assert.equal(replay.importedVouchers, 0);
+    assert.equal(replay.skipped.filter((entry) => entry.reason === "duplicate").length, 5);
+
+    // Memory/Postgres parity (Rule 11) on the same batched input.
+    const memory = new MemoryLedgerStore();
+    const memResult = await memory.importSie({ actorId: "user_test", file });
+    assert.deepEqual(memResult, result);
+    const memEvents = (await memory.getEvents()).filter((event) => event.eventType === "VoucherImported");
+    assert.deepEqual(
+      events.map((event) => event.aggregateId),
+      memEvents.map((event) => event.aggregateId),
+      "batch order parity Memory vs Postgres",
+    );
+  } finally {
+    await client`delete from ledger.events where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+  }
+});
+
+// Structural type for reaching the store's private tail-read seam from tests.
+// TS `private` is compile-time only; the cast pins the CURRENT internal name so
+// a rename fails these regression tests loudly instead of silently un-testing
+// the retry path.
+type TailReadSeam = {
+  lockWorkspaceTail(tx: unknown): Promise<string>;
+};
+
+test("R15: a chain fork from an out-of-band writer is absorbed by one internal retry", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  const rogueClient = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+    // Rogue writer: appends WITHOUT the advisory lock (models an out-of-band
+    // process). It commits between the store's tail read and its insert — the
+    // exact fork window the unique constraint guards.
+    let injected = 0;
+    const injectCompeting = async (previousHash: string) => {
+      injected += 1;
+      const payload = { rogue: true, index: injected };
+      await rogueClient`
+        INSERT INTO ledger.events (
+          id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+          actor_id, occurred_at, payload, previous_hash, event_hash, digest_date
+        ) VALUES (
+          ${`evt_rogue_${injected}_${wsId}`}, ${orgId}, ${wsId}, ${"ledger"}, ${`agg_rogue_${injected}`},
+          ${"VoucherImported"}, ${"rogue-writer"}, ${new Date().toISOString()},
+          ${rogueClient.json(payload as never)}, ${previousHash},
+          ${buildEventHash(previousHash, payload)}, ${new Date().toISOString().slice(0, 10)}
+        )
+      `;
+    };
+
+    const seam = store as unknown as TailReadSeam;
+    const originalTailRead = seam.lockWorkspaceTail.bind(store);
+    let forksToInject = 1;
+    seam.lockWorkspaceTail = async (tx) => {
+      const tail = await originalTailRead(tx);
+      if (forksToInject > 0) {
+        forksToInject -= 1;
+        await injectCompeting(tail); // committed out-of-band, fork armed…
+      }
+      return tail; // …and the store is handed the now-stale tail.
+    };
+
+    // First attempt hits 23505 on the fork guard; the internal retry re-reads
+    // the fresh tail (now the rogue event) and succeeds — callers never see it.
+    const created = await store.createEvidence({
+      organizationId: orgId,
+      workspaceId: wsId,
+      actorId: "user_test",
+      title: "Absorbed-fork evidence",
+      originalFilename: "absorbed.pdf",
+      mimeType: "application/pdf",
+      modalities: ["pdf"],
+    });
+    assert.ok(created.voucher.id, "createEvidence must succeed after one internal retry");
+    assert.equal(injected, 1, "exactly one competing append was injected");
+
+    // 1 rogue event + 4 store events, ONE linear chain across both writers.
+    const events = await store.getEvents();
+    assert.equal(events.length, 5);
+    assert.equal(events[0]?.actorId, "rogue-writer");
+    let prev = "GENESIS";
+    for (const event of events) {
+      assert.equal(event.previousHash, prev, `previousHash mismatch at ${event.eventType}`);
+      prev = event.eventHash;
+    }
+    const summary = summarizeEventIntegrity(events, { verifiedAt: new Date().toISOString(), verifyPayloads: true });
+    assert.equal(summary.chainLinked, true);
+    assert.equal(summary.payloadVerified, true);
+  } finally {
+    await client`delete from ledger.events where organization_id = ${orgId}`;
+    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+    await closePostgresClient(rogueClient);
+  }
+});
+
+test("R15: a persistent forker exhausts the retry and surfaces the typed retryable conflict", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  const rogueClient = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+    let injected = 0;
+    const seam = store as unknown as TailReadSeam;
+    const originalTailRead = seam.lockWorkspaceTail.bind(store);
+    seam.lockWorkspaceTail = async (tx) => {
+      const tail = await originalTailRead(tx);
+      injected += 1;
+      const payload = { rogue: true, index: injected };
+      await rogueClient`
+        INSERT INTO ledger.events (
+          id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+          actor_id, occurred_at, payload, previous_hash, event_hash, digest_date
+        ) VALUES (
+          ${`evt_rogue_${injected}_${wsId}`}, ${orgId}, ${wsId}, ${"ledger"}, ${`agg_rogue_${injected}`},
+          ${"VoucherImported"}, ${"rogue-writer"}, ${new Date().toISOString()},
+          ${rogueClient.json(payload as never)}, ${tail},
+          ${buildEventHash(tail, payload)}, ${new Date().toISOString().slice(0, 10)}
+        )
+      `;
+      return tail; // stale on EVERY attempt → both tries fork.
+    };
+
+    await assert.rejects(
+      () =>
+        store.createEvidence({
+          organizationId: orgId,
+          workspaceId: wsId,
+          actorId: "user_test",
+          title: "Exhausted-retry evidence",
+          originalFilename: "exhausted.pdf",
+          mimeType: "application/pdf",
+          modalities: ["pdf"],
+        }),
+      (error) => {
+        // HashChainForkError presents the PostgresError structural face on
+        // purpose: services/api's app.onError matches `name` + `code` (never
+        // driver imports, WS-A5) and W1 maps 23505 → HTTP 409 conflict. These
+        // assertions pin that wire contract.
+        assert.ok(error instanceof Error);
+        assert.equal(error.name, "PostgresError");
+        const fork = error as Error & { code?: string; constraint_name?: string; retryable?: boolean };
+        assert.equal(fork.code, "23505");
+        assert.equal(fork.constraint_name, "ledger_events_chain_fork_key");
+        assert.equal(fork.retryable, true);
+        assert.match(error.message, /fork/i);
+        assert.ok(error.cause instanceof Error, "underlying driver error rides along as cause");
+        return true;
+      },
+    );
+    assert.equal(injected, 2, "one initial attempt + exactly one internal retry");
+
+    // Both store attempts rolled back completely; only the rogue events remain
+    // — and THEY still form a linear, verifiable chain.
+    const evidenceCount = await client<Array<{ count: string }>>`
+      SELECT COUNT(*)::text AS count FROM ledger.evidence_objects WHERE organization_id = ${orgId}
+    `;
+    assert.equal(evidenceCount[0]?.count, "0", "failed transactions must leave no read-model rows");
+    const events = await store.getEvents();
+    assert.equal(events.length, 2, "only the two rogue appends persist");
+    const summary = summarizeEventIntegrity(events, { verifiedAt: new Date().toISOString(), verifyPayloads: true });
+    assert.equal(summary.chainLinked, true, "the rejected forks never corrupted the persisted chain");
+  } finally {
+    await client`delete from ledger.events where organization_id = ${orgId}`;
+    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+    await closePostgresClient(rogueClient);
+  }
+});
+
+test(
+  "B5: edited approvals validate account/VAT against the registry and server-resolve accountName + Memory parity",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+      const created = await store.createEvidence({
+        organizationId: orgId,
+        workspaceId: wsId,
+        actorId: "user_test",
+        title: "B5 validation receipt",
+        originalFilename: "b5-validation.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["camera"],
+      });
+
+      // Unknown account number → rejected before any mutation (rolled back).
+      await assert.rejects(
+        () =>
+          store.applyReviewDecision(created.review.id, "approve", {
+            actorId: "user_test",
+            edited: { accountNumber: "9999", vatCode: "VAT25" },
+          }),
+        (error) => {
+          assert.ok(error instanceof InvalidReviewEditError);
+          assert.ok(error.issues.some((issue) => issue.includes("chart of accounts")));
+          return true;
+        },
+      );
+
+      // Out-of-vocabulary vatCode (incl. the system marker VAT-REVIEW) → rejected.
+      for (const vatCode of ["VAT99", "VAT-REVIEW"]) {
+        await assert.rejects(
+          () =>
+            store.applyReviewDecision(created.review.id, "approve", {
+              actorId: "user_test",
+              edited: { accountNumber: "6110", vatCode },
+            }),
+          (error) =>
+            error instanceof InvalidReviewEditError &&
+            error.issues.some((issue) => issue.includes("VAT regime vocabulary")),
+        );
+      }
+      assert.equal(
+        (await store.findReviewByVoucher(created.voucher.id))?.status,
+        "needs-review",
+        "rejected edits leave the review decidable",
+      );
+
+      // Valid edit with a FORGED accountName: the registry name wins everywhere.
+      const decided = await store.applyReviewDecision(created.review.id, "approve", {
+        actorId: "user_test",
+        edited: { accountNumber: "6110", accountName: "Totally Forged Name AB", vatCode: "VAT25" },
+      });
+      assert.equal(decided?.status, "approved");
+      assert.equal(decided.suggestion?.accountName, "Kontorsmateriel", "registry truth wins over the client name");
+
+      const journal = (await store.getReports()).journal;
+      const expense = journal.at(-3);
+      assert.equal(expense?.accountNumber, "6110");
+      assert.equal(expense?.accountName, "Kontorsmateriel", "posted line carries the registry name");
+      assert.ok(journal.every((entry) => entry.accountName !== "Totally Forged Name AB"));
+
+      // The decision event records the SUBMITTED edit verbatim (audit input);
+      // the posted lines in PostedToLedger carry the resolved registry truth.
+      const events = await store.getEvents();
+      const approvedEvt = events.find((event) => event.eventType === "ReviewApproved");
+      assert.equal(
+        (approvedEvt?.payload.edited as { accountName?: string } | undefined)?.accountName,
+        "Totally Forged Name AB",
+      );
+      const postedEvt = events.find((event) => event.eventType === "PostedToLedger");
+      const postedLines = postedEvt?.payload.lines as Array<{ accountName: string }>;
+      assert.equal(postedLines[0]?.accountName, "Kontorsmateriel");
+
+      // Memory parity (Rule 11): identical decision on Memory resolves the same name.
+      const memory = new MemoryLedgerStore();
+      const memCreated = await memory.createEvidence({
+        organizationId: "org_jpx",
+        workspaceId: "workspace_main",
+        actorId: "user_test",
+        title: "B5 validation receipt",
+        originalFilename: "b5-validation.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["camera"],
+      });
+      const memDecided = await memory.applyReviewDecision(memCreated.review.id, "approve", {
+        actorId: "user_test",
+        edited: { accountNumber: "6110", accountName: "Totally Forged Name AB", vatCode: "VAT25" },
+      });
+      assert.equal(memDecided?.suggestion?.accountName, decided.suggestion?.accountName, "server-resolved name parity");
+    } finally {
+      await client`delete from ledger.events where organization_id = ${orgId}`;
+      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_packet_items
+        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+      await closePostgresClient(client);
+    }
+  },
+);
+
+test(
+  "B6a: book-without-vat emits ReviewBookedWithoutVat; legacy ReviewRejected+PostedToLedger streams still project",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const wsLegacy = `ws_legacy_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+      const created = await store.createEvidence({
+        organizationId: orgId,
+        workspaceId: wsId,
+        actorId: "user_test",
+        title: "B6a vocabulary receipt",
+        originalFilename: "b6a-vocabulary.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["camera"],
+      });
+
+      const journalBefore = (await store.getReports()).journal.length;
+      const decided = await store.applyReviewDecision(created.review.id, "book-without-vat", { actorId: "user_test" });
+      assert.equal(decided?.status, "booked-without-vat");
+      assert.equal((await store.getReports()).journal.length, journalBefore + 3);
+
+      const events = await store.getEvents();
+      const decisionEvt = events.find((event) => event.eventType === "ReviewBookedWithoutVat");
+      assert.ok(decisionEvt, "decision event uses the honest vocabulary");
+      assert.equal(decisionEvt.aggregateType, "review");
+      assert.equal(decisionEvt.aggregateId, created.review.id);
+      assert.equal(decisionEvt.payload.action, "book-without-vat");
+      assert.ok(!events.some((event) => event.eventType === "ReviewRejected"), "no misleading ReviewRejected");
+      const postedEvt = events.find((event) => event.eventType === "PostedToLedger");
+      assert.ok(postedEvt, "PostedToLedger still emitted");
+      assert.equal(postedEvt.payload.action, "book-without-vat");
+      // Chain stays linear and verifiable with the new vocabulary in it.
+      const summary = summarizeEventIntegrity(events, { verifiedAt: new Date().toISOString(), verifyPayloads: true });
+      assert.equal(summary.chainLinked, true);
+
+      // Memory parity (Rule 11): same decision, same vocabulary.
+      const memory = new MemoryLedgerStore();
+      const memCreated = await memory.createEvidence({
+        organizationId: "org_jpx",
+        workspaceId: "workspace_main",
+        actorId: "user_test",
+        title: "B6a vocabulary receipt",
+        originalFilename: "b6a-vocabulary.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["camera"],
+      });
+      await memory.applyReviewDecision(memCreated.review.id, "book-without-vat", { actorId: "user_test" });
+      const memEvents = await memory.getEvents();
+      assert.ok(memEvents.some((event) => event.eventType === "ReviewBookedWithoutVat"));
+      assert.ok(!memEvents.some((event) => event.eventType === "ReviewRejected"));
+
+      // Backward compatibility: a LEGACY persisted stream (pre-B6a vocabulary:
+      // ReviewRejected + PostedToLedger for a book-without-vat decision) must
+      // still replay into reports — projections key on PostedToLedger lines,
+      // never on the decision-event name.
+      const legacyStore = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsLegacy });
+      const occurredAt = new Date().toISOString();
+      const digestDate = occurredAt.slice(0, 10);
+      const legacyDecisionPayload = { action: "book-without-vat", notes: "legacy vocabulary stream" };
+      const legacyDecisionHash = buildEventHash("GENESIS", legacyDecisionPayload);
+      const legacyLines = [
+        {
+          voucherId: "voucher_legacy_1",
+          accountNumber: "6110",
+          accountName: "Kontorsmateriel",
+          description: "Legacy booked-without-vat",
+          debit: 100,
+          credit: 0,
+          vatCode: "VAT25",
+          bookedAt: digestDate,
+          deductible: false,
+        },
+        {
+          voucherId: "voucher_legacy_1",
+          accountNumber: "1930",
+          accountName: "Företagskonto",
+          description: "Legacy booked-without-vat",
+          debit: 0,
+          credit: 100,
+          vatCode: "NA",
+          bookedAt: digestDate,
+          deductible: false,
+        },
+      ];
+      const legacyPostedPayload = { action: "book-without-vat", lines: legacyLines };
+      const legacyPostedHash = buildEventHash(legacyDecisionHash, legacyPostedPayload);
+      await client`
+        INSERT INTO ledger.events (
+          id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+          actor_id, occurred_at, payload, previous_hash, event_hash, digest_date
+        ) VALUES
+          (${`evt_legacy_1_${wsLegacy}`}, ${orgId}, ${wsLegacy}, 'review', 'review_legacy_1', 'ReviewRejected',
+           ${"user_legacy"}, ${occurredAt}, ${client.json(legacyDecisionPayload as never)}, 'GENESIS',
+           ${legacyDecisionHash}, ${digestDate}),
+          (${`evt_legacy_2_${wsLegacy}`}, ${orgId}, ${wsLegacy}, 'ledger', 'voucher_legacy_1', 'PostedToLedger',
+           ${"user_legacy"}, ${occurredAt}, ${client.json(legacyPostedPayload as never)}, ${legacyDecisionHash},
+           ${legacyPostedHash}, ${digestDate})
+      `;
+
+      const legacyJournal = (await legacyStore.getReports()).journal;
+      assert.equal(legacyJournal.length, 3 + 2, "seed lines + the legacy stream's posted lines");
+      const [legacyExpense, legacyBank] = legacyJournal.slice(-2);
+      assert.equal(legacyExpense?.accountNumber, "6110");
+      assert.equal(legacyExpense?.debit, 100);
+      assert.equal(legacyBank?.credit, 100);
+      const legacySummary = summarizeEventIntegrity(await legacyStore.getEvents(), {
+        verifiedAt: new Date().toISOString(),
+        verifyPayloads: true,
+      });
+      assert.equal(legacySummary.chainLinked, true, "the legacy-vocabulary chain still verifies");
+    } finally {
+      await client`delete from ledger.events where organization_id = ${orgId}`;
+      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_packet_items
+        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+      await closePostgresClient(client);
+    }
+  },
+);
+
+test(
+  "B7a: alert re-detection preserves acknowledged/dismissed and first detected_at; auto-reopen clears resolution metadata",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+      const created = await store.createEvidence({
+        organizationId: orgId,
+        workspaceId: wsId,
+        actorId: "user_test",
+        title: "B7a alert receipt",
+        originalFilename: "b7a-alert.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["camera"],
+      });
+      await store.applyReviewDecision(created.review.id, "approve", { actorId: "user_test" });
+
+      // Strip the supplier VAT number so missing-supplier-vat fires on refresh
+      // (the extraction paths always seed one; mirrors the unit test's
+      // white-box strip on MemoryLedgerStore — same condition, same detector).
+      await client`
+        UPDATE ledger.vouchers SET voucher_fields = voucher_fields - 'supplierVatNumber'
+        WHERE id = ${created.voucher.id}
+      `;
+
+      const first = await store.refreshComplianceAlerts();
+      const alert = first.find(
+        (entry) => entry.kind === "missing-supplier-vat" && entry.targetId === created.voucher.id,
+      );
+      assert.ok(alert, "missing-supplier-vat alert detected");
+      assert.equal(alert.status, "open");
+
+      // Backdate detected_at so preservation is observable across refreshes
+      // (Memory keeps the FIRST detection time on re-detection — Rule 11).
+      const firstDetection = "2026-01-01T00:00:00.000Z";
+      await client`
+        UPDATE ledger.compliance_alerts SET detected_at = ${firstDetection} WHERE id = ${alert.id}
+      `;
+
+      // User acknowledges (no acknowledge UI yet — pinned via SQL, the exact
+      // state an acknowledge endpoint will write).
+      await client`
+        UPDATE ledger.compliance_alerts SET status = 'acknowledged' WHERE id = ${alert.id}
+      `;
+      const second = await store.refreshComplianceAlerts();
+      const acknowledged = second.find((entry) => entry.id === alert.id);
+      assert.equal(acknowledged?.status, "acknowledged", "re-detection must not force-reopen an acknowledged alert");
+      assert.equal(
+        new Date(acknowledged?.detectedAt as unknown as string | Date).toISOString(),
+        firstDetection,
+        "first-detection time preserved on re-detection",
+      );
+
+      // User dismisses with attribution: both survive re-detection untouched.
+      await client`
+        UPDATE ledger.compliance_alerts
+        SET status = 'dismissed', resolved_at = now(), resolved_by = 'user_test'
+        WHERE id = ${alert.id}
+      `;
+      const third = await store.refreshComplianceAlerts();
+      assert.equal(third.find((entry) => entry.id === alert.id)?.status, "dismissed");
+      const dismissedRow = await client<Array<{ resolved_by: string | null }>>`
+        SELECT resolved_by FROM ledger.compliance_alerts WHERE id = ${alert.id}
+      `;
+      assert.equal(dismissedRow[0]?.resolved_by, "user_test", "user dismissal attribution preserved");
+
+      // AUTO state still flips: a resolved alert whose condition re-fires
+      // reopens, and the reopened row carries no stale resolution metadata
+      // (CONVENTIONS Rule 18).
+      await client`
+        UPDATE ledger.compliance_alerts
+        SET status = 'resolved', resolved_at = now(), resolved_by = 'system:auto-resolver'
+        WHERE id = ${alert.id}
+      `;
+      const fourth = await store.refreshComplianceAlerts();
+      assert.equal(fourth.find((entry) => entry.id === alert.id)?.status, "open", "auto-resolved alerts still reopen");
+      const reopenedRow = await client<Array<{ resolved_at: Date | null; resolved_by: string | null }>>`
+        SELECT resolved_at, resolved_by FROM ledger.compliance_alerts WHERE id = ${alert.id}
+      `;
+      assert.equal(reopenedRow[0]?.resolved_at, null, "reopen clears resolved_at");
+      assert.equal(reopenedRow[0]?.resolved_by, null, "reopen clears resolved_by");
+    } finally {
+      await client`delete from ledger.compliance_alerts where organization_id = ${orgId}`;
+      await client`delete from ledger.events where organization_id = ${orgId}`;
+      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_packet_items
+        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+      await closePostgresClient(client);
+    }
+  },
+);
+
+test(
+  "B7b: suggestVoucher updates the pending review read model but never clobbers a decided one + Memory parity",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+      const created = await store.createEvidence({
+        organizationId: orgId,
+        workspaceId: wsId,
+        actorId: "user_test",
+        title: "B7b suggest receipt",
+        originalFilename: "b7b-suggest.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["camera"],
+      });
+
+      // Pending review: regeneration lands on the review read model.
+      const regenerated = await store.suggestVoucher(created.voucher.id);
+      assert.ok(regenerated);
+      const pending = await store.findReviewByVoucher(created.voucher.id);
+      assert.deepEqual(pending?.suggestion, regenerated, "pending review carries the regenerated suggestion");
+
+      // Memory parity (Rule 11): same flow, same read-model behavior.
+      const memory = new MemoryLedgerStore();
+      const memCreated = await memory.createEvidence({
+        organizationId: "org_jpx",
+        workspaceId: "workspace_main",
+        actorId: "user_test",
+        title: "B7b suggest receipt",
+        originalFilename: "b7b-suggest.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["camera"],
+      });
+      const memRegenerated = await memory.suggestVoucher(memCreated.voucher.id);
+      const memPending = await memory.findReviewByVoucher(memCreated.voucher.id);
+      assert.deepEqual(memPending?.suggestion, memRegenerated, "Memory persists onto the pending review identically");
+
+      // Decide with an edit: the review's suggestion now records what was POSTED.
+      const decided = await store.applyReviewDecision(created.review.id, "approve", {
+        actorId: "user_test",
+        edited: { accountNumber: "6110", vatCode: "VAT25" },
+      });
+      assert.equal(decided?.suggestion?.accountNumber, "6110");
+
+      const afterDecision = await store.suggestVoucher(created.voucher.id);
+      assert.ok(afterDecision, "regeneration still returns a fresh suggestion");
+      const decidedReview = await store.findReviewByVoucher(created.voucher.id);
+      assert.equal(
+        decidedReview?.suggestion?.accountNumber,
+        "6110",
+        "the decided review's posted suggestion is never clobbered by regeneration",
+      );
+
+      await memory.applyReviewDecision(memCreated.review.id, "approve", {
+        actorId: "user_test",
+        edited: { accountNumber: "6110", vatCode: "VAT25" },
+      });
+      await memory.suggestVoucher(memCreated.voucher.id);
+      assert.equal(
+        (await memory.findReviewByVoucher(memCreated.voucher.id))?.suggestion?.accountNumber,
+        "6110",
+        "Memory decided-review guard parity",
+      );
+    } finally {
+      await client`delete from ledger.events where organization_id = ${orgId}`;
+      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_packet_items
+        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
       await closePostgresClient(client);
     }
   },

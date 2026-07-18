@@ -14,7 +14,8 @@ import {
 // Integration test: gated on `SUPABASE_DB_URL` (same pattern as
 // postgres-ledger.test.ts) — skips silently when unset so CI without a live
 // DB still passes. Requires migration 0003_pgvector.sql (knowledge.documents
-// + halfvec(1536) + HNSW cosine index).
+// + halfvec(1536) + HNSW cosine index) and 0007_knowledge_tenant_pk.sql
+// (tenant-scoped PK).
 //
 // Manual end-to-end smoke for the full RAG loop (real embeddings instead of
 // the fixture vectors used here): export SUPABASE_DB_URL + AZURE_OPENAI_*,
@@ -38,8 +39,8 @@ function fixtureDoc(
   overrides: Partial<KnowledgeDocumentInput> = {},
 ): KnowledgeDocumentInput {
   return {
-    // Ids are a global PK on knowledge.documents — namespace per run so
-    // parallel/aborted runs never collide.
+    // The PK is tenant-scoped since migration 0007 — (org, workspace, id) —
+    // but ids stay namespaced per run so aborted runs never leave collisions.
     id: `${runId}-doc#${n}`,
     docId: `${runId}-doc`,
     title: "Testdokument om moms",
@@ -154,3 +155,77 @@ test("upsertKnowledgeDocuments is idempotent — re-ingest updates in place, no 
     await closePostgresClient(client);
   }
 });
+
+test(
+  "migration 0007 (B7c): knowledge.documents PK is tenant-scoped — the same chunk id lives independently per workspace",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsA = `ws_a_${Math.random().toString(36).slice(2, 8)}`;
+    const wsB = `ws_b_${Math.random().toString(36).slice(2, 8)}`;
+    const scopeA = { organizationId: orgId, workspaceId: wsA };
+    const scopeB = { organizationId: orgId, workspaceId: wsB };
+    const runId = `${orgId}_pk`;
+
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      // Schema pin: the PK covers exactly (organization_id, workspace_id, id)
+      // in that order — a partial environment where 0007 silently no-opped
+      // (pre-0007 global id PK) fails here loudly.
+      const pkRows = await client<Array<{ cols: string }>>`
+        select (
+          select string_agg(a.attname, ',' order by k.ord)
+          from unnest(c.conkey) with ordinality as k(attnum, ord)
+          join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum
+        ) as cols
+        from pg_constraint c
+        join pg_class t on t.oid = c.conrelid
+        join pg_namespace n on n.oid = t.relnamespace
+        where n.nspname = 'knowledge' and t.relname = 'documents' and c.contype = 'p'
+      `;
+      assert.equal(pkRows.length, 1, "exactly one primary key on knowledge.documents");
+      assert.equal(pkRows[0]?.cols, "organization_id,workspace_id,id", "PK must be tenant-scoped (migration 0007)");
+
+      // The SAME deterministic chunk id ingested by two workspaces → two rows.
+      // Pre-0007 the second upsert stole the first workspace's row (the old
+      // `on conflict (id)` rewrote organization_id/workspace_id).
+      const shared = fixtureDoc(runId, 0, axisVector(0));
+      await upsertKnowledgeDocuments(client, scopeA, [shared]);
+      await upsertKnowledgeDocuments(client, scopeB, [
+        { ...shared, text: "Workspace B:s egna testfakta om representation och moms." },
+      ]);
+
+      const countRows = await client<Array<{ count: string }>>`
+        select count(*)::text as count from knowledge.documents where organization_id = ${orgId}
+      `;
+      assert.equal(countRows[0]?.count, "2", "one row per workspace, no cross-tenant steal");
+
+      // Re-ingesting into A refreshes only A's row; B's content is untouched.
+      await upsertKnowledgeDocuments(client, scopeA, [
+        fixtureDoc(runId, 0, axisVector(2), { text: "Uppdaterade testfakta för workspace A om momsavdrag." }),
+      ]);
+      assert.equal(
+        (
+          await client<Array<{ count: string }>>`
+          select count(*)::text as count from knowledge.documents where organization_id = ${orgId}
+        `
+        )[0]?.count,
+        "2",
+        "re-ingest updates in place per tenant",
+      );
+
+      const passagesA = await queryKnowledgeByEmbedding(client, scopeA, axisVector(2), { topK: 1 });
+      assert.equal(passagesA[0]?.id, shared.id);
+      assert.ok(passagesA[0]?.excerpt.includes("workspace A"), "A sees its refreshed content");
+
+      const passagesB = await queryKnowledgeByEmbedding(client, scopeB, axisVector(0), { topK: 1 });
+      assert.equal(passagesB[0]?.id, shared.id);
+      assert.ok(passagesB[0]?.excerpt.includes("Workspace B"), "B keeps its own content after A's re-ingest");
+    } finally {
+      await client`delete from knowledge.documents where organization_id = ${orgId}`;
+      await closePostgresClient(client);
+    }
+  },
+);

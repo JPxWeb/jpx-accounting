@@ -522,8 +522,15 @@ export function createApp({
 
   // Hash-chain integrity summary (Phase 5): linkage verification over the
   // store's event log — no LedgerStore interface change (plan finding 6).
+  // R14: payload recomputation is on by default — SHA-256 events are re-hashed
+  // from their stored payloads (legacy djb2 links stay linkage-only).
   app.get("/api/integrity", async (context) =>
-    context.json(summarizeEventIntegrity(await currentStore.getEvents(), { verifiedAt: nowIso() })),
+    context.json(
+      summarizeEventIntegrity(await currentStore.getEvents(), {
+        verifiedAt: nowIso(),
+        verifyPayloads: true,
+      }),
+    ),
   );
 
   // Runtime AI transparency for the About-this-AI panel (EU AI Act Art. 50).

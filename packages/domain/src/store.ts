@@ -40,12 +40,13 @@ import {
 import { assertBalancedPosting, postingImbalanceOre } from "./posting-invariants";
 import { buildJournal, buildBalances, buildVat, filterLedgerLines } from "./projections";
 import { buildReportPack } from "./reports/pack";
-import { currentMonthToken } from "./reports/period";
+import { currentMonthToken, localTodayIso } from "./reports/period";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
 import type { ParsedSieFile } from "./sie/parse";
 import { simulateApprovals } from "./simulation";
+import { getVatRegime, type VatRegime } from "./vat/regime";
 
 type LedgerLine = Parameters<typeof buildJournal>[0][number];
 export type ReviewAction = "approve" | "reject" | "book-without-vat";
@@ -86,18 +87,46 @@ export class InvalidReviewEditError extends Error {
 }
 
 /**
+ * VAT codes a reviewer may select on an edited decision (WS-B B5): the
+ * regime's rate vocabulary (VAT25/VAT12/VAT6/VAT0 for Sweden) plus the
+ * VAT-neutral "NA". "VAT-REVIEW" is deliberately NOT selectable — it is the
+ * system's blocked-marker, never a posting choice.
+ */
+export function validEditVatCodes(regime: VatRegime): ReadonlySet<string> {
+  return new Set([...Object.keys(regime.rates), "NA"]);
+}
+
+/**
  * Validate a decision-time edit and derive the effective posting inputs.
  * Append-only by construction: the returned `effectiveVoucher` /
  * `effectiveSuggestion` are decision-time derivations for `buildPostingLines`
  * and the review read model — the stored voucher row is never rewritten.
  * Shared by MemoryLedgerStore and PostgresLedgerStore (CONVENTIONS Rule 11).
+ *
+ * WS-B B5 validation: `edited.accountNumber` must exist in the CoA registry,
+ * `edited.vatCode` must be in the VAT regime vocabulary, and the effective
+ * accountName is SERVER-RESOLVED from the registry — any client-supplied
+ * `edited.accountName` is ignored so display names cannot be forged into the
+ * ledger. Invalid values throw `InvalidReviewEditError` (→ HTTP 422) BEFORE
+ * any mutation, in both stores.
  */
 export function resolveReviewDecisionEdit(
   voucher: Voucher,
   suggestion: AccountingSuggestion | undefined,
   edited: ReviewDecisionEdit,
+  coa: CoaTemplate = defaultCoaTemplate,
 ): { effectiveSuggestion: AccountingSuggestion | undefined; effectiveVoucher: Voucher } {
   const issues: string[] = [];
+  const registryAccount = findCoaAccount(coa, edited.accountNumber);
+  if (!registryAccount) {
+    issues.push(`Edited accountNumber (${edited.accountNumber}) does not exist in the ${coa.id} chart of accounts.`);
+  }
+  const vatVocabulary = validEditVatCodes(getVatRegime(coa.country));
+  if (!vatVocabulary.has(edited.vatCode)) {
+    issues.push(
+      `Edited vatCode (${edited.vatCode}) is not in the VAT regime vocabulary (${[...vatVocabulary].join(", ")}).`,
+    );
+  }
   const anyAmountGiven =
     edited.grossAmount !== undefined || edited.netAmount !== undefined || edited.vatAmount !== undefined;
   if (anyAmountGiven) {
@@ -109,7 +138,19 @@ export function resolveReviewDecisionEdit(
       );
     }
   }
-  if (issues.length > 0) {
+  if (edited.bookedAt !== undefined) {
+    // R13: an explicit accounting-date override must be a real calendar day
+    // and must not book into the future. (Locked/closed-period enforcement is
+    // a Later feature — today any past day is accepted.)
+    if (!isValidCalendarDay(edited.bookedAt)) {
+      issues.push(`Edited bookedAt (${edited.bookedAt}) must be a valid YYYY-MM-DD calendar day.`);
+    } else if (edited.bookedAt > localTodayIso()) {
+      issues.push(`Edited bookedAt (${edited.bookedAt}) must not be in the future.`);
+    }
+  }
+  if (issues.length > 0 || !registryAccount) {
+    // `!registryAccount` is redundant with the pushed issue but narrows the
+    // type: past this point the edited account is a real registry entry.
     throw new InvalidReviewEditError(issues);
   }
 
@@ -117,7 +158,8 @@ export function resolveReviewDecisionEdit(
     ? {
         ...suggestion,
         accountNumber: edited.accountNumber,
-        accountName: edited.accountName,
+        // B5: server-resolved from the registry; edited.accountName is ignored.
+        accountName: registryAccount.name,
         vatCode: edited.vatCode,
       }
     : undefined;
@@ -126,9 +168,17 @@ export function resolveReviewDecisionEdit(
     edited.grossAmount !== undefined
       ? { grossAmount: edited.grossAmount, netAmount: edited.netAmount, vatAmount: edited.vatAmount }
       : {};
+  // R13: thread an edited accounting date into the effective voucher's
+  // transactionDate — the first candidate `deriveBookedAt` consults inside
+  // `buildPostingLines` — so the override reaches the posted lines through the
+  // ONE shared derivation path in both stores. Decision-time only: the stored
+  // voucher row is never rewritten, and the ReviewApproved event payload
+  // records `edited.bookedAt` for the audit trail.
+  const bookedAtOverride: Partial<VoucherField> =
+    edited.bookedAt !== undefined ? { transactionDate: edited.bookedAt } : {};
   const effectiveVoucher: Voucher = {
     ...voucher,
-    voucherFields: { ...voucher.voucherFields, ...amountOverrides },
+    voucherFields: { ...voucher.voucherFields, ...amountOverrides, ...bookedAtOverride },
   };
 
   return { effectiveSuggestion, effectiveVoucher };
@@ -322,6 +372,67 @@ const AUTO_DETECTED_KINDS = new Set(["stale-blocked", "missing-supplier-vat"]);
 const defaultOrganizationId = "org_jpx";
 const defaultWorkspaceId = "workspace_main";
 
+/** Strict calendar-day string (`YYYY-MM-DD`) — the only shape `deriveBookedAt` accepts. */
+const DAY_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * True iff `value` is a strict `YYYY-MM-DD` string naming a REAL calendar day.
+ * `Date.parse` is not enough: engines roll impossible days over (2026-02-31 →
+ * March 3), so components are round-tripped through `Date.UTC` and compared.
+ */
+export function isValidCalendarDay(value: string): boolean {
+  if (!DAY_ONLY_PATTERN.test(value)) return false;
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const roundTrip = new Date(Date.UTC(year, month - 1, day));
+  return roundTrip.getUTCFullYear() === year && roundTrip.getUTCMonth() === month - 1 && roundTrip.getUTCDate() === day;
+}
+
+/**
+ * LOCAL calendar day (`YYYY-MM-DD`) of an ISO timestamp. Never
+ * `toISOString().slice(0, 10)` — that serialises in UTC and crosses the day
+ * boundary in any non-UTC timezone (period-model rule; CONVENTIONS Rule 22).
+ * Throws on unparseable input (Rule 12 NaN guard).
+ */
+export function localDayOfTimestamp(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`unparseable timestamp ${JSON.stringify(iso)}`);
+  }
+  const pad2 = (value: number) => String(value).padStart(2, "0");
+  return `${parsed.getFullYear()}-${pad2(parsed.getMonth() + 1)}-${pad2(parsed.getDate())}`;
+}
+
+/**
+ * Accounting-date derivation for posted ledger lines (WS-B R13). Postings are
+ * dated by the voucher's business-event date — `transactionDate`, falling back
+ * to `receiptDate` — NOT by when the reviewer clicked approve, so entries land
+ * in the correct fiscal/VAT period. The decision-time `occurredAt` timestamp is
+ * only the fallback (as its LOCAL calendar day) when the voucher carries no
+ * usable date. Candidates are ignored unless they are strict `YYYY-MM-DD`,
+ * parseable, and not after the decision day (future-dated extraction noise
+ * must not book into an open future period).
+ *
+ * Owned by domain and consumed inside `buildPostingLines` so MemoryLedgerStore
+ * and PostgresLedgerStore inherit identical derivation (CONVENTIONS Rule 11 —
+ * store parity by construction). The `PostedToLedger` event keeps its own
+ * `occurredAt` (decision time); only the LINES carry the accounting date.
+ */
+export function deriveBookedAt(
+  fields: Pick<VoucherField, "transactionDate" | "receiptDate"> | undefined,
+  occurredAt: string,
+): string {
+  const decisionDay = localDayOfTimestamp(occurredAt);
+  for (const candidate of [fields?.transactionDate, fields?.receiptDate]) {
+    if (candidate === undefined) continue;
+    if (!isValidCalendarDay(candidate)) continue;
+    if (candidate > decisionDay) continue;
+    return candidate;
+  }
+  return decisionDay;
+}
+
 export function buildPostingLines(
   voucher: Voucher,
   suggestion: AccountingSuggestion,
@@ -330,6 +441,11 @@ export function buildPostingLines(
   coa: CoaTemplate = defaultCoaTemplate,
 ): LedgerLine[] {
   const fields = voucher.voucherFields;
+  // R13: lines carry the ACCOUNTING date (voucher transaction/receipt date,
+  // decision-day fallback), not the approval-click timestamp. An edited
+  // bookedAt arrives here via resolveReviewDecisionEdit, which threads it into
+  // the effective voucher's transactionDate.
+  const bookedAt = deriveBookedAt(fields, occurredAt);
   // Non-deductible input VAT (book-without-vat) is part of the cost under
   // Swedish rules: claim 0 VAT and debit the full gross to the cost account.
   const vatAmount = action === "book-without-vat" ? 0 : (fields.vatAmount ?? 0);
@@ -351,7 +467,7 @@ export function buildPostingLines(
       debit: netAmount,
       credit: 0,
       vatCode: suggestion.vatCode,
-      bookedAt: occurredAt,
+      bookedAt,
       deductible: action !== "book-without-vat",
     },
     // Zero-amount for book-without-vat, kept for shape stability and so the
@@ -365,7 +481,7 @@ export function buildPostingLines(
       debit: vatAmount,
       credit: 0,
       vatCode: suggestion.vatCode,
-      bookedAt: occurredAt,
+      bookedAt,
       deductible: action !== "book-without-vat",
     },
     {
@@ -376,7 +492,7 @@ export function buildPostingLines(
       debit: 0,
       credit: grossAmount,
       vatCode: "NA",
-      bookedAt: occurredAt,
+      bookedAt,
       deductible: false,
     },
   ];
@@ -471,13 +587,15 @@ export class MemoryLedgerStore implements LedgerStore {
   private appendEvent(event: Omit<LedgerEvent, "id" | "eventHash" | "previousHash" | "digestDate">) {
     const previousHash = this.events.at(-1)?.eventHash ?? "GENESIS";
     const digestDate = new Date().toISOString().slice(0, 10);
-    const payload = JSON.stringify(event.payload);
 
     const fullEvent: LedgerEvent = {
       ...event,
       id: createId("evt"),
       previousHash,
-      eventHash: buildEventHash(previousHash, payload),
+      // SHA-256 over canonicalJson of (previousHash, payload) — pass the RAW
+      // payload so append-time hashing and integrity re-verification share
+      // the one canonical serializer (WS-B R14; parity with Postgres).
+      eventHash: buildEventHash(previousHash, event.payload),
       digestDate,
     };
 
@@ -637,9 +755,27 @@ export class MemoryLedgerStore implements LedgerStore {
     if (voucherIdToRelink) {
       this.packetIdToVoucherId.set(packet.id, voucherIdToRelink);
       const voucher = this.vouchers.get(voucherIdToRelink);
+      const previousPacketId = voucher?.evidencePacketId;
       if (voucher && voucher.evidencePacketId !== packet.id) {
         this.vouchers.set(voucherIdToRelink, { ...voucher, evidencePacketId: packet.id });
       }
+      // WS-B B6b: a relink changes which evidence backs a voucher — that must
+      // be visible in the audit chain, not a silent read-model repoint.
+      this.appendEvent({
+        organizationId: input.organizationId,
+        workspaceId: input.workspaceId,
+        aggregateType: "voucher",
+        aggregateId: voucherIdToRelink,
+        eventType: "EvidenceRelinked",
+        actorId: input.actorId,
+        occurredAt: nowIso(),
+        payload: {
+          voucherId: voucherIdToRelink,
+          packetId: packet.id,
+          previousPacketId,
+          evidenceIds: [...input.evidenceIds],
+        },
+      });
     }
 
     return packet;
@@ -878,6 +1014,16 @@ export class MemoryLedgerStore implements LedgerStore {
     const ruleHits = evaluateVoucherRules(voucher);
     const suggestion = buildDeterministicSuggestion(voucher, ruleHits);
     this.suggestions.set(voucherId, suggestion);
+    // Store parity (WS-B B7b): persist the regenerated suggestion onto the
+    // review read model exactly like PostgresLedgerStore — but only while the
+    // review is still open. A decided review's suggestion records what was
+    // actually posted and must never be clobbered by a later regeneration.
+    const reviewId = this.voucherIdToReviewId.get(voucherId);
+    const review = reviewId ? this.reviews.get(reviewId) : undefined;
+    if (review && review.status === "needs-review") {
+      // Clone-before-mutate (Rule 17): the review may be shared via getSnapshot.
+      this.reviews.set(review.id, { ...review, suggestion });
+    }
     return suggestion;
   }
 
@@ -945,7 +1091,13 @@ export class MemoryLedgerStore implements LedgerStore {
       workspaceId: updatedVoucher.workspaceId,
       aggregateType: "review",
       aggregateId: reviewId,
-      eventType: action === "approve" ? "ReviewApproved" : "ReviewRejected",
+      // Honest decision vocabulary (WS-B B6a): book-without-vat is its own
+      // decision event, not a "ReviewRejected" that then posts to the ledger.
+      // Legacy streams recorded ReviewRejected + PostedToLedger for this
+      // decision; replay/projections key on PostedToLedger lines only, so
+      // both vocabularies project identically (backward compatible).
+      eventType:
+        action === "approve" ? "ReviewApproved" : action === "reject" ? "ReviewRejected" : "ReviewBookedWithoutVat",
       actorId: input.actorId,
       occurredAt,
       payload: { action, notes: input.notes, ...(edited ? { edited } : {}) },

@@ -21,24 +21,33 @@ export const evidenceModalitySchema = z.enum([
 export const suggestionKindSchema = z.enum(["explanation", "recommendation", "automation-request"]);
 export const reviewStatusSchema = z.enum(["needs-review", "approved", "rejected", "booked-without-vat"]);
 export const trustLevelSchema = z.enum(["official", "internal", "user-upload"]);
+/**
+ * Append-only event vocabulary (WS-B B6). ADDITIVE ONLY: members are never
+ * removed or renamed — persisted streams outlive code. Members marked
+ * `Reserved` are part of the planned vocabulary but have never been emitted
+ * by any store; they stay in the union so old readers keep parsing when a
+ * later phase starts emitting them (do NOT delete them; see plan L2).
+ */
 export const eventTypeSchema = z.enum([
   "EvidenceReceived",
-  "EvidenceClassified",
+  "EvidenceClassified", // Reserved: never emitted yet (classification phase not built).
+  "EvidenceRelinked",
   "FieldsExtracted",
   "ExtractionRefreshed",
   "VoucherCreated",
-  "RuleSetApplied",
+  "RuleSetApplied", // Reserved: never emitted yet (rule hits ride SuggestionGenerated payloads).
   "SuggestionGenerated",
   "ReviewApproved",
   "ReviewRejected",
+  "ReviewBookedWithoutVat",
   "PostedToLedger",
   "VoucherImported",
-  "CorrectionPosted",
-  "PeriodLocked",
-  "PolicyVersionActivated",
+  "CorrectionPosted", // Reserved: never emitted yet (correction flow lands with period close, plan L2).
+  "PeriodLocked", // Reserved: never emitted yet (period close, plan L2).
+  "PolicyVersionActivated", // Reserved: never emitted yet (policy versioning not built).
   "SimulationExecuted",
-  "CloseRunGenerated",
-  "ExportGenerated",
+  "CloseRunGenerated", // Reserved: never emitted yet (getCloseRun is an honest empty shell).
+  "ExportGenerated", // Reserved: never emitted yet (exports don't append events).
 ]);
 export const ruleSeveritySchema = z.enum(["info", "warning", "blocking"]);
 export const assistantAnswerStatusSchema = z.enum(["grounded", "insufficient-basis"]);
@@ -456,14 +465,38 @@ export const suggestionRequestSchema = z.object({
  * all-or-nothing: when any of gross/net/VAT is given, all three must be
  * present and net + VAT must equal gross (±0.01) — enforced by the stores via
  * `InvalidReviewEditError` (HTTP 422).
+ *
+ * WS-B B5: `accountNumber` must exist in the CoA registry and `vatCode` must
+ * be in the VAT regime vocabulary (rates + "NA") — both enforced server-side
+ * in `resolveReviewDecisionEdit` (shared by both stores), invalid values →
+ * `InvalidReviewEditError` (HTTP 422).
  */
 export const reviewDecisionEditSchema = z.object({
   accountNumber: z.string().min(1),
-  accountName: z.string().min(1),
+  /**
+   * Display name for the edited account. IGNORED by the server since WS-B B5:
+   * the accountName is always resolved from the CoA registry (clients cannot
+   * forge display names into the ledger). Optional so new clients may omit
+   * it; still accepted so pre-B5 payloads keep validating.
+   */
+  accountName: z.string().min(1).optional(),
   vatCode: z.string().min(1),
   grossAmount: z.number().positive().optional(),
   netAmount: z.number().nonnegative().optional(),
   vatAmount: z.number().nonnegative().optional(),
+  /**
+   * Accounting-date override (`YYYY-MM-DD`) for the posted ledger LINES (WS-B
+   * R13). Additive/optional so pre-R13 clients keep working: when omitted the
+   * stores derive the date from the voucher's transaction/receipt date, falling
+   * back to the decision day (`deriveBookedAt` in domain). The decision event's
+   * own `occurredAt` always stays the decision time — the audit trail is not
+   * affected by this field. Must not be in the future (enforced by the stores
+   * via `InvalidReviewEditError`, HTTP 422).
+   */
+  bookedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
 });
 export type ReviewDecisionEdit = z.infer<typeof reviewDecisionEditSchema>;
 
@@ -673,10 +706,14 @@ export const observationSchema = z.object({
 
 /**
  * Hash-chain integrity summary (`GET /api/integrity`). Linkage verification
- * only: genesis + `previousHash === predecessor.eventHash` — detects removal,
- * reordering, and insertion. Payload recomputation is a documented future
- * note (Postgres jsonb normalizes key order, so recomputed hashes are not
- * byte-stable).
+ * always runs: genesis + `previousHash === predecessor.eventHash` — detects
+ * removal, reordering, and insertion. Since WS-B R14 the chain is SHA-256
+ * over canonical JSON (older chain prefixes keep their legacy djb2 hashes —
+ * append-only forbids rewrites; see `packages/domain/src/integrity.ts` for
+ * the cutover rule). The `payload*` / `recomputed*` / `legacy*` fields are
+ * present only when the verifier also recomputed SHA-256 event hashes from
+ * stored payloads (`verifyPayloads`) — absent, the shape is identical to the
+ * pre-R14 contract, so existing consumers (the web chip) are unaffected.
  */
 export const integritySummarySchema = z.object({
   eventCount: z.number().int().nonnegative(),
@@ -696,6 +733,14 @@ export const integritySummarySchema = z.object({
     )
     .max(8),
   bas: z.object({ template: z.string(), accountCount: z.number().int().nonnegative() }),
+  /** True when every recomputable (SHA-256) event hash matched its stored payload. */
+  payloadVerified: z.boolean().optional(),
+  /** Recomputed-hash mismatches + unverifiable unknown-format hashes. */
+  payloadMismatchCount: z.number().int().nonnegative().optional(),
+  /** How many SHA-256 events had their hash recomputed from the stored payload. */
+  recomputedEventCount: z.number().int().nonnegative().optional(),
+  /** Pre-cutover djb2 events — linkage-verified only, never recomputed. */
+  legacyEventCount: z.number().int().nonnegative().optional(),
 });
 
 /** One retrieved knowledge chunk with its source provenance. */

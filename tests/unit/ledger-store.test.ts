@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { workspaceSnapshotSchema } from "@jpx-accounting/contracts";
+import type { ComplianceAlert, Voucher } from "@jpx-accounting/contracts";
 import type { LedgerStore } from "@jpx-accounting/domain";
 import {
   deriveDeterministicExtraction,
@@ -663,6 +664,227 @@ test("MemoryLedgerStore.composeEvidence relinks the voucher to the newest packet
   const snapshot = await store.getSnapshot();
   const snapshotVoucher = snapshot.vouchers.find((voucher) => voucher.id === created.voucher.id);
   assert.equal(snapshotVoucher?.evidencePacketId, composed.id, "getSnapshot voucher link matches getEvidenceContext");
+
+  // WS-B B6b: the relink is chain-visible — one EvidenceRelinked event with
+  // the old→new packet linkage in the payload.
+  const relinkEvt = (await store.getEvents()).at(-1);
+  assert.equal(relinkEvt?.eventType, "EvidenceRelinked");
+  assert.equal(relinkEvt?.aggregateType, "voucher");
+  assert.equal(relinkEvt?.aggregateId, created.voucher.id);
+  assert.equal(relinkEvt?.actorId, "user_founder");
+  assert.equal(relinkEvt?.payload.packetId, composed.id);
+  assert.equal(relinkEvt?.payload.previousPacketId, created.packet.id);
+  assert.deepEqual(relinkEvt?.payload.evidenceIds, [created.evidence.id]);
+});
+
+test("MemoryLedgerStore.composeEvidence without a linked voucher appends no EvidenceRelinked event", async () => {
+  const store = new MemoryLedgerStore();
+  const eventsBefore = (await store.getEvents()).length;
+
+  // Evidence ids the store has never seen: nothing to relink.
+  await store.composeEvidence({
+    organizationId: "org_jpx",
+    workspaceId: "workspace_main",
+    actorId: "user_founder",
+    evidenceIds: ["evidence_unknown_1"],
+  });
+
+  assert.equal((await store.getEvents()).length, eventsBefore, "no relink → no chain event");
+});
+
+test("B5: edited approvals reject accountNumbers outside the CoA registry before any mutation", async () => {
+  const store = new MemoryLedgerStore();
+  const [review] = await store.getReviewFeed();
+  assert.ok(review);
+  const eventsBefore = (await store.getEvents()).length;
+  const journalBefore = (await store.getReports()).journal.length;
+
+  await assert.rejects(
+    () =>
+      store.applyReviewDecision(review.id, "approve", {
+        actorId: "user_founder",
+        edited: { accountNumber: "9999", vatCode: "VAT25" },
+      }),
+    (error) => {
+      assert.ok(error instanceof InvalidReviewEditError);
+      assert.ok(
+        error.issues.some((issue) => issue.includes("9999") && issue.includes("chart of accounts")),
+        `expected a registry issue, got: ${error.issues.join(" | ")}`,
+      );
+      return true;
+    },
+  );
+
+  assert.equal((await store.getReviewFeed())[0]?.status, "needs-review", "review stays decidable");
+  assert.equal((await store.getEvents()).length, eventsBefore, "no events appended");
+  assert.equal((await store.getReports()).journal.length, journalBefore, "no lines posted");
+});
+
+test("B5: edited approvals reject vatCodes outside the VAT regime vocabulary (incl. VAT-REVIEW)", async () => {
+  const store = new MemoryLedgerStore();
+  const [review] = await store.getReviewFeed();
+  assert.ok(review);
+
+  for (const vatCode of ["VAT99", "VAT-REVIEW", "moms25"]) {
+    await assert.rejects(
+      () =>
+        store.applyReviewDecision(review.id, "approve", {
+          actorId: "user_founder",
+          edited: { accountNumber: "6110", vatCode },
+        }),
+      (error) => {
+        assert.ok(error instanceof InvalidReviewEditError, `expected InvalidReviewEditError for ${vatCode}`);
+        assert.ok(
+          error.issues.some((issue) => issue.includes(vatCode) && issue.includes("VAT regime vocabulary")),
+          `expected a vocabulary issue for ${vatCode}, got: ${error.issues.join(" | ")}`,
+        );
+        return true;
+      },
+    );
+  }
+
+  // The full rate vocabulary + NA all pass validation (VAT0 exercised here;
+  // VAT25 is covered by the edited-approval happy-path tests above).
+  const decided = await store.applyReviewDecision(review.id, "approve", {
+    actorId: "user_founder",
+    edited: { accountNumber: "6110", vatCode: "VAT0" },
+  });
+  assert.equal(decided?.status, "approved");
+  assert.equal(decided.suggestion?.vatCode, "VAT0");
+});
+
+test("B5: accountName is server-resolved from the registry — a forged client name never reaches the ledger", async () => {
+  const store = new MemoryLedgerStore();
+  const [review] = await store.getReviewFeed();
+  assert.ok(review?.suggestion);
+
+  const decided = await store.applyReviewDecision(review.id, "approve", {
+    actorId: "user_founder",
+    edited: { accountNumber: "6110", accountName: "Totally Forged Name AB", vatCode: "VAT25" },
+  });
+
+  assert.equal(decided?.status, "approved");
+  assert.equal(decided.suggestion?.accountNumber, "6110");
+  assert.equal(decided.suggestion?.accountName, "Kontorsmateriel", "registry truth wins over the client name");
+
+  const journal = (await store.getReports()).journal;
+  const expense = journal.at(-3);
+  assert.equal(expense?.accountNumber, "6110");
+  assert.equal(expense?.accountName, "Kontorsmateriel", "posted line carries the registry name");
+  assert.ok(
+    journal.every((entry) => entry.accountName !== "Totally Forged Name AB"),
+    "the forged name appears nowhere in the journal",
+  );
+});
+
+test("B6a: book-without-vat emits ReviewBookedWithoutVat + PostedToLedger — never ReviewRejected", async () => {
+  const store = new MemoryLedgerStore();
+  const [review] = await store.getReviewFeed();
+  assert.ok(review?.suggestion);
+
+  const decided = await store.applyReviewDecision(review.id, "book-without-vat", { actorId: "user_founder" });
+  assert.equal(decided?.status, "booked-without-vat");
+
+  const events = await store.getEvents();
+  const decisionEvt = events.find((event) => event.eventType === "ReviewBookedWithoutVat");
+  assert.ok(decisionEvt, "decision event uses the honest vocabulary");
+  assert.equal(decisionEvt.aggregateType, "review");
+  assert.equal(decisionEvt.aggregateId, review.id);
+  assert.equal(decisionEvt.payload.action, "book-without-vat");
+  assert.ok(
+    !events.some((event) => event.eventType === "ReviewRejected"),
+    "no misleading ReviewRejected in the audit trail",
+  );
+  const postedEvt = events.find((event) => event.eventType === "PostedToLedger");
+  assert.ok(postedEvt, "PostedToLedger still emitted (replay consumers unchanged)");
+  assert.equal(postedEvt.payload.action, "book-without-vat");
+  assert.ok(Array.isArray(postedEvt.payload.lines), "payload lines stay the replay truth");
+});
+
+test("B7a: refreshComplianceAlerts preserves acknowledged/dismissed on re-detection (lifecycle hooks, Rule 24)", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await store.createEvidence({
+    organizationId: "org_jpx",
+    workspaceId: "workspace_main",
+    actorId: "user_founder",
+    title: "Ack-preservation receipt",
+    originalFilename: "ack-preserve.jpg",
+    mimeType: "image/jpeg",
+    modalities: ["camera"],
+  });
+  await store.applyReviewDecision(created.review.id, "approve", { actorId: "user_founder" });
+
+  // White-box: strip the supplier VAT number so missing-supplier-vat fires
+  // (both extraction paths seed one; there is no public un-set API). The
+  // same condition is driven via SQL on the Postgres side of the parity test.
+  const internals = store as unknown as { vouchers: Map<string, Voucher>; alerts: ComplianceAlert[] };
+  const voucher = internals.vouchers.get(created.voucher.id);
+  assert.ok(voucher);
+  const { supplierVatNumber: _stripped, ...strippedFields } = voucher.voucherFields;
+  internals.vouchers.set(voucher.id, { ...voucher, voucherFields: strippedFields as Voucher["voucherFields"] });
+
+  const first = await store.refreshComplianceAlerts();
+  const alert = first.find((entry) => entry.kind === "missing-supplier-vat" && entry.targetId === created.voucher.id);
+  assert.ok(alert, "missing-supplier-vat alert detected");
+  assert.equal(alert.status, "open");
+
+  // Simulate a user acknowledge (the acknowledge UI is not built yet — this
+  // pins the behavior BEFORE it ships, per the B7a plan note).
+  internals.alerts = internals.alerts.map((entry) =>
+    entry.id === alert.id ? { ...entry, status: "acknowledged" as const } : entry,
+  );
+  const second = await store.refreshComplianceAlerts();
+  const acknowledged = second.find((entry) => entry.id === alert.id);
+  assert.equal(acknowledged?.status, "acknowledged", "re-detection must not force-reopen an acknowledged alert");
+  assert.equal(acknowledged?.detectedAt, alert.detectedAt, "first-detection time preserved");
+
+  internals.alerts = internals.alerts.map((entry) =>
+    entry.id === alert.id ? { ...entry, status: "dismissed" as const } : entry,
+  );
+  const third = await store.refreshComplianceAlerts();
+  assert.equal(
+    third.find((entry) => entry.id === alert.id)?.status,
+    "dismissed",
+    "re-detection must not force-reopen a dismissed alert",
+  );
+});
+
+test("B7b: suggestVoucher persists onto the pending review read model but never clobbers a decided one", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await store.createEvidence({
+    organizationId: "org_jpx",
+    workspaceId: "workspace_main",
+    actorId: "user_founder",
+    title: "Suggest parity receipt",
+    originalFilename: "suggest-parity.jpg",
+    mimeType: "image/jpeg",
+    modalities: ["camera"],
+  });
+
+  const regenerated = await store.suggestVoucher(created.voucher.id);
+  assert.ok(regenerated);
+  const pending = await store.findReviewByVoucher(created.voucher.id);
+  assert.deepEqual(
+    pending?.suggestion,
+    regenerated,
+    "pending review carries the regenerated suggestion (Postgres parity)",
+  );
+
+  // Decide with an edit: the review's suggestion now records what was POSTED.
+  const decided = await store.applyReviewDecision(created.review.id, "approve", {
+    actorId: "user_founder",
+    edited: { accountNumber: "6110", vatCode: "VAT25" },
+  });
+  assert.equal(decided?.suggestion?.accountNumber, "6110");
+
+  const afterDecision = await store.suggestVoucher(created.voucher.id);
+  assert.ok(afterDecision, "regeneration still returns a fresh suggestion");
+  const decidedReview = await store.findReviewByVoucher(created.voucher.id);
+  assert.equal(
+    decidedReview?.suggestion?.accountNumber,
+    "6110",
+    "the decided review's posted suggestion is never clobbered by regeneration",
+  );
 });
 
 test("MemoryLedgerStore.getCloseRun returns the honest empty shell: close_unavailable, real local month, empty checklist", async () => {

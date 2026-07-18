@@ -5,11 +5,14 @@ import type { PostgresClient } from "./client";
 
 /**
  * pgvector-backed knowledge retrieval (Task 5.11) over `knowledge.documents`
- * from migration `0003_pgvector.sql`:
+ * from migration `0003_pgvector.sql` (PK tenant-scoped by `0007`):
  *
- *   id text PK · organization_id · workspace_id · source_type · title ·
+ *   id text · organization_id · workspace_id · source_type · title ·
  *   effective_date date · content text · url · embedding halfvec(1536) ·
  *   embedding_model · created_at · updated_at
+ *   PK (organization_id, workspace_id, id) — the chunk id is only unique
+ *   WITHIN a tenant scope, so two workspaces can each carry the same corpus
+ *   chunk (WS-B B7c; migration 0007 rescopes the pre-0007 global `id` PK).
  *
  * The table has no columns for the chunk's `docId`, `heading`, or verbatim
  * `source` citation — and Task 5.11 deliberately adds no migration — so
@@ -32,7 +35,7 @@ export type KnowledgeSourceType = "official" | "internal" | "user-upload";
 
 /** One embedded corpus chunk ready for upsert — field names mirror `KnowledgeChunk` in `@jpx-accounting/advisor`. */
 export type KnowledgeDocumentInput = {
-  /** Stable chunk id (`<docId>#<n>`) — the upsert conflict key, so re-ingestion is idempotent. */
+  /** Stable chunk id (`<docId>#<n>`) — with the workspace scope it forms the upsert conflict key, so re-ingestion is idempotent per tenant. */
   id: string;
   docId: string;
   title: string;
@@ -106,7 +109,8 @@ function parseContentEnvelope(content: string): ContentEnvelope | undefined {
 
 /**
  * Idempotently upsert embedded corpus chunks into `knowledge.documents`,
- * keyed on the stable chunk id. Re-running the ingestion refreshes content,
+ * keyed on (organization_id, workspace_id, chunk id) — the tenant-scoped PK
+ * from migration 0007. Re-running the ingestion refreshes content,
  * embedding, and `updated_at` in place — no duplicate rows. All rows land in
  * one transaction so a failed ingest never leaves a half-written corpus.
  * Returns the number of documents written.
@@ -140,9 +144,7 @@ export async function upsertKnowledgeDocuments(
             ${document.embeddingModel},
             now()
           )
-        on conflict (id) do update set
-          organization_id = excluded.organization_id,
-          workspace_id = excluded.workspace_id,
+        on conflict (organization_id, workspace_id, id) do update set
           source_type = excluded.source_type,
           title = excluded.title,
           effective_date = excluded.effective_date,
