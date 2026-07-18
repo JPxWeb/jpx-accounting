@@ -37,6 +37,7 @@ import {
   guessAccountingMethod,
   initialLedgerLines,
 } from "./evidence-defaults";
+import { assertBalancedPosting, postingImbalanceOre } from "./posting-invariants";
 import { buildJournal, buildBalances, buildVat, filterLedgerLines } from "./projections";
 import { buildReportPack } from "./reports/pack";
 import { currentMonthToken } from "./reports/period";
@@ -243,6 +244,15 @@ export function planSieImport(
       deductible: false,
     }));
 
+    // Rounding-residue guard: the raw-sum check above tolerates |sum| ≤ 0.005,
+    // but per-line round2 can still leave the ROUNDED lines öre-unbalanced
+    // (e.g. +0.334 +0.334 −0.668 → 0.33 + 0.33 vs 0.67). Never import an
+    // unbalanced entry; per-voucher skip, not throw (Rule 21).
+    if (postingImbalanceOre(lines) !== 0) {
+      skipped.push({ reference, reason: "unbalanced" });
+      return;
+    }
+
     vouchers.push({
       aggregateId,
       reference,
@@ -319,14 +329,20 @@ export function buildPostingLines(
   occurredAt: string,
   coa: CoaTemplate = defaultCoaTemplate,
 ): LedgerLine[] {
-  const amount = voucher.voucherFields.grossAmount ?? 0;
-  const netAmount = voucher.voucherFields.netAmount ?? amount;
-  const vatAmount = action === "book-without-vat" ? 0 : (voucher.voucherFields.vatAmount ?? 0);
-  const description = voucher.voucherFields.description ?? "Reviewed voucher";
+  const fields = voucher.voucherFields;
+  // Non-deductible input VAT (book-without-vat) is part of the cost under
+  // Swedish rules: claim 0 VAT and debit the full gross to the cost account.
+  const vatAmount = action === "book-without-vat" ? 0 : (fields.vatAmount ?? 0);
+  const grossAmount = fields.grossAmount ?? round2((fields.netAmount ?? 0) + vatAmount);
+  // Derive net from gross − VAT instead of trusting fields.netAmount: extracted
+  // triples can be öre-inconsistent, and resolveReviewDecisionEdit admits a
+  // ±0.01 tolerance — deriving is what keeps Σdebit = Σcredit unconditionally.
+  const netAmount = round2(grossAmount - vatAmount);
+  const description = fields.description ?? "Reviewed voucher";
   const inputVatAccount = coa.roles.inputVat;
   const bankAccount = coa.roles.bank;
 
-  return [
+  const lines: LedgerLine[] = [
     {
       voucherId: voucher.id,
       accountNumber: suggestion.accountNumber,
@@ -338,6 +354,9 @@ export function buildPostingLines(
       bookedAt: occurredAt,
       deductible: action !== "book-without-vat",
     },
+    // Zero-amount for book-without-vat, kept for shape stability and so the
+    // journal shows the explicit "no VAT claimed" decision. buildVat and box 48
+    // read input VAT off this account's amounts, so 0 claims nothing.
     {
       voucherId: voucher.id,
       accountNumber: inputVatAccount,
@@ -355,12 +374,13 @@ export function buildPostingLines(
       accountName: findCoaAccount(coa, bankAccount)?.name ?? bankAccount,
       description,
       debit: 0,
-      credit: amount,
+      credit: grossAmount,
       vatCode: "NA",
       bookedAt: occurredAt,
       deductible: false,
     },
   ];
+  return assertBalancedPosting(lines, `voucher ${voucher.id}`);
 }
 
 /**
@@ -403,7 +423,7 @@ export class MemoryLedgerStore implements LedgerStore {
   private readonly packetIdToVoucherId = new Map<string, string>();
   private readonly voucherIdToReviewId = new Map<string, string>();
   private readonly events: LedgerEvent[] = [];
-  private readonly ledgerLines: LedgerLine[] = initialLedgerLines();
+  private readonly ledgerLines: LedgerLine[] = assertBalancedPosting(initialLedgerLines(), "demo seed lines");
   private readonly assistantExamples: AssistantSession[] = [];
   private alerts: ComplianceAlert[] = [
     {
