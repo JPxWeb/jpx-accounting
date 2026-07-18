@@ -99,6 +99,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE=${{ github.event_name == 'workflow_dispatch' && inputs.runtimeMode || 'normal' }}
             NEXT_PUBLIC_API_BASE_URL=/api-proxy
+            NEXT_PUBLIC_AZURE_STORAGE_ORIGIN=${{ vars.AZURE_STORAGE_ORIGIN || '' }}
           tags: |
             ${{ env.WEB_IMAGE }}:${{ env.DEPLOY_SHA }}
             ${{ env.WEB_IMAGE }}:latest
