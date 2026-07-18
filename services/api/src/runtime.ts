@@ -6,7 +6,7 @@ import { MemoryLedgerStore } from "@jpx-accounting/domain";
 import { createPostgresClient, PostgresLedgerStore } from "@jpx-accounting/persistence-postgres";
 
 import { createBlobUploader } from "./blob";
-import type { ApiRuntimeConfig } from "./config";
+import { describeBootPosture, type ApiRuntimeConfig } from "./config";
 
 /**
  * Transparency metadata for `GET /api/runtime-info` (advisory pivot Phase 5).
@@ -51,6 +51,11 @@ export class UnavailableLedgerStore implements LedgerStore {
 
   private fail(): never {
     throw new LedgerStoreUnavailableError(this.reason);
+  }
+
+  /** Readiness probe (WS-A5): fail-closed stores always reject, so /ready reports ledger=false. */
+  async ping(): Promise<void> {
+    return this.fail();
   }
 
   async createEvidence() {
@@ -130,11 +135,25 @@ export class UnavailableLedgerStore implements LedgerStore {
   }
 }
 
-export function isLedgerStoreOperational(store: LedgerStore): boolean {
-  return !(store instanceof UnavailableLedgerStore);
+/**
+ * Readiness probe for /ready (WS-A5): a real check instead of the old
+ * instanceof test. Stores exposing an optional `ping()` are probed for real
+ * (PostgresLedgerStore runs SELECT 1; UnavailableLedgerStore rejects);
+ * stores without one (MemoryLedgerStore) resolve as a no-op. `ping` stays a
+ * structural seam rather than a `LedgerStore` interface member so the
+ * interface in packages/domain/src/store.ts is untouched.
+ */
+export async function pingLedgerStore(store: LedgerStore): Promise<void> {
+  const candidate = store as LedgerStore & { ping?: () => Promise<void> };
+  if (typeof candidate.ping === "function") {
+    await candidate.ping();
+  }
 }
 
 export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
+  // ONE structured boot log line (§A N5e): operators see the resolved posture without diffing env vars.
+  console.log(JSON.stringify(describeBootPosture(config)));
+
   const blobUploader = createBlobUploader({
     accountName: config.azureStorage.accountName,
     containerName: config.azureStorage.containerName,

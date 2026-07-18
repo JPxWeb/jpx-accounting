@@ -47,7 +47,7 @@ import { MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
 import { DEFAULT_SUPABASE_JWT_ALGS, type CorsRuntimePolicy, type SupabaseJwtAlgorithm } from "./config";
 import { queryKnowledge } from "./knowledge";
 import type { AiRuntimeMetadata } from "./runtime";
-import { isLedgerStoreOperational, LedgerStoreUnavailableError } from "./runtime";
+import { LedgerStoreUnavailableError, pingLedgerStore } from "./runtime";
 import { ApiValidationError, jsonValidated } from "./validation";
 
 type CreateAppOptions = {
@@ -113,6 +113,85 @@ function parseReportRange(c: Context<AppEnv>): ReportRange | undefined {
 }
 
 type JsonErrorExtras = Partial<Pick<ApiJsonErrorBody, "code" | "issues">>;
+
+type CachedJwk = JsonWebKey & { kid?: string };
+
+const JWKS_CACHE_TTL_MS = 10 * 60_000;
+
+/**
+ * Auth-infrastructure failures must surface as 503, not 401/500 (§A R7). The error
+ * intentionally stays a plain `Error` tagged by name: `hono/jwk` rethrows a keys-callback
+ * error only when `constructor === Error` — a subclass would be swallowed into its
+ * generic 401 and misreport an outage as a bad token.
+ */
+const JWKS_FETCH_ERROR_NAME = "JwksFetchError";
+
+function jwksFetchError(message: string, cause?: unknown): Error {
+  const error = new Error(message, cause === undefined ? undefined : { cause });
+  error.name = JWKS_FETCH_ERROR_NAME;
+  return error;
+}
+
+// Deliberately NOT a type predicate: `error is Error` would narrow onError's
+// already-`Error`-typed parameter to `never` on the false branch.
+function isJwksFetchError(error: unknown): boolean {
+  return error instanceof Error && error.name === JWKS_FETCH_ERROR_NAME;
+}
+
+/**
+ * TTL-cached, single-flight JWKS fetcher (§A R7). `hono/jwk`'s own `jwks_uri` option
+ * refetches the endpoint on every request; this fetches once, serves the cached keys for
+ * ~10 minutes, and collapses concurrent refreshes into one in-flight request. Failures
+ * are never cached — the next request retries.
+ */
+export function createCachedJwksFetcher(jwksUri: string, ttlMs = JWKS_CACHE_TTL_MS): () => Promise<CachedJwk[]> {
+  let cache: { keys: CachedJwk[]; expiresAt: number } | undefined;
+  let inflight: Promise<CachedJwk[]> | undefined;
+
+  return async () => {
+    if (cache && Date.now() < cache.expiresAt) {
+      return cache.keys;
+    }
+    inflight ??= (async () => {
+      try {
+        let response: Response;
+        try {
+          response = await fetch(jwksUri);
+        } catch (cause) {
+          throw jwksFetchError(`Failed to fetch JWKS from ${jwksUri}.`, cause);
+        }
+        if (!response.ok) {
+          throw jwksFetchError(`JWKS endpoint ${jwksUri} answered ${response.status}.`);
+        }
+        let body: { keys?: unknown };
+        try {
+          body = (await response.json()) as { keys?: unknown };
+        } catch (cause) {
+          throw jwksFetchError(`JWKS endpoint ${jwksUri} returned invalid JSON.`, cause);
+        }
+        if (!Array.isArray(body.keys)) {
+          throw jwksFetchError(`JWKS endpoint ${jwksUri} response is missing a "keys" array.`);
+        }
+        const keys = body.keys as CachedJwk[];
+        cache = { keys, expiresAt: Date.now() + ttlMs };
+        return keys;
+      } finally {
+        inflight = undefined;
+      }
+    })();
+    return inflight;
+  };
+}
+
+/**
+ * postgres-js server errors carry a SQLSTATE `code` and `name: "PostgresError"` —
+ * detected structurally so services/api never imports the postgres driver (WS-A5).
+ */
+function getPostgresErrorCode(error: unknown): string | undefined {
+  if (!(error instanceof Error) || error.name !== "PostgresError") return undefined;
+  const code = (error as Error & { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
 
 function jsonError(
   c: Context<AppEnv>,
@@ -253,22 +332,31 @@ export function createApp({
     // Test instances (ALLOW_TEST_RESET) are exempt: the sequential E2E suite
     // legitimately exceeds 60 mutations/min from one IP and started flaking
     // with 429s on /api/testing/reset once the capture pipeline became real.
-    if (allowTestReset) {
+    // Demo mode only (WS-A5c): a stray ALLOW_TEST_RESET on a normal-mode deploy
+    // must not silently disable the production rate limiter.
+    if (allowTestReset && runtimeMode === "demo") {
       return next();
     }
     return apiMutationLimiter(c, next);
   });
 
-  // JWKS-backed JWT auth on mutating routes when configured. The middleware ships with Hono
-  // (`hono/jwk`); against Supabase the JWKS URL is `${SUPABASE_URL}/auth/v1/keys`. Accepted
-  // algorithms default to RS256 + ES256 (SUPABASE_JWT_ALGS overrides) since Supabase's newer
-  // asymmetric signing keys default to ES256 — a hardcoded RS256-only allowlist would 401 every
-  // legitimate user on such a project. Skipped when unset so demo / unauthenticated pilots keep
-  // working — production sets the env.
+  // JWKS-backed JWT auth on ALL /api/* routes when configured (§A N7 — reads included: workspace
+  // snapshots, reports, and evidence are as sensitive as the mutations that produced them). The
+  // middleware ships with Hono (`hono/jwk`); against Supabase the JWKS URL is
+  // `${SUPABASE_URL}/auth/v1/keys`. Keys go through the TTL-cached single-flight fetcher (§A R7)
+  // instead of `jwks_uri`, which refetches the endpoint per request. Accepted algorithms default
+  // to RS256 + ES256 (SUPABASE_JWT_ALGS overrides) since Supabase's newer asymmetric signing keys
+  // default to ES256 — a hardcoded RS256-only allowlist would 401 every legitimate user on such a
+  // project. Skipped when unset so demo / unauthenticated pilots keep working — production sets
+  // the env. /health + /ready live outside /api and stay public liveness/readiness probes.
   if (jwksUrl) {
-    const verifyJwt = jwk({ jwks_uri: jwksUrl, alg: jwtAlgs });
+    const fetchJwksKeys = createCachedJwksFetcher(jwksUrl);
+    const verifyJwt = jwk({ keys: fetchJwksKeys, alg: jwtAlgs });
     app.use("/api/*", async (c, next) => {
-      if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
+      // GET /api/runtime-info stays public: the About-this-AI transparency panel (EU AI Act
+      // Art. 50) must render before login. CORS preflights never reach here — the cors
+      // middleware above short-circuits OPTIONS.
+      if (c.req.method === "GET" && c.req.path === "/api/runtime-info") {
         return next();
       }
       // /api/testing/reset is route-gated on allowTestReset already, but layering JWT defense in
@@ -337,6 +425,44 @@ export function createApp({
       return jsonError(c, error.message, runtimeMode, 503);
     }
 
+    if (isJwksFetchError(error)) {
+      // Auth infrastructure down ≠ bad token (§A R7): JWKS fetch failures are a service
+      // outage (503), while missing/invalid tokens keep answering 401 via HTTPException.
+      console.error(
+        JSON.stringify({
+          level: "error",
+          component: "api.auth",
+          requestId: c.var.requestId,
+          message: error.message,
+        }),
+      );
+      return jsonError(c, "Authentication is temporarily unavailable.", runtimeMode, 503);
+    }
+
+    const pgCode = getPostgresErrorCode(error);
+    if (pgCode !== undefined) {
+      // WS-A5: the SQLSTATE + driver message stay in the log line only — the response body
+      // never carries Postgres detail beyond the mapped code.
+      console.error(
+        JSON.stringify({
+          level: "error",
+          component: "api",
+          requestId: c.var.requestId,
+          message: error instanceof Error ? error.message : String(error),
+          pgCode,
+        }),
+      );
+      if (pgCode === "23505") {
+        return jsonError(c, "A conflicting record already exists.", runtimeMode, 409, { code: "conflict" });
+      }
+      // Class 08 (connection exceptions) + class 57 (operator intervention, e.g. shutdown,
+      // statement timeout via cancel) are infrastructure availability, not caller mistakes.
+      if (pgCode.startsWith("08") || pgCode.startsWith("57")) {
+        return jsonError(c, "The database is temporarily unavailable.", runtimeMode, 503);
+      }
+      return jsonError(c, "Unexpected server error.", runtimeMode, 500);
+    }
+
     const requestId = c.var.requestId;
     console.error(
       JSON.stringify({
@@ -353,8 +479,16 @@ export function createApp({
 
   app.get("/health", (context) => context.json({ ok: true, runtimeMode }));
 
-  app.get("/ready", (context) => {
-    const ledgerOk = isLedgerStoreOperational(currentStore);
+  app.get("/ready", async (context) => {
+    // Real ledger probe (WS-A5): SELECT 1 against Postgres, no-op for the memory
+    // store, rejection for the fail-closed unavailable store — instead of the old
+    // instanceof check that reported a dead connection pool as ready.
+    let ledgerOk = true;
+    try {
+      await pingLedgerStore(currentStore);
+    } catch {
+      ledgerOk = false;
+    }
     const aiOk = isAiRuntimeOperational(aiRuntime);
     const ready = ledgerOk && aiOk;
     return context.json({

@@ -423,6 +423,17 @@ export class PostgresLedgerStore implements LedgerStore {
     };
   }
 
+  // ---------------- readiness ----------------
+
+  /**
+   * Readiness probe (WS-A5): a trivial round-trip proving the connection pool
+   * can reach Postgres. Not part of the `LedgerStore` interface — the API's
+   * /ready check discovers it structurally.
+   */
+  async ping(): Promise<void> {
+    await this.client`SELECT 1`;
+  }
+
   // ---------------- LedgerStore API ----------------
 
   async createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult> {
