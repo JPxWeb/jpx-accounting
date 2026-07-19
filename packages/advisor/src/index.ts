@@ -9,6 +9,7 @@
 export { KNOWLEDGE_CORPUS } from "./corpus.generated";
 export * from "./excerpt";
 export * from "./retrieval";
+export * from "./sanitize";
 export * from "./context";
 export * from "./demo-turn";
 export * from "./prompts";

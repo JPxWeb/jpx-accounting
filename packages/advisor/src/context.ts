@@ -25,6 +25,17 @@ export interface AdvisorGroundingInput {
   observations: readonly GroundingObservation[];
   deadlines: readonly GroundingDeadline[];
   pendingReviews: readonly ReviewTask[];
+  /**
+   * Formatter applied to UNTRUSTED, evidence-derived strings — review titles
+   * and string-valued observation params (OCR'd supplier names travel there;
+   * WS-D R22). The LLM-bound path passes `delimitUntrustedText` so hostile
+   * document text is sanitized and wrapped in explicit DATA delimiters; the
+   * deterministic demo/display path omits it (identity — no LLM, no injection
+   * surface). Numeric params and system-derived fields (period tokens, KPI
+   * numbers, deadline dates, registry account names) are never untrusted and
+   * bypass the formatter.
+   */
+  formatUntrusted?: ((value: string) => string) | undefined;
 }
 
 /** Keep the block compact: list at most this many pending reviews individually. */
@@ -43,7 +54,9 @@ export function buildAdvisorGrounding({
   observations,
   deadlines,
   pendingReviews,
+  formatUntrusted,
 }: AdvisorGroundingInput): string {
+  const untrusted = formatUntrusted ?? ((value: string) => value);
   const kpis = buildKpis(pack);
   const lines: string[] = [];
 
@@ -65,7 +78,10 @@ export function buildAdvisorGrounding({
     lines.push("Observationer (deterministiska detektorer över samma rapportpaket):");
     for (const observation of observations) {
       const params = Object.entries(observation.params)
-        .map(([key, value]) => `${key}=${value}`)
+        // String param values can carry evidence-derived text (e.g. the
+        // supplier-spike detector's OCR'd supplier name) → untrusted. Numbers
+        // are copied report-pack figures → trusted as-is.
+        .map(([key, value]) => `${key}=${typeof value === "string" ? untrusted(value) : value}`)
         .join(", ");
       lines.push(
         `- ${observation.detector} (${observation.severity}): ${observation.titleKey}${params ? ` [${params}]` : ""}`,
@@ -78,7 +94,9 @@ export function buildAdvisorGrounding({
     const suggestion = review.suggestion
       ? ` — förslag ${review.suggestion.accountNumber} ${review.suggestion.accountName}, momskod ${review.suggestion.vatCode}`
       : "";
-    lines.push(`- ${review.title} (${review.id})${suggestion}`);
+    // Review titles derive from captured evidence (supplier names, free-text
+    // descriptions) → untrusted (WS-D R22).
+    lines.push(`- ${untrusted(review.title)} (${review.id})${suggestion}`);
   }
 
   return lines.join("\n");

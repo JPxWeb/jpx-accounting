@@ -40,7 +40,10 @@ export interface KnowledgePassage {
   title: string;
   excerpt: string;
   source: string;
-  url?: string;
+  // `| undefined` keeps the zod-inferred contract twin (`string | undefined`)
+  // assignable under exactOptionalPropertyTypes — the chat route feeds
+  // contract-validated vector passages into the same advisor surfaces.
+  url?: string | undefined;
   score: number;
 }
 
@@ -49,6 +52,49 @@ export interface RetrieveKnowledgeOptions {
   topK?: number;
   /** Corpus to search. Defaults to the bundled `KNOWLEDGE_CORPUS`. */
   corpus?: KnowledgeChunk[];
+  /**
+   * Minimum BM25 score a passage must reach to be returned. Default 0 (any
+   * positive-scoring overlap qualifies) — the smalltalk gate is the stopword
+   * filter, not this floor. Callers with their own quality bar can raise it.
+   */
+  minScore?: number;
+}
+
+/**
+ * Swedish query stopwords (WS-D retrieval quality): function words (Snowball
+ * Swedish list), near-content-free light verbs, and phatic/greeting tokens.
+ * Filtered from the QUERY only — corpus indexing is untouched, so content-term
+ * scores are unchanged. Greetings and courtesy phrases ("Hej!", "Tack för
+ * hjälpen", "God morgon") consist entirely of these tokens and therefore
+ * retrieve ZERO passages instead of matching corpus function words ("god"
+ * otherwise matches "god redovisningssed"). Curated against the bundled
+ * corpus: real accounting questions keep their content terms ("Vad är god
+ * redovisningssed?" → "redovisningssed" survives the filter).
+ */
+export const SWEDISH_QUERY_STOPWORDS: ReadonlySet<string> = new Set(
+  [
+    // Snowball Swedish function words.
+    ..."och det att i en jag hon som han på den med var sig för så till är men ett om hade de av icke mig du henne då sin nu har inte hans honom skulle hennes där min man ej vid kunde något från ut när efter upp vi dem vara vad över än dig kan sina här ha mot alla under någon eller allt mycket sedan ju denna själv detta åt utan varit hur ingen mitt ni bli blev oss din dessa några deras blir mina samma vilken er sådan vår blivit dess inom mellan sådant varför varje vilka ditt vem vilket sådana vart dina vars vårt våra ert era vilkas".split(
+      " ",
+    ),
+    // Light verbs and hedges that carry no retrieval signal.
+    ..."ska skall vill fick får få gör göra gjort gjorde behöver behövde kanske bara lite gärna snälla".split(" "),
+    // Phatic / greeting / courtesy tokens.
+    ..."hej hejsan hallå tja tjena tack god morgon kväll okej ok ja nej jo visst mår bra dåligt trevlig trevligt kul heter hjälp hjälpa hjälpen".split(
+      " ",
+    ),
+  ].filter(Boolean),
+);
+
+/**
+ * True when the query contains at least one non-stopword token — i.e. there is
+ * something content-bearing to retrieve on. Smalltalk ("Hej, hur mår du?")
+ * returns false. Shared gate for the keyword path (which applies it inside
+ * `retrieveKnowledge`) and the vector path (which should skip the embedding
+ * call entirely when this is false).
+ */
+export function hasRetrievableContent(query: string): boolean {
+  return tokenizeSwedish(query).some((token) => !SWEDISH_QUERY_STOPWORDS.has(token));
 }
 
 /** BM25 term-frequency saturation. */
@@ -123,13 +169,17 @@ function inverseDocumentFrequency(corpusSize: number, documentFrequency: number)
  * deterministic: unique query tokens, a fixed idf formula, and a stable
  * tie-break on chunk id make the ranking a pure function of (query, corpus).
  * Chunks with no term overlap are never returned.
+ *
+ * Relevance gate (WS-D): stopword tokens are removed from the query before
+ * scoring — a query with ONLY stopword tokens (greetings, courtesy phrases)
+ * yields zero passages, so smalltalk never dresses itself in sources.
  */
 export function retrieveKnowledge(query: string, options: RetrieveKnowledgeOptions = {}): KnowledgePassage[] {
-  const { topK = 4, corpus = KNOWLEDGE_CORPUS } = options;
+  const { topK = 4, corpus = KNOWLEDGE_CORPUS, minScore = 0 } = options;
   if (topK <= 0 || corpus.length === 0) return [];
 
   const index = indexCorpus(corpus);
-  const queryTokens = [...new Set(tokenizeSwedish(query))];
+  const queryTokens = [...new Set(tokenizeSwedish(query))].filter((token) => !SWEDISH_QUERY_STOPWORDS.has(token));
   if (queryTokens.length === 0) return [];
 
   const scored: { entry: IndexedChunk; score: number }[] = [];
@@ -143,7 +193,7 @@ export function retrieveKnowledge(query: string, options: RetrieveKnowledgeOptio
       const lengthNorm = 1 - BM25_B + BM25_B * (entry.length / index.averageLength);
       score += idf * ((termFrequency * (BM25_K1 + 1)) / (termFrequency + BM25_K1 * lengthNorm));
     }
-    if (score > 0) scored.push({ entry, score });
+    if (score > 0 && score >= minScore) scored.push({ entry, score });
   }
 
   scored.sort((left, right) => {
