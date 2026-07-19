@@ -12,6 +12,10 @@ import type { AdvisorUIMessage } from "../components/advisor/local-demo-transpor
 
 const STORAGE_KEY = "jpx.accounting.assistantThreads.v2";
 const LEGACY_STORAGE_KEY = "jpx.accounting.assistantThreads.v1";
+
+/** Exported for the local-data registry pin (lib/local-data.ts + tests/unit/local-data-registry.test.ts). */
+export const ASSISTANT_THREADS_STORAGE_KEY = STORAGE_KEY;
+export const ASSISTANT_THREADS_LEGACY_STORAGE_KEY = LEGACY_STORAGE_KEY;
 const MAX_THREADS = 30;
 const MAX_TITLE_CHARS = 80;
 

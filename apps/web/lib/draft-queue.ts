@@ -10,6 +10,10 @@ const storeName = "capture-drafts";
 const sessionStorageKey = "jpx-accounting-drafts:session";
 const inMemoryDrafts = new Map<string, CaptureDraft>();
 
+/** Exported for the local-data registry pin (lib/local-data.ts + tests/unit/local-data-registry.test.ts). */
+export const DRAFT_QUEUE_DB_NAME = databaseName;
+export const DRAFT_QUEUE_SESSION_STORAGE_KEY = sessionStorageKey;
+
 /**
  * Object store for promoted-evidence file blobs (previews), added in v2.
  * Records are `{ evidenceId, blob, storedAt }` keyed by `evidenceId` — see `evidence-blob-cache.ts`.

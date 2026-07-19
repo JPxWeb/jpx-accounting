@@ -30,7 +30,11 @@ export type ApiRuntimeConfig = {
     apiKey?: string | undefined;
   };
   auth: {
-    /** Full JWKS URL — typically `${SUPABASE_URL}/auth/v1/keys`. When set, /api/* mutations require a valid JWT. */
+    /**
+     * Full JWKS URL — typically `${SUPABASE_URL}/auth/v1/keys`. When set, ALL /api/* routes
+     * (runtime-info excepted) require a valid JWT. REQUIRED in normal mode (WS-C R12 fail-closed);
+     * optional in demo, where the scaffold stays auth-free.
+     */
     jwksUrl?: string | undefined;
     /**
      * Asymmetric algorithms the JWKS verifier accepts (comma-separated via SUPABASE_JWT_ALGS).
@@ -93,6 +97,24 @@ function resolveCorsPolicy(runtimeMode: RuntimeMode, originsEnv?: string): CorsR
       .map((segment) => segment.trim())
       .filter(Boolean) ?? [];
   return { kind: "allowlist", origins };
+}
+
+/**
+ * Normal mode requires SUPABASE_JWKS_URL (WS-C R12, extending the W1 fail-closed
+ * pattern): without it every /api/* route would serve real ledger data to
+ * unauthenticated callers. Demo mode stays auth-free by design — the in-memory
+ * scaffold holds no real records and E2E depends on the open surface.
+ */
+function resolveJwksUrl(runtimeMode: RuntimeMode, jwksUrlEnv?: string): string | undefined {
+  const jwksUrl = normalizeOptionalValue(jwksUrlEnv);
+  if (runtimeMode === "normal" && jwksUrl === undefined) {
+    throw new Error(
+      "SUPABASE_JWKS_URL is required when ACCOUNTING_RUNTIME_MODE=normal. " +
+        "Fail closed: without JWKS verification every /api/* route would accept unauthenticated traffic. " +
+        "Set it to ${SUPABASE_URL}/auth/v1/keys (or run demo mode for auth-free scaffolding).",
+    );
+  }
+  return jwksUrl;
 }
 
 /**
@@ -223,7 +245,7 @@ export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiR
       apiKey: normalizeOptionalValue(env.AZURE_DOCUMENT_INTELLIGENCE_API_KEY),
     },
     auth: {
-      jwksUrl: normalizeOptionalValue(env.SUPABASE_JWKS_URL),
+      jwksUrl: resolveJwksUrl(mode, env.SUPABASE_JWKS_URL),
       jwtAlgs: resolveJwtAlgs(env.SUPABASE_JWT_ALGS),
     },
     advisor: {

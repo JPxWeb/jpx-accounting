@@ -57,6 +57,14 @@
       "searchLabel": "Sök ⌘K",
       "searchAria": "Öppna kommandopaletten"
     },
+    "account": {
+      "signIn": "Logga in",
+      "menuAria": "Kontomeny",
+      "closeMenuAria": "Stäng kontomenyn",
+      "signedInAs": "Inloggad som",
+      "signOut": "Logga ut",
+      "signingOut": "Loggar ut …"
+    },
     "demoBanner": "Demoläge är aktivt. Lokal demodata och lokal AI-fallback är avsiktligt aktiverade.",
     "captureSheet": {
       "eyebrow": "Snabbinmatning",
@@ -977,7 +985,39 @@
       "storageNormal2": "Underlagsfiler lagras i Azure Blob Storage (Sweden Central), skrivna via kortlivade signerade URL:er.",
       "storageNormal3": "Båda lagren håller räkenskaperna inom EU, i ordnat och åtkomligt skick.",
       "roadmapTitle": "Vad som inte finns ännu",
-      "roadmapBody": "Reglage för legal hold per klass och verktyg för arkiveringstidens utgång är inte byggda, så det finns inga kontroller att visa här. När de landar blir varje spärr en attribuerad bokföringshändelse — inte en tyst flagga."
+      "roadmapBody": "Reglage för legal hold per klass och verktyg för arkiveringstidens utgång är inte byggda, så det finns inga kontroller att visa här. När de landar blir varje spärr en attribuerad bokföringshändelse — inte en tyst flagga.",
+      "localData": {
+        "title": "Data som lagras i den här webbläsaren",
+        "description": "Utöver huvudboken sparar appen dessa lokala lagringsytor på enheten. Tabellen renderas från samma register som utloggningen rensar — listan är komplett.",
+        "columns": {
+          "store": "Lagring",
+          "key": "Nyckel",
+          "purpose": "Innehåll",
+          "signOut": "Vid utloggning"
+        },
+        "storage": {
+          "localStorage": "localStorage",
+          "sessionStorage": "sessionStorage",
+          "indexedDB": "IndexedDB",
+          "cacheStorage": "Cache Storage",
+          "cookie": "Cookie"
+        },
+        "clearedYes": "Rensas",
+        "clearedNo": "Behålls (inställning)",
+        "signOutNote": "Vid utloggning rensas alla rader markerade ”Rensas” på den här enheten. Huvudbokens poster ligger på servern (eller i demolägets minneslagring) och omfattas av lagringspolicyn ovan.",
+        "entries": {
+          "assistantThreads": "Sparade rådgivarkonversationer (frågor, svar, källhänvisningar).",
+          "assistantThreadsLegacy": "Äldre rådgivarhistorik (v1) — migreras vid första läsningen, tas bort vid utloggning.",
+          "dashboardLayout": "Din widgetordning och dolda widgets på Idag-panelen.",
+          "onboarding": "Vilka introduktionsturer du har slutfört eller avfärdat.",
+          "theme": "Val av ljust/mörkt/systemtema.",
+          "captureDraftsSession": "Flikbunden reservkopia av utkast när IndexedDB inte är tillgängligt (endast metadata).",
+          "captureDraftsDb": "Lokala utkast inklusive kvittofiler, samt en begränsad förhandsvisningscache för uppladdade underlag.",
+          "staticAssetCache": "Offlinecache för appens statiska filer (ikoner, skript) — aldrig API-svar eller autentiserade förfrågningar.",
+          "localeCookie": "Arbetsytans språkval (svenska/engelska).",
+          "supabaseSession": "Supabase Auth-sessionstoken (sb-…-nycklar). Tas bort vid utloggning; städas även defensivt."
+        }
+      }
     },
     "team": {
       "eyebrow": "Inställningar / Team & roller",
@@ -1274,6 +1314,34 @@
           }
         }
       }
+    }
+  },
+  "auth": {
+    "login": {
+      "eyebrow": "Konto",
+      "title": "Logga in i JPX Accounting",
+      "description": "E-post och lösenord, verifierat via Supabase Auth. Din huvudbok förblir append-only och varje verifikation godkänns av en människa.",
+      "modeSwitcherAria": "Logga in eller skapa konto",
+      "emailLabel": "E-postadress",
+      "passwordLabel": "Lösenord",
+      "signIn": "Logga in",
+      "signUp": "Skapa konto",
+      "signingIn": "Loggar in …",
+      "signingUp": "Skapar konto …",
+      "signInErrorTitle": "Inloggningen misslyckades.",
+      "signUpErrorTitle": "Kontot kunde inte skapas.",
+      "checkEmail": "Nästan klart — bekräfta din e-post. Vi skickade en bekräftelselänk till {email} (Supabases standardflöde). Logga in här när adressen är bekräftad.",
+      "limitationsNote": "Tidig version, ärliga begränsningar: e-postbekräftelse och lösenordsåterställning följer Supabases standardflöden — det finns ännu inget bekräftelse- eller återställningsflöde i appen, och ingen social inloggning.",
+      "backToApp": "Tillbaka till appen",
+      "signedInTitle": "Du är inloggad",
+      "signedInBody": "Den här enheten har en aktiv session. Logga ut för att rensa lokal arbetsytedata från webbläsaren.",
+      "signedInAs": "Inloggad som",
+      "continueToApp": "Fortsätt till appen",
+      "signOut": "Logga ut",
+      "signingOut": "Loggar ut …",
+      "signOutErrorTitle": "Utloggningen stötte på ett problem (lokal data rensades ändå):",
+      "notConfiguredTitle": "Inloggning är inte tillgänglig",
+      "notConfiguredBody": "Den här driftsättningen körs utan autentisering (NEXT_PUBLIC_SUPABASE_URL och NEXT_PUBLIC_SUPABASE_ANON_KEY är inte satta). Demoläget kräver inget konto — gå tillbaka till appen."
     }
   }
 }

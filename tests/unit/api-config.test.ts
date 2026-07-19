@@ -21,8 +21,10 @@ test("readApiRuntimeConfig accepts normal mode when properly configured", () => 
   const config = readApiRuntimeConfig({
     ACCOUNTING_RUNTIME_MODE: "normal",
     ADVISOR_TOOL_APPROVAL_SECRET: "production-only-secret",
+    SUPABASE_JWKS_URL: "https://project.supabase.co/auth/v1/keys",
   });
   assert.equal(config.runtimeMode, "normal");
+  assert.equal(config.auth.jwksUrl, "https://project.supabase.co/auth/v1/keys");
 });
 
 test("readApiRuntimeConfig throws on an unknown ACCOUNTING_RUNTIME_MODE instead of falling back to demo", () => {
@@ -102,6 +104,7 @@ test("readApiRuntimeConfig fail-closes on missing tool-approval secret in normal
       readApiRuntimeConfig({
         ACCOUNTING_RUNTIME_MODE: "normal",
         ADVISOR_TOOL_APPROVAL_SECRET: undefined,
+        SUPABASE_JWKS_URL: "https://project.supabase.co/auth/v1/keys",
       }),
     /ADVISOR_TOOL_APPROVAL_SECRET is required/,
   );
@@ -113,6 +116,7 @@ test("readApiRuntimeConfig fail-closes on demo tool-approval secret in normal mo
       readApiRuntimeConfig({
         ACCOUNTING_RUNTIME_MODE: "normal",
         ADVISOR_TOOL_APPROVAL_SECRET: DEMO_ADVISOR_TOOL_APPROVAL_SECRET,
+        SUPABASE_JWKS_URL: "https://project.supabase.co/auth/v1/keys",
       }),
     /must not be the demo default/,
   );
@@ -122,8 +126,43 @@ test("readApiRuntimeConfig accepts a custom tool-approval secret in normal mode"
   const config = readApiRuntimeConfig({
     ACCOUNTING_RUNTIME_MODE: "normal",
     ADVISOR_TOOL_APPROVAL_SECRET: "production-only-secret",
+    SUPABASE_JWKS_URL: "https://project.supabase.co/auth/v1/keys",
   });
   assert.equal(config.advisor.toolApprovalSecret, "production-only-secret");
+});
+
+// ---------------------------------------------------------------------------
+// WS-C R12: SUPABASE_JWKS_URL fails closed in normal mode
+// ---------------------------------------------------------------------------
+
+test("readApiRuntimeConfig fail-closes on missing SUPABASE_JWKS_URL in normal mode", () => {
+  // Without JWKS verification every /api/* route would serve real ledger data
+  // to unauthenticated callers — normal mode must refuse to boot.
+  assert.throws(
+    () =>
+      readApiRuntimeConfig({
+        ACCOUNTING_RUNTIME_MODE: "normal",
+        ADVISOR_TOOL_APPROVAL_SECRET: "production-only-secret",
+      }),
+    /SUPABASE_JWKS_URL is required when ACCOUNTING_RUNTIME_MODE=normal/,
+  );
+  // Whitespace-only must not satisfy the requirement.
+  assert.throws(
+    () =>
+      readApiRuntimeConfig({
+        ACCOUNTING_RUNTIME_MODE: "normal",
+        ADVISOR_TOOL_APPROVAL_SECRET: "production-only-secret",
+        SUPABASE_JWKS_URL: "   ",
+      }),
+    /SUPABASE_JWKS_URL is required/,
+  );
+});
+
+test("readApiRuntimeConfig keeps demo mode auth-free when SUPABASE_JWKS_URL is unset", () => {
+  // Demo stays 100% functional without auth — E2E and offline scaffolding depend on it.
+  const config = readApiRuntimeConfig({ ACCOUNTING_RUNTIME_MODE: "demo" });
+  assert.equal(config.auth.jwksUrl, undefined);
+  assert.equal(describeBootPosture(config).authEnabled, false);
 });
 
 // ---------------------------------------------------------------------------
@@ -171,6 +210,7 @@ test("describeBootPosture reports unavailable ledger store and disabled rate lim
   const normalWithoutDb = readApiRuntimeConfig({
     ACCOUNTING_RUNTIME_MODE: "normal",
     ADVISOR_TOOL_APPROVAL_SECRET: "production-only-secret",
+    SUPABASE_JWKS_URL: "https://project.supabase.co/auth/v1/keys",
   });
   assert.equal(describeBootPosture(normalWithoutDb).ledgerStore, "unavailable");
 

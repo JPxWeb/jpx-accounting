@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 
 import { BFL_RETENTION_SOURCE } from "../../../../lib/legal-sources";
+import { LOCAL_DATA_REGISTRY } from "../../../../lib/local-data";
 import { ScreenHeader } from "../../../../components/ui/screen-header";
 import { SectionLabel } from "../../../../components/ui/section-label";
 
@@ -59,6 +60,53 @@ export default async function RetentionSettingsPage() {
               </ul>
             </div>
           </div>
+        </section>
+
+        {/* WS-C R12: THE local-data disclosure — rendered straight from
+            LOCAL_DATA_REGISTRY (lib/local-data.ts), the same list sign-out's
+            clearAllLocalData() clears, so UI and behavior cannot drift. */}
+        <section className="glass-panel rounded-xl p-5" data-testid="retention-local-data">
+          <SectionLabel>{t("localData.title")}</SectionLabel>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("localData.description")}</p>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[36rem] text-left text-sm">
+              <thead>
+                <tr className="border-b border-border text-caption text-muted-foreground">
+                  <th scope="col" className="py-2 pr-4 font-medium">
+                    {t("localData.columns.store")}
+                  </th>
+                  <th scope="col" className="py-2 pr-4 font-medium">
+                    {t("localData.columns.key")}
+                  </th>
+                  <th scope="col" className="py-2 pr-4 font-medium">
+                    {t("localData.columns.purpose")}
+                  </th>
+                  <th scope="col" className="py-2 font-medium">
+                    {t("localData.columns.signOut")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {LOCAL_DATA_REGISTRY.map((entry) => (
+                  <tr key={entry.id} className="border-b border-border/60 align-top">
+                    <td className="py-2 pr-4 whitespace-nowrap text-muted-foreground">
+                      {t(`localData.storage.${entry.storage}`)}
+                    </td>
+                    <td className="py-2 pr-4">
+                      <code className="font-mono text-xs text-foreground">
+                        {entry.match === "prefix" ? `${entry.key}*` : entry.key}
+                      </code>
+                    </td>
+                    <td className="py-2 pr-4 text-muted-foreground">{t(`localData.entries.${entry.id}`)}</td>
+                    <td className="py-2 whitespace-nowrap text-muted-foreground">
+                      {entry.clearedOnSignOut ? t("localData.clearedYes") : t("localData.clearedNo")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-caption leading-5 text-muted-foreground">{t("localData.signOutNote")}</p>
         </section>
 
         <section className="glass-panel rounded-xl p-5" data-testid="retention-roadmap">
