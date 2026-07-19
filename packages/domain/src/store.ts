@@ -87,6 +87,27 @@ export class InvalidReviewEditError extends Error {
 }
 
 /**
+ * Content-dedupe predicate for idempotent `createEvidence` (WS-D R19). A create
+ * is a duplicate of an EXISTING evidence row only when the caller supplied BOTH
+ * `sha256` and `sizeBytes` (legacy/metadata-only callers never dedupe) and the
+ * existing row carries the identical (organizationId, workspaceId, hash,
+ * sizeBytes) tuple. Workspace scoping is part of the key on purpose: the same
+ * file captured in two different workspaces must create twice — dedupe never
+ * crosses tenants. Shared by MemoryLedgerStore and PostgresLedgerStore so both
+ * stores answer "is this the same file?" identically (CONVENTIONS Rule 11).
+ */
+export function isDuplicateEvidence(existing: EvidenceObject, input: EvidenceCreateInput): boolean {
+  return (
+    input.sha256 !== undefined &&
+    input.sizeBytes !== undefined &&
+    existing.organizationId === input.organizationId &&
+    existing.workspaceId === input.workspaceId &&
+    existing.hash === input.sha256 &&
+    existing.sizeBytes === input.sizeBytes
+  );
+}
+
+/**
  * VAT codes a reviewer may select on an edited decision (WS-B B5): the
  * regime's rate vocabulary (VAT25/VAT12/VAT6/VAT0 for Sweden) plus the
  * VAT-neutral "NA". "VAT-REVIEW" is deliberately NOT selectable — it is the
@@ -200,7 +221,24 @@ export class SieImportError extends Error {
 export const SIE_IMPORT_MAX_VOUCHERS = 500;
 export const SIE_IMPORT_MAX_LINES_PER_VOUCHER = 100;
 
-export type SieImportInput = { actorId: string; file: ParsedSieFile };
+/**
+ * Deferred-auth demo sentinel (WS-C R5, CONVENTIONS Rule 20 adjacency): when a
+ * mutating store call arrives without a server-derived `actorId` (auth off —
+ * demo mode and the browser-side fallback store), events attribute to this
+ * fixed founder identity. With auth on, the API threads the verified JWT
+ * subject as `user:<sub>` instead. Client-supplied actor ids were deleted from
+ * the wire contracts and can never reach a store.
+ */
+export const DEMO_ACTOR_ID = "user_founder";
+
+/**
+ * Server-derived actor threading for mutating store methods. Optional: absent
+ * means "no authenticated subject" and stores default to `DEMO_ACTOR_ID`.
+ * Never populated from a client payload.
+ */
+export type ActorAttribution = { actorId?: string | undefined };
+
+export type SieImportInput = ActorAttribution & { file: ParsedSieFile };
 
 export type SiePlannedVoucher = {
   /** Idempotency key: `sie_<series>_<number>` checked against prior `VoucherImported` events. */
@@ -318,8 +356,8 @@ export function planSieImport(
 }
 
 export interface LedgerStore {
-  createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult>;
-  composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket>;
+  createEvidence(input: EvidenceCreateInput & ActorAttribution): Promise<EvidenceCreateResult>;
+  composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket>;
   getEvidenceContext(
     evidenceId: string,
   ): Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined>;
@@ -356,10 +394,10 @@ export interface LedgerStore {
   applyReviewDecision(
     reviewId: string,
     action: ReviewAction,
-    input: ReviewDecisionInput,
+    input: ReviewDecisionInput & ActorAttribution,
   ): Promise<ReviewTask | undefined>;
   answerAssistantQuestion(question: string): Promise<AssistantSession>;
-  runSimulation(input: SimulationRequest): Promise<SimulationRun>;
+  runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun>;
   getCloseRun(): Promise<CloseRun>;
   refreshComplianceAlerts(): Promise<ComplianceAlert[]>;
   getCompanySettings(): Promise<CompanySettings | null>;
@@ -603,11 +641,42 @@ export class MemoryLedgerStore implements LedgerStore {
     return fullEvent;
   }
 
-  async createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult> {
+  async createEvidence(input: EvidenceCreateInput & ActorAttribution): Promise<EvidenceCreateResult> {
     return this.createEvidenceSync(input);
   }
 
-  private createEvidenceSync(input: EvidenceCreateInput): EvidenceCreateResult {
+  /**
+   * Idempotent-create dedupe (WS-D R19): when an evidence row with the same
+   * (workspace, sha256, sizeBytes) already exists, return the EXISTING row's
+   * full create-context instead of creating a duplicate. A dedup hit appends
+   * NOTHING — the hash chain stays clean. Map iteration is insertion-ordered,
+   * so the FIRST (oldest) matching evidence wins deterministically. Falls
+   * through to a genuine create when any context link is missing (defensive —
+   * `createEvidence` always writes the full evidence→packet→voucher→review
+   * chain, so a partial match means the row wasn't born here).
+   */
+  private findDuplicateEvidenceResult(input: EvidenceCreateInput): EvidenceCreateResult | undefined {
+    if (input.sha256 === undefined || input.sizeBytes === undefined) return undefined;
+    for (const candidate of this.evidence.values()) {
+      if (!isDuplicateEvidence(candidate, input)) continue;
+      const packetId = this.evidenceIdToPacketId.get(candidate.id);
+      const packet = packetId !== undefined ? this.evidencePackets.get(packetId) : undefined;
+      const voucherId = packetId !== undefined ? this.packetIdToVoucherId.get(packetId) : undefined;
+      const voucher = voucherId !== undefined ? this.vouchers.get(voucherId) : undefined;
+      const reviewId = voucherId !== undefined ? this.voucherIdToReviewId.get(voucherId) : undefined;
+      const review = reviewId !== undefined ? this.reviews.get(reviewId) : undefined;
+      if (!packet || !voucher || !review) continue;
+      return { evidence: candidate, packet, voucher, review, voucherId: voucher.id, deduped: true };
+    }
+    return undefined;
+  }
+
+  private createEvidenceSync(input: EvidenceCreateInput & ActorAttribution): EvidenceCreateResult {
+    const duplicate = this.findDuplicateEvidenceResult(input);
+    if (duplicate) return duplicate;
+
+    // Server-derived attribution or the demo sentinel — never a client value (R5).
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     const createdAt = nowIso();
     const evidenceId = createId("evidence");
     const packetId = createId("packet");
@@ -618,7 +687,7 @@ export class MemoryLedgerStore implements LedgerStore {
       organizationId: input.organizationId,
       workspaceId: input.workspaceId,
       createdAt,
-      createdBy: input.actorId,
+      createdBy: actorId,
       title: input.title,
       modalities: input.modalities,
       originalFilename: input.originalFilename,
@@ -650,7 +719,7 @@ export class MemoryLedgerStore implements LedgerStore {
       extractedFields,
       voucherFields: deriveVoucherFields(extractedFields, input),
       createdAt,
-      createdBy: input.actorId,
+      createdBy: actorId,
     };
 
     const ruleHits = evaluateVoucherRules(voucher);
@@ -668,7 +737,7 @@ export class MemoryLedgerStore implements LedgerStore {
         : "Approve the proposed posting.",
       suggestion,
       provenanceTimeline: [
-        { id: createId("step"), label: "Evidence received", timestamp: createdAt, actor: input.actorId },
+        { id: createId("step"), label: "Evidence received", timestamp: createdAt, actor: actorId },
         { id: createId("step"), label: "Fields extracted", timestamp: createdAt, actor: "system-extractor" },
         { id: createId("step"), label: "Rules applied", timestamp: createdAt, actor: "system-rules" },
         { id: createId("step"), label: "Suggestion generated", timestamp: createdAt, actor: "system-ai" },
@@ -690,7 +759,7 @@ export class MemoryLedgerStore implements LedgerStore {
       aggregateType: "evidence",
       aggregateId: evidenceId,
       eventType: "EvidenceReceived",
-      actorId: input.actorId,
+      actorId,
       occurredAt: createdAt,
       payload: evidence,
     });
@@ -712,7 +781,7 @@ export class MemoryLedgerStore implements LedgerStore {
       aggregateType: "voucher",
       aggregateId: voucherId,
       eventType: "VoucherCreated",
-      actorId: input.actorId,
+      actorId,
       occurredAt: createdAt,
       payload: voucher,
     });
@@ -731,7 +800,8 @@ export class MemoryLedgerStore implements LedgerStore {
     return { evidence, packet, voucher, review, voucherId };
   }
 
-  async composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket> {
+  async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket> {
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     const packet: EvidencePacket = {
       id: createId("packet"),
       evidenceIds: input.evidenceIds,
@@ -767,7 +837,7 @@ export class MemoryLedgerStore implements LedgerStore {
         aggregateType: "voucher",
         aggregateId: voucherIdToRelink,
         eventType: "EvidenceRelinked",
-        actorId: input.actorId,
+        actorId,
         occurredAt: nowIso(),
         payload: {
           voucherId: voucherIdToRelink,
@@ -937,7 +1007,7 @@ export class MemoryLedgerStore implements LedgerStore {
         aggregateType: "ledger",
         aggregateId: planned.aggregateId,
         eventType: "VoucherImported",
-        actorId: input.actorId,
+        actorId: input.actorId ?? DEMO_ACTOR_ID,
         occurredAt,
         payload: {
           source: "sie",
@@ -1030,8 +1100,9 @@ export class MemoryLedgerStore implements LedgerStore {
   async applyReviewDecision(
     reviewId: string,
     action: ReviewAction,
-    input: ReviewDecisionInput,
+    input: ReviewDecisionInput & ActorAttribution,
   ): Promise<ReviewTask | undefined> {
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     const review = this.reviews.get(reviewId);
     if (!review) return undefined;
 
@@ -1067,7 +1138,7 @@ export class MemoryLedgerStore implements LedgerStore {
               ? "Booked without VAT deduction (edited)"
               : "Booked without VAT deduction",
       timestamp: occurredAt,
-      actor: input.actorId,
+      actor: actorId,
     };
 
     // Clone-before-mutate (Rule 17): review/voucher may have been returned by
@@ -1098,7 +1169,7 @@ export class MemoryLedgerStore implements LedgerStore {
       // both vocabularies project identically (backward compatible).
       eventType:
         action === "approve" ? "ReviewApproved" : action === "reject" ? "ReviewRejected" : "ReviewBookedWithoutVat",
-      actorId: input.actorId,
+      actorId,
       occurredAt,
       payload: { action, notes: input.notes, ...(edited ? { edited } : {}) },
     });
@@ -1113,7 +1184,7 @@ export class MemoryLedgerStore implements LedgerStore {
         aggregateType: "ledger",
         aggregateId: updatedVoucher.id,
         eventType: "PostedToLedger",
-        actorId: input.actorId,
+        actorId,
         occurredAt,
         // `lines` in the payload keeps event-payload replay the truth in both
         // stores (fixes the Memory/Postgres parity gap — Phase 3 finding 13).
@@ -1130,7 +1201,7 @@ export class MemoryLedgerStore implements LedgerStore {
     return answer;
   }
 
-  async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
+  async runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun> {
     // Dedup at boundary (Rule 23): Postgres .in() dedupes server-side; Memory
     // must match for parity (Rule 11).
     const reviewIds = [...new Set(input.reviewIds)];
@@ -1169,7 +1240,7 @@ export class MemoryLedgerStore implements LedgerStore {
       aggregateType: "simulation",
       aggregateId: result.id,
       eventType: "SimulationExecuted",
-      actorId: input.actorId,
+      actorId: input.actorId ?? DEMO_ACTOR_ID,
       occurredAt: nowIso(),
       payload: result,
     });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { workspaceSnapshotSchema } from "@jpx-accounting/contracts";
-import type { ComplianceAlert, Voucher } from "@jpx-accounting/contracts";
+import type { ComplianceAlert, EvidenceCreateInput, Voucher } from "@jpx-accounting/contracts";
 import type { LedgerStore } from "@jpx-accounting/domain";
 import {
   deriveDeterministicExtraction,
@@ -113,6 +113,78 @@ test("MemoryLedgerStore.createEvidence without upload metadata keeps the legacy 
   const snapshot = await store.getSnapshot();
   const seeded = snapshot.vouchers.find((voucher) => voucher.id !== created.voucher.id);
   assert.equal(seeded?.voucherFields.grossAmount, 1249);
+});
+
+/** WS-D R19: identical (workspace, sha256, sizeBytes) fixture for the dedupe tests. */
+const dedupeCreateInput = (): EvidenceCreateInput => ({
+  organizationId: "org_jpx",
+  workspaceId: "workspace_main",
+  title: "Dedupe receipt",
+  originalFilename: "dedupe-receipt.jpg",
+  mimeType: "image/jpeg",
+  modalities: ["upload"],
+  sizeBytes: 2048,
+  sha256: "cd".repeat(32),
+});
+
+test("MemoryLedgerStore.createEvidence dedupes identical (workspace, sha256, sizeBytes) and appends nothing", async () => {
+  const store = new MemoryLedgerStore();
+  const first = await store.createEvidence(dedupeCreateInput());
+  assert.equal(first.deduped, undefined, "a genuine create must not carry the deduped marker");
+
+  const eventsAfterFirst = (await store.getEvents()).length;
+  const vouchersAfterFirst = (await store.getSnapshot()).vouchers.length;
+
+  // A deliberate re-upload of the same file is the same evidence — even when
+  // draft-level fields (title, modality) differ, only the content tuple counts.
+  const second = await store.createEvidence({
+    ...dedupeCreateInput(),
+    title: "Dedupe receipt (retried)",
+    modalities: ["share"],
+  });
+
+  assert.equal(second.deduped, true);
+  assert.equal(second.evidence.id, first.evidence.id, "dedup hit must return the FIRST evidence id");
+  assert.equal(second.voucherId, first.voucherId);
+  assert.equal(second.packet.id, first.packet.id);
+  assert.equal(second.review.id, first.review.id);
+  assert.equal(second.evidence.title, "Dedupe receipt", "the existing evidence is returned unmodified");
+
+  assert.equal((await store.getEvents()).length, eventsAfterFirst, "a dedup hit must append NO events");
+  assert.equal((await store.getSnapshot()).vouchers.length, vouchersAfterFirst, "no duplicate voucher");
+});
+
+test("MemoryLedgerStore.createEvidence never dedupes across workspaces or on differing size", async () => {
+  const store = new MemoryLedgerStore();
+  const first = await store.createEvidence(dedupeCreateInput());
+  const eventsAfterFirst = (await store.getEvents()).length;
+
+  // Same file, different tenant workspace: must create, never leak across tenants.
+  const otherWorkspace = await store.createEvidence({ ...dedupeCreateInput(), workspaceId: "workspace_other" });
+  assert.equal(otherWorkspace.deduped, undefined);
+  assert.notEqual(otherWorkspace.evidence.id, first.evidence.id);
+  const eventsAfterOther = (await store.getEvents()).length;
+  assert.equal(eventsAfterOther, eventsAfterFirst + 4, "cross-workspace create must append its four events");
+
+  // Same hash but different byte size: not the same content tuple.
+  const differentSize = await store.createEvidence({ ...dedupeCreateInput(), sizeBytes: 4096 });
+  assert.equal(differentSize.deduped, undefined);
+  assert.notEqual(differentSize.evidence.id, first.evidence.id);
+  assert.equal((await store.getEvents()).length, eventsAfterOther + 4);
+});
+
+test("MemoryLedgerStore.createEvidence without sha256 (legacy callers) skips dedupe entirely", async () => {
+  const store = new MemoryLedgerStore();
+  const base = dedupeCreateInput();
+  delete base.sha256;
+
+  const first = await store.createEvidence({ ...base });
+  const eventsAfterFirst = (await store.getEvents()).length;
+  const second = await store.createEvidence({ ...base });
+
+  assert.equal(second.deduped, undefined);
+  assert.notEqual(second.evidence.id, first.evidence.id, "hash-less creates must never collapse");
+  assert.equal((await store.getEvents()).length, eventsAfterFirst + 4);
 });
 
 test("MemoryLedgerStore.applyReviewDecision with edits posts corrected lines append-only", async () => {

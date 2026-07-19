@@ -7,7 +7,6 @@ import { deriveDeterministicExtraction, MemoryLedgerStore, mergeExtractedFields,
 const legacyCreateInput: EvidenceCreateInput = {
   organizationId: "org_jpx",
   workspaceId: "workspace_main",
-  actorId: "user_founder",
   title: "Extraction test receipt",
   originalFilename: "extraction-test.jpg",
   mimeType: "image/jpeg",

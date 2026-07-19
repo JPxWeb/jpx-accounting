@@ -400,6 +400,14 @@ export const evidenceCreateResultSchema = z.object({
   voucher: voucherSchema,
   review: reviewTaskSchema,
   voucherId: z.string(),
+  /**
+   * WS-D R19 idempotent-create marker: `true` when `createEvidence` matched an
+   * existing evidence row on (workspace, sha256, sizeBytes) and returned that
+   * row's context instead of creating a duplicate. A deliberate re-upload of
+   * the same file is treated as the same evidence. Absent (not `false`) on a
+   * genuine create so pre-dedupe payloads keep parsing unchanged.
+   */
+  deduped: z.boolean().optional(),
 });
 
 /** Result of one Document Intelligence (or stub) extraction run, as persisted by `updateEvidenceExtraction`. */
@@ -419,10 +427,17 @@ export const evidenceContextSchema = z.object({
 });
 export type EvidenceContext = z.infer<typeof evidenceContextSchema>;
 
+/**
+ * WS-C R5: request schemas carry NO `actorId` — attribution is derived
+ * server-side from the verified JWT subject (`user:<sub>`) or, with auth off,
+ * the demo sentinel. A client-posted `actorId` key is stripped by Zod's
+ * default unknown-key handling and never reaches a store. Read models
+ * (`ledgerEventSchema`, provenance timelines, integrity summaries) keep their
+ * actor fields — those record what the SERVER attributed.
+ */
 export const evidenceCreateInputSchema = z.object({
   organizationId: z.string(),
   workspaceId: z.string(),
-  actorId: z.string(),
   title: z.string(),
   originalFilename: z.string(),
   mimeType: z.string(),
@@ -448,15 +463,17 @@ export const evidenceCreateInputSchema = z.object({
 export const evidenceComposeInputSchema = z.object({
   organizationId: z.string(),
   workspaceId: z.string(),
-  actorId: z.string(),
   evidenceIds: z.array(z.string()).min(1),
   note: z.string().optional(),
   voiceTranscript: z.string().optional(),
 });
 
-export const suggestionRequestSchema = z.object({
-  actorId: z.string(),
-});
+/**
+ * Deliberately empty since the R5 actor sweep (the only field was the
+ * client-supplied `actorId`): kept as a named schema so the route still
+ * requires a JSON body and future request fields have a home.
+ */
+export const suggestionRequestSchema = z.object({});
 
 /**
  * Reviewer corrections applied at decision time (advisory pivot Phase 3).
@@ -501,24 +518,20 @@ export const reviewDecisionEditSchema = z.object({
 export type ReviewDecisionEdit = z.infer<typeof reviewDecisionEditSchema>;
 
 export const reviewDecisionInputSchema = z.object({
-  actorId: z.string(),
   notes: z.string().optional(),
   edited: reviewDecisionEditSchema.optional(),
 });
 
 export const assistantRequestSchema = z.object({
-  actorId: z.string(),
   question: z.string(),
   contextVoucherId: z.string().optional(),
 });
 
 export const knowledgeQuerySchema = z.object({
-  actorId: z.string(),
   query: z.string(),
 });
 
 export const simulationRequestSchema = z.object({
-  actorId: z.string(),
   title: z.string(),
   scenario: z.string(),
   reviewIds: z.array(z.string()).min(1).max(50),

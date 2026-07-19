@@ -5,7 +5,6 @@ import { simulationRequestSchema, simulationRunSchema } from "@jpx-accounting/co
 
 test("simulationRequestSchema requires reviewIds (min 1) and action", () => {
   const ok = simulationRequestSchema.parse({
-    actorId: "user_a",
     title: "What if I approve these",
     scenario: "approve 2 pending",
     reviewIds: ["r1", "r2"],
@@ -16,7 +15,6 @@ test("simulationRequestSchema requires reviewIds (min 1) and action", () => {
 
   assert.throws(() =>
     simulationRequestSchema.parse({
-      actorId: "u",
       title: "t",
       scenario: "s",
       reviewIds: [],
@@ -26,13 +24,23 @@ test("simulationRequestSchema requires reviewIds (min 1) and action", () => {
 
   assert.throws(() =>
     simulationRequestSchema.parse({
-      actorId: "u",
       title: "t",
       scenario: "s",
       reviewIds: ["r1"],
       action: "delete",
     }),
   );
+});
+
+test("simulationRequestSchema strips a client-posted actorId (WS-C R5 — attribution is server-derived)", () => {
+  const parsed = simulationRequestSchema.parse({
+    actorId: "user_spoof",
+    title: "t",
+    scenario: "s",
+    reviewIds: ["r1"],
+    action: "approve",
+  });
+  assert.ok(!("actorId" in parsed), "legacy payloads still validate, but the actorId key must be stripped");
 });
 
 test("simulationRunSchema requires balanceDelta and vatDelta", () => {

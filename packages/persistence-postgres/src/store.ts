@@ -39,12 +39,14 @@ import {
   buildVat,
   createId,
   currentMonthToken,
+  DEMO_ACTOR_ID,
   deriveVoucherFields,
   detectComplianceIssues,
   evaluateVoucherRules,
   filterLedgerLines,
   guessAccountingMethod,
   initialLedgerLines,
+  isDuplicateEvidence,
   mergeExtractedFields,
   nowIso,
   planSieImport,
@@ -53,6 +55,7 @@ import {
   ReviewNotFoundError,
   simulateApprovals,
   today,
+  type ActorAttribution,
   type LedgerLine,
   type LedgerStore,
   type ReportRange,
@@ -538,10 +541,70 @@ export class PostgresLedgerStore implements LedgerStore {
 
   // ---------------- LedgerStore API ----------------
 
-  async createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult> {
+  /**
+   * Idempotent-create dedupe (WS-D R19): find an EXISTING evidence row with the
+   * identical (workspace, sha256, sizeBytes) tuple and rebuild its full
+   * create-context. Must run INSIDE the chain transaction AFTER
+   * `lockWorkspaceTail` — the advisory lock serializes concurrent
+   * `createEvidence` calls, so the second racer always sees the first's
+   * committed row (a pre-transaction check would let both miss and duplicate).
+   * The shared `isDuplicateEvidence` predicate keeps the match semantics
+   * byte-identical with MemoryLedgerStore (CONVENTIONS Rule 11); rows whose
+   * packet/voucher/review links can't be resolved fall through to a genuine
+   * create, mirroring the memory store's defensive behavior. The lookup is
+   * indexed by migration 0008 (`organization_id, workspace_id, hash`).
+   */
+  private async findDuplicateEvidence(tx: Tx, input: EvidenceCreateInput): Promise<EvidenceCreateResult | undefined> {
+    if (input.sha256 === undefined || input.sizeBytes === undefined) return undefined;
+    const scope = { organizationId: input.organizationId, workspaceId: input.workspaceId };
+
+    const rows = await tx<EvidenceRow[]>`
+      SELECT id, organization_id, workspace_id, title, created_by, created_at,
+             original_filename, mime_type, blob_path, hash, trust_level, metadata, modalities
+      FROM ledger.evidence_objects
+      WHERE organization_id = ${input.organizationId}
+        AND workspace_id = ${input.workspaceId}
+        AND hash = ${input.sha256}
+      ORDER BY created_at ASC, id ASC
+    `;
+
+    for (const row of rows) {
+      const evidence = rowToEvidence(row);
+      // Re-check the full tuple (sizeBytes lives in metadata, not the WHERE clause).
+      if (!isDuplicateEvidence(evidence, input)) continue;
+
+      const { packet, voucher } = await resolvePacketAndVoucher(tx, scope, evidence.id);
+      if (!packet || !voucher) continue;
+
+      const reviewRows = await tx<ReviewRow[]>`
+        SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
+               suggested_action, suggestion, provenance_timeline, title, created_at
+        FROM ledger.review_tasks
+        WHERE voucher_id = ${voucher.id}
+          AND organization_id = ${input.organizationId}
+          AND workspace_id = ${input.workspaceId}
+        LIMIT 1
+      `;
+      const review = reviewRows[0] ? rowToReview(reviewRows[0]) : undefined;
+      if (!review) continue;
+
+      return { evidence, packet, voucher, review, voucherId: voucher.id, deduped: true };
+    }
+    return undefined;
+  }
+
+  async createEvidence(input: EvidenceCreateInput & ActorAttribution): Promise<EvidenceCreateResult> {
+    // Server-derived attribution or the demo sentinel — never a client value
+    // (R5; parity with MemoryLedgerStore, Rule 11).
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     return this.withChainForkRetry(() =>
       this.client.begin(async (tx) => {
         const tailHash = await this.lockWorkspaceTail(tx);
+
+        // Dedup hit: return the existing context and append NOTHING — no rows,
+        // no chain events; the transaction commits empty (WS-D R19).
+        const duplicate = await this.findDuplicateEvidence(tx, input);
+        if (duplicate) return duplicate;
 
         const createdAt = nowIso();
         const evidenceId = createId("evidence");
@@ -553,7 +616,7 @@ export class PostgresLedgerStore implements LedgerStore {
           organizationId: input.organizationId,
           workspaceId: input.workspaceId,
           createdAt,
-          createdBy: input.actorId,
+          createdBy: actorId,
           title: input.title,
           modalities: input.modalities,
           originalFilename: input.originalFilename,
@@ -656,7 +719,7 @@ export class PostgresLedgerStore implements LedgerStore {
           extractedFields,
           voucherFields: deriveVoucherFields(extractedFields, input),
           createdAt,
-          createdBy: input.actorId,
+          createdBy: actorId,
         };
 
         await tx`
@@ -702,7 +765,7 @@ export class PostgresLedgerStore implements LedgerStore {
             : "Approve the proposed posting.",
           suggestion,
           provenanceTimeline: [
-            { id: createId("step"), label: "Evidence received", timestamp: createdAt, actor: input.actorId },
+            { id: createId("step"), label: "Evidence received", timestamp: createdAt, actor: actorId },
             { id: createId("step"), label: "Fields extracted", timestamp: createdAt, actor: "system-extractor" },
             { id: createId("step"), label: "Rules applied", timestamp: createdAt, actor: "system-rules" },
             { id: createId("step"), label: "Suggestion generated", timestamp: createdAt, actor: "system-ai" },
@@ -752,7 +815,7 @@ export class PostgresLedgerStore implements LedgerStore {
             aggregateType: "evidence",
             aggregateId: evidenceId,
             eventType: "EvidenceReceived",
-            actorId: input.actorId,
+            actorId,
             occurredAt: createdAt,
             payload: evidence as unknown as Record<string, unknown>,
           },
@@ -784,7 +847,7 @@ export class PostgresLedgerStore implements LedgerStore {
             aggregateType: "voucher",
             aggregateId: voucherId,
             eventType: "VoucherCreated",
-            actorId: input.actorId,
+            actorId,
             occurredAt: createdAt,
             payload: voucher as unknown as Record<string, unknown>,
           },
@@ -818,7 +881,8 @@ export class PostgresLedgerStore implements LedgerStore {
   // answerAssistantQuestion, refreshComplianceAlerts and putCompanySettings
   // below stay lock-free: they mutate read models only and append NO chain
   // events — the chain lock's scope is chain appends.
-  async composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket> {
+  async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket> {
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     return this.withChainForkRetry(() =>
       this.client.begin(async (tx) => {
         const tailHash = await this.lockWorkspaceTail(tx);
@@ -898,7 +962,7 @@ export class PostgresLedgerStore implements LedgerStore {
               aggregateType: "voucher",
               aggregateId: voucherIdToRelink,
               eventType: "EvidenceRelinked",
-              actorId: input.actorId,
+              actorId,
               occurredAt: nowIso(),
               payload: {
                 voucherId: voucherIdToRelink,
@@ -1093,6 +1157,7 @@ export class PostgresLedgerStore implements LedgerStore {
   }
 
   async importSie(input: SieImportInput): Promise<SieImportResult> {
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     // Shared per-voucher planning (bounds → SieImportError, per-voucher
     // isolation into `skipped`) keeps Memory and Postgres in lockstep.
     const { vouchers, skipped } = planSieImport(input.file);
@@ -1183,7 +1248,7 @@ export class PostgresLedgerStore implements LedgerStore {
             'ledger',
             e.doc->>'aggregateId',
             'VoucherImported',
-            ${input.actorId},
+            ${actorId},
             ${occurredAt},
             e.doc->'payload',
             e.doc->>'previousHash',
@@ -1399,8 +1464,9 @@ export class PostgresLedgerStore implements LedgerStore {
   async applyReviewDecision(
     reviewId: string,
     action: ReviewAction,
-    input: ReviewDecisionInput,
+    input: ReviewDecisionInput & ActorAttribution,
   ): Promise<ReviewTask | undefined> {
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     return this.withChainForkRetry(() =>
       this.client.begin(async (tx) => {
         const tailHashStart = await this.lockWorkspaceTail(tx);
@@ -1471,7 +1537,7 @@ export class PostgresLedgerStore implements LedgerStore {
             id: createId("step"),
             label: stepLabel,
             timestamp: occurredAt,
-            actor: input.actorId,
+            actor: actorId,
           },
         ];
 
@@ -1517,7 +1583,7 @@ export class PostgresLedgerStore implements LedgerStore {
             aggregateType: "review",
             aggregateId: review.id,
             eventType: decisionEventType,
-            actorId: input.actorId,
+            actorId,
             occurredAt,
             payload: decisionPayload,
           },
@@ -1535,7 +1601,7 @@ export class PostgresLedgerStore implements LedgerStore {
               aggregateType: "ledger",
               aggregateId: voucher.id,
               eventType: "PostedToLedger",
-              actorId: input.actorId,
+              actorId,
               occurredAt,
               payload: {
                 action,
@@ -1569,7 +1635,8 @@ export class PostgresLedgerStore implements LedgerStore {
     return session;
   }
 
-  async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
+  async runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun> {
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     return this.withChainForkRetry(() =>
       this.client.begin(async (tx) => {
         const tailHash = await this.lockWorkspaceTail(tx);
@@ -1633,7 +1700,7 @@ export class PostgresLedgerStore implements LedgerStore {
             aggregateType: "simulation",
             aggregateId: result.id,
             eventType: "SimulationExecuted",
-            actorId: input.actorId,
+            actorId,
             occurredAt: nowIso(),
             payload: result as unknown as Record<string, unknown>,
           },

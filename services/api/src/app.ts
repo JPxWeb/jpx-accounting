@@ -28,6 +28,7 @@ import {
   buildSieExport,
   currentMonthToken,
   decodeSieBuffer,
+  DEMO_ACTOR_ID,
   encodePc8,
   InvalidPeriodTokenError,
   InvalidReviewEditError,
@@ -78,7 +79,8 @@ type CreateAppOptions = {
   allowTestReset?: boolean;
 };
 
-type AppVariables = { requestId: string };
+/** `jwtPayload` is set by `hono/jwk` after successful verification (WS-C R5 consumes it). */
+type AppVariables = { requestId: string; jwtPayload?: Record<string, unknown> | undefined };
 type AppEnv = { Variables: AppVariables };
 
 const DEFAULT_JSON_BODY_BYTES = 512 * 1024;
@@ -193,6 +195,52 @@ function getPostgresErrorCode(error: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
+/**
+ * The VERIFIED token subject, or undefined when no verified payload exists on
+ * this request (auth disabled, or the route is JWT-exempt). Only ever reads
+ * the `jwtPayload` context var that `hono/jwk` sets after verification —
+ * never a client-supplied header or body field (WS-C R5).
+ */
+function jwtSubject(c: Context<AppEnv>): string | undefined {
+  const payload = c.var.jwtPayload;
+  if (!payload || typeof payload !== "object") return undefined;
+  const sub = (payload as { sub?: unknown }).sub;
+  if (typeof sub !== "string") return undefined;
+  const trimmed = sub.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+/**
+ * Client-address bucket for rate limiting when no authenticated subject is
+ * available (WS-C item 3). Uses the RIGHTMOST X-Forwarded-For hop: on Azure
+ * App Service (the deploy target) the platform front-end APPENDS the
+ * immediate peer's address to whatever XFF the client sent, so the rightmost
+ * entry is the only hop a spoofer cannot choose — taking the leftmost lets an
+ * attacker mint a fresh bucket per request with a random header. Azure also
+ * formats the appended hop as `ip:port` (port varies per connection), so the
+ * port is stripped to keep one bucket per address. Falls back to `x-real-ip`,
+ * then a shared "unknown" bucket. Exported for regression tests.
+ */
+export function clientIpKey(xff: string | undefined, realIp: string | undefined): string {
+  const hops = (xff ?? "")
+    .split(",")
+    .map((hop) => hop.trim())
+    .filter((hop) => hop !== "");
+  const candidate = hops.at(-1) ?? realIp?.trim();
+  if (!candidate) return "unknown";
+  return stripIpPort(candidate);
+}
+
+/** `1.2.3.4:5678` → `1.2.3.4`; `[2001:db8::1]:443` → `2001:db8::1`; bare v4/v6 pass through. */
+function stripIpPort(address: string): string {
+  const bracketed = /^\[(.+)\](?::\d+)?$/.exec(address);
+  const bracketedIp = bracketed?.[1];
+  if (bracketedIp !== undefined) return bracketedIp;
+  const parts = address.split(":");
+  if (parts.length === 2 && /^\d+$/.test(parts[1] ?? "")) return parts[0] ?? address;
+  return address;
+}
+
 function jsonError(
   c: Context<AppEnv>,
   message: string,
@@ -238,7 +286,28 @@ export function createApp({
     toolApprovalSecret: advisor.toolApprovalSecret,
   });
 
-  async function postReviewDecision(input: ReviewDecisionInput, reviewId: string, outcome: ReviewAction) {
+  /**
+   * Server-derived actor for audit attribution (WS-C R5): with auth configured
+   * the actor is the VERIFIED token subject as `user:<sub>`; with auth off it
+   * is the repo's demo sentinel (CONVENTIONS Rule 20 adjacency). Client
+   * payloads no longer carry an actorId — the request schemas dropped the
+   * field, and an extra key is stripped by validation before it gets here. A
+   * verified token without a usable `sub` cannot be attributed → fail closed.
+   */
+  function deriveActorId(c: Context<AppEnv>): string {
+    if (!jwksUrl) return DEMO_ACTOR_ID;
+    const sub = jwtSubject(c);
+    if (!sub) {
+      throw new HTTPException(401, { message: "Authenticated token is missing a usable subject (sub) claim." });
+    }
+    return `user:${sub}`;
+  }
+
+  async function postReviewDecision(
+    input: ReviewDecisionInput & { actorId: string },
+    reviewId: string,
+    outcome: ReviewAction,
+  ) {
     const review = await currentStore.applyReviewDecision(reviewId, outcome, input);
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return review;
@@ -311,35 +380,6 @@ export function createApp({
     });
   }
 
-  // Rate-limit only the mutating surface so health/ready probes and read-only GETs are unaffected.
-  // 60 mutations per minute per IP fits an interactive single-user pilot — bump when scale-out lands
-  // and switch to a Redis-backed store (e.g. @hono-rate-limiter/redis against Azure Cache).
-  const apiMutationLimiter = rateLimiter<AppEnv>({
-    windowMs: 60_000,
-    limit: 60,
-    standardHeaders: "draft-7",
-    keyGenerator: (c) => {
-      const xff = c.req.header("x-forwarded-for");
-      if (xff) return xff.split(",")[0]?.trim() ?? "unknown";
-      return c.req.header("x-real-ip") ?? "unknown";
-    },
-    handler: (c) => jsonError(c, "Too many requests.", runtimeMode, 429),
-  });
-  app.use("/api/*", async (c, next) => {
-    if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
-      return next();
-    }
-    // Test instances (ALLOW_TEST_RESET) are exempt: the sequential E2E suite
-    // legitimately exceeds 60 mutations/min from one IP and started flaking
-    // with 429s on /api/testing/reset once the capture pipeline became real.
-    // Demo mode only (WS-A5c): a stray ALLOW_TEST_RESET on a normal-mode deploy
-    // must not silently disable the production rate limiter.
-    if (allowTestReset && runtimeMode === "demo") {
-      return next();
-    }
-    return apiMutationLimiter(c, next);
-  });
-
   // JWKS-backed JWT auth on ALL /api/* routes when configured (§A N7 — reads included: workspace
   // snapshots, reports, and evidence are as sensitive as the mutations that produced them). The
   // middleware ships with Hono (`hono/jwk`); against Supabase the JWKS URL is
@@ -349,6 +389,8 @@ export function createApp({
   // default to ES256 — a hardcoded RS256-only allowlist would 401 every legitimate user on such a
   // project. Skipped when unset so demo / unauthenticated pilots keep working — production sets
   // the env. /health + /ready live outside /api and stay public liveness/readiness probes.
+  // Registered BEFORE the rate limiters (WS-C 3) so their key generators can read the verified
+  // `jwtPayload` subject.
   if (jwksUrl) {
     const fetchJwksKeys = createCachedJwksFetcher(jwksUrl);
     const verifyJwt = jwk({ keys: fetchJwksKeys, alg: jwtAlgs });
@@ -364,6 +406,65 @@ export function createApp({
       return verifyJwt(c, next);
     });
   }
+
+  // Rate-limit keying (WS-C 3): one bucket per VERIFIED subject when auth is on — behind the web
+  // app's server-side proxy every browser shares the proxy's outbound address, so per-IP keying
+  // would give all users one shared bucket (and per-subject keying survives address churn). With
+  // auth off, fall back to the client address derived by `clientIpKey` (rightmost XFF hop — see
+  // its Azure App Service reasoning), then x-real-ip, then one shared "unknown" bucket.
+  const rateLimitKey = (c: Context<AppEnv>): string => {
+    const sub = jwtSubject(c);
+    if (sub) return `sub:${sub}`;
+    return `ip:${clientIpKey(c.req.header("x-forwarded-for"), c.req.header("x-real-ip"))}`;
+  };
+  // Test instances (ALLOW_TEST_RESET) are exempt: the sequential E2E suite legitimately exceeds
+  // the per-key budgets from one IP and started flaking with 429s once the capture pipeline
+  // became real. Demo mode only (WS-A5c): a stray ALLOW_TEST_RESET on a normal-mode deploy must
+  // not silently disable the production rate limiters.
+  const rateLimiterBypassed = allowTestReset && runtimeMode === "demo";
+
+  // Mutating surface: 60/min per key fits an interactive single-user pilot — bump when scale-out
+  // lands and switch to a Redis-backed store (e.g. @hono-rate-limiter/redis against Azure Cache).
+  const apiMutationLimiter = rateLimiter<AppEnv>({
+    windowMs: 60_000,
+    limit: 60,
+    standardHeaders: "draft-7",
+    keyGenerator: rateLimitKey,
+    handler: (c) => jsonError(c, "Too many requests.", runtimeMode, 429),
+  });
+  app.use("/api/*", async (c, next) => {
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
+      return next();
+    }
+    if (rateLimiterBypassed) {
+      return next();
+    }
+    return apiMutationLimiter(c, next);
+  });
+
+  // Modest READ limiter on the derivation-heavy GET surface (WS-C 3): report routes re-derive
+  // projections per request and the SIE export serializes the full ledger — an anonymous scraper
+  // hammering them is cheap DoS. 120/min per key stays far above the dashboard's parallel report
+  // queries; health/ready and the remaining GETs are unaffected.
+  const apiReadLimiter = rateLimiter<AppEnv>({
+    windowMs: 60_000,
+    limit: 120,
+    standardHeaders: "draft-7",
+    keyGenerator: rateLimitKey,
+    handler: (c) => jsonError(c, "Too many requests.", runtimeMode, 429),
+  });
+  app.use("/api/*", async (c, next) => {
+    if (c.req.method !== "GET") {
+      return next();
+    }
+    if (!c.req.path.startsWith("/api/reports/") && !c.req.path.startsWith("/api/exports/")) {
+      return next();
+    }
+    if (rateLimiterBypassed) {
+      return next();
+    }
+    return apiReadLimiter(c, next);
+  });
 
   app.use(
     "*",
@@ -549,12 +650,13 @@ export function createApp({
 
   app.post("/api/evidence", jsonValidated(evidenceCreateInputSchema), async (context) => {
     const input = context.req.valid("json");
-    return context.json(await currentStore.createEvidence(input), 201);
+    // Attribution comes from the server-side derivation, never the payload (R5).
+    return context.json(await currentStore.createEvidence({ ...input, actorId: deriveActorId(context) }), 201);
   });
 
   app.post("/api/evidence/compose", jsonValidated(evidenceComposeInputSchema), async (context) => {
     const input = context.req.valid("json");
-    return context.json(await currentStore.composeEvidence(input), 201);
+    return context.json(await currentStore.composeEvidence({ ...input, actorId: deriveActorId(context) }), 201);
   });
 
   app.post("/api/uploads/init", jsonValidated(uploadInitSchema), async (context) => {
@@ -679,26 +781,35 @@ export function createApp({
   });
 
   app.post("/api/reviews/:id/approve", jsonValidated(reviewDecisionInputSchema), async (c) =>
-    c.json(await postReviewDecision(c.req.valid("json"), c.req.param("id"), "approve")),
+    c.json(
+      await postReviewDecision({ ...c.req.valid("json"), actorId: deriveActorId(c) }, c.req.param("id"), "approve"),
+    ),
   );
 
   app.post("/api/reviews/:id/reject", jsonValidated(reviewDecisionInputSchema), async (c) =>
-    c.json(await postReviewDecision(c.req.valid("json"), c.req.param("id"), "reject")),
+    c.json(
+      await postReviewDecision({ ...c.req.valid("json"), actorId: deriveActorId(c) }, c.req.param("id"), "reject"),
+    ),
   );
 
   app.post("/api/reviews/:id/book-without-vat", jsonValidated(reviewDecisionInputSchema), async (c) =>
-    c.json(await postReviewDecision(c.req.valid("json"), c.req.param("id"), "book-without-vat")),
+    c.json(
+      await postReviewDecision(
+        { ...c.req.valid("json"), actorId: deriveActorId(c) },
+        c.req.param("id"),
+        "book-without-vat",
+      ),
+    ),
   );
 
   app.post("/api/imports/sie", async (context) => {
     // Raw file bytes, not JSON: decode (strict UTF-8 → CP437 fallback), parse
     // the SIE 4 subset, and let the store append VoucherImported events.
-    // Deferred-auth identity matches the rest of the demo pipeline; override
-    // via ?actorId= until real auth attribution lands.
+    // Attribution is server-derived (R5) — the old `?actorId=` override let any
+    // caller stamp arbitrary identities into the 7-year audit trail.
     const bytes = new Uint8Array(await context.req.arrayBuffer());
     const parsed = parseSie(decodeSieBuffer(bytes));
-    const actorId = context.req.query("actorId") ?? "user_founder";
-    const result = await currentStore.importSie({ actorId, file: parsed });
+    const result = await currentStore.importSie({ actorId: deriveActorId(context), file: parsed });
     return context.json(result);
   });
 
@@ -719,7 +830,9 @@ export function createApp({
   // stream or Azure streamText — both route tool approvals through the
   // existing review decision. Inherits the full mutation middleware stack
   // (body limit, rate limiter, JWT when configured) like every /api/* POST.
-  app.post("/api/advisor/chat", (context) => advisorChat(context.req.raw));
+  // The server-derived actor rides along so approved proposeReviewAction
+  // executions attribute to the SAME identity as a direct review decision (R5).
+  app.post("/api/advisor/chat", (context) => advisorChat(context.req.raw, { actorId: deriveActorId(context) }));
 
   app.post("/api/knowledge/query", jsonValidated(knowledgeQuerySchema), async (context) => {
     const input = context.req.valid("json");
@@ -731,7 +844,7 @@ export function createApp({
 
   app.post("/api/simulations/run", jsonValidated(simulationRequestSchema), async (context) => {
     const input = context.req.valid("json");
-    return context.json(await currentStore.runSimulation(input), 201);
+    return context.json(await currentStore.runSimulation({ ...input, actorId: deriveActorId(context) }), 201);
   });
 
   app.post("/api/close-runs", async (context) => context.json(await currentStore.getCloseRun(), 201));

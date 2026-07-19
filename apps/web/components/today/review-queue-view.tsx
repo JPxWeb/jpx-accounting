@@ -39,8 +39,6 @@ import { Button } from "../ui/button";
  * posted voucher.
  */
 
-const ACTOR_ID = "user_founder";
-
 function applyOptimisticUpdate(current: WorkspaceSnapshot | undefined, review: ReviewTask | undefined) {
   if (!current || !review) return current;
   // Shallow-clone the mutated review so React Query's structural sharing can't
@@ -114,23 +112,24 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
     [queryClient],
   );
 
+  // No actorId in any mutation payload (WS-C R5): the server derives the
+  // actor from the verified subject / demo sentinel.
   const approveReview = useMutation({
-    mutationFn: (id: string) => apiClient.approveReview(id, { actorId: ACTOR_ID }),
+    mutationFn: (id: string) => apiClient.approveReview(id),
     onSuccess: onMutationSuccess,
   });
   const rejectReview = useMutation({
-    mutationFn: (id: string) => apiClient.rejectReview(id, { actorId: ACTOR_ID }),
+    mutationFn: (id: string) => apiClient.rejectReview(id),
     onSuccess: onMutationSuccess,
   });
   const bookWithoutVatReview = useMutation({
-    mutationFn: (id: string) => apiClient.bookWithoutVatReview(id, { actorId: ACTOR_ID }),
+    mutationFn: (id: string) => apiClient.bookWithoutVatReview(id),
     onSuccess: onMutationSuccess,
   });
 
   const simulationPreview = useMutation({
     mutationFn: (reviewIds: string[]) =>
       apiClient.runSimulation({
-        actorId: ACTOR_ID,
         title: tSimulation("requestTitle", { count: reviewIds.length }),
         scenario: "review-queue-preview",
         reviewIds,

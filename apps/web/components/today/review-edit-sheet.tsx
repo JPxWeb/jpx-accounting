@@ -16,7 +16,6 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { apiClient } from "../../lib/client";
 import { useDialogFocusTrap } from "../../lib/focus-trap";
 import { getErrorMessage } from "../../lib/request-errors";
-import { WORKSPACE_IDENTITY } from "../../lib/workspace-identity";
 import { registerGlobalTourBlocker } from "../onboarding/onboarding-shell";
 import { Button } from "../ui/button";
 
@@ -82,9 +81,9 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
 
   useDialogFocusTrap(dialogRef, true, onClose, accountSelectRef);
 
+  // No actorId (WS-C R5): the server derives attribution.
   const approveWithEdits = useMutation({
-    mutationFn: (edited: ReviewDecisionEdit) =>
-      apiClient.approveReview(review.id, { actorId: WORKSPACE_IDENTITY.actorId, edited }),
+    mutationFn: (edited: ReviewDecisionEdit) => apiClient.approveReview(review.id, { edited }),
     onSuccess,
   });
 

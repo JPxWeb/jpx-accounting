@@ -232,6 +232,151 @@ test("PostgresLedgerStore.createEvidence upload metadata round-trip + Memory fie
 });
 
 test(
+  "WS-D R19: createEvidence dedupes identical (workspace, sha256, sizeBytes), appends nothing, and survives a concurrent race",
+  { skip },
+  async () => {
+    if (!databaseUrl) return;
+    const orgId = `org_test_${Date.now().toString(36)}`;
+    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const client = createPostgresClient({ connectionString: databaseUrl });
+    const racerClient = createPostgresClient({ connectionString: databaseUrl });
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+      const dedupeInput = () => ({
+        organizationId: orgId,
+        workspaceId: wsId,
+        actorId: "user_test",
+        title: "Dedupe receipt",
+        originalFilename: "dedupe-receipt.jpg",
+        mimeType: "image/jpeg",
+        modalities: ["upload" as const],
+        sizeBytes: 2048,
+        sha256: "ef".repeat(32),
+      });
+
+      const first = await store.createEvidence(dedupeInput());
+      assert.equal(first.deduped, undefined, "a genuine create must not carry the deduped marker");
+
+      // A deliberate re-upload of the same file is the same evidence — draft-level
+      // fields (title, modality) don't matter, only the content tuple.
+      const second = await store.createEvidence({
+        ...dedupeInput(),
+        title: "Dedupe receipt (retried)",
+        modalities: ["share" as const],
+      });
+      assert.equal(second.deduped, true);
+      assert.equal(second.evidence.id, first.evidence.id, "dedup hit must return the FIRST evidence id");
+      assert.equal(second.voucherId, first.voucherId);
+      assert.equal(second.packet.id, first.packet.id);
+      assert.equal(second.review.id, first.review.id);
+      assert.equal(second.evidence.title, "Dedupe receipt", "the existing evidence is returned unmodified");
+
+      const eventsAfterDedupe = await store.getEvents();
+      assert.equal(eventsAfterDedupe.length, 4, "a dedup hit must append NO events — chain stays clean");
+
+      // Concurrent race on two real connections (the WS-D item's actual bug): the
+      // advisory lock serializes the appenders, so exactly one creates and the
+      // blocked racer sees the committed row and dedupes.
+      const racerStore = new PostgresLedgerStore(racerClient, { organizationId: orgId, workspaceId: wsId });
+      const raceInput = () => ({ ...dedupeInput(), sha256: "ab12".repeat(16), sizeBytes: 4096 });
+      const [left, right] = await Promise.all([
+        store.createEvidence(raceInput()),
+        racerStore.createEvidence(raceInput()),
+      ]);
+      assert.equal(left.evidence.id, right.evidence.id, "both racers must land on ONE evidence row");
+      assert.equal(
+        [left, right].filter((r) => r.deduped === true).length,
+        1,
+        "exactly one racer dedupes, the other creates",
+      );
+      const evidenceRows = await client<Array<{ count: string }>>`
+        SELECT COUNT(*)::text AS count FROM ledger.evidence_objects
+        WHERE organization_id = ${orgId} AND workspace_id = ${wsId}
+      `;
+      assert.equal(evidenceRows[0]?.count, "2", "one row per distinct content tuple");
+      assert.equal((await store.getEvents()).length, 8, "four events per genuine create, none for dedup hits");
+
+      // Memory parity (CONVENTIONS Rule 11): same duplicate input, same idempotent answer.
+      const memory = new MemoryLedgerStore();
+      const memInput = { ...dedupeInput(), organizationId: "org_jpx", workspaceId: "workspace_main" };
+      const memFirst = await memory.createEvidence(memInput);
+      const memSecond = await memory.createEvidence(memInput);
+      assert.equal(memFirst.deduped, undefined);
+      assert.equal(memSecond.deduped, true);
+      assert.equal(memSecond.evidence.id, memFirst.evidence.id);
+
+      // Migration 0008 schema pin: the dedupe lookup must be indexed, not a seq scan.
+      const indexRows = await client<Array<{ indexname: string }>>`
+        SELECT indexname FROM pg_indexes
+        WHERE schemaname = 'ledger' AND tablename = 'evidence_objects'
+          AND indexname = 'ledger_evidence_objects_dedupe_idx'
+      `;
+      assert.equal(indexRows.length, 1, "migration 0008 dedupe index must exist");
+    } finally {
+      await client`delete from ledger.events where organization_id = ${orgId}`;
+      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_packet_items
+        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+      await closePostgresClient(racerClient);
+      await closePostgresClient(client);
+    }
+  },
+);
+
+test("WS-D R19: createEvidence never dedupes across workspaces and skips dedupe without sha256", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsA = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const wsB = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const storeA = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsA });
+    const storeB = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsB });
+    const fileInput = (workspaceId: string) => ({
+      organizationId: orgId,
+      workspaceId,
+      actorId: "user_test",
+      title: "Tenant-scoped receipt",
+      originalFilename: "tenant-receipt.jpg",
+      mimeType: "image/jpeg",
+      modalities: ["upload" as const],
+      sizeBytes: 1024,
+      sha256: "0123".repeat(16),
+    });
+
+    // Same file, two workspaces: dedupe must NOT cross the tenant boundary.
+    const inA = await storeA.createEvidence(fileInput(wsA));
+    const inB = await storeB.createEvidence(fileInput(wsB));
+    assert.equal(inB.deduped, undefined, "cross-workspace create must be genuine");
+    assert.notEqual(inB.evidence.id, inA.evidence.id);
+    assert.equal((await storeB.getEvents()).length, 4, "the second workspace gets its own four-event create chain");
+
+    // Missing sha256 (legacy callers): identical metadata still creates every time.
+    const legacyInput = () => {
+      const { sha256: _sha256, ...rest } = fileInput(wsA);
+      return rest;
+    };
+    const legacyFirst = await storeA.createEvidence(legacyInput());
+    const legacySecond = await storeA.createEvidence(legacyInput());
+    assert.equal(legacySecond.deduped, undefined);
+    assert.notEqual(legacySecond.evidence.id, legacyFirst.evidence.id, "hash-less creates must never collapse");
+    assert.equal((await storeA.getEvents()).length, 12, "three genuine creates in workspace A");
+  } finally {
+    await client`delete from ledger.events where organization_id = ${orgId}`;
+    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_packet_items
+        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+  }
+});
+
+test(
   "PostgresLedgerStore.updateEvidenceExtraction persists refresh, chains events, guards decided vouchers + Memory parity",
   { skip },
   async () => {

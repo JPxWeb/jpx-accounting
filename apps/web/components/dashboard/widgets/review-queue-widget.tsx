@@ -13,7 +13,6 @@ import { applyReviewSnapshotUpdate } from "../../today/review-queue-view";
 import { Money } from "../../ui/money";
 import type { DashboardData } from "../use-dashboard-data";
 
-const ACTOR_ID = "user_founder";
 const BATCH_POPOVER_ID = "review-widget-batch-popover";
 
 const BAND_STYLES: Record<ConfidenceBand, string> = {
@@ -35,8 +34,9 @@ export function ReviewQueueWidget({ data }: { data: DashboardData }) {
   const queryClient = useQueryClient();
   const [batchRunning, setBatchRunning] = useState(false);
 
+  // No actorId in the payload (WS-C R5): attribution is server-derived.
   const approveReview = useMutation({
-    mutationFn: (id: string) => apiClient.approveReview(id, { actorId: ACTOR_ID }),
+    mutationFn: (id: string) => apiClient.approveReview(id),
     onSuccess: (review) => {
       applyReviewSnapshotUpdate(queryClient, review);
       invalidateLedgerDerived(queryClient);
@@ -62,7 +62,7 @@ export function ReviewQueueWidget({ data }: { data: DashboardData }) {
       for (const review of targets) {
         // Sequential on purpose: each approval is an ordinary review decision
         // appended to the hash chain — no bulk mutation exists, by design.
-        const updated = await apiClient.approveReview(review.id, { actorId: ACTOR_ID });
+        const updated = await apiClient.approveReview(review.id);
         applyReviewSnapshotUpdate(queryClient, updated);
         approved += 1;
       }
