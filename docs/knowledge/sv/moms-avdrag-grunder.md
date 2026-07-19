@@ -2,7 +2,7 @@
 title: Momsavdrag — grunderna för ingående moms
 source: Skatteverket — Avdragsrätt för ingående moms; Mervärdesskattelagen (2023:200)
 url: https://www.skatteverket.se/foretag/moms
-effective: 2026-07-04
+effective: 2026-07-19
 ---
 
 ## Rätten till avdrag
@@ -16,8 +16,10 @@ effective: 2026-07-04
 ## Skattesatserna
 
 - 25 procent är normalskattesatsen och gäller de flesta varor och tjänster.
-- 12 procent gäller bland annat livsmedel, restaurang- och cateringtjänster (dock 25 procent på alkohol) samt rumsuthyrning i hotellverksamhet.
+- 12 procent gäller bland annat restaurang- och cateringtjänster (dock 25 procent på alkohol) samt rumsuthyrning i hotellverksamhet.
 - 6 procent gäller bland annat böcker och tidningar, persontransporter samt entré till kultur- och idrottsevenemang.
+- Livsmedel har tillfälligt sänkt moms från 12 till 6 procent under perioden 1 april 2026–31 december 2027; alkoholhaltiga drycker omfattas inte utan ligger kvar på 25 procent (Skatteverket, "Livsmedelsmomsen sänks till 6 procent", 2026).
+- Gränsdragning under sänkningen: servering på plats är en restaurangtjänst med 12 procent moms, medan hämtmat utan serveringstjänster räknas som livsmedel med 6 procent moms.
 
 ## Vanliga avdragsförbud och begränsningar
 

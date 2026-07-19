@@ -2,7 +2,7 @@
 title: Representation — avdrag och moms
 source: Skatteverket — Representation; inkomstskattelagen 16 kap. 2 §
 url: https://www.skatteverket.se/foretag/skatterochavdrag/avdragforforetag/representation
-effective: 2017-01-01
+effective: 2026-07-19
 ---
 
 ## Inkomstskatt: måltider är inte avdragsgilla
@@ -15,8 +15,8 @@ effective: 2017-01-01
 ## Moms: avdrag på underlag upp till 300 kronor
 
 - Momsavdrag medges på ett underlag om högst 300 kronor exklusive moms per person och tillfälle för mat och dryck vid representation.
-- Vid 25 procent moms är det maximala avdraget 75 kronor per person; vid 12 procent moms 36 kronor per person.
-- När både mat (12 procent) och alkohol (25 procent) ingår får avdraget i stället beräknas med schablon: 46 kronor per person och tillfälle, förutsatt att kostnaden överstiger 300 kronor exklusive moms per person och att den debiterade momsen är minst 46 kronor per person.
+- Vid 25 procent moms är det maximala avdraget 75 kronor per person; vid 12 procent moms (till exempel servering på restaurang) 36 kronor per person; vid 6 procent moms (livsmedel och hämtmat under den tillfälliga sänkningen 1 april 2026–31 december 2027) 18 kronor per person.
+- När både mat och alkohol (25 procent) ingår får avdraget i stället beräknas med schablon, förutsatt att kostnaden överstiger 300 kronor exklusive moms per person och att den debiterade momsen är minst schablonbeloppet: 46 kronor per person och tillfälle när maten har 12 procent moms, respektive 33 kronor per person och tillfälle när maten har 6 procent moms (Skatteverket — Avdrag för moms vid representation).
 - Överskjutande moms — den del som avser underlag över 300 kronor — får varken dras av som moms eller som kostnad utöver de vanliga representationsreglerna.
 
 ## Kontering
