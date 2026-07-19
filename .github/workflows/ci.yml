@@ -130,6 +130,9 @@ jobs:
       - name: Build for E2E
         run: pnpm build:e2e
 
+      # Visual specs compare against the committed *-linux.png baselines, generated in the
+      # pinned Playwright Docker image (workflow: scripts/visual-baselines.md). If they all
+      # fail with "snapshot doesn't exist", the linux baselines were not regenerated.
       - name: Run E2E tests
         run: npx playwright test
 

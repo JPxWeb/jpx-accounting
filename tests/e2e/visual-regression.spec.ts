@@ -10,6 +10,11 @@ import { resetApiState } from "./test-helpers";
  *
  * Dynamic regions (timestamps, generated ids) get masked via
  * [data-visual-mask] attributes on the element in question.
+ *
+ * Baselines are PER-PLATFORM (`-win32` from Windows dev machines, `-linux`
+ * from the pinned Playwright Docker image so ubuntu CI compares real
+ * baselines). Generation + review workflow, and the known statutory-calendar
+ * drift on today/reports: scripts/visual-baselines.md.
  */
 const SCREENS: { name: string; path: string; readySelector?: string }[] = [
   { name: "today", path: "/today" },
