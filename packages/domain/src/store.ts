@@ -40,7 +40,7 @@ import {
 import { assertBalancedPosting, postingImbalanceOre } from "./posting-invariants";
 import { buildJournal, buildBalances, buildVat, filterLedgerLines } from "./projections";
 import { buildReportPack } from "./reports/pack";
-import { currentMonthToken, localTodayIso } from "./reports/period";
+import { currentMonthToken } from "./reports/period";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
@@ -153,19 +153,36 @@ export function resolveReviewDecisionEdit(
   if (anyAmountGiven) {
     if (edited.grossAmount === undefined || edited.netAmount === undefined || edited.vatAmount === undefined) {
       issues.push("Amount edits must provide grossAmount, netAmount, and vatAmount together.");
-    } else if (Math.abs(edited.netAmount + edited.vatAmount - edited.grossAmount) > 0.01) {
-      issues.push(
-        `Edited amounts do not add up: net (${edited.netAmount}) + VAT (${edited.vatAmount}) must equal gross (${edited.grossAmount}) within 0.01.`,
-      );
+    } else {
+      // Sub-öre amounts would sail through the sum check and then blow the
+      // öre-exact assertBalanced invariant MID-mutation (500, and a
+      // half-applied decision in the memory store) — reject them here, 422,
+      // before anything mutates.
+      for (const [name, value] of [
+        ["grossAmount", edited.grossAmount],
+        ["netAmount", edited.netAmount],
+        ["vatAmount", edited.vatAmount],
+      ] as const) {
+        if (!Number.isFinite(value) || Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) {
+          issues.push(`Edited ${name} (${value}) must be öre-exact (at most two decimals).`);
+        }
+      }
+      if (Math.abs(edited.netAmount + edited.vatAmount - edited.grossAmount) > 0.01) {
+        issues.push(
+          `Edited amounts do not add up: net (${edited.netAmount}) + VAT (${edited.vatAmount}) must equal gross (${edited.grossAmount}) within 0.01.`,
+        );
+      }
     }
   }
   if (edited.bookedAt !== undefined) {
     // R13: an explicit accounting-date override must be a real calendar day
-    // and must not book into the future. (Locked/closed-period enforcement is
-    // a Later feature — today any past day is accepted.)
+    // and must not book into the future. One day of slack absorbs client/server
+    // timezone skew (a Stockholm browser is a calendar day ahead of a UTC-hosted
+    // API between 00:00 and 02:00 local — its "today" must not 422). Locked/
+    // closed-period enforcement is a Later feature — any past day is accepted.
     if (!isValidCalendarDay(edited.bookedAt)) {
       issues.push(`Edited bookedAt (${edited.bookedAt}) must be a valid YYYY-MM-DD calendar day.`);
-    } else if (edited.bookedAt > localTodayIso()) {
+    } else if (edited.bookedAt > localDayOfTimestamp(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())) {
       issues.push(`Edited bookedAt (${edited.bookedAt}) must not be in the future.`);
     }
   }

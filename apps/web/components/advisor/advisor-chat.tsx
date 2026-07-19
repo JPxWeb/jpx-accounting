@@ -11,6 +11,7 @@ import {
   prependAssistantThread,
   type StoredAssistantThread,
 } from "../../lib/assistant-thread-storage";
+import { getSupabaseAccessToken } from "../../lib/auth";
 import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { getErrorMessage } from "../../lib/request-errors";
 import { webRuntimeConfig } from "../../lib/runtime-config";
@@ -47,6 +48,12 @@ export function AdvisorChat({
     }
     return new DefaultChatTransport<AdvisorUIMessage>({
       api: `${webRuntimeConfig.apiBaseUrl ?? ""}/api/advisor/chat`,
+      // Auth-on deployments gate ALL /api/* methods — resolve the bearer per
+      // request exactly like lib/client.ts (no session → no header; demo unchanged).
+      headers: async () => {
+        const token = await getSupabaseAccessToken();
+        return token ? { Authorization: `Bearer ${token}` } : {};
+      },
     });
   }, []);
 

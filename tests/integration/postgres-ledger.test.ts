@@ -679,8 +679,10 @@ test(
         title: "R13 future booking date",
         originalFilename: "r13-future.jpg",
       });
+      // +2 days: the server allows ONE day of slack for client/server timezone
+      // skew (resolveReviewDecisionEdit), so rejection starts at day-after-tomorrow.
       const tomorrowDate = new Date();
-      tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+      tomorrowDate.setDate(tomorrowDate.getDate() + 2);
       const pad2 = (value: number) => String(value).padStart(2, "0");
       const tomorrow = `${tomorrowDate.getFullYear()}-${pad2(tomorrowDate.getMonth() + 1)}-${pad2(tomorrowDate.getDate())}`;
       await assert.rejects(
@@ -2315,3 +2317,82 @@ test(
     }
   },
 );
+
+test("R15 follow-up: appends survive a wall-clock inversion (seq-primary tail pick)", { skip }, async () => {
+  if (!databaseUrl) return;
+  const orgId = `org_test_${Date.now().toString(36)}`;
+  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const client = createPostgresClient({ connectionString: databaseUrl });
+  try {
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+
+    // 1. Normal append establishes a chain tail at wall-clock "now".
+    await store.createEvidence({
+      organizationId: orgId,
+      workspaceId: wsId,
+      actorId: "user_test",
+      title: "Pre-inversion evidence",
+      originalFilename: "pre-inversion.pdf",
+      mimeType: "application/pdf",
+      modalities: ["pdf"],
+    });
+    const beforeInversion = await store.getEvents();
+    const tail = beforeInversion.at(-1)!;
+
+    // 2. Simulate an NTP step-back: the NEXT append chains correctly onto the
+    //    tail but carries an occurred_at 30 minutes in the PAST. Written raw,
+    //    exactly as the store's own append would during a clock excursion.
+    const backdatedPayload = { evidenceId: "ev_backdated", title: "Clock-inversion append" };
+    const backdatedHash = buildEventHash(tail.eventHash, backdatedPayload);
+    const backdatedAt = new Date(Date.now() - 30 * 60_000).toISOString();
+    await client`
+      INSERT INTO ledger.events (
+        id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+        actor_id, occurred_at, payload, previous_hash, event_hash, digest_date
+      ) VALUES (
+        ${`evt_backdated_${wsId}`}, ${orgId}, ${wsId}, ${"evidence"}, ${"ev_backdated"},
+        ${"EvidenceReceived"}, ${"user_test"}, ${backdatedAt}, ${client.json(backdatedPayload as never)},
+        ${tail.eventHash}, ${backdatedHash}, ${backdatedAt.slice(0, 10)}
+      )
+    `;
+
+    // 3. With an occurred_at-keyed tail pick this next append is permanently
+    //    wedged: the pick returns the pre-inversion tail, the fork constraint
+    //    23505s, and the single retry re-picks the same wrong tail. With the
+    //    seq-primary pick it chains onto the backdated event and succeeds.
+    const after = await store.createEvidence({
+      organizationId: orgId,
+      workspaceId: wsId,
+      actorId: "user_test",
+      title: "Post-inversion evidence",
+      originalFilename: "post-inversion.pdf",
+      mimeType: "application/pdf",
+      modalities: ["pdf"],
+    });
+    assert.ok(after.evidence.id, "append after a clock inversion must not wedge on the fork constraint");
+
+    // 4. getEvents returns true chain order (seq), so integrity holds even
+    //    though occurred_at is non-monotonic across the chain.
+    const events = await store.getEvents();
+    const backdatedIndex = events.findIndex((e) => e.eventHash === backdatedHash);
+    assert.ok(backdatedIndex > 0, "backdated event present");
+    assert.equal(events[backdatedIndex]!.previousHash, tail.eventHash);
+    assert.equal(
+      events[backdatedIndex + 1]!.previousHash,
+      backdatedHash,
+      "post-inversion append must chain onto the backdated tail",
+    );
+    const summary = summarizeEventIntegrity(events, { verifiedAt: new Date().toISOString(), verifyPayloads: true });
+    assert.equal(summary.chainLinked, true, "chain must verify in seq order despite occurred_at inversion");
+    assert.equal(summary.payloadMismatchCount, 0);
+  } finally {
+    await client`delete from ledger.events where organization_id = ${orgId}`;
+    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
+    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_packet_items
+      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
+    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
+    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
+    await closePostgresClient(client);
+  }
+});

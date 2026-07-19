@@ -275,6 +275,32 @@ test("MemoryLedgerStore.applyReviewDecision rejects inconsistent edited amounts 
     (error) => error instanceof InvalidReviewEditError,
   );
 
+  // Sub-öre amounts must 422 HERE, pre-mutation — historically they passed the
+  // sum check (10.005 + 2.5 = 12.505 is "consistent") and then blew the
+  // öre-exact assertBalanced invariant mid-mutation as a 500.
+  await assert.rejects(
+    () =>
+      store.applyReviewDecision(review.id, "approve", {
+        actorId: "user_founder",
+        edited: {
+          accountNumber: "6110",
+          accountName: "Kontorsmateriel",
+          vatCode: "VAT25",
+          grossAmount: 12.505,
+          netAmount: 10.005,
+          vatAmount: 2.5,
+        },
+      }),
+    (error) => {
+      assert.ok(error instanceof InvalidReviewEditError);
+      assert.ok(
+        error.issues.some((issue) => issue.includes("öre-exact")),
+        "expected the öre-exactness issue",
+      );
+      return true;
+    },
+  );
+
   // Nothing mutated: the review stays decidable and no events/lines landed.
   const [reviewAfter] = await store.getReviewFeed();
   assert.equal(reviewAfter?.status, "needs-review");

@@ -18,7 +18,9 @@ const responseHeaders = new Set([
 const requestHeaders = ["accept", "authorization", "content-type", "x-request-id"] as const;
 
 /** Cap on proxied request bodies; the API's own upload limit is 16 MB. */
-const MAX_PROXY_BODY_BYTES = 25 * 1024 * 1024;
+// Must exceed the API's own largest per-route body limit (32 MiB SIE import in
+// services/api/src/app.ts) — the proxy is a conduit, not the tighter gate.
+const MAX_PROXY_BODY_BYTES = 33 * 1024 * 1024;
 
 /**
  * The proxy exposes strictly the upstream's `/api/*` surface. Next decodes

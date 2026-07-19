@@ -205,7 +205,9 @@ test("invalid edited bookedAt (future or malformed) throws InvalidReviewEditErro
   const journalBefore = (await store.getReports()).journal.length;
 
   const base = { accountNumber: "6110", accountName: "Kontorsmateriel", vatCode: "VAT25" };
-  for (const bookedAt of [localDayOffset(1), "2026-02-30", "garbage", "2026-04-02T10:00:00.000Z"]) {
+  // +2 days: the server allows ONE day of slack to absorb client/server
+  // timezone skew (see resolveReviewDecisionEdit), so "future" starts at +2.
+  for (const bookedAt of [localDayOffset(2), "2026-02-30", "garbage", "2026-04-02T10:00:00.000Z"]) {
     await assert.rejects(
       () => store.applyReviewDecision(review.id, "approve", { actorId: "user_founder", edited: { ...base, bookedAt } }),
       (error) => {

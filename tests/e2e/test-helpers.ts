@@ -37,7 +37,7 @@ export async function activateControl(locator: Locator, isMobile: boolean) {
 export const createEvidencePayload = {
   organizationId: "org_jpx",
   workspaceId: "workspace_main",
-  actorId: "user_founder",
+
   title: "Playwright evidence sample",
   originalFilename: "playwright-receipt.jpg",
   mimeType: "image/jpeg",

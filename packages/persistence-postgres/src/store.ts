@@ -432,12 +432,17 @@ export class PostgresLedgerStore implements LedgerStore {
         hashtextextended(${`${this.defaults.organizationId}/${this.defaults.workspaceId}`}, 0)
       )
     `;
+    // seq-PRIMARY, not occurred_at: seq is the true append order. Keying the
+    // tail on wall-clock occurred_at wedges the workspace permanently after a
+    // single clock inversion (NTP step-back between appends): the pick returns
+    // the wrong "newest" event, the fork constraint 23505s, and the one retry
+    // re-picks the same wrong tail forever.
     const rows = await tx<{ event_hash: string }[]>`
       SELECT event_hash
       FROM ledger.events
       WHERE organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
-      ORDER BY occurred_at DESC, created_at DESC, seq DESC
+      ORDER BY seq DESC
       LIMIT 1
     `;
     return rows[0]?.event_hash ?? "GENESIS";
@@ -1312,7 +1317,7 @@ export class PostgresLedgerStore implements LedgerStore {
       WHERE event_type = ANY(${["PostedToLedger", "VoucherImported"]})
         AND organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
-      ORDER BY occurred_at ASC, created_at ASC, seq ASC
+      ORDER BY seq ASC
     `;
 
     for (const row of rows) {
@@ -1410,16 +1415,18 @@ export class PostgresLedgerStore implements LedgerStore {
   }
 
   async getEvents(): Promise<LedgerEvent[]> {
-    // `seq` (0006 identity) is the FINAL tiebreak on every ledger.events read:
-    // occurred_at and created_at are both wall-clock and can tie inside a
-    // multi-row insert (importSie batch) or across appends on the same µs.
+    // seq-PRIMARY (0006 identity): the true append order and therefore the
+    // hash-chain order — integrity verification must see events exactly as
+    // chained, which wall-clock occurred_at cannot guarantee (clock steps,
+    // identical timestamps inside batched inserts). Matches MemoryLedgerStore's
+    // insertion order (Rule 11 parity).
     const rows = await this.client<EventRow[]>`
       SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
              actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
       FROM ledger.events
       WHERE organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
-      ORDER BY occurred_at ASC, created_at ASC, seq ASC
+      ORDER BY seq ASC
     `;
     return rows.map(rowToEvent);
   }

@@ -26,6 +26,7 @@ pnpm ingest:knowledge         # Embed + upsert the knowledge corpus into Postgre
 
 # Testing
 pnpm test:unit                # Unit tests: tsx --test 'tests/unit/**/*.test.ts'
+pnpm test:unit:coverage       # Same suite under c8 coverage
 pnpm test:integration          # Postgres integration tests (skip silently when SUPABASE_DB_URL is unset)
 pnpm test:e2e                 # Playwright E2E (builds first, starts both servers)
 pnpm test:e2e:headed          # E2E with visible browser
@@ -44,9 +45,14 @@ tsx --test tests/unit/some-file.test.ts
 # Run a single integration test (still gated on SUPABASE_DB_URL)
 tsx --test tests/integration/postgres-ledger.test.ts
 
-# Run integration tests against a local Supabase
-# (run `supabase start`, apply migrations 0001-0004, then export SUPABASE_DB_URL)
+# Run integration tests against a real Postgres
+# (throwaway pgvector/pgvector:pg17 container + migrations 0001-0008 — exact
+# commands in scripts/integration-db.md; then export SUPABASE_DB_URL)
 pnpm test:integration
+
+# Other checks
+pnpm check:corpus             # Knowledge-corpus freshness tripwire (not yet part of `pnpm check`/CI)
+pnpm bundle:api               # esbuild-bundle the API into api-deploy/server.cjs (what deploy.yml ships)
 ```
 
 ## Architecture
@@ -56,10 +62,10 @@ pnpm monorepo (Node >=24, pnpm 10.29.2) — mobile-first Swedish accounting PWA 
 ### Workspace layout
 
 - **apps/web** — Next.js 16 PWA (React 19, TailwindCSS 4, React Query 5, Motion 12, shadcn/ui via `@base-ui/react`, Sonner toaster, react-hook-form, nuqs, @tanstack/react-table). Swedish locale throughout. `@/*` path alias resolves to `apps/web/*` (see `apps/web/tsconfig.json` and `components.json`).
-- **services/api** — Hono HTTP server (port 3001). Routes in `src/app.ts`, dependency injection in `src/runtime.ts`, blob SAS minting in `src/blob.ts`. `GET /health` = liveness; `GET /ready` = readiness (`ledger` + `ai` checks). JSON errors carry `requestId`; `400`s use `code: "validation_error"` + `issues[]`. Mutating routes go through `hono-rate-limiter` and (when `SUPABASE_JWKS_URL` is set) `hono/jwk` — `POST /api/advisor/chat` (AI SDK 7 UI-message SSE, `src/advisor/`) inherits that same stack. `GET /api/integrity` + `GET /api/runtime-info` are the Phase-5 trust endpoints; `src/knowledge.ts` serves `POST /api/knowledge/query` (keyword always, pgvector in normal mode with keyword fallback).
+- **services/api** — Hono HTTP server (port 3001). Routes in `src/app.ts`, dependency injection in `src/runtime.ts`, blob SAS minting in `src/blob.ts`. `GET /health` = liveness; `GET /ready` = readiness (`ledger` + `ai` checks). JSON errors carry `requestId`; `400`s use `code: "validation_error"` + `issues[]`. When `SUPABASE_JWKS_URL` is set (**required in normal mode** — the API refuses to boot without it), `hono/jwk` gates **ALL `/api/*` routes and methods** (sole exemption: `GET /api/runtime-info`, the public AI-transparency panel); actor attribution is derived server-side from the verified token subject (`user:<sub>`, demo sentinel with auth off) and mutating routes go through `hono-rate-limiter` keyed by verified subject (client-address bucket when unauthenticated) — `POST /api/advisor/chat` (AI SDK 7 UI-message SSE, `src/advisor/`, output/token + stream-timeout cost envelope) inherits that same stack. `GET /api/integrity` + `GET /api/runtime-info` are the Phase-5 trust endpoints; `src/knowledge.ts` serves `POST /api/knowledge/query` (keyword always, pgvector in normal mode with keyword fallback).
 - **packages/contracts** — Zod v4 schemas: the single source of truth for all API shapes and domain types.
-- **packages/domain** — Core accounting logic: `LedgerStore` interface (**async**), append-only event sourcing with hash chain, BAS accounts, Swedish rules (incl. `confidenceBand()` 0.85/0.6 — the ONE confidence-tier source), projections, statutory tax calendar (`src/tax/calendar.ts`), hash-chain integrity summary (`src/integrity.ts`, linkage-only), `MemoryLedgerStore` reference impl.
-- **packages/persistence-postgres** — `PostgresLedgerStore` against Supabase Postgres using `postgres-js`. Each mutation runs in `sql.begin(...)` with `SELECT … FOR UPDATE` on the workspace tail row to keep the hash chain serializable. Also `src/knowledge.ts`: `upsertKnowledgeDocuments` + `queryKnowledgeByEmbedding` (cosine `<=>` on `halfvec(1536)`) for the RAG loop.
+- **packages/domain** — Core accounting logic: `LedgerStore` interface (**async**), append-only event sourcing with hash chain, BAS accounts, Swedish rules (incl. `confidenceBand()` 0.85/0.6 — the ONE confidence-tier source), projections, statutory tax calendar (`src/tax/calendar.ts`), hash-chain integrity summary (`src/integrity.ts` — linkage always, payload recomputation for SHA-256 events), `MemoryLedgerStore` reference impl.
+- **packages/persistence-postgres** — `PostgresLedgerStore` against Supabase Postgres using `postgres-js`. Each mutation runs in `sql.begin(...)` taking `pg_advisory_xact_lock` on the workspace key **before** reading the chain tail (`lockWorkspaceTail`); migration `0006` backs it with a `seq` identity column (final ORDER BY tiebreak on every events read) and a `UNIQUE (organization_id, workspace_id, previous_hash)` constraint that turns any fork attempt into a retryable 23505. The old `SELECT … FOR UPDATE` tail-row lock is gone — a blocked FOR-UPDATE waiter resumed on a stale snapshot and could silently fork the chain. Also `src/knowledge.ts`: `upsertKnowledgeDocuments` + `queryKnowledgeByEmbedding` (cosine `<=>` on `halfvec(1536)`) for the RAG loop.
 - **packages/document-intelligence** — Adapter for `@azure-rest/ai-document-intelligence` (REST client, GA `2024-11-30`). `pickModelForDocument` picks `prebuilt-invoice` for Swedish _fakturer_, falls back to `prebuilt-receipt` for till receipts. Uses `getLongRunningPoller` for all calls.
 - **packages/ai-core** — Provider-agnostic AI abstraction. Factory selects `LocalAiRuntime` (demo), `ResponsesAiRuntime` (Azure OpenAI), or `UnavailableAiRuntime` based on runtime mode + config. Exposes `embed()` for retrieval (default `text-embedding-3-small`, 1536 dims). Advisor **chat** does not go through ai-core — it uses AI SDK 7 in `services/api/src/advisor/`; both read the same `AZURE_OPENAI_*` env.
 - **packages/advisor** — Pure, isomorphic advisor brain (deps: contracts + reporting only — **never** ai-core, whose `openai` import must not reach the web bundle). Bundled sourced Swedish knowledge corpus (`src/corpus.generated.ts`, regenerated via `pnpm build:knowledge` from `docs/knowledge/sv`), BM25-lite retrieval, grounding builder, deterministic demo advisor turns, suggested prompts. One brain, two thin adapters: the API wraps it in UI-message SSE; the web replays it via `LocalDemoChatTransport`.
@@ -69,7 +75,9 @@ pnpm monorepo (Node >=24, pnpm 10.29.2) — mobile-first Swedish accounting PWA 
 
 ### Key design rules
 
-- **Append-only events** are the source of truth; never overwrite evidence or ledger history. The hash chain (`previous_hash → event_hash`) is global per workspace; mutations lock the latest event row with `SELECT … FOR UPDATE` before appending.
+- **Append-only events** are the source of truth; never overwrite evidence or ledger history. The hash chain (`previous_hash → event_hash`) is global per workspace. Event hashes are **SHA-256 over canonical JSON** (`packages/domain/src/hash-chain.ts`: `sha256_` + 64 hex; `canonicalJson` is byte-stable across the Postgres jsonb round trip, so `GET /api/integrity` recomputes payload hashes, not just linkage). Pre-cutover chains keep their legacy djb2 links (`h_` + 8 hex, linkage-only) — a valid chain is a djb2 prefix followed by a SHA-256 suffix; a djb2 hash AFTER any SHA-256 hash is a break. Postgres mutations serialize via `pg_advisory_xact_lock` before the tail read (see persistence-postgres above), never via tail-row `FOR UPDATE`.
+- **Actor attribution is server-derived** — request schemas carry NO `actorId` (a client-posted key is stripped by Zod). The API derives the actor from the verified JWT subject (`user:<sub>`), or the demo sentinel when auth is off. Never reintroduce client-supplied attribution.
+- **Booking dates come from the business event, not the click** — approved vouchers are dated by `deriveBookedAt` (`packages/domain/src/store.ts`): `transactionDate`, falling back to `receiptDate`, never the approval timestamp.
 - **AI suggests, never mutates** — AI outputs (LLM responses, Document Intelligence extractions) require human review before affecting ledger state. The review queue stays the only path to a posted voucher. The advisor's `proposeReviewAction` tool is no exception: it executes only the existing `applyReviewDecision(...)` and only after an explicit, HMAC-signed human tool-approval (`ADVISOR_TOOL_APPROVAL_SECRET`).
 - **`LedgerStore` is async** — every method returns `Promise<T>`. Postgres + future async stores were the driver; `MemoryLedgerStore` matches the interface by wrapping its sync logic.
 - **Runtime mode is explicit**: `demo` uses scaffold fallbacks (`MemoryLedgerStore`, `LocalAiRuntime`, `StubBlobUploader`, `StubDocumentIntelligenceClient`); `normal` fails closed if `SUPABASE_DB_URL` / Azure config is missing (`UnavailableLedgerStore` + `/ready.checks.ledger=false`).
@@ -101,13 +109,14 @@ Reuse before reinventing — the following modules already exist in `apps/web/`:
 - **shadcn/ui primitives** live in `apps/web/components/ui/` alongside bespoke project components. Distinguishing them by import is the convention: shadcn primitives import `cn` from `@/lib/utils` and `cva` from `class-variance-authority`; bespoke components (`icons.tsx`, `metric-card.tsx`, `screen-header.tsx`, `section-label.tsx`, `status-badge.tsx`, `unavailable-state.tsx`) don't. Add new shadcn primitives via `pnpm dlx shadcn@latest add <name>` (config in `apps/web/components.json` is style `base-nova` / baseColor `neutral` / lucide). Skeleton is the merged exception — exports both shadcn `Skeleton` and bespoke `ScreenSkeleton`.
 - **Sonner toaster + Skip-to-content link** are mounted at the root layout (`apps/web/app/layout.tsx`). Call `toast("...")` from anywhere; the toaster surfaces bottom-right. The skip-to-content link targets `#main-content` — when adding new top-level routes, render an element with `id="main-content"` to make the link functional for keyboard users.
 - **useIsMobile hook** at `apps/web/hooks/use-mobile.ts` uses `useSyncExternalStore` (not `useState+useEffect` — ESLint's `react-hooks/set-state-in-effect` rule fails the latter). SSR-safe; returns `false` during render, real value after hydration.
+- **Auth MVP (Supabase)** — `/login` is a standalone route outside `(shell)` (no tab chrome; `components/auth/login-screen.tsx`). Session state lives in `apps/web/lib/auth/session.ts` (`useSyncExternalStore`; Supabase `onAuthStateChange` is the single writer). Bearer threading: `apps/web/lib/client.ts` attaches `Authorization: Bearer <token>` to every API request while signed in, and the api-proxy forwards the `authorization` header. Sign-out calls `clearAllLocalData()` — `apps/web/lib/local-data.ts` is THE canonical registry of every persistent client-side store (localStorage/IndexedDB/CacheStorage), pinned by `tests/unit/local-data-registry.test.ts` which fails on any unregistered storage writer. The whole auth UI is enabled only when `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` are both set at web build time; unset, the app stays the auth-free demo experience.
 - **Onboarding (opt-in tours)** — `apps/web/components/onboarding/` + `apps/web/lib/onboarding/`. Checklist milestones are data-derived in `getting-started-widget.tsx` (`deriveMilestones`); tour completion is opt-in localStorage (`onboarding-storage.ts`). Joyride v3: use `skipBeacon: true` on steps (not v2 `disableBeacon`). `OnboardingShell` wraps `(shell)/layout.tsx`; tour blockers via `registerGlobalTourBlocker`. E2E: `tests/e2e/onboarding.spec.ts`. See CONVENTIONS rule 29.
 
 ### E2E test setup
 
-Playwright runs sequentially (1 worker) against dedicated test servers: API on port 3201 (demo mode, test reset enabled), web on port 3200. Both desktop and mobile (Pixel 7) projects. Tests must `pnpm build:e2e` first since the web server uses `next start`. `playwright.config.ts` webServer commands use `corepack pnpm` (bare `pnpm` is not on PATH in some Windows/agent shells).
+Playwright runs sequentially (1 worker) against dedicated test servers: API on port 3201 (demo mode, test reset enabled), web on port 3200. Both desktop and mobile (Pixel 7) projects. Tests must `pnpm build:e2e` first since the web server uses `next start`. `playwright.config.ts` webServer commands use `corepack pnpm` (bare `pnpm` is not on PATH in some Windows/agent shells). On the mobile project, activate controls via `activateControl(locator, isMobile)` from `tests/e2e/test-helpers.ts` — it clicks on desktop but uses coordinate-free keyboard activation (focus + Enter) on mobile, because Pixel 7 emulation can wedge a persistent `visualViewport.offsetTop` that makes every pointer click (and `.tap()`) hit-test 51 px above the target.
 
-Visual regression (`tests/e2e/visual-regression.spec.ts`, 20 themed full-page baselines): clock-derived UI — topbar timestamp, journal/archive dates, event hashes, activity dates — must carry a `data-visual-mask` attribute; the spec masks those regions so baselines stay date-stable. Re-baseline only with `pnpm test:e2e:visual:update` after reviewing every diff image.
+Visual regression (`tests/e2e/visual-regression.spec.ts`, 20 themed full-page shots): baselines are **per-platform** (`-win32` and `-linux` suffixes — linux is what CI compares; both sets are checked in). Clock-derived UI — topbar timestamp, journal/archive dates, event hashes, activity dates — must carry a `data-visual-mask` attribute; the spec masks those regions so baselines stay date-stable. Re-baseline only with `pnpm test:e2e:visual:update` after reviewing every diff image; the full generate/review/re-baseline workflow (including producing linux baselines from Windows) is in [`scripts/visual-baselines.md`](scripts/visual-baselines.md).
 
 ### Known deferred / Don't accidentally redo
 
@@ -128,7 +137,7 @@ Visual regression (`tests/e2e/visual-regression.spec.ts`, 20 themed full-page ba
 
 ### Migrations
 
-SQL migrations live in `infra/supabase/migrations/000N_*.sql` and are applied in numeric order. Current: `0001_init.sql`, `0002_schema_alignment.sql`, `0003_pgvector.sql`, `0004_compliance_and_settings.sql`. New migrations get the next number. They must be idempotent (`if not exists` / `if exists`, CHECK constraints added via `DO $$ ... exception when duplicate_object then null; end $$;` blocks) — the same file may be replayed on partial environments.
+SQL migrations live in `infra/supabase/migrations/000N_*.sql` and are applied in numeric order. Current: `0001_init.sql`, `0002_schema_alignment.sql`, `0003_pgvector.sql`, `0004_compliance_and_settings.sql`, `0005_events_id_text.sql` (events.id uuid→text to match `createId('evt')` inserts + `clock_timestamp()` created_at for in-transaction ordering), `0006_chain_serialization.sql` (`seq` identity tiebreak column + `UNIQUE (org, workspace, previous_hash)` fork constraint under the advisory lock), `0007_knowledge_tenant_pk.sql` (knowledge.documents PK rescoped to `(organization_id, workspace_id, id)` — stops cross-tenant upsert clobbering), `0008_evidence_dedupe_index.sql` (btree lookup index for idempotent evidence content-dedupe). New migrations get the next number. They must be idempotent (`if not exists` / `if exists`, CHECK constraints added via `DO $$ ... exception when duplicate_object then null; end $$;` blocks) — the same file may be replayed on partial environments.
 
 `0004` uses `NULLS NOT DISTINCT` on its unique index, which requires Postgres 15+. Supabase ships PG 17 by default, so this is safe in normal mode; self-hosted Postgres deployments need to verify.
 
@@ -162,9 +171,13 @@ Key env vars (see `.env.example` for full list):
 
 - `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_CONTAINER`: Required for User-Delegation SAS minting in `/api/uploads/init`. Bicep also needs `Storage Blob Delegator` + `Storage Blob Data Contributor` role assignments on the API's Managed Identity.
 
-**Hardening (Phase E)**
+**Auth + hardening**
 
-- `SUPABASE_JWKS_URL`: Optional. When set (e.g. `${SUPABASE_URL}/auth/v1/keys`), `/api/*` mutating routes require a JWT verifiable against this JWKS endpoint. Accepted algorithms default to `RS256` + `ES256` and are overridable via comma-separated `SUPABASE_JWT_ALGS` (see `services/api/src/config.ts`).
+- `SUPABASE_JWKS_URL`: **REQUIRED in normal mode** (fail-closed — the API refuses to boot without it); optional in demo. When set (e.g. `${SUPABASE_URL}/auth/v1/keys`), ALL `/api/*` routes and methods require a JWT verifiable against this JWKS endpoint (`GET /api/runtime-info` exempt). Accepted algorithms default to `RS256` + `ES256`, overridable via comma-separated `SUPABASE_JWT_ALGS` (see `services/api/src/config.ts`).
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Web **build-time** pair enabling the Supabase Auth UI (`/login`, bearer threading). Both unset = auth-free demo experience (auth affordances hide themselves). The URL's origin is added to the web CSP `connect-src`.
+- `NEXT_PUBLIC_AZURE_STORAGE_ORIGIN`: Web **build-time** CSP allowance for direct-to-Azure SAS traffic (browser PUTs, read-SAS previews). Unset keeps the strict same-origin CSP.
+- `ADVISOR_MAX_OUTPUT_TOKENS`, `ADVISOR_STREAM_TIMEOUT_MS`: Advisor cost envelope on `/api/advisor/chat` (defaults 2048 tokens / 90 s — `services/api/src/advisor/chat.ts`).
+- `APPLICATIONINSIGHTS_CONNECTION_STRING`: API telemetry (Bicep injects it in deploys); unset = `services/api/src/telemetry.ts` is a strict no-op (no SDK load).
 
 See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for trust boundaries, the env matrix, and build/deploy subtleties.
 
