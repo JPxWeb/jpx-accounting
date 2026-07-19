@@ -1,7 +1,7 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 import { expectAccessible } from "./a11y-helpers";
-import { apiBaseUrl, resetApiState } from "./test-helpers";
+import { activateControl, apiBaseUrl, pickSelectOption, resetApiState } from "./test-helpers";
 
 /**
  * Settings depth (Phase 6 Task 6.2): the five formerly header-only sub-pages
@@ -29,11 +29,6 @@ test.beforeEach(async ({ request }) => {
   expect(saved.ok()).toBeTruthy();
 });
 
-async function pickSelectOption(page: Page, testId: string, optionLabel: string) {
-  await page.getByTestId(testId).click();
-  await page.getByRole("option", { name: optionLabel }).click();
-}
-
 test("fiscal-year: real form previews the fiscal window and next årsredovisning", async ({ page }) => {
   await page.goto("/settings/fiscal-year");
   await expect(page.getByTestId("company-fiscal-year-form")).toBeVisible();
@@ -54,12 +49,14 @@ test("fiscal-year: real form previews the fiscal window and next årsredovisning
   await expectAccessible(page);
 });
 
-test("fiscal-year: start month persists through the company-settings path", async ({ page }) => {
+test("fiscal-year: start month persists through the company-settings path", async ({ page, isMobile }) => {
   await page.goto("/settings/fiscal-year");
   await expect(page.getByTestId("company-fiscal-year-form")).toBeVisible();
 
-  await pickSelectOption(page, "fiscal-year-start-select", "July");
-  await page.getByTestId("fiscal-year-save").click();
+  // pickSelectOption/activateControl: pointer on desktop, trusted keyboard on
+  // mobile — see the helpers' doc comments for the Pixel 7 viewport quirk.
+  await pickSelectOption(page, "fiscal-year-start-select", "July", isMobile);
+  await activateControl(page.getByTestId("fiscal-year-save"), isMobile);
   await expect(page.getByText("Fiscal year saved.")).toBeVisible();
 
   // The demo API keeps MemoryLedgerStore state for the run, so the saved

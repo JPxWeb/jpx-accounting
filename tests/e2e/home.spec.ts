@@ -3,7 +3,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 import { expectAccessible } from "./a11y-helpers";
-import { resetApiState } from "./test-helpers";
+import { activateControl, resetApiState } from "./test-helpers";
 
 const receiptFixture = path.join(__dirname, "..", "fixtures", "receipt.jpg");
 
@@ -63,15 +63,17 @@ test("queue view can add a new review item from the browser", async ({ page }) =
   await expect(page.getByTestId("review-card")).toHaveCount(2);
 });
 
-test("queue view supports approval and local draft capture", async ({ page }) => {
+test("queue view supports approval and local draft capture", async ({ page, isMobile }) => {
   await page.goto("/today?view=queue");
 
   await expect(page.getByTestId("review-card")).toHaveCount(1);
 
-  await page.getByTestId("review-accept").first().click();
+  // activateControl: pointer on desktop, keyboard on mobile — see the helper's
+  // doc comment for the Pixel 7 visual-viewport emulation quirk.
+  await activateControl(page.getByTestId("review-accept").first(), isMobile);
   await expect(page.getByTestId("review-status").filter({ hasText: "approved" })).toHaveCount(1);
 
-  await captureButton(page).click();
+  await activateControl(captureButton(page), isMobile);
   await expect(page.getByTestId("capture-sheet")).toBeVisible();
   // The camera tile opens the OS camera/file dialog, which Playwright cannot drive —
   // feed the hidden input directly (same code path as a real capture).

@@ -1,13 +1,13 @@
 import { expect, test } from "@playwright/test";
 
 import { expectAccessible } from "./a11y-helpers";
-import { apiBaseUrl, resetApiState } from "./test-helpers";
+import { activateControl, apiBaseUrl, resetApiState } from "./test-helpers";
 
 test.beforeEach(async ({ request }) => {
   await resetApiState(request);
 });
 
-test("reports screen renders the narrative-first pack surfaces", async ({ page }) => {
+test("reports screen renders the narrative-first pack surfaces", async ({ page, isMobile }) => {
   await page.goto("/reports");
 
   await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
@@ -31,7 +31,9 @@ test("reports screen renders the narrative-first pack surfaces", async ({ page }
   await expect(page.getByTestId("cash-bridge").locator("svg").first()).toBeVisible();
   const tableToggle = page.getByTestId("chart-table-toggle-monthly-bars");
   await expect(tableToggle).toHaveAttribute("aria-expanded", "false");
-  await tableToggle.click();
+  // activateControl: pointer on desktop, keyboard on mobile — see the helper's
+  // doc comment for the Pixel 7 visual-viewport emulation quirk.
+  await activateControl(tableToggle, isMobile);
   await expect(tableToggle).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByTestId("chart-table-monthly-bars")).toBeVisible();
 

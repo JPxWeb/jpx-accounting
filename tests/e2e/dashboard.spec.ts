@@ -1,7 +1,11 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 import { expectAccessible } from "./a11y-helpers";
-import { apiBaseUrl, resetApiState } from "./test-helpers";
+import { activateControl, apiBaseUrl, resetApiState } from "./test-helpers";
+
+// Widget-chrome buttons/links are activated via `activateControl`: pointer
+// click on desktop, keyboard on mobile — see the helper's doc comment for the
+// Pixel 7 visual-viewport emulation quirk that strands pointer clicks.
 
 /**
  * The /today advisory dashboard (Task 5.8 + the Task 6.1 getting-started
@@ -68,26 +72,26 @@ test("keyboard-only reorder swaps the first two widgets and persists across relo
   expect(await widgetOrder(page)).toEqual(expected);
 });
 
-test("widget picker hides, re-adds, and resets widgets", async ({ page }) => {
+test("widget picker hides, re-adds, and resets widgets", async ({ page, isMobile }) => {
   await page.goto("/today");
   await expect(page.getByTestId("widget-integrity")).toBeVisible();
 
   // Hide via the picker toggle.
-  await page.getByTestId("widget-picker-open").click();
-  await page.getByTestId("widget-picker-toggle-integrity").click();
+  await activateControl(page.getByTestId("widget-picker-open"), isMobile);
+  await activateControl(page.getByTestId("widget-picker-toggle-integrity"), isMobile);
   await expect(page.getByTestId("widget-integrity")).toHaveCount(0);
 
   // Re-add: the widget returns at its remembered slot.
-  await page.getByTestId("widget-picker-toggle-integrity").click();
+  await activateControl(page.getByTestId("widget-picker-toggle-integrity"), isMobile);
   await expect(page.getByTestId("widget-integrity")).toBeVisible();
   expect(await widgetOrder(page)).toEqual([...WIDGET_IDS]);
 
   // Remove via the widget chrome, then reset the whole layout from the picker.
   await page.keyboard.press("Escape"); // light-dismiss the popover
-  await page.getByTestId("widget-remove-vat-status").click();
+  await activateControl(page.getByTestId("widget-remove-vat-status"), isMobile);
   await expect(page.getByTestId("widget-vat-status")).toHaveCount(0);
-  await page.getByTestId("widget-picker-open").click();
-  await page.getByTestId("dashboard-reset").click();
+  await activateControl(page.getByTestId("widget-picker-open"), isMobile);
+  await activateControl(page.getByTestId("dashboard-reset"), isMobile);
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("widget-vat-status")).toBeVisible();
   expect(await widgetOrder(page)).toEqual([...WIDGET_IDS]);
@@ -125,7 +129,7 @@ async function importBurnFixture(request: APIRequestContext) {
   expect(await imported.json()).toMatchObject({ accepted: true, importedVouchers: 2 });
 }
 
-test("observation provenance href resolves to its report surface", async ({ page, request }) => {
+test("observation provenance href resolves to its report surface", async ({ page, request, isMobile }) => {
   // Two months of heavy cash burn → negative cash → critical cash-runway
   // observation, which always ranks first (severity → detector priority).
   await importBurnFixture(request);
@@ -136,19 +140,19 @@ test("observation provenance href resolves to its report surface", async ({ page
 
   const chip = observationsWidget.getByTestId("observation-chip").first();
   await expect(chip).toBeVisible();
-  await chip.click();
+  await activateControl(chip, isMobile);
 
   await expect(page).toHaveURL(/\/reports#cash-bridge$/);
   await expect(page.getByTestId("cash-bridge")).toBeVisible();
 });
 
-test("one-tap approve decrements the pending count through the review gate", async ({ page }) => {
+test("one-tap approve decrements the pending count through the review gate", async ({ page, isMobile }) => {
   await page.goto("/today");
 
   const widget = page.getByTestId("widget-review-queue");
   await expect(widget.getByTestId("review-widget-pending-count")).toContainText("1 pending review");
 
-  await widget.getByTestId("review-widget-approve").click();
+  await activateControl(widget.getByTestId("review-widget-approve"), isMobile);
   await expect(widget.getByTestId("review-widget-pending-count")).toHaveCount(0);
   await expect(widget).toContainText("The queue is clear");
 
@@ -157,16 +161,16 @@ test("one-tap approve decrements the pending count through the review gate", asy
   await expect(page.getByTestId("review-status").filter({ hasText: "approved" })).toHaveCount(1);
 });
 
-test("batch approve routes every seeded high-confidence review through approvals", async ({ page }) => {
+test("batch approve routes every seeded high-confidence review through approvals", async ({ page, isMobile }) => {
   await page.goto("/today");
 
   const widget = page.getByTestId("widget-review-queue");
   // The seeded review (confidence 0.86) lands in the shared high band (≥ 0.85).
   await expect(widget.getByTestId("confidence-band")).toHaveAttribute("data-band", "high");
 
-  await widget.getByTestId("review-widget-batch").click();
+  await activateControl(widget.getByTestId("review-widget-batch"), isMobile);
   await expect(page.getByTestId("batch-approve-confirm")).toBeVisible();
-  await page.getByTestId("batch-approve-confirm").click();
+  await activateControl(page.getByTestId("batch-approve-confirm"), isMobile);
 
   await expect(page.getByText("1 review approved.").first()).toBeVisible();
   await expect(widget).toContainText("The queue is clear");
@@ -175,7 +179,7 @@ test("batch approve routes every seeded high-confidence review through approvals
   await expect(page.getByTestId("review-status").filter({ hasText: "approved" })).toHaveCount(1);
 });
 
-test("getting-started checklist derives from workspace data and its links resolve", async ({ page }) => {
+test("getting-started checklist derives from workspace data and its links resolve", async ({ page, isMobile }) => {
   await page.goto("/today");
 
   const widget = page.getByTestId("widget-getting-started");
@@ -193,12 +197,12 @@ test("getting-started checklist derives from workspace data and its links resolv
 
   // Steps are pure derivations: approving through the review widget (ordinary
   // review gate) flips the approve step without any stored checklist state.
-  await page.getByTestId("widget-review-queue").getByTestId("review-widget-approve").click();
+  await activateControl(page.getByTestId("widget-review-queue").getByTestId("review-widget-approve"), isMobile);
   await expect(widget.getByTestId("getting-started-step-approve")).toHaveAttribute("data-complete", "true");
   await expect(widget.getByTestId("getting-started-progress")).toHaveText("1 of 5 done");
 
   // And the links navigate for real.
-  await widget.getByTestId("getting-started-step-capture").click();
+  await activateControl(widget.getByTestId("getting-started-step-capture"), isMobile);
   await expect(page).toHaveURL(/\/capture$/);
 });
 
