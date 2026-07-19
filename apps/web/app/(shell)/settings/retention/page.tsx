@@ -68,7 +68,15 @@ export default async function RetentionSettingsPage() {
         <section className="glass-panel rounded-xl p-5" data-testid="retention-local-data">
           <SectionLabel>{t("localData.title")}</SectionLabel>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("localData.description")}</p>
-          <div className="mt-4 overflow-x-auto">
+          {/* tabIndex + region: an overflow container that actually scrolls
+              must be keyboard-reachable (axe scrollable-region-focusable —
+              it scrolls on linux font metrics even when it fits on win32). */}
+          <div
+            className="mt-4 overflow-x-auto focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+            tabIndex={0}
+            role="region"
+            aria-label={t("localData.title")}
+          >
             <table className="w-full min-w-[36rem] text-left text-sm">
               <thead>
                 <tr className="border-b border-border text-caption text-muted-foreground">
