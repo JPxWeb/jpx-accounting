@@ -2,7 +2,17 @@ create schema if not exists ledger;
 create schema if not exists projections;
 
 create extension if not exists pgcrypto;
-create extension if not exists pgaudit;
+
+-- pgaudit ships on Supabase but not on vanilla/pgvector Postgres images or CI
+-- service containers. Non-fatal per CONVENTIONS Rules 9 + 19: narrow catch
+-- (missing control file / not allowed / no privilege) so real infrastructure
+-- failures still abort the migration.
+do $$ begin
+  create extension if not exists pgaudit;
+exception
+  when undefined_file or feature_not_supported or insufficient_privilege then
+    raise notice 'pgaudit not available on this server, skipping: %', sqlerrm;
+end $$;
 
 create table if not exists ledger.events (
   id uuid primary key default gen_random_uuid(),

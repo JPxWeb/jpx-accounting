@@ -1,10 +1,14 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { resetApiState } from "./test-helpers";
+import { activateControl, pickSelectOption, resetApiState } from "./test-helpers";
 
 test.beforeEach(async ({ request }) => {
   await resetApiState(request);
 });
+
+// Selects and submits go through `pickSelectOption`/`activateControl`:
+// pointer on desktop, trusted keyboard on mobile — see the helpers' doc
+// comments for the Pixel 7 visual-viewport emulation quirk.
 
 async function fillCompanyBasics(page: Page, overrides: { organizationNumber?: string } = {}) {
   await page.getByLabel("Organization name").fill("Jpx Konsult AB");
@@ -15,20 +19,15 @@ async function fillCompanyBasics(page: Page, overrides: { organizationNumber?: s
   await page.getByLabel("Contact email").fill("kontakt@jpx.nu");
 }
 
-async function pickSelectOption(page: Page, testId: string, optionLabel: string) {
-  await page.getByTestId(testId).click();
-  await page.getByRole("option", { name: optionLabel }).click();
-}
-
-test("saves the workspace profile and persists it across reload", async ({ page }) => {
+test("saves the workspace profile and persists it across reload", async ({ page, isMobile }) => {
   await page.goto("/settings/company");
   await expect(page.getByTestId("company-form")).toBeVisible();
 
   await fillCompanyBasics(page);
-  await pickSelectOption(page, "company-profile-currency", "EUR");
-  await pickSelectOption(page, "company-profile-locale", "English");
+  await pickSelectOption(page, "company-profile-currency", "EUR", isMobile);
+  await pickSelectOption(page, "company-profile-locale", "English", isMobile);
 
-  await page.getByTestId("company-form-submit").click();
+  await activateControl(page.getByTestId("company-form-submit"), isMobile);
   await expect(page.getByText("Company settings saved.")).toBeVisible();
 
   await page.reload();
@@ -48,7 +47,7 @@ test("saves the workspace profile and persists it across reload", async ({ page 
   await expect(page.getByTestId("trial-balance-row").first()).toContainText(/EUR/);
 });
 
-test("saves the VAT period and persists it across reload", async ({ page }) => {
+test("saves the VAT period and persists it across reload", async ({ page, isMobile }) => {
   await page.goto("/settings/company");
   await expect(page.getByTestId("company-form")).toBeVisible();
 
@@ -56,10 +55,10 @@ test("saves the VAT period and persists it across reload", async ({ page }) => {
   await expect(page.getByTestId("company-vat-period")).toContainText("Quarterly");
 
   await fillCompanyBasics(page);
-  await pickSelectOption(page, "company-profile-locale", "English");
-  await pickSelectOption(page, "company-vat-period", "Monthly");
+  await pickSelectOption(page, "company-profile-locale", "English", isMobile);
+  await pickSelectOption(page, "company-vat-period", "Monthly", isMobile);
 
-  await page.getByTestId("company-form-submit").click();
+  await activateControl(page.getByTestId("company-form-submit"), isMobile);
   await expect(page.getByText("Company settings saved.")).toBeVisible();
 
   await page.reload();
@@ -67,7 +66,7 @@ test("saves the VAT period and persists it across reload", async ({ page }) => {
   await expect(page.getByTestId("company-vat-period")).toContainText("Monthly");
 });
 
-test("saving a Swedish locale flips html lang and the shell copy", async ({ page }) => {
+test("saving a Swedish locale flips html lang and the shell copy", async ({ page, isMobile }) => {
   await page.goto("/settings/company");
   await expect(page.getByTestId("company-form")).toBeVisible();
 
@@ -75,9 +74,9 @@ test("saving a Swedish locale flips html lang and the shell copy", async ({ page
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
 
   await fillCompanyBasics(page);
-  await pickSelectOption(page, "company-profile-locale", "Svenska");
+  await pickSelectOption(page, "company-profile-locale", "Svenska", isMobile);
 
-  await page.getByTestId("company-form-submit").click();
+  await activateControl(page.getByTestId("company-form-submit"), isMobile);
   await expect(page.getByText("Company settings saved.")).toBeVisible();
 
   // The save writes the NEXT_LOCALE cookie and refreshes the router, which
@@ -86,12 +85,12 @@ test("saving a Swedish locale flips html lang and the shell copy", async ({ page
   await expect(page.getByRole("link", { name: /Böcker/ }).first()).toBeVisible();
 });
 
-test("rejects an invalid Swedish organization number with the registry message", async ({ page }) => {
+test("rejects an invalid Swedish organization number with the registry message", async ({ page, isMobile }) => {
   await page.goto("/settings/company");
   await expect(page.getByTestId("company-form")).toBeVisible();
 
   await fillCompanyBasics(page, { organizationNumber: "12345" });
-  await page.getByTestId("company-form-submit").click();
+  await activateControl(page.getByTestId("company-form-submit"), isMobile);
 
   await expect(page.getByText("Swedish org number format is XXXXXX-XXXX")).toBeVisible();
 });

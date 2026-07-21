@@ -52,9 +52,27 @@ import {
 } from "@jpx-accounting/domain";
 
 type RequestOptions = RequestInit & { json?: unknown };
+
+/**
+ * Narrow fetch seam used internally so authorized and plain requests share one
+ * shape (all call sites pass string URLs — never Request objects).
+ */
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+
 type AccountingApiClientOptions = {
   baseUrl?: string | undefined;
   runtimeMode: RuntimeMode;
+  /**
+   * Auth-token provider seam (WS-C R12): resolves the CURRENT session's access
+   * token per request — never cache the token at construction time, sessions
+   * refresh underneath the client. When it yields a token, API requests carry
+   * `Authorization: Bearer <token>`; when absent/undefined the request goes out
+   * unauthenticated (demo mode and signed-out browsing keep working, and an
+   * auth-required API answers 401 honestly). Azure SAS uploads never get the
+   * header — the SAS URL is its own credential and the token must not leak to
+   * the storage host.
+   */
+  getAuthToken?: (() => Promise<string | undefined> | string | undefined) | undefined;
 };
 
 export class AccountingApiError extends Error {
@@ -96,7 +114,13 @@ function reportRangeQuery(range?: ReportRange): string {
   return query ? `?${query}` : "";
 }
 
-async function requestJson<T>(baseUrl: string, path: string, schema: ZodType<T>, options?: RequestOptions): Promise<T> {
+async function requestJson<T>(
+  fetchImpl: FetchLike,
+  baseUrl: string,
+  path: string,
+  schema: ZodType<T>,
+  options?: RequestOptions,
+): Promise<T> {
   const init: RequestInit = {
     headers: {
       "content-type": "application/json",
@@ -114,7 +138,7 @@ async function requestJson<T>(baseUrl: string, path: string, schema: ZodType<T>,
     init.body = JSON.stringify(options.json);
   }
 
-  const response = await fetch(`${baseUrl}${path}`, init);
+  const response = await fetchImpl(`${baseUrl}${path}`, init);
 
   if (!response.ok) {
     const payload = await response.json().catch(() => undefined as { error?: string; message?: string } | undefined);
@@ -141,10 +165,41 @@ export class AccountingApiClient {
     return this.options.baseUrl;
   }
 
+  /**
+   * Resolve the current bearer token from the configured provider. Provider
+   * failures degrade to an unauthenticated request (the API then answers 401
+   * honestly) instead of turning every call into an opaque client-side throw.
+   */
+  private async resolveAuthToken(): Promise<string | undefined> {
+    const provider = this.options.getAuthToken;
+    if (!provider) return undefined;
+    try {
+      return (await provider()) || undefined;
+    } catch (error) {
+      console.warn("AccountingApiClient: auth token provider failed; sending request unauthenticated.", error);
+      return undefined;
+    }
+  }
+
+  /**
+   * `fetch` with `Authorization: Bearer <token>` attached when a session token
+   * resolves. Arrow property so it can be passed as a bound `FetchLike`. An
+   * explicit caller-supplied authorization header always wins.
+   */
+  private readonly authorizedFetch: FetchLike = async (input, init = {}) => {
+    const token = await this.resolveAuthToken();
+    if (!token) return fetch(input, init);
+    const headers = new Headers(init.headers);
+    if (!headers.has("authorization")) {
+      headers.set("authorization", `Bearer ${token}`);
+    }
+    return fetch(input, { ...init, headers });
+  };
+
   async getSnapshot() {
     if (this.fallbackStore) return this.fallbackStore.getSnapshot();
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.baseUrl, "/api/workspace", workspaceSnapshotSchema);
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/workspace", workspaceSnapshotSchema);
   }
 
   /**
@@ -154,7 +209,12 @@ export class AccountingApiClient {
   async getJournal(range?: ReportRange): Promise<JournalEntryProjection[]> {
     if (this.fallbackStore) return (await this.fallbackStore.getReports(range)).journal;
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.baseUrl, `/api/reports/journal${reportRangeQuery(range)}`, journalProjectionListSchema);
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/reports/journal${reportRangeQuery(range)}`,
+      journalProjectionListSchema,
+    );
   }
 
   /**
@@ -165,7 +225,12 @@ export class AccountingApiClient {
   async getTrialBalance(range?: ReportRange): Promise<AccountBalanceProjection[]> {
     if (this.fallbackStore) return (await this.fallbackStore.getReports(range)).balances;
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.baseUrl, `/api/reports/trial-balance${reportRangeQuery(range)}`, accountBalanceListSchema);
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/reports/trial-balance${reportRangeQuery(range)}`,
+      accountBalanceListSchema,
+    );
   }
 
   /**
@@ -178,40 +243,53 @@ export class AccountingApiClient {
     if (this.fallbackStore) return this.fallbackStore.getReportPack({ period });
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     const params = new URLSearchParams({ period });
-    return requestJson(this.baseUrl, `/api/reports/pack?${params.toString()}`, reportPackSchema);
+    return requestJson(this.authorizedFetch, this.baseUrl, `/api/reports/pack?${params.toString()}`, reportPackSchema);
   }
 
   async createEvidence(input: EvidenceCreateInput) {
     if (this.fallbackStore) return this.fallbackStore.createEvidence(input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.baseUrl, "/api/evidence", evidenceCreateResultSchema, { method: "POST", json: input });
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/evidence", evidenceCreateResultSchema, {
+      method: "POST",
+      json: input,
+    });
   }
 
-  async approveReview(reviewId: string, input: ReviewDecisionInput): Promise<ReviewTask | undefined> {
+  // Review decisions carry no actor (WS-C R5): attribution is derived
+  // server-side from the verified JWT subject, or the demo sentinel — both in
+  // the API and in the offline fallback store. `input` defaults to `{}` since
+  // notes/edited are the only remaining fields and most decisions send neither.
+  async approveReview(reviewId: string, input: ReviewDecisionInput = {}): Promise<ReviewTask | undefined> {
     if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "approve", input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.baseUrl, `/api/reviews/${reviewId}/approve`, reviewTaskSchema, {
+    return requestJson(this.authorizedFetch, this.baseUrl, `/api/reviews/${reviewId}/approve`, reviewTaskSchema, {
       method: "POST",
       json: input,
     });
   }
 
-  async rejectReview(reviewId: string, input: ReviewDecisionInput): Promise<ReviewTask | undefined> {
+  async rejectReview(reviewId: string, input: ReviewDecisionInput = {}): Promise<ReviewTask | undefined> {
     if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "reject", input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.baseUrl, `/api/reviews/${reviewId}/reject`, reviewTaskSchema, {
+    return requestJson(this.authorizedFetch, this.baseUrl, `/api/reviews/${reviewId}/reject`, reviewTaskSchema, {
       method: "POST",
       json: input,
     });
   }
 
-  async bookWithoutVatReview(reviewId: string, input: ReviewDecisionInput): Promise<ReviewTask | undefined> {
+  async bookWithoutVatReview(reviewId: string, input: ReviewDecisionInput = {}): Promise<ReviewTask | undefined> {
     if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "book-without-vat", input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.baseUrl, `/api/reviews/${reviewId}/book-without-vat`, reviewTaskSchema, {
-      method: "POST",
-      json: input,
-    });
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/reviews/${reviewId}/book-without-vat`,
+      reviewTaskSchema,
+      {
+        method: "POST",
+        json: input,
+      },
+    );
   }
 
   // `askAssistant` (POST /api/assistant/sessions) was retired in Phase 6 —
@@ -220,7 +298,10 @@ export class AccountingApiClient {
   async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
     if (this.fallbackStore) return this.fallbackStore.runSimulation(input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.baseUrl, "/api/simulations/run", simulationRunSchema, { method: "POST", json: input });
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/simulations/run", simulationRunSchema, {
+      method: "POST",
+      json: input,
+    });
   }
 
   /**
@@ -237,9 +318,15 @@ export class AccountingApiClient {
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     const params = options?.includeResolved ? "?includeResolved=true" : "";
-    return requestJson(this.baseUrl, `/api/compliance-watch/refresh${params}`, complianceAlertListSchema, {
-      method: "POST",
-    });
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/compliance-watch/refresh${params}`,
+      complianceAlertListSchema,
+      {
+        method: "POST",
+      },
+    );
   }
 
   /**
@@ -260,7 +347,10 @@ export class AccountingApiClient {
       };
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.baseUrl, "/api/uploads/init", uploadInitResultSchema, { method: "POST", json: input });
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/uploads/init", uploadInitResultSchema, {
+      method: "POST",
+      json: input,
+    });
   }
 
   /**
@@ -276,18 +366,19 @@ export class AccountingApiClient {
     // Stub uploadUrls are API-relative (`/api/uploads/{id}`); resolve them against the API base so
     // the PUT reaches the API (possibly via the web api-proxy) instead of 404ing on the web origin.
     // Azure SAS URLs are absolute and pass through untouched.
-    const target =
-      uploadResult.uploadUrl.startsWith("/") && this.baseUrl
-        ? `${this.baseUrl}${uploadResult.uploadUrl}`
-        : uploadResult.uploadUrl;
-    const response = await fetch(target, {
+    const isApiRelative = uploadResult.uploadUrl.startsWith("/") && this.baseUrl !== undefined;
+    const target = isApiRelative ? `${this.baseUrl}${uploadResult.uploadUrl}` : uploadResult.uploadUrl;
+    const init: RequestInit = {
       method: "PUT",
       headers: {
         "x-ms-blob-type": uploadResult.requiredBlobType,
         "content-type": uploadResult.requiredContentType,
       },
       body: body as BodyInit,
-    });
+    };
+    // Only API-relative stub uploads get the bearer token: the absolute Azure SAS
+    // URL is its own credential and the session token must not leak to the storage host.
+    const response = isApiRelative ? await this.authorizedFetch(target, init) : await fetch(target, init);
     if (!response.ok) {
       throw new AccountingApiError(response.status, `Blob upload failed: ${response.status} ${response.statusText}`);
     }
@@ -306,7 +397,7 @@ export class AccountingApiClient {
       return { ...context, ...(review ? { review } : {}) };
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    const response = await fetch(`${this.baseUrl}/api/evidence/${evidenceId}`, {
+    const response = await this.authorizedFetch(`${this.baseUrl}/api/evidence/${evidenceId}`, {
       headers: { accept: "application/json" },
     });
     if (response.status === 404) return undefined;
@@ -336,7 +427,7 @@ export class AccountingApiClient {
       });
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    const response = await fetch(`${this.baseUrl}/api/evidence/${evidenceId}/extract`, {
+    const response = await this.authorizedFetch(`${this.baseUrl}/api/evidence/${evidenceId}/extract`, {
       method: "POST",
       headers: { accept: "application/json" },
     });
@@ -357,7 +448,7 @@ export class AccountingApiClient {
   async getEvidenceFileUrl(evidenceId: string): Promise<{ url: string } | null> {
     if (this.fallbackStore) return null;
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    const response = await fetch(`${this.baseUrl}/api/evidence/${evidenceId}/file-url`, {
+    const response = await this.authorizedFetch(`${this.baseUrl}/api/evidence/${evidenceId}/file-url`, {
       headers: { accept: "application/json" },
     });
     if (response.status === 404) return null;
@@ -379,7 +470,7 @@ export class AccountingApiClient {
       return summarizeEventIntegrity(await this.fallbackStore.getEvents(), { verifiedAt: nowIso() });
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.baseUrl, "/api/integrity", integritySummarySchema);
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/integrity", integritySummarySchema);
   }
 
   /**
@@ -392,13 +483,13 @@ export class AccountingApiClient {
       return { runtimeMode: "demo", ai: { operational: true, provider: "local-demo" } };
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.baseUrl, "/api/runtime-info", runtimeInfoSchema);
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/runtime-info", runtimeInfoSchema);
   }
 
   async getCompanySettings(): Promise<CompanySettings | null> {
     if (this.fallbackStore) return this.fallbackStore.getCompanySettings();
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    const response = await fetch(`${this.baseUrl}/api/settings/company`, {
+    const response = await this.authorizedFetch(`${this.baseUrl}/api/settings/company`, {
       headers: { accept: "application/json" },
     });
     if (!response.ok) {
@@ -410,7 +501,7 @@ export class AccountingApiClient {
   async saveCompanySettings(input: CompanySettings): Promise<CompanySettings> {
     if (this.fallbackStore) return this.fallbackStore.putCompanySettings(input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    const response = await fetch(`${this.baseUrl}/api/settings/company`, {
+    const response = await this.authorizedFetch(`${this.baseUrl}/api/settings/company`, {
       method: "PUT",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify(input),
@@ -439,7 +530,7 @@ export class AccountingApiClient {
       return encodePc8(buildSieExport({ journal: reports.journal, settings, generatedAt: nowIso() }));
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    const response = await fetch(`${this.baseUrl}/api/exports/sie`, {
+    const response = await this.authorizedFetch(`${this.baseUrl}/api/exports/sie`, {
       headers: { accept: "text/plain,*/*" },
     });
     if (!response.ok) {
@@ -460,10 +551,11 @@ export class AccountingApiClient {
   async importSie(bytes: Uint8Array | ArrayBuffer): Promise<SieImportResult> {
     const asBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     if (this.fallbackStore) {
-      return this.fallbackStore.importSie({ actorId: "user_founder", file: parseSie(decodeSieBuffer(asBytes)) });
+      // No actorId: the store attributes to the demo sentinel (WS-C R5).
+      return this.fallbackStore.importSie({ file: parseSie(decodeSieBuffer(asBytes)) });
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    const response = await fetch(`${this.baseUrl}/api/imports/sie`, {
+    const response = await this.authorizedFetch(`${this.baseUrl}/api/imports/sie`, {
       method: "POST",
       headers: { "content-type": "application/octet-stream", accept: "application/json" },
       body: asBytes as unknown as BodyInit,

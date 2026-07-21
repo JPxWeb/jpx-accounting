@@ -1,7 +1,11 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
 import { expectAccessible } from "./a11y-helpers";
-import { apiBaseUrl, resetApiState } from "./test-helpers";
+import { activateControl, apiBaseUrl, resetApiState } from "./test-helpers";
+
+// Drill controls (chart rows, drawer links) are activated via
+// `activateControl`: pointer click on desktop, keyboard on mobile — see the
+// helper's doc comment for the Pixel 7 visual-viewport emulation quirk.
 
 /**
  * Drill grammar (advisory-pivot Phase 4, Task 4.8): report number → account
@@ -29,14 +33,15 @@ async function approveSeededReview(request: APIRequestContext) {
 test("cash-bridge row drills to the account drawer, through the voucher link to evidence, and hands off to the GL", async ({
   page,
   request,
+  isMobile,
 }) => {
   await approveSeededReview(request);
 
   await page.goto("/reports");
 
   // The bridge chart is a lazy chunk — the table toggle appears with it.
-  await page.getByTestId("chart-table-toggle-cash-bridge").click();
-  await page.getByTestId("cash-bridge-row-6540").click();
+  await activateControl(page.getByTestId("chart-table-toggle-cash-bridge"), isMobile);
+  await activateControl(page.getByTestId("cash-bridge-row-6540"), isMobile);
 
   // Drawer opens on ?drill=6540 with both 6540 lines (seed + approved voucher).
   const drawer = page.getByTestId("account-drill-drawer");
@@ -52,7 +57,7 @@ test("cash-bridge row drills to the account drawer, through the voucher link to 
   // Axe with the dialog open (focus trap, aria-modal, names).
   await expectAccessible(page);
 
-  await drawer.getByTestId("drill-voucher-link").click();
+  await activateControl(drawer.getByTestId("drill-voucher-link"), isMobile);
   await expect(page).toHaveURL(/\/capture\/evidence\//);
   await expect(page.getByTestId("evidence-preview")).toBeVisible();
 
@@ -61,7 +66,7 @@ test("cash-bridge row drills to the account drawer, through the voucher link to 
   await expect(page.getByTestId("account-drill-drawer")).toBeVisible();
 
   // GL handoff carries BOTH the account and the same period token.
-  await page.getByTestId("drill-open-ledger").click();
+  await activateControl(page.getByTestId("drill-open-ledger"), isMobile);
   await expect(page).toHaveURL(/\/books\?/);
   await expect(page).toHaveURL(/view=general-ledger/);
   await expect(page).toHaveURL(/account=6540/);
@@ -69,7 +74,7 @@ test("cash-bridge row drills to the account drawer, through the voucher link to 
   await expect(page.getByTestId("ledger-account-filter")).toBeVisible();
 });
 
-test("SIE-imported lines show the Imported badge and never a dead link", async ({ page, request }) => {
+test("SIE-imported lines show the Imported badge and never a dead link", async ({ page, request, isMobile }) => {
   // Pinned March fixture (plan finding 8): permanently outside the default period.
   const sieFixture = [
     "#FLAGGA 0",
@@ -91,7 +96,7 @@ test("SIE-imported lines show the Imported badge and never a dead link", async (
   await page.goto("/reports?period=2026-03");
 
   // Statement line → drawer for the imported account.
-  await page.locator('[data-testid="pnl-line"][data-account="6110"]').click();
+  await activateControl(page.locator('[data-testid="pnl-line"][data-account="6110"]'), isMobile);
   const drawer = page.getByTestId("account-drill-drawer");
   await expect(drawer).toBeVisible();
   await expect(drawer.getByTestId("drill-line")).toHaveCount(1);

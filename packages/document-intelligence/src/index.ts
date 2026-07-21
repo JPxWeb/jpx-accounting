@@ -113,7 +113,12 @@ class AzureDocumentIntelligenceClient implements DocumentIntelligenceClient {
 // Map a small subset of Document Intelligence's field schema into the lean ExtractedField[]
 // shape the domain uses. Both `prebuilt-invoice` and `prebuilt-receipt` carry the keys used
 // here, just with different confidences. Unmapped fields stay in `rawFields` for the audit trail.
-function mapFieldsToContract(rawFields: Record<string, unknown>, modelId: DocumentIntelligenceModel): ExtractedField[] {
+// Exported for unit tests (tests/unit/document-intelligence.test.ts): the only other route to
+// this pure mapping runs through the live Azure REST client.
+export function mapFieldsToContract(
+  rawFields: Record<string, unknown>,
+  modelId: DocumentIntelligenceModel,
+): ExtractedField[] {
   const get = (...keys: string[]): { value: unknown; confidence: number | undefined } => {
     for (const key of keys) {
       const candidate = rawFields[key] as { content?: unknown; valueString?: unknown; confidence?: number } | undefined;

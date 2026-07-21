@@ -94,6 +94,13 @@ resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01
   parent: storage
   name: 'default'
   properties: {
+    // Evidence blobs are statutory 7-year records (Bokföringslagen) on LRS — soft delete +
+    // versioning are the minimum recovery net against accidental overwrite/delete.
+    deleteRetentionPolicy: {
+      enabled: true
+      days: 30
+    }
+    isVersioningEnabled: true
     cors: {
       corsRules: [
         {
@@ -119,10 +126,36 @@ resource evidenceContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
 }
 
 // ---------------------------------------------------------------------------
+// Observability – Log Analytics + Application Insights
+// (classic App Insights is retired; new components must be workspace-based)
+// ---------------------------------------------------------------------------
+
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+  name: '${namePrefix}-${environmentName}-logs'
+  location: location
+  properties: {
+    sku: {
+      name: 'PerGB2018'
+    }
+    retentionInDays: 30
+  }
+}
+
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: '${namePrefix}-${environmentName}-appi'
+  location: location
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: logAnalytics.id
+  }
+}
+
+// ---------------------------------------------------------------------------
 // App Service – API (Hono, bundled with esbuild)
 // ---------------------------------------------------------------------------
 
-@description('Direct Postgres connection string for the API (Supabase / pgvector). Optional � leave blank to keep normal mode fail-closed.')
+@description('Direct Postgres connection string for the API (Supabase / pgvector). Optional — leave blank to keep normal mode fail-closed.')
 @secure()
 param supabaseDbUrl string = ''
 
@@ -130,9 +163,12 @@ param supabaseDbUrl string = ''
 @secure()
 param advisorToolApprovalSecret string = ''
 
-@description('Supabase JWKS URL for JWT verification on mutating routes (typically `${SUPABASE_URL}/auth/v1/keys`).')
+@description('Supabase JWKS URL for JWT verification on mutating routes (typically `\${SUPABASE_URL}/auth/v1/keys`).')
 @secure()
 param supabaseJwksUrl string = ''
+
+@description('Comma-separated JWT algorithms the JWKS verifier accepts (SUPABASE_JWT_ALGS). Leave blank for the API default (RS256 + ES256 — see services/api/src/config.ts).')
+param supabaseJwtAlgs string = ''
 
 @description('Comma-separated browser origins permitted to call the API directly in normal mode (ACCOUNTING_CORS_ORIGINS). When empty, Bicep defaults to the deployed web App Service origin.')
 param accountingCorsOrigins string = ''
@@ -140,14 +176,12 @@ param accountingCorsOrigins string = ''
 @description('Set true when SUPABASE_DB_URL uses Supavisor transaction mode (port 6543); disables postgres-js named prepared statements.')
 param supabasePoolerTransactionMode bool = false
 
-// Fail closed: normal mode must not ship with the offline demo HMAC (config.ts DEMO_ADVISOR_TOOL_APPROVAL_SECRET).
-var demoAdvisorToolApprovalSecret = 'jpx-demo-advisor-tool-approval-secret'
+// Fail closed: normal mode must not ship with the offline demo HMAC (config.ts
+// DEMO_ADVISOR_TOOL_APPROVAL_SECRET). Bicep cannot express this check without the experimental
+// assertions feature (function-call `assert(...)` does not compile), so the enforcement point is
+// the "Reject demo advisor HMAC in normal mode" gate in .github/workflows/deploy.yml, which fails
+// the deploy before this template is ever submitted to ARM.
 var effectiveAccountingCorsOrigins = empty(accountingCorsOrigins) ? webAppDefaultOrigin : accountingCorsOrigins
-
-assert(
-  runtimeMode != 'normal' || (length(advisorToolApprovalSecret) > 0 && advisorToolApprovalSecret != demoAdvisorToolApprovalSecret),
-  'normal mode requires a non-empty ADVISOR_TOOL_APPROVAL_SECRET that is not the demo default'
-)
 
 resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
   name: '${namePrefix}-${environmentName}-api'
@@ -181,8 +215,10 @@ resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AZURE_DOCUMENT_INTELLIGENCE_API_KEY', value: azureDocumentIntelligenceApiKey }
         { name: 'ADVISOR_TOOL_APPROVAL_SECRET', value: advisorToolApprovalSecret }
         { name: 'SUPABASE_JWKS_URL', value: supabaseJwksUrl }
+        { name: 'SUPABASE_JWT_ALGS', value: supabaseJwtAlgs }
         { name: 'ACCOUNTING_CORS_ORIGINS', value: effectiveAccountingCorsOrigins }
         { name: 'SUPABASE_POOLER_TRANSACTION_MODE', value: string(supabasePoolerTransactionMode) }
+        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
       ]
     }
   }
@@ -252,6 +288,7 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'NEXT_PUBLIC_API_BASE_URL', value: '/api-proxy' }
         { name: 'DOCKER_REGISTRY_SERVER_URL', value: 'https://ghcr.io' }
         { name: 'WEBSITES_ENABLE_APP_SERVICE_STORAGE', value: 'false' }
+        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
       ]
     }
   }

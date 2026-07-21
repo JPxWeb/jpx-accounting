@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { apiBaseUrl, resetApiState } from "./test-helpers";
+import { activateControl, apiBaseUrl, resetApiState } from "./test-helpers";
+
+// The posture switches are plain <button role="switch"> elements, so
+// `activateControl` (pointer on desktop, focus+Enter on mobile) applies —
+// see the helper's doc comment for the Pixel 7 visual-viewport quirk.
 
 /**
  * AI posture trust surfaces (Task 5.10): About-this-AI transparency panel,
@@ -46,10 +50,10 @@ test("About-this-AI renders the runtime provider and the Article 50 statement", 
   await expect(page.getByTestId("ai-toggle-suggestions")).toHaveAttribute("aria-checked", "true");
 });
 
-test("posture toggles persist across reload", async ({ page }) => {
+test("posture toggles persist across reload", async ({ page, isMobile }) => {
   await page.goto("/settings/ai-posture");
 
-  await page.getByTestId("ai-toggle-suggestions").click();
+  await activateControl(page.getByTestId("ai-toggle-suggestions"), isMobile);
   await expect(page.getByText("AI posture saved.")).toBeVisible();
   await expect(page.getByTestId("ai-toggle-suggestions")).toHaveAttribute("aria-checked", "false");
 
@@ -60,9 +64,12 @@ test("posture toggles persist across reload", async ({ page }) => {
   await expect(page.getByTestId("ai-toggle-advisor")).toHaveAttribute("aria-checked", "true");
 });
 
-test("suggestions off hides the AI block on queue cards but keeps human actions operable", async ({ page }) => {
+test("suggestions off hides the AI block on queue cards but keeps human actions operable", async ({
+  page,
+  isMobile,
+}) => {
   await page.goto("/settings/ai-posture");
-  await page.getByTestId("ai-toggle-suggestions").click();
+  await activateControl(page.getByTestId("ai-toggle-suggestions"), isMobile);
   await expect(page.getByText("AI posture saved.")).toBeVisible();
 
   // Scope to actionable cards so the accept assertion is deterministic.
@@ -79,13 +86,13 @@ test("suggestions off hides the AI block on queue cards but keeps human actions 
   const pendingBefore = await page.getByTestId("review-card").count();
   const accept = firstCard.getByTestId("review-accept");
   await expect(accept).toBeEnabled();
-  await accept.click();
+  await activateControl(accept, isMobile);
   await expect(page.getByTestId("review-card")).toHaveCount(pendingBefore - 1);
 });
 
-test("advisor off shows the honest disabled panel on /assistant", async ({ page }) => {
+test("advisor off shows the honest disabled panel on /assistant", async ({ page, isMobile }) => {
   await page.goto("/settings/ai-posture");
-  await page.getByTestId("ai-toggle-advisor").click();
+  await activateControl(page.getByTestId("ai-toggle-advisor"), isMobile);
   await expect(page.getByText("AI posture saved.")).toBeVisible();
   await expect(page.getByTestId("ai-toggle-advisor")).toHaveAttribute("aria-checked", "false");
 

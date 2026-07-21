@@ -3,7 +3,7 @@ import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { resetApiState } from "./test-helpers";
+import { activateControl, resetApiState } from "./test-helpers";
 
 const receiptFixture = path.join(__dirname, "..", "fixtures", "receipt.jpg");
 const invoiceFixture = path.join(__dirname, "..", "fixtures", "invoice.pdf");
@@ -21,20 +21,34 @@ test("capture page shows quick-add, drop-zone, drafts, and the evidence archive"
   await expect(page.getByText("Full implementation lands in Phase 5")).toHaveCount(0);
 });
 
-test("picked files become drafts with thumbnails and promote on retry", async ({ page }) => {
+// Small row controls (draft-promote, evidence-open) are activated via
+// `activateControl`: pointer click on desktop, keyboard on mobile — see the
+// helper's doc comment for the Pixel 7 visual-viewport emulation quirk.
+
+test("picked files become drafts with thumbnails and promote on retry", async ({ page, isMobile }) => {
   await page.goto("/capture");
   // Block upload-init so the fire-and-forget promotion fails and the drafts stay
   // visible — this pins the thumbnail rendering AND the drafts-table retry path.
-  await page.route("**/api/uploads/init", (route) => route.abort());
+  let abortedInitCalls = 0;
+  await page.route("**/api/uploads/init", (route) => {
+    abortedInitCalls += 1;
+    return route.abort();
+  });
   await page.getByTestId("capture-file-input").setInputFiles([receiptFixture, invoiceFixture]);
   await expect(page.getByTestId("draft-row")).toHaveCount(2);
   // One <img> thumb for the JPEG, one FileText icon for the PDF.
   await expect(page.getByTestId("draft-thumb")).toHaveCount(2);
 
+  // Draft rows render BEFORE the fire-and-forget promotions reach the network,
+  // so unrouting on the row count alone races them: on the slower mobile
+  // emulation both auto-promote initUploads can fire after the unroute,
+  // succeed, and clear the drafts with no button press. Wait until both
+  // auto-promotions have consumed their (aborted) attempt first.
+  await expect.poll(() => abortedInitCalls).toBe(2);
   await page.unroute("**/api/uploads/init");
-  await page.getByTestId("draft-promote").first().click();
+  await activateControl(page.getByTestId("draft-promote").first(), isMobile);
   await expect(page.getByTestId("draft-row")).toHaveCount(1);
-  await page.getByTestId("draft-promote").first().click();
+  await activateControl(page.getByTestId("draft-promote").first(), isMobile);
   await expect(page.getByTestId("draft-row")).toHaveCount(0);
   // Seeded evidence + the two promoted files.
   await expect(page.getByTestId("evidence-row")).toHaveCount(3);
@@ -49,10 +63,10 @@ test("a picked file auto-promotes into the evidence archive", async ({ page }) =
   await expect(page.getByTestId("draft-row")).toHaveCount(0);
 });
 
-test("an evidence row drills through to detail with the hash visible", async ({ page }) => {
+test("an evidence row drills through to detail with the hash visible", async ({ page, isMobile }) => {
   await page.goto("/capture");
   await expect(page.getByTestId("evidence-row").first()).toBeVisible();
-  await page.getByTestId("evidence-open").first().click();
+  await activateControl(page.getByTestId("evidence-open").first(), isMobile);
   await expect(page).toHaveURL(/\/capture\/evidence\//);
   await expect(page.getByTestId("evidence-hash")).toBeVisible();
 });

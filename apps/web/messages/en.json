@@ -57,6 +57,14 @@
       "searchLabel": "Search ⌘K",
       "searchAria": "Open command palette"
     },
+    "account": {
+      "signIn": "Sign in",
+      "menuAria": "Account menu",
+      "closeMenuAria": "Close account menu",
+      "signedInAs": "Signed in as",
+      "signOut": "Sign out",
+      "signingOut": "Signing out …"
+    },
     "demoBanner": "Demo mode is active. Local demo data and local AI fallback are enabled intentionally.",
     "captureSheet": {
       "eyebrow": "Quick Intake",
@@ -112,6 +120,9 @@
       "grossLabel": "Gross amount",
       "netLabel": "Net amount",
       "vatAmountLabel": "VAT amount",
+      "bookedAtLabel": "Booking date",
+      "bookedAtHint": "Defaults to the receipt's transaction date. The approval itself is always logged at decision time.",
+      "bookedAtError": "The booking date must be a valid calendar day and cannot be in the future.",
       "amountError": "Net + VAT must equal gross (within 0.01); all three amounts are required when any of them changes.",
       "submit": "Approve with edits",
       "submitting": "Approving…",
@@ -974,7 +985,39 @@
       "storageNormal2": "Evidence files persist in Azure Blob Storage (Sweden Central), written via short-lived signed URLs.",
       "storageNormal3": "Both stores keep records within the EU, in ordered, accessible form.",
       "roadmapTitle": "What does not exist yet",
-      "roadmapBody": "Per-class legal-hold toggles and retention-expiry tooling are not built, so there are no controls to show here. When they land, every hold will be an attributed ledger event — not a silent flag."
+      "roadmapBody": "Per-class legal-hold toggles and retention-expiry tooling are not built, so there are no controls to show here. When they land, every hold will be an attributed ledger event — not a silent flag.",
+      "localData": {
+        "title": "Data stored in this browser",
+        "description": "Beyond the ledger, the app keeps these device-local stores. This table is rendered from the same registry that sign-out clears — it is the complete list.",
+        "columns": {
+          "store": "Store",
+          "key": "Key",
+          "purpose": "Contents",
+          "signOut": "On sign-out"
+        },
+        "storage": {
+          "localStorage": "localStorage",
+          "sessionStorage": "sessionStorage",
+          "indexedDB": "IndexedDB",
+          "cacheStorage": "Cache Storage",
+          "cookie": "Cookie"
+        },
+        "clearedYes": "Cleared",
+        "clearedNo": "Kept (preference)",
+        "signOutNote": "Signing out clears every row marked \"Cleared\" on this device. Ledger records live server-side (or in the in-memory demo store) and are governed by the retention policy above.",
+        "entries": {
+          "assistantThreads": "Saved advisor conversations (questions, answers, citations).",
+          "assistantThreadsLegacy": "Legacy advisor history (v1) — migrated on first read, removed on sign-out.",
+          "dashboardLayout": "Your Today-dashboard widget order and hidden widgets.",
+          "onboarding": "Which onboarding tours you have completed or dismissed.",
+          "theme": "Light/dark/system appearance choice.",
+          "captureDraftsSession": "Tab-scoped fallback copy of capture drafts when IndexedDB is unavailable (metadata only).",
+          "captureDraftsDb": "Local-first capture drafts including receipt files, plus a bounded preview cache of promoted evidence files.",
+          "staticAssetCache": "Offline cache of static app assets (icons, scripts) — never API responses or authorized requests.",
+          "localeCookie": "Workspace language preference (Swedish/English).",
+          "supabaseSession": "Supabase Auth session tokens (sb-… keys). Removed by sign-out; swept defensively too."
+        }
+      }
     },
     "team": {
       "eyebrow": "Settings / Team & roles",
@@ -1271,6 +1314,34 @@
           }
         }
       }
+    }
+  },
+  "auth": {
+    "login": {
+      "eyebrow": "Account",
+      "title": "Sign in to JPX Accounting",
+      "description": "Email and password, verified by Supabase Auth. Your ledger stays append-only and every posting remains human-approved.",
+      "modeSwitcherAria": "Sign in or create account",
+      "emailLabel": "Email",
+      "passwordLabel": "Password",
+      "signIn": "Sign in",
+      "signUp": "Create account",
+      "signingIn": "Signing in …",
+      "signingUp": "Creating account …",
+      "signInErrorTitle": "Sign-in failed.",
+      "signUpErrorTitle": "Account creation failed.",
+      "checkEmail": "Almost there — confirm your email. We sent a confirmation link to {email} (Supabase's standard flow). Sign in here once the address is confirmed.",
+      "limitationsNote": "Early build, honest limits: email confirmation and password recovery follow Supabase's hosted defaults — there is no in-app confirmation or reset flow yet, and no social sign-in.",
+      "backToApp": "Back to the app",
+      "signedInTitle": "You are signed in",
+      "signedInBody": "This device holds an active session. Sign out to clear local workspace data from this browser.",
+      "signedInAs": "Signed in as",
+      "continueToApp": "Continue to the app",
+      "signOut": "Sign out",
+      "signingOut": "Signing out …",
+      "signOutErrorTitle": "Sign-out hit a problem (local data was still cleared):",
+      "notConfiguredTitle": "Sign-in is not available",
+      "notConfiguredBody": "This deployment runs without authentication (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are not set). Demo mode needs no account — head back to the app."
     }
   }
 }

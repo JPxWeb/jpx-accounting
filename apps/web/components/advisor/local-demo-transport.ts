@@ -39,8 +39,6 @@ import { apiClient } from "../../lib/client";
 export const PROPOSE_REVIEW_ACTION_TOOL = "proposeReviewAction";
 export const PROPOSE_REVIEW_ACTION_PART_TYPE = `tool-${PROPOSE_REVIEW_ACTION_TOOL}` as const;
 
-/** Deferred-auth identity, matching the server route and the review queue. */
-const ADVISOR_ACTOR_ID = "user_founder";
 const ADVISOR_APPROVAL_NOTES = "Approved via advisor";
 
 /** The tool output shape both modes stream, so the client renders one confirmation row. */
@@ -194,8 +192,8 @@ async function buildTurnParts(messages: AdvisorUIMessage[]): Promise<DemoTurnPar
     // or skip entirely on denial.
     let approved = false;
     if (approvalResponse.approved) {
+      // No actorId (WS-C R5): the fallback store attributes to the demo sentinel.
       const review = await apiClient.approveReview(approvalResponse.proposal.reviewId, {
-        actorId: ADVISOR_ACTOR_ID,
         notes: ADVISOR_APPROVAL_NOTES,
         edited: approvalResponse.proposal.edited,
       });

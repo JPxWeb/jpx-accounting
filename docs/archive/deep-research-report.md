@@ -1,3 +1,5 @@
+> **Archived 2026-07-18 — background research, absorbed.** One-off research input (Bokföringslagen/VAT/archiving constraints, market patterns) whose actionable conclusions were folded into the product design and [`../compliance-playbook.md`](../compliance-playbook.md); kept for reference, not maintained.
+
 # Deep research on building Swedish bookkeeping software with AI-assisted receipt processing on Azure
 
 ## Regulatory baseline you must design for

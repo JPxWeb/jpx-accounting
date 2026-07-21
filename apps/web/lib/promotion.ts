@@ -8,6 +8,7 @@ import { removeCaptureDraft, saveCaptureDraft } from "./draft-queue";
 import type { CaptureDraft, DraftQueueSaveResult } from "./draft-queue-core";
 import { putEvidenceBlob } from "./evidence-blob-cache";
 import { sha256Hex } from "./hash";
+import { invalidateLedgerDerived } from "./query-invalidation";
 import { WORKSPACE_IDENTITY } from "./workspace-identity";
 
 /**
@@ -65,8 +66,11 @@ function invalidateCaptureQueries(queryClient: QueryClient | undefined) {
   if (!queryClient) {
     return;
   }
+  // Narrow extra: the local draft queue is not ledger-derived.
   void queryClient.invalidateQueries({ queryKey: ["capture-drafts"] });
-  void queryClient.invalidateQueries({ queryKey: ["workspace"] });
+  // Promotion creates evidence + voucher + review — refresh everything derived
+  // from the ledger (R18), not just the workspace snapshot.
+  invalidateLedgerDerived(queryClient);
 }
 
 export type PromoteDraftOptions = {
@@ -116,19 +120,59 @@ async function promoteMetadataDraft(draft: CaptureDraft): Promise<EvidenceCreate
 }
 
 /**
+ * Join-or-start seam for the in-flight promotion registry (WS-D R19). Pure over the
+ * passed `registry` Map so unit tests can exercise the race semantics directly:
+ * while a run for `key` is in flight every subsequent call returns THAT promise
+ * (settling with the same result or rejection) instead of starting a parallel run;
+ * the entry clears on settle, so a post-failure retry starts a fresh run.
+ */
+export function joinInFlight<T>(registry: Map<string, Promise<T>>, key: string, task: () => Promise<T>): Promise<T> {
+  const existing = registry.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  // `Promise.resolve().then(task)` also routes synchronous throws into the promise.
+  const run = Promise.resolve()
+    .then(task)
+    .finally(() => {
+      registry.delete(key);
+    });
+  registry.set(key, run);
+  return run;
+}
+
+/**
+ * In-flight promotions keyed by draft id. Draft ids are stable across the auto-promote →
+ * drafts-table-retry lifecycle, so a retry click (or double-click) while the original
+ * fire-and-forget promotion is still running joins it instead of racing a second
+ * initUpload→createEvidence pipeline into duplicate evidence. Per-tab only: drafts
+ * synced into ANOTHER tab (BroadcastChannel) can still race across tabs — those are
+ * absorbed server-side by the (workspace, sha256, sizeBytes) createEvidence dedupe.
+ */
+const inFlightPromotions = new Map<string, Promise<EvidenceCreateResult>>();
+
+/**
  * Promote a local draft into ledger evidence:
  * sha256 → initUpload → uploadBlob → createEvidence → putEvidenceBlob → removeCaptureDraft,
  * then fire-and-forget extraction. Throws when the create fails — the draft stays local so
- * the drafts-table promote button doubles as the retry path.
+ * the drafts-table promote button doubles as the retry path. Re-entrant per draft: a call
+ * for a draft that is already promoting awaits the in-flight run (registry above); the
+ * first caller's `options` win for the joined run.
  */
 export async function promoteDraft(
   draft: CaptureDraft,
   options: PromoteDraftOptions = {},
 ): Promise<EvidenceCreateResult> {
+  return joinInFlight(inFlightPromotions, draft.id, () => runPromotionPipeline(draft, options));
+}
+
+async function runPromotionPipeline(draft: CaptureDraft, options: PromoteDraftOptions): Promise<EvidenceCreateResult> {
   const created = draft.file ? await promoteFileDraft(draft, draft.file) : await promoteMetadataDraft(draft);
 
   if (draft.file) {
     // Local preview cache for the device that captured the file (bounded LRU, best-effort).
+    // Useful on a dedup hit too: THIS device now holds the bytes for the existing evidence.
     await putEvidenceBlob(created.evidence.id, draft.file);
   }
 
@@ -137,10 +181,14 @@ export async function promoteDraft(
 
   // Fire-and-forget: extraction enriches the voucher in the background. The create-time
   // fields are already reviewable, so an extraction failure must never fail the promotion.
-  void apiClient
-    .extractEvidence(created.evidence.id)
-    .catch(() => undefined)
-    .then(() => invalidateCaptureQueries(options.queryClient));
+  // Skipped on a dedup hit (WS-D R19): the existing evidence already ran extraction, and a
+  // duplicate promote must leave the append-only chain untouched.
+  if (!created.deduped) {
+    void apiClient
+      .extractEvidence(created.evidence.id)
+      .catch(() => undefined)
+      .then(() => invalidateCaptureQueries(options.queryClient));
+  }
 
   return created;
 }

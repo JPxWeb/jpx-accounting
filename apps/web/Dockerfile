@@ -25,6 +25,11 @@ ENV NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE=${NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE}
 ARG NEXT_PUBLIC_API_BASE_URL=/api-proxy
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 
+# Azure Blob origin allowed by the production CSP for SAS uploads/previews (R17).
+# Empty keeps the strict CSP; set to https://<account>.blob.core.windows.net in deploys.
+ARG NEXT_PUBLIC_AZURE_STORAGE_ORIGIN=
+ENV NEXT_PUBLIC_AZURE_STORAGE_ORIGIN=${NEXT_PUBLIC_AZURE_STORAGE_ORIGIN}
+
 # Build all workspace packages (contracts, domain, ui-tokens, etc.) then web
 RUN pnpm build
 

@@ -37,6 +37,7 @@ import {
   guessAccountingMethod,
   initialLedgerLines,
 } from "./evidence-defaults";
+import { assertBalancedPosting, postingImbalanceOre } from "./posting-invariants";
 import { buildJournal, buildBalances, buildVat, filterLedgerLines } from "./projections";
 import { buildReportPack } from "./reports/pack";
 import { currentMonthToken } from "./reports/period";
@@ -45,6 +46,7 @@ import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
 import type { ParsedSieFile } from "./sie/parse";
 import { simulateApprovals } from "./simulation";
+import { getVatRegime, type VatRegime } from "./vat/regime";
 
 type LedgerLine = Parameters<typeof buildJournal>[0][number];
 export type ReviewAction = "approve" | "reject" | "book-without-vat";
@@ -85,30 +87,108 @@ export class InvalidReviewEditError extends Error {
 }
 
 /**
+ * Content-dedupe predicate for idempotent `createEvidence` (WS-D R19). A create
+ * is a duplicate of an EXISTING evidence row only when the caller supplied BOTH
+ * `sha256` and `sizeBytes` (legacy/metadata-only callers never dedupe) and the
+ * existing row carries the identical (organizationId, workspaceId, hash,
+ * sizeBytes) tuple. Workspace scoping is part of the key on purpose: the same
+ * file captured in two different workspaces must create twice — dedupe never
+ * crosses tenants. Shared by MemoryLedgerStore and PostgresLedgerStore so both
+ * stores answer "is this the same file?" identically (CONVENTIONS Rule 11).
+ */
+export function isDuplicateEvidence(existing: EvidenceObject, input: EvidenceCreateInput): boolean {
+  return (
+    input.sha256 !== undefined &&
+    input.sizeBytes !== undefined &&
+    existing.organizationId === input.organizationId &&
+    existing.workspaceId === input.workspaceId &&
+    existing.hash === input.sha256 &&
+    existing.sizeBytes === input.sizeBytes
+  );
+}
+
+/**
+ * VAT codes a reviewer may select on an edited decision (WS-B B5): the
+ * regime's rate vocabulary (VAT25/VAT12/VAT6/VAT0 for Sweden) plus the
+ * VAT-neutral "NA". "VAT-REVIEW" is deliberately NOT selectable — it is the
+ * system's blocked-marker, never a posting choice.
+ */
+export function validEditVatCodes(regime: VatRegime): ReadonlySet<string> {
+  return new Set([...Object.keys(regime.rates), "NA"]);
+}
+
+/**
  * Validate a decision-time edit and derive the effective posting inputs.
  * Append-only by construction: the returned `effectiveVoucher` /
  * `effectiveSuggestion` are decision-time derivations for `buildPostingLines`
  * and the review read model — the stored voucher row is never rewritten.
  * Shared by MemoryLedgerStore and PostgresLedgerStore (CONVENTIONS Rule 11).
+ *
+ * WS-B B5 validation: `edited.accountNumber` must exist in the CoA registry,
+ * `edited.vatCode` must be in the VAT regime vocabulary, and the effective
+ * accountName is SERVER-RESOLVED from the registry — any client-supplied
+ * `edited.accountName` is ignored so display names cannot be forged into the
+ * ledger. Invalid values throw `InvalidReviewEditError` (→ HTTP 422) BEFORE
+ * any mutation, in both stores.
  */
 export function resolveReviewDecisionEdit(
   voucher: Voucher,
   suggestion: AccountingSuggestion | undefined,
   edited: ReviewDecisionEdit,
+  coa: CoaTemplate = defaultCoaTemplate,
 ): { effectiveSuggestion: AccountingSuggestion | undefined; effectiveVoucher: Voucher } {
   const issues: string[] = [];
+  const registryAccount = findCoaAccount(coa, edited.accountNumber);
+  if (!registryAccount) {
+    issues.push(`Edited accountNumber (${edited.accountNumber}) does not exist in the ${coa.id} chart of accounts.`);
+  }
+  const vatVocabulary = validEditVatCodes(getVatRegime(coa.country));
+  if (!vatVocabulary.has(edited.vatCode)) {
+    issues.push(
+      `Edited vatCode (${edited.vatCode}) is not in the VAT regime vocabulary (${[...vatVocabulary].join(", ")}).`,
+    );
+  }
   const anyAmountGiven =
     edited.grossAmount !== undefined || edited.netAmount !== undefined || edited.vatAmount !== undefined;
   if (anyAmountGiven) {
     if (edited.grossAmount === undefined || edited.netAmount === undefined || edited.vatAmount === undefined) {
       issues.push("Amount edits must provide grossAmount, netAmount, and vatAmount together.");
-    } else if (Math.abs(edited.netAmount + edited.vatAmount - edited.grossAmount) > 0.01) {
-      issues.push(
-        `Edited amounts do not add up: net (${edited.netAmount}) + VAT (${edited.vatAmount}) must equal gross (${edited.grossAmount}) within 0.01.`,
-      );
+    } else {
+      // Sub-öre amounts would sail through the sum check and then blow the
+      // öre-exact assertBalanced invariant MID-mutation (500, and a
+      // half-applied decision in the memory store) — reject them here, 422,
+      // before anything mutates.
+      for (const [name, value] of [
+        ["grossAmount", edited.grossAmount],
+        ["netAmount", edited.netAmount],
+        ["vatAmount", edited.vatAmount],
+      ] as const) {
+        if (!Number.isFinite(value) || Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) {
+          issues.push(`Edited ${name} (${value}) must be öre-exact (at most two decimals).`);
+        }
+      }
+      if (Math.abs(edited.netAmount + edited.vatAmount - edited.grossAmount) > 0.01) {
+        issues.push(
+          `Edited amounts do not add up: net (${edited.netAmount}) + VAT (${edited.vatAmount}) must equal gross (${edited.grossAmount}) within 0.01.`,
+        );
+      }
     }
   }
-  if (issues.length > 0) {
+  if (edited.bookedAt !== undefined) {
+    // R13: an explicit accounting-date override must be a real calendar day
+    // and must not book into the future. One day of slack absorbs client/server
+    // timezone skew (a Stockholm browser is a calendar day ahead of a UTC-hosted
+    // API between 00:00 and 02:00 local — its "today" must not 422). Locked/
+    // closed-period enforcement is a Later feature — any past day is accepted.
+    if (!isValidCalendarDay(edited.bookedAt)) {
+      issues.push(`Edited bookedAt (${edited.bookedAt}) must be a valid YYYY-MM-DD calendar day.`);
+    } else if (edited.bookedAt > localDayOfTimestamp(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())) {
+      issues.push(`Edited bookedAt (${edited.bookedAt}) must not be in the future.`);
+    }
+  }
+  if (issues.length > 0 || !registryAccount) {
+    // `!registryAccount` is redundant with the pushed issue but narrows the
+    // type: past this point the edited account is a real registry entry.
     throw new InvalidReviewEditError(issues);
   }
 
@@ -116,7 +196,8 @@ export function resolveReviewDecisionEdit(
     ? {
         ...suggestion,
         accountNumber: edited.accountNumber,
-        accountName: edited.accountName,
+        // B5: server-resolved from the registry; edited.accountName is ignored.
+        accountName: registryAccount.name,
         vatCode: edited.vatCode,
       }
     : undefined;
@@ -125,9 +206,17 @@ export function resolveReviewDecisionEdit(
     edited.grossAmount !== undefined
       ? { grossAmount: edited.grossAmount, netAmount: edited.netAmount, vatAmount: edited.vatAmount }
       : {};
+  // R13: thread an edited accounting date into the effective voucher's
+  // transactionDate — the first candidate `deriveBookedAt` consults inside
+  // `buildPostingLines` — so the override reaches the posted lines through the
+  // ONE shared derivation path in both stores. Decision-time only: the stored
+  // voucher row is never rewritten, and the ReviewApproved event payload
+  // records `edited.bookedAt` for the audit trail.
+  const bookedAtOverride: Partial<VoucherField> =
+    edited.bookedAt !== undefined ? { transactionDate: edited.bookedAt } : {};
   const effectiveVoucher: Voucher = {
     ...voucher,
-    voucherFields: { ...voucher.voucherFields, ...amountOverrides },
+    voucherFields: { ...voucher.voucherFields, ...amountOverrides, ...bookedAtOverride },
   };
 
   return { effectiveSuggestion, effectiveVoucher };
@@ -149,7 +238,24 @@ export class SieImportError extends Error {
 export const SIE_IMPORT_MAX_VOUCHERS = 500;
 export const SIE_IMPORT_MAX_LINES_PER_VOUCHER = 100;
 
-export type SieImportInput = { actorId: string; file: ParsedSieFile };
+/**
+ * Deferred-auth demo sentinel (WS-C R5, CONVENTIONS Rule 20 adjacency): when a
+ * mutating store call arrives without a server-derived `actorId` (auth off —
+ * demo mode and the browser-side fallback store), events attribute to this
+ * fixed founder identity. With auth on, the API threads the verified JWT
+ * subject as `user:<sub>` instead. Client-supplied actor ids were deleted from
+ * the wire contracts and can never reach a store.
+ */
+export const DEMO_ACTOR_ID = "user_founder";
+
+/**
+ * Server-derived actor threading for mutating store methods. Optional: absent
+ * means "no authenticated subject" and stores default to `DEMO_ACTOR_ID`.
+ * Never populated from a client payload.
+ */
+export type ActorAttribution = { actorId?: string | undefined };
+
+export type SieImportInput = ActorAttribution & { file: ParsedSieFile };
 
 export type SiePlannedVoucher = {
   /** Idempotency key: `sie_<series>_<number>` checked against prior `VoucherImported` events. */
@@ -243,6 +349,15 @@ export function planSieImport(
       deductible: false,
     }));
 
+    // Rounding-residue guard: the raw-sum check above tolerates |sum| ≤ 0.005,
+    // but per-line round2 can still leave the ROUNDED lines öre-unbalanced
+    // (e.g. +0.334 +0.334 −0.668 → 0.33 + 0.33 vs 0.67). Never import an
+    // unbalanced entry; per-voucher skip, not throw (Rule 21).
+    if (postingImbalanceOre(lines) !== 0) {
+      skipped.push({ reference, reason: "unbalanced" });
+      return;
+    }
+
     vouchers.push({
       aggregateId,
       reference,
@@ -258,8 +373,8 @@ export function planSieImport(
 }
 
 export interface LedgerStore {
-  createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult>;
-  composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket>;
+  createEvidence(input: EvidenceCreateInput & ActorAttribution): Promise<EvidenceCreateResult>;
+  composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket>;
   getEvidenceContext(
     evidenceId: string,
   ): Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined>;
@@ -296,10 +411,10 @@ export interface LedgerStore {
   applyReviewDecision(
     reviewId: string,
     action: ReviewAction,
-    input: ReviewDecisionInput,
+    input: ReviewDecisionInput & ActorAttribution,
   ): Promise<ReviewTask | undefined>;
   answerAssistantQuestion(question: string): Promise<AssistantSession>;
-  runSimulation(input: SimulationRequest): Promise<SimulationRun>;
+  runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun>;
   getCloseRun(): Promise<CloseRun>;
   refreshComplianceAlerts(): Promise<ComplianceAlert[]>;
   getCompanySettings(): Promise<CompanySettings | null>;
@@ -312,6 +427,67 @@ const AUTO_DETECTED_KINDS = new Set(["stale-blocked", "missing-supplier-vat"]);
 const defaultOrganizationId = "org_jpx";
 const defaultWorkspaceId = "workspace_main";
 
+/** Strict calendar-day string (`YYYY-MM-DD`) — the only shape `deriveBookedAt` accepts. */
+const DAY_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * True iff `value` is a strict `YYYY-MM-DD` string naming a REAL calendar day.
+ * `Date.parse` is not enough: engines roll impossible days over (2026-02-31 →
+ * March 3), so components are round-tripped through `Date.UTC` and compared.
+ */
+export function isValidCalendarDay(value: string): boolean {
+  if (!DAY_ONLY_PATTERN.test(value)) return false;
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const roundTrip = new Date(Date.UTC(year, month - 1, day));
+  return roundTrip.getUTCFullYear() === year && roundTrip.getUTCMonth() === month - 1 && roundTrip.getUTCDate() === day;
+}
+
+/**
+ * LOCAL calendar day (`YYYY-MM-DD`) of an ISO timestamp. Never
+ * `toISOString().slice(0, 10)` — that serialises in UTC and crosses the day
+ * boundary in any non-UTC timezone (period-model rule; CONVENTIONS Rule 22).
+ * Throws on unparseable input (Rule 12 NaN guard).
+ */
+export function localDayOfTimestamp(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`unparseable timestamp ${JSON.stringify(iso)}`);
+  }
+  const pad2 = (value: number) => String(value).padStart(2, "0");
+  return `${parsed.getFullYear()}-${pad2(parsed.getMonth() + 1)}-${pad2(parsed.getDate())}`;
+}
+
+/**
+ * Accounting-date derivation for posted ledger lines (WS-B R13). Postings are
+ * dated by the voucher's business-event date — `transactionDate`, falling back
+ * to `receiptDate` — NOT by when the reviewer clicked approve, so entries land
+ * in the correct fiscal/VAT period. The decision-time `occurredAt` timestamp is
+ * only the fallback (as its LOCAL calendar day) when the voucher carries no
+ * usable date. Candidates are ignored unless they are strict `YYYY-MM-DD`,
+ * parseable, and not after the decision day (future-dated extraction noise
+ * must not book into an open future period).
+ *
+ * Owned by domain and consumed inside `buildPostingLines` so MemoryLedgerStore
+ * and PostgresLedgerStore inherit identical derivation (CONVENTIONS Rule 11 —
+ * store parity by construction). The `PostedToLedger` event keeps its own
+ * `occurredAt` (decision time); only the LINES carry the accounting date.
+ */
+export function deriveBookedAt(
+  fields: Pick<VoucherField, "transactionDate" | "receiptDate"> | undefined,
+  occurredAt: string,
+): string {
+  const decisionDay = localDayOfTimestamp(occurredAt);
+  for (const candidate of [fields?.transactionDate, fields?.receiptDate]) {
+    if (candidate === undefined) continue;
+    if (!isValidCalendarDay(candidate)) continue;
+    if (candidate > decisionDay) continue;
+    return candidate;
+  }
+  return decisionDay;
+}
+
 export function buildPostingLines(
   voucher: Voucher,
   suggestion: AccountingSuggestion,
@@ -319,14 +495,25 @@ export function buildPostingLines(
   occurredAt: string,
   coa: CoaTemplate = defaultCoaTemplate,
 ): LedgerLine[] {
-  const amount = voucher.voucherFields.grossAmount ?? 0;
-  const netAmount = voucher.voucherFields.netAmount ?? amount;
-  const vatAmount = action === "book-without-vat" ? 0 : (voucher.voucherFields.vatAmount ?? 0);
-  const description = voucher.voucherFields.description ?? "Reviewed voucher";
+  const fields = voucher.voucherFields;
+  // R13: lines carry the ACCOUNTING date (voucher transaction/receipt date,
+  // decision-day fallback), not the approval-click timestamp. An edited
+  // bookedAt arrives here via resolveReviewDecisionEdit, which threads it into
+  // the effective voucher's transactionDate.
+  const bookedAt = deriveBookedAt(fields, occurredAt);
+  // Non-deductible input VAT (book-without-vat) is part of the cost under
+  // Swedish rules: claim 0 VAT and debit the full gross to the cost account.
+  const vatAmount = action === "book-without-vat" ? 0 : (fields.vatAmount ?? 0);
+  const grossAmount = fields.grossAmount ?? round2((fields.netAmount ?? 0) + vatAmount);
+  // Derive net from gross − VAT instead of trusting fields.netAmount: extracted
+  // triples can be öre-inconsistent, and resolveReviewDecisionEdit admits a
+  // ±0.01 tolerance — deriving is what keeps Σdebit = Σcredit unconditionally.
+  const netAmount = round2(grossAmount - vatAmount);
+  const description = fields.description ?? "Reviewed voucher";
   const inputVatAccount = coa.roles.inputVat;
   const bankAccount = coa.roles.bank;
 
-  return [
+  const lines: LedgerLine[] = [
     {
       voucherId: voucher.id,
       accountNumber: suggestion.accountNumber,
@@ -335,9 +522,12 @@ export function buildPostingLines(
       debit: netAmount,
       credit: 0,
       vatCode: suggestion.vatCode,
-      bookedAt: occurredAt,
+      bookedAt,
       deductible: action !== "book-without-vat",
     },
+    // Zero-amount for book-without-vat, kept for shape stability and so the
+    // journal shows the explicit "no VAT claimed" decision. buildVat and box 48
+    // read input VAT off this account's amounts, so 0 claims nothing.
     {
       voucherId: voucher.id,
       accountNumber: inputVatAccount,
@@ -346,7 +536,7 @@ export function buildPostingLines(
       debit: vatAmount,
       credit: 0,
       vatCode: suggestion.vatCode,
-      bookedAt: occurredAt,
+      bookedAt,
       deductible: action !== "book-without-vat",
     },
     {
@@ -355,12 +545,13 @@ export function buildPostingLines(
       accountName: findCoaAccount(coa, bankAccount)?.name ?? bankAccount,
       description,
       debit: 0,
-      credit: amount,
+      credit: grossAmount,
       vatCode: "NA",
-      bookedAt: occurredAt,
+      bookedAt,
       deductible: false,
     },
   ];
+  return assertBalancedPosting(lines, `voucher ${voucher.id}`);
 }
 
 /**
@@ -403,7 +594,7 @@ export class MemoryLedgerStore implements LedgerStore {
   private readonly packetIdToVoucherId = new Map<string, string>();
   private readonly voucherIdToReviewId = new Map<string, string>();
   private readonly events: LedgerEvent[] = [];
-  private readonly ledgerLines: LedgerLine[] = initialLedgerLines();
+  private readonly ledgerLines: LedgerLine[] = assertBalancedPosting(initialLedgerLines(), "demo seed lines");
   private readonly assistantExamples: AssistantSession[] = [];
   private alerts: ComplianceAlert[] = [
     {
@@ -451,13 +642,15 @@ export class MemoryLedgerStore implements LedgerStore {
   private appendEvent(event: Omit<LedgerEvent, "id" | "eventHash" | "previousHash" | "digestDate">) {
     const previousHash = this.events.at(-1)?.eventHash ?? "GENESIS";
     const digestDate = new Date().toISOString().slice(0, 10);
-    const payload = JSON.stringify(event.payload);
 
     const fullEvent: LedgerEvent = {
       ...event,
       id: createId("evt"),
       previousHash,
-      eventHash: buildEventHash(previousHash, payload),
+      // SHA-256 over canonicalJson of (previousHash, payload) — pass the RAW
+      // payload so append-time hashing and integrity re-verification share
+      // the one canonical serializer (WS-B R14; parity with Postgres).
+      eventHash: buildEventHash(previousHash, event.payload),
       digestDate,
     };
 
@@ -465,11 +658,42 @@ export class MemoryLedgerStore implements LedgerStore {
     return fullEvent;
   }
 
-  async createEvidence(input: EvidenceCreateInput): Promise<EvidenceCreateResult> {
+  async createEvidence(input: EvidenceCreateInput & ActorAttribution): Promise<EvidenceCreateResult> {
     return this.createEvidenceSync(input);
   }
 
-  private createEvidenceSync(input: EvidenceCreateInput): EvidenceCreateResult {
+  /**
+   * Idempotent-create dedupe (WS-D R19): when an evidence row with the same
+   * (workspace, sha256, sizeBytes) already exists, return the EXISTING row's
+   * full create-context instead of creating a duplicate. A dedup hit appends
+   * NOTHING — the hash chain stays clean. Map iteration is insertion-ordered,
+   * so the FIRST (oldest) matching evidence wins deterministically. Falls
+   * through to a genuine create when any context link is missing (defensive —
+   * `createEvidence` always writes the full evidence→packet→voucher→review
+   * chain, so a partial match means the row wasn't born here).
+   */
+  private findDuplicateEvidenceResult(input: EvidenceCreateInput): EvidenceCreateResult | undefined {
+    if (input.sha256 === undefined || input.sizeBytes === undefined) return undefined;
+    for (const candidate of this.evidence.values()) {
+      if (!isDuplicateEvidence(candidate, input)) continue;
+      const packetId = this.evidenceIdToPacketId.get(candidate.id);
+      const packet = packetId !== undefined ? this.evidencePackets.get(packetId) : undefined;
+      const voucherId = packetId !== undefined ? this.packetIdToVoucherId.get(packetId) : undefined;
+      const voucher = voucherId !== undefined ? this.vouchers.get(voucherId) : undefined;
+      const reviewId = voucherId !== undefined ? this.voucherIdToReviewId.get(voucherId) : undefined;
+      const review = reviewId !== undefined ? this.reviews.get(reviewId) : undefined;
+      if (!packet || !voucher || !review) continue;
+      return { evidence: candidate, packet, voucher, review, voucherId: voucher.id, deduped: true };
+    }
+    return undefined;
+  }
+
+  private createEvidenceSync(input: EvidenceCreateInput & ActorAttribution): EvidenceCreateResult {
+    const duplicate = this.findDuplicateEvidenceResult(input);
+    if (duplicate) return duplicate;
+
+    // Server-derived attribution or the demo sentinel — never a client value (R5).
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     const createdAt = nowIso();
     const evidenceId = createId("evidence");
     const packetId = createId("packet");
@@ -480,7 +704,7 @@ export class MemoryLedgerStore implements LedgerStore {
       organizationId: input.organizationId,
       workspaceId: input.workspaceId,
       createdAt,
-      createdBy: input.actorId,
+      createdBy: actorId,
       title: input.title,
       modalities: input.modalities,
       originalFilename: input.originalFilename,
@@ -512,7 +736,7 @@ export class MemoryLedgerStore implements LedgerStore {
       extractedFields,
       voucherFields: deriveVoucherFields(extractedFields, input),
       createdAt,
-      createdBy: input.actorId,
+      createdBy: actorId,
     };
 
     const ruleHits = evaluateVoucherRules(voucher);
@@ -530,7 +754,7 @@ export class MemoryLedgerStore implements LedgerStore {
         : "Approve the proposed posting.",
       suggestion,
       provenanceTimeline: [
-        { id: createId("step"), label: "Evidence received", timestamp: createdAt, actor: input.actorId },
+        { id: createId("step"), label: "Evidence received", timestamp: createdAt, actor: actorId },
         { id: createId("step"), label: "Fields extracted", timestamp: createdAt, actor: "system-extractor" },
         { id: createId("step"), label: "Rules applied", timestamp: createdAt, actor: "system-rules" },
         { id: createId("step"), label: "Suggestion generated", timestamp: createdAt, actor: "system-ai" },
@@ -552,7 +776,7 @@ export class MemoryLedgerStore implements LedgerStore {
       aggregateType: "evidence",
       aggregateId: evidenceId,
       eventType: "EvidenceReceived",
-      actorId: input.actorId,
+      actorId,
       occurredAt: createdAt,
       payload: evidence,
     });
@@ -574,7 +798,7 @@ export class MemoryLedgerStore implements LedgerStore {
       aggregateType: "voucher",
       aggregateId: voucherId,
       eventType: "VoucherCreated",
-      actorId: input.actorId,
+      actorId,
       occurredAt: createdAt,
       payload: voucher,
     });
@@ -593,7 +817,8 @@ export class MemoryLedgerStore implements LedgerStore {
     return { evidence, packet, voucher, review, voucherId };
   }
 
-  async composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket> {
+  async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket> {
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     const packet: EvidencePacket = {
       id: createId("packet"),
       evidenceIds: input.evidenceIds,
@@ -617,9 +842,27 @@ export class MemoryLedgerStore implements LedgerStore {
     if (voucherIdToRelink) {
       this.packetIdToVoucherId.set(packet.id, voucherIdToRelink);
       const voucher = this.vouchers.get(voucherIdToRelink);
+      const previousPacketId = voucher?.evidencePacketId;
       if (voucher && voucher.evidencePacketId !== packet.id) {
         this.vouchers.set(voucherIdToRelink, { ...voucher, evidencePacketId: packet.id });
       }
+      // WS-B B6b: a relink changes which evidence backs a voucher — that must
+      // be visible in the audit chain, not a silent read-model repoint.
+      this.appendEvent({
+        organizationId: input.organizationId,
+        workspaceId: input.workspaceId,
+        aggregateType: "voucher",
+        aggregateId: voucherIdToRelink,
+        eventType: "EvidenceRelinked",
+        actorId,
+        occurredAt: nowIso(),
+        payload: {
+          voucherId: voucherIdToRelink,
+          packetId: packet.id,
+          previousPacketId,
+          evidenceIds: [...input.evidenceIds],
+        },
+      });
     }
 
     return packet;
@@ -781,7 +1024,7 @@ export class MemoryLedgerStore implements LedgerStore {
         aggregateType: "ledger",
         aggregateId: planned.aggregateId,
         eventType: "VoucherImported",
-        actorId: input.actorId,
+        actorId: input.actorId ?? DEMO_ACTOR_ID,
         occurredAt,
         payload: {
           source: "sie",
@@ -858,14 +1101,25 @@ export class MemoryLedgerStore implements LedgerStore {
     const ruleHits = evaluateVoucherRules(voucher);
     const suggestion = buildDeterministicSuggestion(voucher, ruleHits);
     this.suggestions.set(voucherId, suggestion);
+    // Store parity (WS-B B7b): persist the regenerated suggestion onto the
+    // review read model exactly like PostgresLedgerStore — but only while the
+    // review is still open. A decided review's suggestion records what was
+    // actually posted and must never be clobbered by a later regeneration.
+    const reviewId = this.voucherIdToReviewId.get(voucherId);
+    const review = reviewId ? this.reviews.get(reviewId) : undefined;
+    if (review && review.status === "needs-review") {
+      // Clone-before-mutate (Rule 17): the review may be shared via getSnapshot.
+      this.reviews.set(review.id, { ...review, suggestion });
+    }
     return suggestion;
   }
 
   async applyReviewDecision(
     reviewId: string,
     action: ReviewAction,
-    input: ReviewDecisionInput,
+    input: ReviewDecisionInput & ActorAttribution,
   ): Promise<ReviewTask | undefined> {
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     const review = this.reviews.get(reviewId);
     if (!review) return undefined;
 
@@ -901,7 +1155,7 @@ export class MemoryLedgerStore implements LedgerStore {
               ? "Booked without VAT deduction (edited)"
               : "Booked without VAT deduction",
       timestamp: occurredAt,
-      actor: input.actorId,
+      actor: actorId,
     };
 
     // Clone-before-mutate (Rule 17): review/voucher may have been returned by
@@ -925,8 +1179,14 @@ export class MemoryLedgerStore implements LedgerStore {
       workspaceId: updatedVoucher.workspaceId,
       aggregateType: "review",
       aggregateId: reviewId,
-      eventType: action === "approve" ? "ReviewApproved" : "ReviewRejected",
-      actorId: input.actorId,
+      // Honest decision vocabulary (WS-B B6a): book-without-vat is its own
+      // decision event, not a "ReviewRejected" that then posts to the ledger.
+      // Legacy streams recorded ReviewRejected + PostedToLedger for this
+      // decision; replay/projections key on PostedToLedger lines only, so
+      // both vocabularies project identically (backward compatible).
+      eventType:
+        action === "approve" ? "ReviewApproved" : action === "reject" ? "ReviewRejected" : "ReviewBookedWithoutVat",
+      actorId,
       occurredAt,
       payload: { action, notes: input.notes, ...(edited ? { edited } : {}) },
     });
@@ -941,7 +1201,7 @@ export class MemoryLedgerStore implements LedgerStore {
         aggregateType: "ledger",
         aggregateId: updatedVoucher.id,
         eventType: "PostedToLedger",
-        actorId: input.actorId,
+        actorId,
         occurredAt,
         // `lines` in the payload keeps event-payload replay the truth in both
         // stores (fixes the Memory/Postgres parity gap — Phase 3 finding 13).
@@ -958,7 +1218,7 @@ export class MemoryLedgerStore implements LedgerStore {
     return answer;
   }
 
-  async runSimulation(input: SimulationRequest): Promise<SimulationRun> {
+  async runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun> {
     // Dedup at boundary (Rule 23): Postgres .in() dedupes server-side; Memory
     // must match for parity (Rule 11).
     const reviewIds = [...new Set(input.reviewIds)];
@@ -997,7 +1257,7 @@ export class MemoryLedgerStore implements LedgerStore {
       aggregateType: "simulation",
       aggregateId: result.id,
       eventType: "SimulationExecuted",
-      actorId: input.actorId,
+      actorId: input.actorId ?? DEMO_ACTOR_ID,
       occurredAt: nowIso(),
       payload: result,
     });

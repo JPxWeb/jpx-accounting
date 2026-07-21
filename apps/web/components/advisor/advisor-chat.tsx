@@ -11,12 +11,15 @@ import {
   prependAssistantThread,
   type StoredAssistantThread,
 } from "../../lib/assistant-thread-storage";
+import { getSupabaseAccessToken } from "../../lib/auth";
+import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { getErrorMessage } from "../../lib/request-errors";
 import { webRuntimeConfig } from "../../lib/runtime-config";
 import { SectionLabel } from "../ui/section-label";
 import { LocalDemoChatTransport, PROPOSE_REVIEW_ACTION_PART_TYPE, type AdvisorUIMessage } from "./local-demo-transport";
 import { MessagePart } from "./message-part";
 import { SuggestedPrompts } from "./suggested-prompts";
+import { respondToApprovalPreservingSignature } from "./tool-approval";
 
 /**
  * The advisor chat surface (Task 5.9): AI SDK 7 `useChat` over one of two
@@ -45,10 +48,16 @@ export function AdvisorChat({
     }
     return new DefaultChatTransport<AdvisorUIMessage>({
       api: `${webRuntimeConfig.apiBaseUrl ?? ""}/api/advisor/chat`,
+      // Auth-on deployments gate ALL /api/* methods — resolve the bearer per
+      // request exactly like lib/client.ts (no session → no header; demo unchanged).
+      headers: async () => {
+        const token = await getSupabaseAccessToken();
+        return token ? { Authorization: `Bearer ${token}` } : {};
+      },
     });
   }, []);
 
-  const { messages, sendMessage, status, error, clearError, addToolApprovalResponse } = useChat<AdvisorUIMessage>({
+  const { messages, sendMessage, status, error, clearError, setMessages } = useChat<AdvisorUIMessage>({
     id: thread.id,
     messages: thread.messages,
     transport,
@@ -68,9 +77,7 @@ export function AdvisorChat({
         (part) => part.type === PROPOSE_REVIEW_ACTION_PART_TYPE && part.state === "output-available",
       );
       if (executedReviewAction) {
-        void queryClient.invalidateQueries({ queryKey: ["workspace"] });
-        void queryClient.invalidateQueries({ queryKey: ["integrity"] });
-        void queryClient.invalidateQueries({ queryKey: ["reports", "pack"] });
+        invalidateLedgerDerived(queryClient);
       }
     },
   });
@@ -118,9 +125,16 @@ export function AdvisorChat({
                     key={`${message.id}-${index}`}
                     part={part}
                     busy={busy}
-                    onApprovalResponse={(approvalId, approved) =>
-                      void addToolApprovalResponse({ id: approvalId, approved })
-                    }
+                    onApprovalResponse={(approvalId, approved) => {
+                      // NOT addToolApprovalResponse: ai@7.0.15 drops the HMAC
+                      // signature from the approval object — see tool-approval.ts.
+                      const updated = respondToApprovalPreservingSignature(messages, approvalId, approved);
+                      if (!updated) return;
+                      setMessages(updated);
+                      if (lastAssistantMessageIsCompleteWithApprovalResponses({ messages: updated })) {
+                        void sendMessage(undefined);
+                      }
+                    }}
                   />
                 ))}
               </div>

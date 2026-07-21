@@ -13,7 +13,6 @@ import {
 const legacyInput: EvidenceCreateInput = {
   organizationId: "org_jpx",
   workspaceId: "workspace_main",
-  actorId: "user_founder",
   title: "OpenAI subscription invoice",
   originalFilename: "openai-march-2026.pdf",
   mimeType: "application/pdf",

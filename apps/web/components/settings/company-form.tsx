@@ -18,6 +18,7 @@ import { toast } from "sonner";
 
 import { apiClient } from "../../lib/client";
 import { messagesLocale } from "../../lib/message-locale";
+import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { Button } from "../ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "../ui/form";
 import { Input } from "../ui/input";
@@ -134,6 +135,9 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
     mutationFn: (input: CompanySettings) => apiClient.saveCompanySettings(input),
     onSuccess: (saved) => {
       queryClient.setQueryData(["company-settings"], saved);
+      // Profile changes (fiscal year, VAT cadence) cascade into report windows
+      // and audit-visible ledger state — run the shared R18 sweep.
+      invalidateLedgerDerived(queryClient);
       // The message locale is cookie-driven (next-intl without routing);
       // refresh re-renders server components with the new catalog + html lang.
       document.cookie = `NEXT_LOCALE=${messagesLocale(saved.profile.locale)}; path=/; max-age=31536000`;

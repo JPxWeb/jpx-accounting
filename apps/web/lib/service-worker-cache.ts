@@ -1,5 +1,8 @@
 const cachePrefix = "jpx-accounting-static-";
 
+/** Exported for the local-data registry (lib/local-data.ts) so the disclosed cache prefix cannot drift. */
+export const STATIC_ASSET_CACHE_PREFIX = cachePrefix;
+
 export const staticAssetCacheName = `${cachePrefix}v2`;
 
 // Keep in sync with the precache list in apps/web/public/sw.js.

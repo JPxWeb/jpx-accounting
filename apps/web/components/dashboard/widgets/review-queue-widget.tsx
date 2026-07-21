@@ -2,17 +2,17 @@
 
 import type { ReviewTask } from "@jpx-accounting/contracts";
 import { confidenceBand, type ConfidenceBand } from "@jpx-accounting/domain";
-import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { apiClient } from "../../../lib/client";
+import { invalidateLedgerDerived } from "../../../lib/query-invalidation";
 import { applyReviewSnapshotUpdate } from "../../today/review-queue-view";
 import { Money } from "../../ui/money";
 import type { DashboardData } from "../use-dashboard-data";
 
-const ACTOR_ID = "user_founder";
 const BATCH_POPOVER_ID = "review-widget-batch-popover";
 
 const BAND_STYLES: Record<ConfidenceBand, string> = {
@@ -34,11 +34,12 @@ export function ReviewQueueWidget({ data }: { data: DashboardData }) {
   const queryClient = useQueryClient();
   const [batchRunning, setBatchRunning] = useState(false);
 
+  // No actorId in the payload (WS-C R5): attribution is server-derived.
   const approveReview = useMutation({
-    mutationFn: (id: string) => apiClient.approveReview(id, { actorId: ACTOR_ID }),
+    mutationFn: (id: string) => apiClient.approveReview(id),
     onSuccess: (review) => {
       applyReviewSnapshotUpdate(queryClient, review);
-      invalidateDerived(queryClient);
+      invalidateLedgerDerived(queryClient);
     },
   });
 
@@ -61,7 +62,7 @@ export function ReviewQueueWidget({ data }: { data: DashboardData }) {
       for (const review of targets) {
         // Sequential on purpose: each approval is an ordinary review decision
         // appended to the hash chain — no bulk mutation exists, by design.
-        const updated = await apiClient.approveReview(review.id, { actorId: ACTOR_ID });
+        const updated = await apiClient.approveReview(review.id);
         applyReviewSnapshotUpdate(queryClient, updated);
         approved += 1;
       }
@@ -70,7 +71,7 @@ export function ReviewQueueWidget({ data }: { data: DashboardData }) {
       toast.error(t("batchError", { completed: approved, total: targets.length }));
     } finally {
       setBatchRunning(false);
-      invalidateDerived(queryClient);
+      invalidateLedgerDerived(queryClient);
     }
   }
 
@@ -164,10 +165,4 @@ export function ReviewQueueWidget({ data }: { data: DashboardData }) {
       ) : null}
     </div>
   );
-}
-
-/** Approvals change events + reports; refresh the widgets built on them. */
-function invalidateDerived(queryClient: QueryClient) {
-  void queryClient.invalidateQueries({ queryKey: ["integrity"] });
-  void queryClient.invalidateQueries({ queryKey: ["reports", "pack"] });
 }

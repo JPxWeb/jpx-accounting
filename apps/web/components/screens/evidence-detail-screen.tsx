@@ -11,6 +11,7 @@ import { useObjectUrl } from "../../hooks/use-object-url";
 import { apiClient } from "../../lib/client";
 import { getEvidenceBlob } from "../../lib/evidence-blob-cache";
 import { formatPercent } from "../../lib/presentation";
+import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { useWorkspaceProfile } from "../providers/workspace-profile-provider";
 import { Button } from "../ui/button";
 import { Money } from "../ui/money";
@@ -115,8 +116,9 @@ export function EvidenceDetailScreen() {
   const extract = useMutation({
     mutationFn: () => apiClient.extractEvidence(evidenceId),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["evidence", evidenceId] });
-      void queryClient.invalidateQueries({ queryKey: ["workspace"] });
+      // Covers ["evidence", evidenceId] via the ["evidence"] prefix, plus every
+      // other ledger-derived family the refreshed extraction feeds (R18).
+      invalidateLedgerDerived(queryClient);
       toast.success(t("links.extractSuccess"));
     },
     onError: () => toast.error(t("links.extractError")),

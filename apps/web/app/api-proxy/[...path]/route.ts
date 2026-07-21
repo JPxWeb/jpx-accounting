@@ -17,11 +17,42 @@ const responseHeaders = new Set([
 
 const requestHeaders = ["accept", "authorization", "content-type", "x-request-id"] as const;
 
+/** Cap on proxied request bodies; the API's own upload limit is 16 MB. */
+// Must exceed the API's own largest per-route body limit (32 MiB SIE import in
+// services/api/src/app.ts) — the proxy is a conduit, not the tighter gate.
+const MAX_PROXY_BODY_BYTES = 33 * 1024 * 1024;
+
+/**
+ * The proxy exposes strictly the upstream's `/api/*` surface. Next decodes
+ * percent-encodings per segment (`%2e%2e` → `..`, `%2F` → `/`), and WHATWG
+ * `new URL(...)` both treats `\` as `/` and normalizes dot segments — so any
+ * of these could otherwise reassemble into upstream paths outside `/api/*`
+ * (`/health`, `/ready`, anything else the Hono server serves).
+ */
+function isProxyablePath(path: string[]): boolean {
+  if (path[0] !== "api") {
+    return false;
+  }
+  return path.every(
+    (segment) =>
+      segment.length > 0 && segment !== "." && segment !== ".." && !segment.includes("/") && !segment.includes("\\"),
+  );
+}
+
 function getApiBaseUrl() {
   return getWebServerRuntimeConfig().apiBaseUrl;
 }
 
 async function proxyRequest(request: Request, path: string[]) {
+  if (!isProxyablePath(path)) {
+    return Response.json({ error: "Not found." }, { status: 404 });
+  }
+
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength !== null && Number(declaredLength) > MAX_PROXY_BODY_BYTES) {
+    return Response.json({ error: "Request body too large." }, { status: 413 });
+  }
+
   const baseUrl = getApiBaseUrl();
   if (!baseUrl) {
     const { runtimeMode } = getWebServerRuntimeConfig();
@@ -36,6 +67,12 @@ async function proxyRequest(request: Request, path: string[]) {
 
   const incomingUrl = new URL(request.url);
   const targetUrl = new URL(`${baseUrl.replace(/\/$/, "")}/${path.join("/")}${incomingUrl.search}`);
+  // Belt and braces: whatever the segments contained, the normalized upstream
+  // path must still live under /api/.
+  const upstreamApiRoot = `${new URL(baseUrl).pathname.replace(/\/$/, "")}/api`;
+  if (targetUrl.pathname !== upstreamApiRoot && !targetUrl.pathname.startsWith(`${upstreamApiRoot}/`)) {
+    return Response.json({ error: "Not found." }, { status: 404 });
+  }
   const headers = new Headers();
   for (const header of requestHeaders) {
     const value = request.headers.get(header);
@@ -50,7 +87,12 @@ async function proxyRequest(request: Request, path: string[]) {
   };
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = await request.arrayBuffer();
+    const body = await request.arrayBuffer();
+    // Re-check after buffering: chunked requests carry no content-length header.
+    if (body.byteLength > MAX_PROXY_BODY_BYTES) {
+      return Response.json({ error: "Request body too large." }, { status: 413 });
+    }
+    init.body = body;
   }
 
   const response = await fetch(targetUrl, init);

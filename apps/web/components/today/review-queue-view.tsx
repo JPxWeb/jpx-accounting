@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReviewKeyboard } from "../../hooks/use-review-keyboard";
 import { apiClient } from "../../lib/client";
 import { AccountingApiError } from "@jpx-accounting/api-client";
+import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { getErrorMessage } from "../../lib/request-errors";
 import {
   type ConfidenceFilter,
@@ -37,8 +38,6 @@ import { Button } from "../ui/button";
  * lives at `/today?view=queue` now. The review gate stays the ONLY path to a
  * posted voucher.
  */
-
-const ACTOR_ID = "user_founder";
 
 function applyOptimisticUpdate(current: WorkspaceSnapshot | undefined, review: ReviewTask | undefined) {
   if (!current || !review) return current;
@@ -105,28 +104,32 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
 
   const onMutationSuccess = useCallback(
     (review: ReviewTask | undefined) => {
+      // Optimistic snapshot update for instant queue feedback, then the shared
+      // R18 sweep so journal/balances/reports/integrity views refresh too.
       applyReviewSnapshotUpdate(queryClient, review);
+      invalidateLedgerDerived(queryClient);
     },
     [queryClient],
   );
 
+  // No actorId in any mutation payload (WS-C R5): the server derives the
+  // actor from the verified subject / demo sentinel.
   const approveReview = useMutation({
-    mutationFn: (id: string) => apiClient.approveReview(id, { actorId: ACTOR_ID }),
+    mutationFn: (id: string) => apiClient.approveReview(id),
     onSuccess: onMutationSuccess,
   });
   const rejectReview = useMutation({
-    mutationFn: (id: string) => apiClient.rejectReview(id, { actorId: ACTOR_ID }),
+    mutationFn: (id: string) => apiClient.rejectReview(id),
     onSuccess: onMutationSuccess,
   });
   const bookWithoutVatReview = useMutation({
-    mutationFn: (id: string) => apiClient.bookWithoutVatReview(id, { actorId: ACTOR_ID }),
+    mutationFn: (id: string) => apiClient.bookWithoutVatReview(id),
     onSuccess: onMutationSuccess,
   });
 
   const simulationPreview = useMutation({
     mutationFn: (reviewIds: string[]) =>
       apiClient.runSimulation({
-        actorId: ACTOR_ID,
         title: tSimulation("requestTitle", { count: reviewIds.length }),
         scenario: "review-queue-preview",
         reviewIds,

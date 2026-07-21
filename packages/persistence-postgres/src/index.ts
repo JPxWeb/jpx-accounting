@@ -8,4 +8,4 @@ export {
   type KnowledgeWorkspaceScope,
   type QueryKnowledgeByEmbeddingOptions,
 } from "./knowledge";
-export { PostgresLedgerStore } from "./store";
+export { HashChainForkError, PostgresLedgerStore } from "./store";

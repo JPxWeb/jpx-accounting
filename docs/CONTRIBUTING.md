@@ -32,15 +32,19 @@ Implementation changes that touch frameworks or toolchain should cross-check aga
 
 ### Env matrix (normal mode)
 
-| Concern                     | Env var(s)                                                                                        | Required for                                               |
-| --------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Postgres write path         | `SUPABASE_DB_URL` (+ optional `SUPABASE_POOLER_TRANSACTION_MODE=true` for port 6543)              | `PostgresLedgerStore`; `/ready.checks.ledger=true`         |
-| Azure Blob signed upload    | `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_CONTAINER`                                                | `AzureBlobUploader` instead of stub                        |
-| Azure OpenAI (chat + embed) | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_MODEL`                             | `ResponsesAiRuntime` instead of `Unavailable…`             |
-| Document Intelligence       | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`, `AZURE_DOCUMENT_INTELLIGENCE_API_KEY`                     | `AzureDocumentIntelligenceClient` instead of stub          |
-| JWT auth on mutating routes | `SUPABASE_JWKS_URL` (typically `${SUPABASE_URL}/auth/v1/keys`)                                    | `hono/jwk` middleware on POST/PUT/PATCH/DELETE             |
-| Advisor tool-approval HMAC  | `ADVISOR_TOOL_APPROVAL_SECRET` (must not be the demo default in `normal`)                         | AI SDK `experimental_toolApprovalSecret` signing           |
-| Browser CORS (direct API)   | `ACCOUNTING_CORS_ORIGINS` (comma-separated; Bicep defaults to the deployed web origin when unset) | Browser calls to `/api/*` outside same-origin `/api-proxy` |
+| Concern                     | Env var(s)                                                                                                                                                      | Required for                                                                   |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Postgres write path         | `SUPABASE_DB_URL` (+ optional `SUPABASE_POOLER_TRANSACTION_MODE=true` for port 6543)                                                                            | `PostgresLedgerStore`; `/ready.checks.ledger=true`                             |
+| Azure Blob signed upload    | `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_CONTAINER`                                                                                                              | `AzureBlobUploader` instead of stub                                            |
+| Azure OpenAI (chat + embed) | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_MODEL`                                                                                           | `ResponsesAiRuntime` instead of `Unavailable…`                                 |
+| Document Intelligence       | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`, `AZURE_DOCUMENT_INTELLIGENCE_API_KEY`                                                                                   | `AzureDocumentIntelligenceClient` instead of stub                              |
+| JWT auth on `/api/*`        | `SUPABASE_JWKS_URL` (typically `${SUPABASE_URL}/auth/v1/keys`) — **REQUIRED in `normal`**, the API refuses to boot without it (fail closed); optional in `demo` | `hono/jwk` on ALL `/api/*` routes and methods (`GET /api/runtime-info` exempt) |
+| Web auth UI (build time)    | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (both, at web **build** time)                                                                       | `/login` + bearer threading; unset = auth-free demo UI                         |
+| Blob CSP (build time)       | `NEXT_PUBLIC_AZURE_STORAGE_ORIGIN` (at web **build** time)                                                                                                      | CSP `connect-src`/`img-src` for direct-to-Azure SAS traffic                    |
+| API telemetry               | `APPLICATIONINSIGHTS_CONNECTION_STRING` (Bicep injects on deploy; unset = strict no-op)                                                                         | App Insights SDK in `services/api/src/telemetry.ts`                            |
+| Advisor tool-approval HMAC  | `ADVISOR_TOOL_APPROVAL_SECRET` (must not be the demo default in `normal`)                                                                                       | AI SDK `experimental_toolApprovalSecret` signing                               |
+| Advisor cost envelope       | `ADVISOR_MAX_OUTPUT_TOKENS`, `ADVISOR_STREAM_TIMEOUT_MS` (optional; defaults 2048 / 90000)                                                                      | Output-token cap + stream timeout on `/api/advisor/chat`                       |
+| Browser CORS (direct API)   | `ACCOUNTING_CORS_ORIGINS` (comma-separated; Bicep defaults to the deployed web origin when unset)                                                               | Browser calls to `/api/*` outside same-origin `/api-proxy`                     |
 
 When deploying to Azure, [`infra/azure/main.bicep`](../infra/azure/main.bicep) wires the API App Service `appSettings` above (including `ADVISOR_TOOL_APPROVAL_SECRET`, `SUPABASE_JWKS_URL`, `ACCOUNTING_CORS_ORIGINS`, `SUPABASE_POOLER_TRANSACTION_MODE`), configures storage blob CORS for the live web origin (`storageCorsAllowedOrigins` param — defaults to the deployed web App Service origin plus localhost dev ports), and grants the Managed Identity the two RBAC roles needed for User-Delegation SAS minting (`Storage Blob Delegator`, `Storage Blob Data Contributor`). The Bicep template **asserts** that `runtimeMode=normal` cannot deploy with the demo HMAC secret.
 
@@ -76,18 +80,12 @@ Migrations live in [`infra/supabase/migrations`](../infra/supabase/migrations) a
 | `0002_schema_alignment.sql`        | `ledger.evidence_objects.modalities text[]` and `ledger.review_tasks.title text` (closes gaps vs. domain types).               |
 | `0003_pgvector.sql`                | `vector` extension, `knowledge.documents` with `halfvec(1536)` + HNSW index using `halfvec_cosine_ops`.                        |
 | `0004_compliance_and_settings.sql` | `ledger.compliance_alerts`, `ledger.assistant_sessions`, `ledger.organization_settings` (compliance watch + company settings). |
+| `0005_events_id_text.sql`          | `ledger.events.id` uuid→text (matches `createId('evt')` inserts) + `clock_timestamp()` default on `created_at`.                |
+| `0006_chain_serialization.sql`     | `seq` identity column (deterministic ORDER BY tiebreak) + `UNIQUE (org, workspace, previous_hash)` hash-chain fork constraint. |
+| `0007_knowledge_tenant_pk.sql`     | `knowledge.documents` PK rescoped to `(organization_id, workspace_id, id)` — tenant-safe corpus upserts.                       |
+| `0008_evidence_dedupe_index.sql`   | Btree index `(organization_id, workspace_id, hash)` backing idempotent evidence content-dedupe.                                |
 
-Local development against a real DB:
-
-```bash
-supabase start
-psql "$SUPABASE_DB_URL" -f infra/supabase/migrations/0001_init.sql
-psql "$SUPABASE_DB_URL" -f infra/supabase/migrations/0002_schema_alignment.sql
-psql "$SUPABASE_DB_URL" -f infra/supabase/migrations/0003_pgvector.sql
-psql "$SUPABASE_DB_URL" -f infra/supabase/migrations/0004_compliance_and_settings.sql
-export SUPABASE_DB_URL=...    # exported for the API + integration tests
-pnpm test:integration         # skips silently when SUPABASE_DB_URL is unset
-```
+Local development against a real DB: apply migrations `0001`–`0008` in order, export `SUPABASE_DB_URL`, then `pnpm test:integration` (skips silently when `SUPABASE_DB_URL` is unset). The exact throwaway-container commands (`pgvector/pgvector:pg17`) live in [`scripts/integration-db.md`](../scripts/integration-db.md).
 
 `tests/integration/postgres-ledger.test.ts` exercises evidence-create, hash-chain integrity, review approval, and replay idempotency against the live DB. CI keeps it optional / nightly to avoid PR flake.
 
@@ -101,7 +99,7 @@ pnpm test:integration         # skips silently when SUPABASE_DB_URL is unset
 Populate the vector index with the ingestion script (idempotent upserts keyed on chunk id — re-running refreshes content + embeddings in place):
 
 ```bash
-export SUPABASE_DB_URL=...        # migrations 0001–0004 applied
+export SUPABASE_DB_URL=...        # migrations 0001–0008 applied (0007 tenant-scopes the knowledge PK)
 export AZURE_OPENAI_ENDPOINT=...  # embeddings use text-embedding-3-small (1536 dims = halfvec(1536))
 export AZURE_OPENAI_API_KEY=...
 pnpm ingest:knowledge

@@ -1,3 +1,5 @@
+> **Archived 2026-07-18 — implemented or superseded.** The stack decisions here are either in place (Next.js 16 / React 19 / Tailwind 4 / shadcn/ui, Hono + Zod v4, TanStack Query, `ai-core` around Azure OpenAI) or superseded (TanStack Form was removed in favor of react-hook-form; advisor chat uses AI SDK 7, not `ai-core`; Foundry Agent Service was never adopted). See [`../architecture.md`](../architecture.md) for what actually runs.
+
 # Updated Future-Proof Stack Plan (March 18, 2026)
 
 ## Summary

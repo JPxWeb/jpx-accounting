@@ -8,6 +8,7 @@ export * from "./evidence-defaults";
 export * from "./hash-chain";
 export * from "./ids";
 export * from "./integrity";
+export * from "./posting-invariants";
 export * from "./projections";
 export * from "./reports/cash";
 export * from "./reports/pack";

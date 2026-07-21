@@ -4,7 +4,7 @@ import path from "node:path";
 import { deriveDeterministicExtraction, today } from "@jpx-accounting/domain";
 import { expect, test } from "@playwright/test";
 
-import { resetApiState } from "./test-helpers";
+import { activateControl, resetApiState } from "./test-helpers";
 
 /**
  * THE real capture loop (Phase 3 exit gate, plan Task 3.11):
@@ -37,9 +37,14 @@ test.beforeEach(async ({ request }) => {
   await resetApiState(request);
 });
 
+// The drill/approve controls are activated via `activateControl`: pointer
+// click on desktop, keyboard on mobile — see the helper's doc comment for the
+// Pixel 7 visual-viewport emulation quirk that strands pointer clicks.
+
 test("a captured file flows extraction → review → approval → journal, and the seed stays pinned", async ({
   page,
   request,
+  isMobile,
 }) => {
   const expected = expectedFieldsForFixture();
 
@@ -53,7 +58,7 @@ test("a captured file flows extraction → review → approval → journal, and 
 
   // 2. Evidence detail: preview renders, extracted fields show the
   //    deterministic (non-1249) values.
-  await newRow.getByTestId("evidence-open").click();
+  await activateControl(newRow.getByTestId("evidence-open"), isMobile);
   await expect(page).toHaveURL(/\/capture\/evidence\//);
   const evidenceId = page.url().split("/").at(-1)!;
   await expect(page.getByTestId("evidence-preview")).toBeVisible();
@@ -67,7 +72,7 @@ test("a captured file flows extraction → review → approval → journal, and 
   expect(context.review).toBeTruthy();
 
   // 3. Review deep-link: the focused card shows the SAME gross through Money.
-  await page.getByTestId("evidence-open-review").click();
+  await activateControl(page.getByTestId("evidence-open-review"), isMobile);
   await expect(page).toHaveURL(/\/today\?review=/);
   const focusedCard = page.getByTestId("review-card").filter({ hasText: expected.supplier });
   await expect(focusedCard).toHaveCount(1);
@@ -76,7 +81,7 @@ test("a captured file flows extraction → review → approval → journal, and 
 
   // 4. Approve → the journal gains exactly the 3 posted lines for this voucher,
   //    with the expense line equal to the derived net amount.
-  await focusedCard.getByTestId("review-accept").click();
+  await activateControl(focusedCard.getByTestId("review-accept"), isMobile);
   await expect(focusedCard.getByTestId("review-status")).toContainText("approved");
 
   const journal = await (await request.get(`${apiBaseUrl}/api/reports/journal`)).json();

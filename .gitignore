@@ -37,3 +37,6 @@ lh-*.json
 # Git worktrees (isolated workspaces)
 .claude/worktrees/
 .worktrees/
+
+# local deploy experiments
+api-deploy-test/

@@ -39,7 +39,21 @@ export function useReviewKeyboard({
 
   useHotkeys("j", () => navigate(1));
   useHotkeys("k", () => navigate(-1));
-  useHotkeys("y,enter", () => runOnFocused(onAccept));
+  useHotkeys("y,enter", (event) => {
+    // Enter on a focused button/link must only activate that control: focusing
+    // any control inside a card sets `focusedId` (ReviewCard onFocus), so
+    // without this guard a keyboard user pressing Enter on e.g. the Edit
+    // button would BOTH open the edit sheet and fire the approve hotkey —
+    // racing an unedited approval past the editor. Y stays a bare hotkey.
+    if (
+      event.key === "Enter" &&
+      event.target instanceof Element &&
+      event.target.closest("button, a, [role='button']")
+    ) {
+      return;
+    }
+    runOnFocused(onAccept);
+  });
   useHotkeys("n", () => runOnFocused(onReject));
   useHotkeys("e", () => runOnFocused(onEdit));
   useHotkeys("b", () => runOnFocused(onBookWithoutVat));

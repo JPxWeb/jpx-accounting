@@ -1,7 +1,13 @@
 "use client";
 
 import type { ReviewDecisionEdit, ReviewTask, Voucher } from "@jpx-accounting/contracts";
-import { defaultCoaTemplate, findCoaAccount } from "@jpx-accounting/domain";
+import {
+  defaultCoaTemplate,
+  deriveBookedAt,
+  findCoaAccount,
+  isValidCalendarDay,
+  localTodayIso,
+} from "@jpx-accounting/domain";
 import { useMutation } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { useTranslations } from "next-intl";
@@ -10,7 +16,6 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { apiClient } from "../../lib/client";
 import { useDialogFocusTrap } from "../../lib/focus-trap";
 import { getErrorMessage } from "../../lib/request-errors";
-import { WORKSPACE_IDENTITY } from "../../lib/workspace-identity";
 import { registerGlobalTourBlocker } from "../onboarding/onboarding-shell";
 import { Button } from "../ui/button";
 
@@ -65,12 +70,20 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
   const [grossInput, setGrossInput] = useState(() => toInputValue(voucher?.voucherFields.grossAmount));
   const [netInput, setNetInput] = useState(() => toInputValue(voucher?.voucherFields.netAmount));
   const [vatInput, setVatInput] = useState(() => toInputValue(voucher?.voucherFields.vatAmount));
+  // R13: accounting date the approval will book at. Default = the SAME shared
+  // derivation the stores run (voucher transaction/receipt date, today
+  // fallback), so an untouched field posts identically whether or not it is
+  // sent. Locked/closed-period validation is a Later feature — any past day is
+  // accepted today.
+  const localToday = localTodayIso();
+  const derivedBookedAt = deriveBookedAt(voucher?.voucherFields, new Date().toISOString());
+  const [bookedAtInput, setBookedAtInput] = useState(derivedBookedAt);
 
   useDialogFocusTrap(dialogRef, true, onClose, accountSelectRef);
 
+  // No actorId (WS-C R5): the server derives attribution.
   const approveWithEdits = useMutation({
-    mutationFn: (edited: ReviewDecisionEdit) =>
-      apiClient.approveReview(review.id, { actorId: WORKSPACE_IDENTITY.actorId, edited }),
+    mutationFn: (edited: ReviewDecisionEdit) => apiClient.approveReview(review.id, { edited }),
     onSuccess,
   });
 
@@ -98,8 +111,13 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
       vat >= 0 &&
       Math.abs(net + vat - gross) <= AMOUNT_TOLERANCE);
 
+  // Mirrors the domain rule in `resolveReviewDecisionEdit`: a valid calendar
+  // day, not in the future. Empty = "use the derived default" (field omitted).
+  const bookedAtChanged = bookedAtInput !== "" && bookedAtInput !== derivedBookedAt;
+  const bookedAtValid = bookedAtInput === "" || (isValidCalendarDay(bookedAtInput) && bookedAtInput <= localToday);
+
   const accountName = findCoaAccount(defaultCoaTemplate, accountNumber)?.name ?? accountNumber;
-  const submitDisabled = !amountsValid || approveWithEdits.isPending;
+  const submitDisabled = !amountsValid || !bookedAtValid || approveWithEdits.isPending;
   const submitError = approveWithEdits.error ? getErrorMessage(approveWithEdits.error, t("submitError")) : null;
 
   useEffect(() => {
@@ -119,6 +137,9 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
       ...(amountsChanged && gross !== undefined && net !== undefined && vat !== undefined
         ? { grossAmount: gross, netAmount: net, vatAmount: vat }
         : {}),
+      // Accounting date rides along only when it differs from the shared
+      // derivation default — the stores derive the same day when omitted.
+      ...(bookedAtChanged ? { bookedAt: bookedAtInput } : {}),
     };
     approveWithEdits.mutate(edited);
   }
@@ -184,6 +205,22 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
                   </option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label htmlFor="review-edit-booked-at" className="text-eyebrow block">
+                {t("bookedAtLabel")}
+              </label>
+              <input
+                id="review-edit-booked-at"
+                data-testid="edit-booked-at"
+                data-visual-mask
+                type="date"
+                max={localToday}
+                value={bookedAtInput}
+                onChange={(event) => setBookedAtInput(event.target.value)}
+                className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
+              />
+              <p className="mt-1 text-xs leading-4 text-muted-foreground">{t("bookedAtHint")}</p>
             </div>
             <div>
               <label htmlFor="review-edit-vat-code" className="text-eyebrow block">
@@ -253,6 +290,11 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
           {!amountsValid ? (
             <p data-testid="edit-amount-error" className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">
               {t("amountError")}
+            </p>
+          ) : null}
+          {!bookedAtValid ? (
+            <p data-testid="edit-booked-at-error" className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">
+              {t("bookedAtError")}
             </p>
           ) : null}
           {submitError ? (

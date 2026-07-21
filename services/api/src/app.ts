@@ -28,6 +28,7 @@ import {
   buildSieExport,
   currentMonthToken,
   decodeSieBuffer,
+  DEMO_ACTOR_ID,
   encodePc8,
   InvalidPeriodTokenError,
   InvalidReviewEditError,
@@ -47,7 +48,7 @@ import { MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
 import { DEFAULT_SUPABASE_JWT_ALGS, type CorsRuntimePolicy, type SupabaseJwtAlgorithm } from "./config";
 import { queryKnowledge } from "./knowledge";
 import type { AiRuntimeMetadata } from "./runtime";
-import { isLedgerStoreOperational, LedgerStoreUnavailableError } from "./runtime";
+import { LedgerStoreUnavailableError, pingLedgerStore } from "./runtime";
 import { ApiValidationError, jsonValidated } from "./validation";
 
 type CreateAppOptions = {
@@ -78,7 +79,8 @@ type CreateAppOptions = {
   allowTestReset?: boolean;
 };
 
-type AppVariables = { requestId: string };
+/** `jwtPayload` is set by `hono/jwk` after successful verification (WS-C R5 consumes it). */
+type AppVariables = { requestId: string; jwtPayload?: Record<string, unknown> | undefined };
 type AppEnv = { Variables: AppVariables };
 
 const DEFAULT_JSON_BODY_BYTES = 512 * 1024;
@@ -113,6 +115,131 @@ function parseReportRange(c: Context<AppEnv>): ReportRange | undefined {
 }
 
 type JsonErrorExtras = Partial<Pick<ApiJsonErrorBody, "code" | "issues">>;
+
+type CachedJwk = JsonWebKey & { kid?: string };
+
+const JWKS_CACHE_TTL_MS = 10 * 60_000;
+
+/**
+ * Auth-infrastructure failures must surface as 503, not 401/500 (§A R7). The error
+ * intentionally stays a plain `Error` tagged by name: `hono/jwk` rethrows a keys-callback
+ * error only when `constructor === Error` — a subclass would be swallowed into its
+ * generic 401 and misreport an outage as a bad token.
+ */
+const JWKS_FETCH_ERROR_NAME = "JwksFetchError";
+
+function jwksFetchError(message: string, cause?: unknown): Error {
+  const error = new Error(message, cause === undefined ? undefined : { cause });
+  error.name = JWKS_FETCH_ERROR_NAME;
+  return error;
+}
+
+// Deliberately NOT a type predicate: `error is Error` would narrow onError's
+// already-`Error`-typed parameter to `never` on the false branch.
+function isJwksFetchError(error: unknown): boolean {
+  return error instanceof Error && error.name === JWKS_FETCH_ERROR_NAME;
+}
+
+/**
+ * TTL-cached, single-flight JWKS fetcher (§A R7). `hono/jwk`'s own `jwks_uri` option
+ * refetches the endpoint on every request; this fetches once, serves the cached keys for
+ * ~10 minutes, and collapses concurrent refreshes into one in-flight request. Failures
+ * are never cached — the next request retries.
+ */
+export function createCachedJwksFetcher(jwksUri: string, ttlMs = JWKS_CACHE_TTL_MS): () => Promise<CachedJwk[]> {
+  let cache: { keys: CachedJwk[]; expiresAt: number } | undefined;
+  let inflight: Promise<CachedJwk[]> | undefined;
+
+  return async () => {
+    if (cache && Date.now() < cache.expiresAt) {
+      return cache.keys;
+    }
+    inflight ??= (async () => {
+      try {
+        let response: Response;
+        try {
+          response = await fetch(jwksUri);
+        } catch (cause) {
+          throw jwksFetchError(`Failed to fetch JWKS from ${jwksUri}.`, cause);
+        }
+        if (!response.ok) {
+          throw jwksFetchError(`JWKS endpoint ${jwksUri} answered ${response.status}.`);
+        }
+        let body: { keys?: unknown };
+        try {
+          body = (await response.json()) as { keys?: unknown };
+        } catch (cause) {
+          throw jwksFetchError(`JWKS endpoint ${jwksUri} returned invalid JSON.`, cause);
+        }
+        if (!Array.isArray(body.keys)) {
+          throw jwksFetchError(`JWKS endpoint ${jwksUri} response is missing a "keys" array.`);
+        }
+        const keys = body.keys as CachedJwk[];
+        cache = { keys, expiresAt: Date.now() + ttlMs };
+        return keys;
+      } finally {
+        inflight = undefined;
+      }
+    })();
+    return inflight;
+  };
+}
+
+/**
+ * postgres-js server errors carry a SQLSTATE `code` and `name: "PostgresError"` —
+ * detected structurally so services/api never imports the postgres driver (WS-A5).
+ */
+function getPostgresErrorCode(error: unknown): string | undefined {
+  if (!(error instanceof Error) || error.name !== "PostgresError") return undefined;
+  const code = (error as Error & { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+/**
+ * The VERIFIED token subject, or undefined when no verified payload exists on
+ * this request (auth disabled, or the route is JWT-exempt). Only ever reads
+ * the `jwtPayload` context var that `hono/jwk` sets after verification —
+ * never a client-supplied header or body field (WS-C R5).
+ */
+function jwtSubject(c: Context<AppEnv>): string | undefined {
+  const payload = c.var.jwtPayload;
+  if (!payload || typeof payload !== "object") return undefined;
+  const sub = (payload as { sub?: unknown }).sub;
+  if (typeof sub !== "string") return undefined;
+  const trimmed = sub.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+/**
+ * Client-address bucket for rate limiting when no authenticated subject is
+ * available (WS-C item 3). Uses the RIGHTMOST X-Forwarded-For hop: on Azure
+ * App Service (the deploy target) the platform front-end APPENDS the
+ * immediate peer's address to whatever XFF the client sent, so the rightmost
+ * entry is the only hop a spoofer cannot choose — taking the leftmost lets an
+ * attacker mint a fresh bucket per request with a random header. Azure also
+ * formats the appended hop as `ip:port` (port varies per connection), so the
+ * port is stripped to keep one bucket per address. Falls back to `x-real-ip`,
+ * then a shared "unknown" bucket. Exported for regression tests.
+ */
+export function clientIpKey(xff: string | undefined, realIp: string | undefined): string {
+  const hops = (xff ?? "")
+    .split(",")
+    .map((hop) => hop.trim())
+    .filter((hop) => hop !== "");
+  const candidate = hops.at(-1) ?? realIp?.trim();
+  if (!candidate) return "unknown";
+  return stripIpPort(candidate);
+}
+
+/** `1.2.3.4:5678` → `1.2.3.4`; `[2001:db8::1]:443` → `2001:db8::1`; bare v4/v6 pass through. */
+function stripIpPort(address: string): string {
+  const bracketed = /^\[(.+)\](?::\d+)?$/.exec(address);
+  const bracketedIp = bracketed?.[1];
+  if (bracketedIp !== undefined) return bracketedIp;
+  const parts = address.split(":");
+  if (parts.length === 2 && /^\d+$/.test(parts[1] ?? "")) return parts[0] ?? address;
+  return address;
+}
 
 function jsonError(
   c: Context<AppEnv>,
@@ -159,7 +286,28 @@ export function createApp({
     toolApprovalSecret: advisor.toolApprovalSecret,
   });
 
-  async function postReviewDecision(input: ReviewDecisionInput, reviewId: string, outcome: ReviewAction) {
+  /**
+   * Server-derived actor for audit attribution (WS-C R5): with auth configured
+   * the actor is the VERIFIED token subject as `user:<sub>`; with auth off it
+   * is the repo's demo sentinel (CONVENTIONS Rule 20 adjacency). Client
+   * payloads no longer carry an actorId — the request schemas dropped the
+   * field, and an extra key is stripped by validation before it gets here. A
+   * verified token without a usable `sub` cannot be attributed → fail closed.
+   */
+  function deriveActorId(c: Context<AppEnv>): string {
+    if (!jwksUrl) return DEMO_ACTOR_ID;
+    const sub = jwtSubject(c);
+    if (!sub) {
+      throw new HTTPException(401, { message: "Authenticated token is missing a usable subject (sub) claim." });
+    }
+    return `user:${sub}`;
+  }
+
+  async function postReviewDecision(
+    input: ReviewDecisionInput & { actorId: string },
+    reviewId: string,
+    outcome: ReviewAction,
+  ) {
     const review = await currentStore.applyReviewDecision(reviewId, outcome, input);
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return review;
@@ -232,43 +380,25 @@ export function createApp({
     });
   }
 
-  // Rate-limit only the mutating surface so health/ready probes and read-only GETs are unaffected.
-  // 60 mutations per minute per IP fits an interactive single-user pilot — bump when scale-out lands
-  // and switch to a Redis-backed store (e.g. @hono-rate-limiter/redis against Azure Cache).
-  const apiMutationLimiter = rateLimiter<AppEnv>({
-    windowMs: 60_000,
-    limit: 60,
-    standardHeaders: "draft-7",
-    keyGenerator: (c) => {
-      const xff = c.req.header("x-forwarded-for");
-      if (xff) return xff.split(",")[0]?.trim() ?? "unknown";
-      return c.req.header("x-real-ip") ?? "unknown";
-    },
-    handler: (c) => jsonError(c, "Too many requests.", runtimeMode, 429),
-  });
-  app.use("/api/*", async (c, next) => {
-    if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
-      return next();
-    }
-    // Test instances (ALLOW_TEST_RESET) are exempt: the sequential E2E suite
-    // legitimately exceeds 60 mutations/min from one IP and started flaking
-    // with 429s on /api/testing/reset once the capture pipeline became real.
-    if (allowTestReset) {
-      return next();
-    }
-    return apiMutationLimiter(c, next);
-  });
-
-  // JWKS-backed JWT auth on mutating routes when configured. The middleware ships with Hono
-  // (`hono/jwk`); against Supabase the JWKS URL is `${SUPABASE_URL}/auth/v1/keys`. Accepted
-  // algorithms default to RS256 + ES256 (SUPABASE_JWT_ALGS overrides) since Supabase's newer
-  // asymmetric signing keys default to ES256 — a hardcoded RS256-only allowlist would 401 every
-  // legitimate user on such a project. Skipped when unset so demo / unauthenticated pilots keep
-  // working — production sets the env.
+  // JWKS-backed JWT auth on ALL /api/* routes when configured (§A N7 — reads included: workspace
+  // snapshots, reports, and evidence are as sensitive as the mutations that produced them). The
+  // middleware ships with Hono (`hono/jwk`); against Supabase the JWKS URL is
+  // `${SUPABASE_URL}/auth/v1/keys`. Keys go through the TTL-cached single-flight fetcher (§A R7)
+  // instead of `jwks_uri`, which refetches the endpoint per request. Accepted algorithms default
+  // to RS256 + ES256 (SUPABASE_JWT_ALGS overrides) since Supabase's newer asymmetric signing keys
+  // default to ES256 — a hardcoded RS256-only allowlist would 401 every legitimate user on such a
+  // project. Skipped when unset so demo / unauthenticated pilots keep working — production sets
+  // the env. /health + /ready live outside /api and stay public liveness/readiness probes.
+  // Registered BEFORE the rate limiters (WS-C 3) so their key generators can read the verified
+  // `jwtPayload` subject.
   if (jwksUrl) {
-    const verifyJwt = jwk({ jwks_uri: jwksUrl, alg: jwtAlgs });
+    const fetchJwksKeys = createCachedJwksFetcher(jwksUrl);
+    const verifyJwt = jwk({ keys: fetchJwksKeys, alg: jwtAlgs });
     app.use("/api/*", async (c, next) => {
-      if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
+      // GET /api/runtime-info stays public: the About-this-AI transparency panel (EU AI Act
+      // Art. 50) must render before login. CORS preflights never reach here — the cors
+      // middleware above short-circuits OPTIONS.
+      if (c.req.method === "GET" && c.req.path === "/api/runtime-info") {
         return next();
       }
       // /api/testing/reset is route-gated on allowTestReset already, but layering JWT defense in
@@ -276,6 +406,65 @@ export function createApp({
       return verifyJwt(c, next);
     });
   }
+
+  // Rate-limit keying (WS-C 3): one bucket per VERIFIED subject when auth is on — behind the web
+  // app's server-side proxy every browser shares the proxy's outbound address, so per-IP keying
+  // would give all users one shared bucket (and per-subject keying survives address churn). With
+  // auth off, fall back to the client address derived by `clientIpKey` (rightmost XFF hop — see
+  // its Azure App Service reasoning), then x-real-ip, then one shared "unknown" bucket.
+  const rateLimitKey = (c: Context<AppEnv>): string => {
+    const sub = jwtSubject(c);
+    if (sub) return `sub:${sub}`;
+    return `ip:${clientIpKey(c.req.header("x-forwarded-for"), c.req.header("x-real-ip"))}`;
+  };
+  // Test instances (ALLOW_TEST_RESET) are exempt: the sequential E2E suite legitimately exceeds
+  // the per-key budgets from one IP and started flaking with 429s once the capture pipeline
+  // became real. Demo mode only (WS-A5c): a stray ALLOW_TEST_RESET on a normal-mode deploy must
+  // not silently disable the production rate limiters.
+  const rateLimiterBypassed = allowTestReset && runtimeMode === "demo";
+
+  // Mutating surface: 60/min per key fits an interactive single-user pilot — bump when scale-out
+  // lands and switch to a Redis-backed store (e.g. @hono-rate-limiter/redis against Azure Cache).
+  const apiMutationLimiter = rateLimiter<AppEnv>({
+    windowMs: 60_000,
+    limit: 60,
+    standardHeaders: "draft-7",
+    keyGenerator: rateLimitKey,
+    handler: (c) => jsonError(c, "Too many requests.", runtimeMode, 429),
+  });
+  app.use("/api/*", async (c, next) => {
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
+      return next();
+    }
+    if (rateLimiterBypassed) {
+      return next();
+    }
+    return apiMutationLimiter(c, next);
+  });
+
+  // Modest READ limiter on the derivation-heavy GET surface (WS-C 3): report routes re-derive
+  // projections per request and the SIE export serializes the full ledger — an anonymous scraper
+  // hammering them is cheap DoS. 120/min per key stays far above the dashboard's parallel report
+  // queries; health/ready and the remaining GETs are unaffected.
+  const apiReadLimiter = rateLimiter<AppEnv>({
+    windowMs: 60_000,
+    limit: 120,
+    standardHeaders: "draft-7",
+    keyGenerator: rateLimitKey,
+    handler: (c) => jsonError(c, "Too many requests.", runtimeMode, 429),
+  });
+  app.use("/api/*", async (c, next) => {
+    if (c.req.method !== "GET") {
+      return next();
+    }
+    if (!c.req.path.startsWith("/api/reports/") && !c.req.path.startsWith("/api/exports/")) {
+      return next();
+    }
+    if (rateLimiterBypassed) {
+      return next();
+    }
+    return apiReadLimiter(c, next);
+  });
 
   app.use(
     "*",
@@ -337,6 +526,44 @@ export function createApp({
       return jsonError(c, error.message, runtimeMode, 503);
     }
 
+    if (isJwksFetchError(error)) {
+      // Auth infrastructure down ≠ bad token (§A R7): JWKS fetch failures are a service
+      // outage (503), while missing/invalid tokens keep answering 401 via HTTPException.
+      console.error(
+        JSON.stringify({
+          level: "error",
+          component: "api.auth",
+          requestId: c.var.requestId,
+          message: error.message,
+        }),
+      );
+      return jsonError(c, "Authentication is temporarily unavailable.", runtimeMode, 503);
+    }
+
+    const pgCode = getPostgresErrorCode(error);
+    if (pgCode !== undefined) {
+      // WS-A5: the SQLSTATE + driver message stay in the log line only — the response body
+      // never carries Postgres detail beyond the mapped code.
+      console.error(
+        JSON.stringify({
+          level: "error",
+          component: "api",
+          requestId: c.var.requestId,
+          message: error instanceof Error ? error.message : String(error),
+          pgCode,
+        }),
+      );
+      if (pgCode === "23505") {
+        return jsonError(c, "A conflicting record already exists.", runtimeMode, 409, { code: "conflict" });
+      }
+      // Class 08 (connection exceptions) + class 57 (operator intervention, e.g. shutdown,
+      // statement timeout via cancel) are infrastructure availability, not caller mistakes.
+      if (pgCode.startsWith("08") || pgCode.startsWith("57")) {
+        return jsonError(c, "The database is temporarily unavailable.", runtimeMode, 503);
+      }
+      return jsonError(c, "Unexpected server error.", runtimeMode, 500);
+    }
+
     const requestId = c.var.requestId;
     console.error(
       JSON.stringify({
@@ -353,8 +580,16 @@ export function createApp({
 
   app.get("/health", (context) => context.json({ ok: true, runtimeMode }));
 
-  app.get("/ready", (context) => {
-    const ledgerOk = isLedgerStoreOperational(currentStore);
+  app.get("/ready", async (context) => {
+    // Real ledger probe (WS-A5): SELECT 1 against Postgres, no-op for the memory
+    // store, rejection for the fail-closed unavailable store — instead of the old
+    // instanceof check that reported a dead connection pool as ready.
+    let ledgerOk = true;
+    try {
+      await pingLedgerStore(currentStore);
+    } catch {
+      ledgerOk = false;
+    }
     const aiOk = isAiRuntimeOperational(aiRuntime);
     const ready = ledgerOk && aiOk;
     return context.json({
@@ -388,8 +623,15 @@ export function createApp({
 
   // Hash-chain integrity summary (Phase 5): linkage verification over the
   // store's event log — no LedgerStore interface change (plan finding 6).
+  // R14: payload recomputation is on by default — SHA-256 events are re-hashed
+  // from their stored payloads (legacy djb2 links stay linkage-only).
   app.get("/api/integrity", async (context) =>
-    context.json(summarizeEventIntegrity(await currentStore.getEvents(), { verifiedAt: nowIso() })),
+    context.json(
+      summarizeEventIntegrity(await currentStore.getEvents(), {
+        verifiedAt: nowIso(),
+        verifyPayloads: true,
+      }),
+    ),
   );
 
   // Runtime AI transparency for the About-this-AI panel (EU AI Act Art. 50).
@@ -408,12 +650,13 @@ export function createApp({
 
   app.post("/api/evidence", jsonValidated(evidenceCreateInputSchema), async (context) => {
     const input = context.req.valid("json");
-    return context.json(await currentStore.createEvidence(input), 201);
+    // Attribution comes from the server-side derivation, never the payload (R5).
+    return context.json(await currentStore.createEvidence({ ...input, actorId: deriveActorId(context) }), 201);
   });
 
   app.post("/api/evidence/compose", jsonValidated(evidenceComposeInputSchema), async (context) => {
     const input = context.req.valid("json");
-    return context.json(await currentStore.composeEvidence(input), 201);
+    return context.json(await currentStore.composeEvidence({ ...input, actorId: deriveActorId(context) }), 201);
   });
 
   app.post("/api/uploads/init", jsonValidated(uploadInitSchema), async (context) => {
@@ -538,26 +781,35 @@ export function createApp({
   });
 
   app.post("/api/reviews/:id/approve", jsonValidated(reviewDecisionInputSchema), async (c) =>
-    c.json(await postReviewDecision(c.req.valid("json"), c.req.param("id"), "approve")),
+    c.json(
+      await postReviewDecision({ ...c.req.valid("json"), actorId: deriveActorId(c) }, c.req.param("id"), "approve"),
+    ),
   );
 
   app.post("/api/reviews/:id/reject", jsonValidated(reviewDecisionInputSchema), async (c) =>
-    c.json(await postReviewDecision(c.req.valid("json"), c.req.param("id"), "reject")),
+    c.json(
+      await postReviewDecision({ ...c.req.valid("json"), actorId: deriveActorId(c) }, c.req.param("id"), "reject"),
+    ),
   );
 
   app.post("/api/reviews/:id/book-without-vat", jsonValidated(reviewDecisionInputSchema), async (c) =>
-    c.json(await postReviewDecision(c.req.valid("json"), c.req.param("id"), "book-without-vat")),
+    c.json(
+      await postReviewDecision(
+        { ...c.req.valid("json"), actorId: deriveActorId(c) },
+        c.req.param("id"),
+        "book-without-vat",
+      ),
+    ),
   );
 
   app.post("/api/imports/sie", async (context) => {
     // Raw file bytes, not JSON: decode (strict UTF-8 → CP437 fallback), parse
     // the SIE 4 subset, and let the store append VoucherImported events.
-    // Deferred-auth identity matches the rest of the demo pipeline; override
-    // via ?actorId= until real auth attribution lands.
+    // Attribution is server-derived (R5) — the old `?actorId=` override let any
+    // caller stamp arbitrary identities into the 7-year audit trail.
     const bytes = new Uint8Array(await context.req.arrayBuffer());
     const parsed = parseSie(decodeSieBuffer(bytes));
-    const actorId = context.req.query("actorId") ?? "user_founder";
-    const result = await currentStore.importSie({ actorId, file: parsed });
+    const result = await currentStore.importSie({ actorId: deriveActorId(context), file: parsed });
     return context.json(result);
   });
 
@@ -578,7 +830,9 @@ export function createApp({
   // stream or Azure streamText — both route tool approvals through the
   // existing review decision. Inherits the full mutation middleware stack
   // (body limit, rate limiter, JWT when configured) like every /api/* POST.
-  app.post("/api/advisor/chat", (context) => advisorChat(context.req.raw));
+  // The server-derived actor rides along so approved proposeReviewAction
+  // executions attribute to the SAME identity as a direct review decision (R5).
+  app.post("/api/advisor/chat", (context) => advisorChat(context.req.raw, { actorId: deriveActorId(context) }));
 
   app.post("/api/knowledge/query", jsonValidated(knowledgeQuerySchema), async (context) => {
     const input = context.req.valid("json");
@@ -590,7 +844,7 @@ export function createApp({
 
   app.post("/api/simulations/run", jsonValidated(simulationRequestSchema), async (context) => {
     const input = context.req.valid("json");
-    return context.json(await currentStore.runSimulation(input), 201);
+    return context.json(await currentStore.runSimulation({ ...input, actorId: deriveActorId(context) }), 201);
   });
 
   app.post("/api/close-runs", async (context) => context.json(await currentStore.getCloseRun(), 201));

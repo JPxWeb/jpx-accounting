@@ -1,3 +1,5 @@
+> **Archived 2026-07-18 — background research, absorbed.** Second one-off research pass (cheap-first Azure architecture, cash-method rules, MVP scoping) that shaped the event-sourced ledger + review-queue design; kept for reference, not maintained.
+
 # Building an internal Swedish bookkeeping system for an AB with AI-assisted receipts on Azure
 
 ## Executive summary and recommendations

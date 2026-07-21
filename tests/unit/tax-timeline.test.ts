@@ -153,16 +153,51 @@ test("timeline is deterministic for identical inputs", () => {
   assert.deepEqual(build(), build());
 });
 
-test("fiscal start 07-01: quarterly deadlines follow the fiscal quarters", () => {
-  // fy-2025 Q4 with start 07-01 spans Apr–Jun 2026 → due 2026-08-17.
+test("fiscal start 07-01: quarterly deadlines are CALENDAR quarters, joined via the matching fiscal token", () => {
+  // Statutory kalenderkvartal Apr–Jun 2026 → due 2026-08-17 (August 17th
+  // rule). The id/label name the CALENDAR quarter; the periodToken is the
+  // fiscal-grammar token that resolves to the same window (fy-2025 Q4 with
+  // start 07-01 spans exactly Apr–Jun 2026), keeping the box-49 join alive.
   const timeline = buildTaxTimeline({
     profile: { vatPeriod: "quarterly", fiscalYearStart: "07-01" },
     today: "2026-07-04",
   });
-  const q4 = byId(timeline, "tax_vat_2025-Q4");
-  assert.ok(q4, "expected fy-2025 Q4 in the horizon");
-  assert.equal(q4.dueDate, "2026-08-17");
-  assert.equal(q4.periodToken, "2025-Q4");
+  const q2 = byId(timeline, "tax_vat_2026-Q2");
+  assert.ok(q2, "expected calendar Q2 2026 in the horizon");
+  assert.equal(q2.dueDate, "2026-08-17");
+  assert.equal(q2.periodLabel, "2026-Q2");
+  assert.equal(q2.periodToken, "2025-Q4");
+  assert.equal(q2.amountRef, "box49");
+  // The old fiscal-quarter schedule (fy quarters ending Jul/Oct/Jan) must be gone.
+  assert.equal(byId(timeline, "tax_vat_2025-Q4"), undefined);
+  assert.equal(byId(timeline, "tax_vat_2026-Q1"), undefined);
+});
+
+test("broken fiscal year (05-01): quarterly VAT deadlines stay on calendar quarters, date-only", () => {
+  // A May fiscal year is not calendar-quarter-aligned: the statutory windows
+  // (kalenderkvartal) have no unified-grammar token, so the rows are honest
+  // date-only entries — no periodToken, amountRef null — but the DATES follow
+  // the statutory calendar-quarter schedule, not the fiscal quarters.
+  const timeline = buildTaxTimeline({
+    profile: { vatPeriod: "quarterly", fiscalYearStart: "05-01" },
+    today: "2026-07-04",
+    horizonDays: 240,
+    limit: 20,
+  });
+  const vatDeadlines = timeline.filter((deadline) => deadline.kind === "vat-return");
+  assert.deepEqual(
+    vatDeadlines.map((deadline) => [deadline.id, deadline.dueDate]),
+    [
+      ["tax_vat_2026-Q2", "2026-08-17"], // Apr–Jun → Aug 17th rule (Monday)
+      ["tax_vat_2026-Q3", "2026-11-12"], // Jul–Sep → Nov 12th
+      ["tax_vat_2026-Q4", "2027-02-12"], // Oct–Dec → Feb 12th
+    ],
+  );
+  for (const deadline of vatDeadlines) {
+    assert.equal(taxDeadlineSchema.safeParse(deadline).success, true);
+    assert.equal(deadline.periodToken, undefined, `${deadline.id} must not claim a fiscal-window token`);
+    assert.equal(deadline.amountRef, null, `${deadline.id} must render date-only`);
+  }
 });
 
 test("currentVatPeriodToken resolves the containing period for all cadences", () => {
@@ -172,4 +207,15 @@ test("currentVatPeriodToken resolves the containing period for all cadences", ()
   assert.equal(currentVatPeriodToken("quarterly", "07-01", "2026-06-30"), "2025-Q4");
   assert.equal(currentVatPeriodToken("yearly", "01-01", "2026-07-04"), "fy-2026");
   assert.equal(currentVatPeriodToken("yearly", "07-01", "2026-06-30"), "fy-2025");
+});
+
+test("currentVatPeriodToken quarterly is the CALENDAR quarter; broken fiscal years fall back to the month", () => {
+  // Calendar-quarter-aligned fiscal years resolve the calendar quarter through
+  // the fiscal grammar: Apr–Jun 2026 is fy-2026 Q1 for an April start, and
+  // Jan–Mar 2026 is fy-2025 Q2 for an October start.
+  assert.equal(currentVatPeriodToken("quarterly", "04-01", "2026-05-15"), "2026-Q1");
+  assert.equal(currentVatPeriodToken("quarterly", "10-01", "2026-01-15"), "2025-Q2");
+  // A May fiscal year has no token for the statutory calendar quarter — fall
+  // back to the resolvable current-month token (honest subset window).
+  assert.equal(currentVatPeriodToken("quarterly", "05-01", "2026-05-15"), "2026-05");
 });

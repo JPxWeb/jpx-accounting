@@ -17,6 +17,7 @@ import { formatRuntimeModeLabel } from "../lib/presentation";
 import { webRuntimeConfig } from "../lib/runtime-config";
 import { registerGlobalTourBlocker } from "./onboarding/onboarding-shell";
 import { MicroHintLink } from "./onboarding/micro-hints";
+import { AccountMenu } from "./auth/account-menu";
 import { CommandPalette } from "./command-palette";
 import { useWorkspaceProfile } from "./providers/workspace-profile-provider";
 import { ThemeToggle } from "./theme-toggle";
@@ -318,6 +319,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 >
                   {t("topbar.searchLabel")}
                 </button>
+                {/* Renders null when auth is unconfigured (demo) or still resolving — zero layout impact. */}
+                <AccountMenu />
                 <Link
                   href="/assistant"
                   data-tour="mobile-advisor-link"

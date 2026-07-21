@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-import { resetApiState } from "./test-helpers";
+import { activateControl, resetApiState } from "./test-helpers";
 
 const receiptFixture = path.join(__dirname, "..", "fixtures", "receipt.jpg");
 
@@ -11,7 +11,7 @@ test.beforeEach(async ({ request }) => {
   await resetApiState(request);
 });
 
-test("navigation and share target flows stay reachable", async ({ page }) => {
+test("navigation and share target flows stay reachable", async ({ page, isMobile }) => {
   await page.goto("/");
 
   if (test.info().project.name.includes("mobile")) {
@@ -20,10 +20,12 @@ test("navigation and share target flows stay reachable", async ({ page }) => {
     await expect(page.getByTestId("desktop-navigation")).toBeVisible();
   }
 
-  await page.getByRole("link", { name: "Reports" }).click();
+  // On mobile these resolve to the bottom-docked nav links — exactly where the
+  // Pixel 7 visual-viewport offset strands pointer clicks (see activateControl).
+  await activateControl(page.getByRole("link", { name: "Reports" }), isMobile);
   await expect(page).toHaveURL(/\/reports$/);
 
-  await page.getByRole("link", { name: "Settings" }).click();
+  await activateControl(page.getByRole("link", { name: "Settings" }), isMobile);
   // /settings redirects to the first sub-page (PR-D2 settings layout).
   await expect(page).toHaveURL(/\/settings\/company$/);
 

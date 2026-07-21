@@ -74,7 +74,7 @@ test("evidence, extraction, suggestion, and review endpoints stay coherent and i
     data: {
       organizationId: "org_jpx",
       workspaceId: "workspace_main",
-      actorId: "user_founder",
+
       evidenceIds: [createdPayload.evidence.id],
       note: "Bundled for review",
     },
@@ -89,7 +89,7 @@ test("evidence, extraction, suggestion, and review endpoints stay coherent and i
   expect(extraction.voucher.id).toBe(createdPayload.voucher.id);
 
   const suggestion = await request.post(`${apiBaseUrl}/api/vouchers/${createdPayload.voucher.id}/suggest`, {
-    data: { actorId: "user_founder" },
+    data: {},
   });
   expect(suggestion.ok()).toBeTruthy();
   expect(await suggestion.json()).toMatchObject({
@@ -101,7 +101,7 @@ test("evidence, extraction, suggestion, and review endpoints stay coherent and i
   expect(journalBeforeData).toHaveLength(3);
 
   const approve = await request.post(`${apiBaseUrl}/api/reviews/${createdPayload.review.id}/approve`, {
-    data: { actorId: "user_founder", notes: "Reviewed in Playwright" },
+    data: { notes: "Reviewed in Playwright" },
   });
   expect(approve.ok()).toBeTruthy();
   expect(await approve.json()).toMatchObject({
@@ -113,7 +113,7 @@ test("evidence, extraction, suggestion, and review endpoints stay coherent and i
   expect(journalAfterApproveData).toHaveLength(6);
 
   const approveAgain = await request.post(`${apiBaseUrl}/api/reviews/${createdPayload.review.id}/approve`, {
-    data: { actorId: "user_founder", notes: "Replay should be safe" },
+    data: { notes: "Replay should be safe" },
   });
   expect(approveAgain.ok()).toBeTruthy();
   expect(await approveAgain.json()).toMatchObject({
@@ -152,7 +152,7 @@ test("honest upload pipeline: init → PUT → create with metadata → persiste
     data: {
       organizationId: "org_jpx",
       workspaceId: "workspace_main",
-      actorId: "user_founder",
+
       title: "Uploaded receipt",
       originalFilename: "uploaded-receipt.jpg",
       mimeType: "image/jpeg",
@@ -209,7 +209,7 @@ test("knowledge, simulation, close, and import endpoints round-trip", async ({ r
   // `/api/assistant/sessions` was retired in Phase 6 — superseded by the
   // streaming `/api/advisor/chat` (pinned below): gone means 404.
   const retiredAssistant = await request.post(`${apiBaseUrl}/api/assistant/sessions`, {
-    data: { actorId: "user_founder", question: "retired?" },
+    data: { question: "retired?" },
   });
   expect(retiredAssistant.status()).toBe(404);
 
@@ -219,7 +219,6 @@ test("knowledge, simulation, close, and import endpoints round-trip", async ({ r
   // retrieval unit tests.
   const knowledge = await request.post(`${apiBaseUrl}/api/knowledge/query`, {
     data: {
-      actorId: "user_founder",
       query: "representation",
     },
   });
@@ -238,7 +237,6 @@ test("knowledge, simulation, close, and import endpoints round-trip", async ({ r
 
   const simulation = await request.post(`${apiBaseUrl}/api/simulations/run`, {
     data: {
-      actorId: "user_founder",
       title: "Representation reclassification",
       scenario: "Treat a lunch receipt as representation and compare VAT impact.",
       reviewIds: [simReviewList[0]!.id],

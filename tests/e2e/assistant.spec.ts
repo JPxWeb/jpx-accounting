@@ -1,12 +1,17 @@
 import { expect, test } from "@playwright/test";
 
-import { resetApiState } from "./test-helpers";
+import { activateControl, resetApiState } from "./test-helpers";
 
 test.beforeEach(async ({ request }) => {
   await resetApiState(request);
 });
 
-test("advisor streams a grounded, Article 50-labeled answer with provenance", async ({ page }) => {
+// The advisor buttons (Send, approve, reject) are activated via
+// `activateControl`: pointer click on desktop, keyboard on mobile — see the
+// helper's doc comment for the Pixel 7 visual-viewport emulation quirk that
+// makes pointer clicks on these small controls hang until the test timeout.
+
+test("advisor streams a grounded, Article 50-labeled answer with provenance", async ({ page, isMobile }) => {
   await page.goto("/assistant");
 
   // Persistent Article 50 label + the suggested-prompt trio on the empty state
@@ -17,7 +22,7 @@ test("advisor streams a grounded, Article 50-labeled answer with provenance", as
   // "moms" is a guaranteed corpus token (BM25 keyword retrieval has no
   // stemming), so this cash/VAT question always yields sourced passages.
   await page.getByTestId("assistant-question").fill("Hur ser kassan ut just nu, och vad gäller för moms?");
-  await page.getByTestId("assistant-submit").click();
+  await activateControl(page.getByTestId("assistant-submit"), isMobile);
 
   const answer = page.getByTestId("advisor-message").last();
   // Streamed text embeds the grounding block — numbers copied from the report
@@ -30,14 +35,14 @@ test("advisor streams a grounded, Article 50-labeled answer with provenance", as
   await expect(answer.getByTestId("provenance-chip").first()).toContainText(/Skatteverket|Bokföringslagen|BAS/);
 });
 
-test("a drafted review approval executes only after explicit human approval", async ({ page }) => {
+test("a drafted review approval executes only after explicit human approval", async ({ page, isMobile }) => {
   await page.goto("/assistant");
 
   // A review-action question with the seeded pending review present makes the
   // advisor stream a proposeReviewAction tool part in the approval-requested
   // state — a draft, not an action.
   await page.getByTestId("assistant-question").fill("godkänn granskningen");
-  await page.getByTestId("assistant-submit").click();
+  await activateControl(page.getByTestId("assistant-submit"), isMobile);
 
   const approvalCard = page.getByTestId("advisor-approval-card");
   await expect(approvalCard).toBeVisible();
@@ -46,7 +51,7 @@ test("a drafted review approval executes only after explicit human approval", as
 
   // Explicit human approval → the turn re-sends and the server executes the
   // ordinary applyReviewDecision through the review gate.
-  await approvalCard.getByTestId("advisor-approve-tool").click();
+  await activateControl(approvalCard.getByTestId("advisor-approve-tool"), isMobile);
 
   const toolResult = page.getByTestId("advisor-tool-result");
   await expect(toolResult).toBeVisible();
@@ -58,15 +63,15 @@ test("a drafted review approval executes only after explicit human approval", as
   await expect(page.getByTestId("review-status").filter({ hasText: "approved" })).toHaveCount(1);
 });
 
-test("rejecting a drafted approval posts nothing", async ({ page }) => {
+test("rejecting a drafted approval posts nothing", async ({ page, isMobile }) => {
   await page.goto("/assistant");
 
   await page.getByTestId("assistant-question").fill("godkänn granskningen");
-  await page.getByTestId("assistant-submit").click();
+  await activateControl(page.getByTestId("assistant-submit"), isMobile);
 
   const approvalCard = page.getByTestId("advisor-approval-card");
   await expect(approvalCard).toBeVisible();
-  await approvalCard.getByTestId("advisor-reject-tool").click();
+  await activateControl(approvalCard.getByTestId("advisor-reject-tool"), isMobile);
 
   const toolResult = page.getByTestId("advisor-tool-result");
   await expect(toolResult).toBeVisible();

@@ -30,7 +30,11 @@ export type ApiRuntimeConfig = {
     apiKey?: string | undefined;
   };
   auth: {
-    /** Full JWKS URL — typically `${SUPABASE_URL}/auth/v1/keys`. When set, /api/* mutations require a valid JWT. */
+    /**
+     * Full JWKS URL — typically `${SUPABASE_URL}/auth/v1/keys`. When set, ALL /api/* routes
+     * (runtime-info excepted) require a valid JWT. REQUIRED in normal mode (WS-C R12 fail-closed);
+     * optional in demo, where the scaffold stays auth-free.
+     */
     jwksUrl?: string | undefined;
     /**
      * Asymmetric algorithms the JWKS verifier accepts (comma-separated via SUPABASE_JWT_ALGS).
@@ -55,17 +59,24 @@ export type ApiRuntimeConfig = {
 export const DEMO_ADVISOR_TOOL_APPROVAL_SECRET = "jpx-demo-advisor-tool-approval-secret";
 
 /** Mirrors `hono/jwk`'s `AsymmetricAlgorithm` union — kept local so config.ts stays framework-import-free. */
-export type SupabaseJwtAlgorithm =
-  | "RS256"
-  | "RS384"
-  | "RS512"
-  | "PS256"
-  | "PS384"
-  | "PS512"
-  | "ES256"
-  | "ES384"
-  | "ES512"
-  | "EdDSA";
+export const SUPABASE_JWT_ALGORITHMS = [
+  "RS256",
+  "RS384",
+  "RS512",
+  "PS256",
+  "PS384",
+  "PS512",
+  "ES256",
+  "ES384",
+  "ES512",
+  "EdDSA",
+] as const;
+
+export type SupabaseJwtAlgorithm = (typeof SUPABASE_JWT_ALGORITHMS)[number];
+
+function isSupabaseJwtAlgorithm(value: string): value is SupabaseJwtAlgorithm {
+  return (SUPABASE_JWT_ALGORITHMS as readonly string[]).includes(value);
+}
 
 /** RS256 covers Supabase's original asymmetric keys; ES256 covers its newer default. */
 export const DEFAULT_SUPABASE_JWT_ALGS: SupabaseJwtAlgorithm[] = ["RS256", "ES256"];
@@ -88,13 +99,97 @@ function resolveCorsPolicy(runtimeMode: RuntimeMode, originsEnv?: string): CorsR
   return { kind: "allowlist", origins };
 }
 
-/** Comma-separated SUPABASE_JWT_ALGS → trimmed list; falls back to DEFAULT_SUPABASE_JWT_ALGS when unset/empty. */
+/**
+ * Normal mode requires SUPABASE_JWKS_URL (WS-C R12, extending the W1 fail-closed
+ * pattern): without it every /api/* route would serve real ledger data to
+ * unauthenticated callers. Demo mode stays auth-free by design — the in-memory
+ * scaffold holds no real records and E2E depends on the open surface.
+ */
+function resolveJwksUrl(runtimeMode: RuntimeMode, jwksUrlEnv?: string): string | undefined {
+  const jwksUrl = normalizeOptionalValue(jwksUrlEnv);
+  if (runtimeMode === "normal" && jwksUrl === undefined) {
+    throw new Error(
+      "SUPABASE_JWKS_URL is required when ACCOUNTING_RUNTIME_MODE=normal. " +
+        "Fail closed: without JWKS verification every /api/* route would accept unauthenticated traffic. " +
+        "Set it to ${SUPABASE_URL}/auth/v1/keys (or run demo mode for auth-free scaffolding).",
+    );
+  }
+  return jwksUrl;
+}
+
+/**
+ * Comma-separated SUPABASE_JWT_ALGS → trimmed list; falls back to DEFAULT_SUPABASE_JWT_ALGS
+ * when unset/empty. Fail closed on unknown members (§A N5): a typo like "R256" would
+ * otherwise ride along until the verifier rejects every token at request time.
+ */
 function resolveJwtAlgs(algsEnv?: string): SupabaseJwtAlgorithm[] {
-  const algs = algsEnv
-    ?.split(",")
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-  return algs && algs.length > 0 ? (algs as SupabaseJwtAlgorithm[]) : [...DEFAULT_SUPABASE_JWT_ALGS];
+  const algs =
+    algsEnv
+      ?.split(",")
+      .map((segment) => segment.trim())
+      .filter(Boolean) ?? [];
+  if (algs.length === 0) {
+    return [...DEFAULT_SUPABASE_JWT_ALGS];
+  }
+  const unknown = algs.filter((alg) => !isSupabaseJwtAlgorithm(alg));
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown SUPABASE_JWT_ALGS value(s): ${unknown.join(", ")}. ` +
+        `Allowed asymmetric algorithms: ${SUPABASE_JWT_ALGORITHMS.join(", ")}.`,
+    );
+  }
+  return algs.filter(isSupabaseJwtAlgorithm);
+}
+
+/**
+ * Fail closed on typos (§A N5): an unknown ACCOUNTING_RUNTIME_MODE must never silently
+ * demote a production deploy to demo (the previous behavior). Unset still defaults to demo.
+ */
+function resolveRuntimeMode(modeEnv?: string): RuntimeMode {
+  const raw = normalizeOptionalValue(modeEnv);
+  if (raw === undefined) {
+    return "demo";
+  }
+  const parsed = runtimeModeSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`Unknown ACCOUNTING_RUNTIME_MODE ${JSON.stringify(raw)} — expected "demo" or "normal".`);
+  }
+  return parsed.data;
+}
+
+/** PORT must be a whole TCP port; NaN or out-of-range values throw instead of booting on garbage (§A N5). */
+function resolvePort(portEnv?: string): number {
+  const raw = normalizeOptionalValue(portEnv);
+  if (raw === undefined) {
+    return 3001;
+  }
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid PORT ${JSON.stringify(raw)} — expected an integer between 1 and 65535.`);
+  }
+  return port;
+}
+
+/**
+ * Resolved boot posture for the single structured boot log line (§A N5e) —
+ * emitted once by `createApiRuntimeDependencies` in runtime.ts, NOT here:
+ * `readApiRuntimeConfig` is also re-read lazily (knowledge.ts) and must stay
+ * side-effect free. Derivable from config alone — never carries secrets or
+ * connection strings.
+ */
+export function describeBootPosture(config: ApiRuntimeConfig) {
+  return {
+    level: "info",
+    component: "api.boot",
+    message: "resolved runtime posture",
+    runtimeMode: config.runtimeMode,
+    ledgerStore: config.runtimeMode === "demo" ? "memory" : config.supabase.databaseUrl ? "postgres" : "unavailable",
+    authEnabled: config.auth.jwksUrl !== undefined,
+    corsPolicy: config.corsPolicy.kind,
+    corsOriginCount: config.corsPolicy.kind === "allowlist" ? config.corsPolicy.origins.length : 0,
+    // Must mirror the app.ts limiter gate: the ALLOW_TEST_RESET bypass applies in demo mode only.
+    rateLimitEnabled: !(config.allowTestReset && config.runtimeMode === "demo"),
+  };
 }
 
 /**
@@ -125,12 +220,10 @@ function resolveAdvisorToolApprovalSecret(runtimeMode: RuntimeMode, envValue?: s
 }
 
 export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiRuntimeConfig {
-  const runtimeMode = runtimeModeSchema.safeParse(env.ACCOUNTING_RUNTIME_MODE ?? "demo");
+  const mode = resolveRuntimeMode(env.ACCOUNTING_RUNTIME_MODE);
 
-  const mode = runtimeMode.success ? runtimeMode.data : "demo";
-
-  return {
-    port: Number(env.PORT ?? 3001),
+  const config: ApiRuntimeConfig = {
+    port: resolvePort(env.PORT),
     runtimeMode: mode,
     allowTestReset: env.ALLOW_TEST_RESET === "true",
     corsPolicy: resolveCorsPolicy(mode, env.ACCOUNTING_CORS_ORIGINS),
@@ -152,11 +245,13 @@ export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiR
       apiKey: normalizeOptionalValue(env.AZURE_DOCUMENT_INTELLIGENCE_API_KEY),
     },
     auth: {
-      jwksUrl: normalizeOptionalValue(env.SUPABASE_JWKS_URL),
+      jwksUrl: resolveJwksUrl(mode, env.SUPABASE_JWKS_URL),
       jwtAlgs: resolveJwtAlgs(env.SUPABASE_JWT_ALGS),
     },
     advisor: {
       toolApprovalSecret: resolveAdvisorToolApprovalSecret(mode, env.ADVISOR_TOOL_APPROVAL_SECRET),
     },
   };
+
+  return config;
 }
