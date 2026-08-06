@@ -3,8 +3,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Joyride, STATUS, type Step } from "react-joyride";
+import { STATUS, type Step } from "react-joyride";
 
 import { useIsMobile } from "../../hooks/use-mobile";
 import { apiClient } from "../../lib/client";
@@ -15,6 +16,8 @@ import type { TourId } from "../../lib/onboarding/tour-ids";
 import { webRuntimeConfig } from "../../lib/runtime-config";
 import { markActiveTourCompleted, OnboardingProvider } from "./onboarding-context";
 import { TourTooltip } from "./tour-tooltip";
+
+const Joyride = dynamic(() => import("react-joyride").then((mod) => mod.Joyride), { ssr: false });
 
 function isCurrentRoute(route: string): boolean {
   if (typeof window === "undefined") return false;

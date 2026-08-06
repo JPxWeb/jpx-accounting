@@ -38,11 +38,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Lint + format before typecheck — fast feedback; aligns with root eslint.config.mjs (Next flat + typescript-eslint).
+      # Lint + format before typecheck â€” fast feedback; aligns with root eslint.config.mjs (Next flat + typescript-eslint).
       - name: Lint
         run: pnpm lint
 
-      # Mirrors root `pnpm check` — a missing sv/en key must fail CI, not first surface at runtime.
+      # Architectural seam grep gates (dnd-kit / ai-sdk / recharts ownership).
+      - name: Check architectural seams
+        run: corepack pnpm check:seams
+
+      # Mirrors root `pnpm check` â€” a missing sv/en key must fail CI, not first surface at runtime.
       - name: Check i18n parity
         run: corepack pnpm check:i18n
 
@@ -52,7 +56,7 @@ jobs:
       - name: Typecheck all packages
         run: pnpm typecheck
 
-      # Matches root `pnpm check` — tests/ has its own tsconfig (see tests/tsconfig.json).
+      # Matches root `pnpm check` â€” tests/ has its own tsconfig (see tests/tsconfig.json).
       - name: Typecheck tests directory
         run: pnpm typecheck:tests
 
@@ -150,8 +154,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Same one-command lifecycle as local agents: Compose up → jpx_test_* → migrate →
-      # JPX_REQUIRE_DATABASE_TESTS=true → test:integration → drop DB. No silent skips.
+      # Same one-command lifecycle as local agents: Compose up â†’ jpx_test_* â†’ migrate â†’
+      # JPX_REQUIRE_DATABASE_TESTS=true â†’ test:integration â†’ drop DB. No silent skips.
       - name: Strict PostgreSQL integration (pnpm db:test)
         run: pnpm db:test
 
@@ -181,7 +185,7 @@ jobs:
           # NOTE: jpx_test_* is already dropped by db:test's finally. This block probes
           # the tool-managed jpx_dev DB only. Real failure diagnostics are in the
           # db:test step log (status/verify emitted before drop).
-          # pnpm 10.29.2 writes its run banner to stdout — always use --silent for capture.
+          # pnpm 10.29.2 writes its run banner to stdout â€” always use --silent for capture.
           if URL=$(corepack pnpm --silent db:url 2>/dev/null); then
             {
               echo "NOTE: inspects tool-managed jpx_dev, NOT the dropped jpx_test_* DB"
@@ -194,7 +198,7 @@ jobs:
             sed -i -E 's#postgres(ql)?://[^[:space:]]+#<redacted-url>#g' \
               artifacts/db-diagnostics/*.txt || true
           else
-            echo "db:url unavailable — Compose may not have started" \
+            echo "db:url unavailable â€” Compose may not have started" \
               > artifacts/db-diagnostics/migrations-status.txt
           fi
 

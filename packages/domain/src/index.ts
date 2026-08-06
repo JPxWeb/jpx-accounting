@@ -1,4 +1,3 @@
-export * from "./assistant";
 export * from "./coa/bas-2026";
 export * from "./coa/registry";
 export * from "./coa/types";

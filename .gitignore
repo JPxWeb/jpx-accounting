@@ -40,3 +40,5 @@ lh-*.json
 
 # local deploy experiments
 api-deploy-test/
+# Ghost package directory (never a workspace member — stray local node_modules only)
+packages/supabase-client/

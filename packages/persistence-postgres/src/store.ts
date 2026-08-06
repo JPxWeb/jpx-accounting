@@ -1,7 +1,6 @@
 import type {
   AccountingMethod,
   AccountingSuggestion,
-  AssistantSession,
   CloseRun,
   CompanySettings,
   ComplianceAlert,
@@ -29,7 +28,6 @@ import { companySettingsSchema } from "@jpx-accounting/contracts";
 
 import {
   AUTO_DETECTED_ALERT_KINDS,
-  buildAssistantScaffold,
   buildBalances,
   buildDeterministicSuggestion,
   buildEventHash,
@@ -766,7 +764,7 @@ export class PostgresLedgerStore implements LedgerStore {
   // composeEvidence appends an EvidenceRelinked chain event when a voucher is
   // repointed at the new packet (WS-B B6b), so it takes the workspace chain
   // lock + fork retry like every other appender. suggestVoucher,
-  // answerAssistantQuestion, refreshComplianceAlerts and putCompanySettings
+  // refreshComplianceAlerts and putCompanySettings
   // below stay lock-free: they mutate read models only and append NO chain
   // events — the chain lock's scope is chain appends.
   async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket> {
@@ -1220,9 +1218,8 @@ export class PostgresLedgerStore implements LedgerStore {
       vouchers: voucherRows.map(rowToVoucher),
       reviews,
       reports,
-      // Contract decision: assistantExamples has no Postgres read model yet.
-      // answerAssistantQuestion persists to ledger.assistant_sessions, but the
-      // snapshot's AssistantSession[] shape is Memory-only until wired.
+      // assistantExamples retired (P2-6 / F-7); staged empty for wire compat.
+      // ledger.assistant_sessions table retained (append-only history).
       assistantExamples: [],
       closeRun,
       alerts: alertRows.map(rowToComplianceAlert),
@@ -1358,23 +1355,6 @@ export class PostgresLedgerStore implements LedgerStore {
         return plan.updatedReview;
       }),
     );
-  }
-
-  async answerAssistantQuestion(question: string): Promise<AssistantSession> {
-    const session = buildAssistantScaffold(question);
-
-    await this.client.begin(async (tx) => {
-      await tx`
-        INSERT INTO ledger.assistant_sessions
-          (id, organization_id, workspace_id, question, answer, status, citations, actor_id)
-        VALUES
-          (${session.id}, ${this.defaults.organizationId}, ${this.defaults.workspaceId},
-           ${session.question}, ${session.answer}, ${session.status},
-           ${tx.json(session.citations as unknown as Parameters<typeof tx.json>[0])}, null)
-      `;
-    });
-
-    return session;
   }
 
   async runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun> {
