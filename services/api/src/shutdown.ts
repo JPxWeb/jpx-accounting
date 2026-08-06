@@ -3,11 +3,17 @@ type ClosableServer = {
   closeIdleConnections?: () => void;
 };
 
+/** Minimal process surface for signal wiring — avoids requiring Process return chaining in tests. */
+type ShutdownProcess = {
+  once(signal: string, fn: () => void): void;
+  exit(code: number): void;
+};
+
 export type GracefulShutdownOptions = {
   server: ClosableServer;
   closeDatabase: () => Promise<void>;
   /** Injectable for tests; defaults to the real process. */
-  proc?: Pick<NodeJS.Process, "once" | "exit">;
+  proc?: ShutdownProcess;
   /** Watchdog ceiling; must stay below the App Service stop grace period. */
   watchdogMs?: number;
 };

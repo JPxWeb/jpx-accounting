@@ -240,7 +240,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
     advisor,
     jwksUrl: config.auth.jwksUrl,
     jwtAlgs: config.auth.jwtAlgs,
-    /** Closes the shared Postgres pool; wire to SIGTERM/SIGINT in the API entrypoint when ready. */
+    /** Closes the shared Postgres pool; wired to SIGTERM/SIGINT via `registerGracefulShutdown` in `index.ts`. */
     closeDatabase,
   };
 }
