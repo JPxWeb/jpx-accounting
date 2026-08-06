@@ -1,5 +1,7 @@
 # Advisory Pivot Implementation Plan (Master)
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Execute the 7-phase advisory pivot (spec: `docs/superpowers/specs/2026-07-03-advisory-pivot-design.md`) — one-shot UI consolidation plus the drag-&-drop advisory dashboard, real capture, deep reports, and the advisory layer — on branch `feat/advisory-pivot`.

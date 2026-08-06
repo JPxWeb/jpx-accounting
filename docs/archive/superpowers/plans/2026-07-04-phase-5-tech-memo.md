@@ -1,5 +1,7 @@
 # Phase 5 front-end tech decision memo (verified 2026-07-04)
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 Verified against live sources + npm registry on 2026-07-04. Feeds the Phase 5 detail plan. Stack context: Next 16.2.0, React 19.2.4, Tailwind 4.2.2, Hono 4.12.8, Zod 4.3.6, next-intl 4.13, nuqs 2.8, idb 8.0.3, React Compiler, Node ≥24.
 
 ## 1. Drag & drop — VERDICT: **@dnd-kit/react 0.5.0 (the new rewrite)**

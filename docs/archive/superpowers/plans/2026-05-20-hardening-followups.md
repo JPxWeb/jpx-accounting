@@ -1,5 +1,7 @@
 # Supabase Backend Hardening Follow-ups Implementation Plan
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Close the deferred items and new findings surfaced during the Supabase Backend Hardening series (`2026-05-19-supabase-hardening.md`): complete the audit-trail actor threading (Task 5 only covered settings; reviews/evidence still client-spoofable), close the test-coverage gap (no end-to-end normal-mode test; tests/integration/ not typechecked; suggestVoucher positive path uncovered), and one small consistency cleanup (`thisMonth()` helper).

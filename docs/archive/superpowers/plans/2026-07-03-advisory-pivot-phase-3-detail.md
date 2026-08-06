@@ -1,5 +1,7 @@
 # Phase 3 — Real capture: detailed execution plan
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans. Checkbox syntax for tracking. Verification vocabulary: `CHECK` = `pnpm check`; `E2E` = `pnpm test:e2e`; `E2E:file <f>` = `pnpm build:e2e && npx playwright test tests/e2e/<f>`; `INTEG` = `pnpm test:integration` with `SUPABASE_DB_URL` set (or documented manual SQL smoke, Rules 2/14).
 
 **Baseline verified against branch `feat/advisory-pivot` on 2026-07-04** (HEAD `2c4db6e`, Phases 0–2 landed: dark mode + visual baselines light/dark for 5 screens, workspace profile on `companySettingsSchema`, `Money`/`useWorkspaceProfile`, next-intl en+sv with `shell`/`capture`/`today` namespaces migrated, CoA registry `defaultCoaTemplate`+`roles`, `swedishVatRegime`, migrations 0001–0004).

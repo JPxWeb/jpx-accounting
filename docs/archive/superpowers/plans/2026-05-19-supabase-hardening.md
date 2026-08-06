@@ -1,5 +1,7 @@
 # Supabase Backend Hardening Implementation Plan
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Resolve every open finding from the Supabase-backend-track review — multi-tenancy fail-open, unscoped reads, dishonest stubs, N+1/unbounded queries, and remaining reuse debt — without changing the public API contract.

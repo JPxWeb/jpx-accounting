@@ -1,5 +1,7 @@
 # Repo-Health Wave C — Security Pins + CI Execution Plan
 
+> **STATUS:** **COMPLETE** — landed on `main` via PR #35 (2026-08-06); deploy ARM scope casing follow-up PR #37. Do not re-execute. Archived under `docs/archive/superpowers/plans/` (this file may live there; links from active docs point at the archive). Next work: consolidation Waves D–G / post–Wave C brainstorm.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Land Wave C security pins and CI hygiene — exact Next/Hono bumps (P0-5), Playwright/visual/mobile-flake fixes (P1-10), dep pin hygiene + gated AI SDK bump retaining the tool-approval workaround (P1-12 partial), and CI `db:test` failure diagnostics that inspect the live throwaway DB (P1-19).

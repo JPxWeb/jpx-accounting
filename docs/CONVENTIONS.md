@@ -10,7 +10,7 @@ Each section names the rule, the failure pattern that motivates it, and the chec
 
 **Rule:** Whenever a field is added to a Zod schema that is read from or written to a `PostgresLedgerStore` table, a migration must add (or already provide) the matching DB column with a compatible type. Confirm both directions: the column exists for writes, and the column matches the enum/CHECK/NOT NULL constraints the schema implies.
 
-**The incident:** Phase 7 extended `complianceAlertSchema` with `severity`, `body`, `status` enum, etc. The upsert payload included `severity` and `body` columns that no migration ever added. Unit tests passed because the in-memory store doesn't validate column existence. Only a real-DB call would have caught it — and `pnpm test:integration` only runs when `SUPABASE_DB_URL` is set.
+**The incident:** Phase 7 extended `complianceAlertSchema` with `severity`, `body`, `status` enum, etc. The upsert payload included `severity` and `body` columns that no migration ever added. Unit tests passed because the in-memory store doesn't validate column existence. Only a real-DB call would have caught it — and at the time `pnpm test:integration` was only run when a Postgres URL was set (today: prefer `pnpm db:test`, or `DATABASE_TEST_URL=…/jpx_test_* JPX_REQUIRE_DATABASE_TESTS=true pnpm test:integration`; legacy `SUPABASE_DB_URL` remains an alias).
 
 **The check:**
 
@@ -35,7 +35,7 @@ Each section names the rule, the failure pattern that motivates it, and the chec
 **The check:**
 
 - Any change that writes to a NEW column, uses a NEW conflict target, or relies on a NEW CHECK constraint MUST be backed by at least one of:
-  - An integration test in `tests/integration/` exercised against a real Postgres (`pnpm test:integration` with `SUPABASE_DB_URL` set)
+  - An integration test in `tests/integration/` exercised against a real Postgres (`pnpm db:test`, or `DATABASE_TEST_URL=…/jpx_test_* JPX_REQUIRE_DATABASE_TESTS=true pnpm test:integration`; legacy `SUPABASE_DB_URL` alias still accepted)
   - A documented manual smoke test in the PR description (raw SQL or `node -e` snippet)
 - PR review checklist: for every modified Postgres write path, ask "does any test other than the in-memory store actually exercise this?"
 
@@ -172,7 +172,7 @@ $$;
 
 **The check:**
 
-- For each new `LedgerStore` method, the test suite should include at least one assertion that compares Memory and Postgres outputs for the same input. The Postgres side is exercised by `pnpm test:integration` when `SUPABASE_DB_URL` is set; the Memory side runs in `pnpm test:unit`. If the outputs intentionally differ, document why.
+- For each new `LedgerStore` method, the test suite should include at least one assertion that compares Memory and Postgres outputs for the same input. The Postgres side is exercised by `pnpm db:test` (or `DATABASE_TEST_URL=…/jpx_test_* JPX_REQUIRE_DATABASE_TESTS=true pnpm test:integration`; legacy `SUPABASE_DB_URL` alias still accepted); the Memory side runs in `pnpm test:unit`. If the outputs intentionally differ, document why.
 - Use deterministic IDs derived from the dedup key when the conceptual entity has a natural key (e.g. `alert_<kind>_<targetId>` for compliance alerts).
 
 ---

@@ -1,5 +1,7 @@
 # Track A · Phase 8 — Settings depth + simulations Implementation Plan
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Complete tasks in order.
 
 > **Status (2026-07-05, advisory pivot):** All 8 settings sub-pages render real wired components — **0 header-only stubs remain** (`ComplianceIntegrityPanel`, `FiscalYearForm`, `IntegrationsPosture`, retention statutory policy, `TeamOverview`, plus company/about/ai-posture). Profile and Billing cards on `/settings/about` are still unbuilt placeholders. The Books simulation sub-tab tasks below remain open.
