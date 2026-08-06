@@ -66,7 +66,7 @@ function createNormalModeApp(mock: MockOpenAiResponsesServer) {
     // with this slice, so the advisor streams through createAzure against the
     // mock endpoint (POST {endpoint}/openai/responses with the api-key header).
     azureOpenAi: { endpoint: mock.endpoint, apiKey: MOCK_API_KEY, model: "mock-deployment" },
-    supabase: { poolerTransactionMode: false },
+    database: { poolMode: "direct", poolMax: 10 },
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: {},

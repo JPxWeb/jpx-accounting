@@ -41,7 +41,7 @@ function createTestApiApp(runtimeMode: "demo" | "normal", overrides: TestAppOver
     allowTestReset: overrides.allowTestReset ?? false,
     corsPolicy,
     azureOpenAi: {},
-    supabase: { poolerTransactionMode: false },
+    database: { poolMode: "direct", poolMax: 10 },
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: { jwksUrl: overrides.jwksUrl },

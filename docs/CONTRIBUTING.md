@@ -4,16 +4,16 @@ JPX Accounting is a **pnpm workspace** targeting **Node 24** (`.node-version`; m
 
 ## Repo map
 
-| Path                                                           | Responsibility                                                                                                                          |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web`                                                     | Next.js 16 App Router PWA (`pnpm dev` / `pnpm dev:web`; default dev port **3002** via `apps/web/package.json`).                         |
-| `services/api`                                                 | Hono HTTP API (default dev port **3001** via `PORT` / `.env`). Routes, blob SAS minting, runtime wiring, rate limiter, JWKS auth.       |
-| `packages/contracts`                                           | Shared Zod v4 schemas and exported types — **single source** for HTTP bodies and client parsing. Includes `uploadInitResultSchema`.     |
-| `packages/domain`                                              | Async `LedgerStore` interface, `MemoryLedgerStore`, hash-chain helper, projections (no Express/Next coupling).                          |
-| `packages/persistence-postgres`                                | `PostgresLedgerStore` against Supabase (`postgres-js`). Used in normal mode when `SUPABASE_DB_URL` is set; otherwise fail-closed.       |
-| `packages/document-intelligence`                               | Adapter for `@azure-rest/ai-document-intelligence` with model picker (`prebuilt-invoice` default, `prebuilt-receipt` for receipts).     |
-| `packages/api-client`                                          | Thin `fetch` client; validates JSON **when `baseUrl` is set** with the same schemas as `contracts`. Includes `initUpload`/`uploadBlob`. |
-| `packages/ai-core`, `packages/reporting`, `packages/ui-tokens` | AI boundary (chat + embeddings), summaries, tokens.                                                                                     |
+| Path                                                           | Responsibility                                                                                                                                                                       |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/web`                                                     | Next.js 16 App Router PWA (`pnpm dev` / `pnpm dev:web`; default dev port **3002** via `apps/web/package.json`).                                                                      |
+| `services/api`                                                 | Hono HTTP API (default dev port **3001** via `PORT` / `.env`). Routes, blob SAS minting, runtime wiring, rate limiter, JWKS auth.                                                    |
+| `packages/contracts`                                           | Shared Zod v4 schemas and exported types — **single source** for HTTP bodies and client parsing. Includes `uploadInitResultSchema`.                                                  |
+| `packages/domain`                                              | Async `LedgerStore` interface, `MemoryLedgerStore`, hash-chain helper, projections (no Express/Next coupling).                                                                       |
+| `packages/persistence-postgres`                                | `PostgresLedgerStore` (`postgres-js`) against any PG 15–17 + pgvector provider. Used in normal mode when `DATABASE_URL` (or legacy `SUPABASE_DB_URL`) is set; otherwise fail-closed. |
+| `packages/document-intelligence`                               | Adapter for `@azure-rest/ai-document-intelligence` with model picker (`prebuilt-invoice` default, `prebuilt-receipt` for receipts).                                                  |
+| `packages/api-client`                                          | Thin `fetch` client; validates JSON **when `baseUrl` is set** with the same schemas as `contracts`. Includes `initUpload`/`uploadBlob`.                                              |
+| `packages/ai-core`, `packages/reporting`, `packages/ui-tokens` | AI boundary (chat + embeddings), summaries, tokens.                                                                                                                                  |
 
 ## Trust boundaries
 
@@ -28,13 +28,15 @@ Implementation changes that touch frameworks or toolchain should cross-check aga
 ## Runtime modes (`demo` vs `normal`)
 
 - **`demo`**: `MemoryLedgerStore`, `LocalAiRuntime`, `StubBlobUploader`, `StubDocumentIntelligenceClient`. **Open API CORS** for convenience. Embeddings produce deterministic mock vectors so indexing tests stay reproducible offline.
-- **`normal`**: real storage/AI prerequisites are required; ledger calls fail closed when not configured. The API picks `PostgresLedgerStore` only when `SUPABASE_DB_URL` is set, otherwise `UnavailableLedgerStore` makes `/ready.checks.ledger=false` and `/api/*` reads return `503` with the structured error shape. **`ACCOUNTING_CORS_ORIGINS`** (comma-separated) controls which browser origins may call `/api/*` directly; same-origin `/api-proxy` traffic from Next does not rely on browser CORS to the API.
+- **`normal`**: real storage/AI prerequisites are required; ledger calls fail closed when not configured. The API picks `PostgresLedgerStore` only when `DATABASE_URL` (or legacy `SUPABASE_DB_URL`) is set, otherwise `UnavailableLedgerStore` makes `/ready.checks.ledger=false` and `/api/*` reads return `503` with the structured error shape. **`ACCOUNTING_CORS_ORIGINS`** (comma-separated) controls which browser origins may call `/api/*` directly; same-origin `/api-proxy` traffic from Next does not rely on browser CORS to the API.
 
 ### Env matrix (normal mode)
 
 | Concern                     | Env var(s)                                                                                                                                                      | Required for                                                                   |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Postgres write path         | `SUPABASE_DB_URL` (+ optional `SUPABASE_POOLER_TRANSACTION_MODE=true` for port 6543)                                                                            | `PostgresLedgerStore`; `/ready.checks.ledger=true`                             |
+| Postgres write path         | `DATABASE_URL` (+ `DATABASE_POOL_MODE`, optional `DATABASE_POOL_MAX`; legacy `SUPABASE_DB_URL` / `SUPABASE_POOLER_TRANSACTION_MODE`)                            | `PostgresLedgerStore`; `/ready.checks.ledger=true`                             |
+| Postgres migrations         | `DATABASE_MIGRATION_URL` (falls back to `DATABASE_URL` in direct\|session mode)                                                                                 | `pnpm db:migrate` / `scripts/db-migrations.mts`                                |
+| Strict DB integration tests | `DATABASE_TEST_URL` or orchestrated `jpx_test_*` via `pnpm db:test`                                                                                             | Non-skipping Postgres integration suite                                        |
 | Azure Blob signed upload    | `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_CONTAINER`                                                                                                              | `AzureBlobUploader` instead of stub                                            |
 | Azure OpenAI (chat + embed) | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_MODEL`                                                                                           | `ResponsesAiRuntime` instead of `Unavailable…`                                 |
 | Document Intelligence       | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`, `AZURE_DOCUMENT_INTELLIGENCE_API_KEY`                                                                                   | `AzureDocumentIntelligenceClient` instead of stub                              |
@@ -85,27 +87,34 @@ Migrations live in [`infra/supabase/migrations`](../infra/supabase/migrations) a
 | `0007_knowledge_tenant_pk.sql`     | `knowledge.documents` PK rescoped to `(organization_id, workspace_id, id)` — tenant-safe corpus upserts.                       |
 | `0008_evidence_dedupe_index.sql`   | Btree index `(organization_id, workspace_id, hash)` backing idempotent evidence content-dedupe.                                |
 
-Local development against a real DB: apply migrations `0001`–`0008` in order, export `SUPABASE_DB_URL`, then `pnpm test:integration` (skips silently when `SUPABASE_DB_URL` is unset). The exact throwaway-container commands (`pgvector/pgvector:pg17`) live in [`scripts/integration-db.md`](../scripts/integration-db.md).
+Local development against a real DB (Compose-first):
 
-`tests/integration/postgres-ledger.test.ts` exercises evidence-create, hash-chain integrity, review approval, and replay idempotency against the live DB. CI keeps it optional / nightly to avoid PR flake.
+```bash
+pnpm db:up && pnpm db:migrate && pnpm db:seed   # stable jpx_dev
+pnpm db:test                                    # strict throwaway jpx_test_* gate (never skips)
+```
+
+Ordinary `pnpm test:integration` skips Postgres cases when no URL is set; when a URL is present the database name must start with `jpx_test_*`. Details: [`scripts/integration-db.md`](../scripts/integration-db.md).
+
+`tests/integration/postgres-ledger.test.ts` and `knowledge-query.test.ts` share [`tests/integration/helpers/postgres-test-context.ts`](../tests/integration/helpers/postgres-test-context.ts) for URL resolution, UUID namespaces, and FK-safe cleanup.
 
 ## Knowledge retrieval (RAG)
 
 `POST /api/knowledge/query` answers in one of two modes (the response's `mode` field reports which one actually ran):
 
 - **keyword** — BM25-lite over the bundled sourced corpus (`packages/advisor`). Always available and the only mode in `demo`.
-- **vector** — pgvector cosine search over `knowledge.documents` (migration `0003_pgvector.sql`). Active only in `normal` mode when **both** `SUPABASE_DB_URL` and Azure OpenAI (`AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`) are configured. **Any** vector failure — embedding call, DB query, or an empty index — falls back to keyword with a structured `console.warn` (`component: "api.knowledge"`); retrieval never 500s the advisor.
+- **vector** — pgvector cosine search over `knowledge.documents` (migration `0003_pgvector.sql`). Active only in `normal` mode when **both** `DATABASE_URL` (or legacy `SUPABASE_DB_URL`) and Azure OpenAI (`AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`) are configured. **Any** vector failure — embedding call, DB query, or an empty index — falls back to keyword with a structured `console.warn` (`component: "api.knowledge"`); retrieval never 500s the advisor.
 
 Populate the vector index with the ingestion script (idempotent upserts keyed on chunk id — re-running refreshes content + embeddings in place):
 
 ```bash
-export SUPABASE_DB_URL=...        # migrations 0001–0008 applied (0007 tenant-scopes the knowledge PK)
+export DATABASE_URL=...           # migrations 0001–0008 applied (0007 tenant-scopes the knowledge PK)
 export AZURE_OPENAI_ENDPOINT=...  # embeddings use text-embedding-3-small (1536 dims = halfvec(1536))
 export AZURE_OPENAI_API_KEY=...
 pnpm ingest:knowledge
 ```
 
-Rows land scoped to the fixed normal-mode workspace (`org_jpx` / `workspace_main`, mirroring `services/api/src/runtime.ts`). `tests/integration/knowledge-query.test.ts` covers the upsert + nearest-neighbour loop with fixture embeddings and skips silently without `SUPABASE_DB_URL`.
+Rows land scoped to the fixed normal-mode workspace (`org_jpx` / `workspace_main`, mirroring `services/api/src/runtime.ts`). `tests/integration/knowledge-query.test.ts` covers the upsert + nearest-neighbour loop with fixture embeddings and skips without a `jpx_test_*` URL.
 
 ## Production web (`standalone`)
 
@@ -155,6 +164,58 @@ pnpm format
 pnpm format:check
 pnpm typecheck
 pnpm test:unit
-pnpm test:integration   # Postgres integration tests; auto-skip without SUPABASE_DB_URL
+pnpm test:integration   # Postgres cases skip without a jpx_test_* URL
+pnpm db:test            # strict Compose-orchestrated Postgres gate (never skips)
 pnpm check              # lint + format:check + typecheck + unit tests + build
 ```
+
+## Managed PostgreSQL provider compatibility
+
+Moving from local Compose to a hosted provider is **configuration only** — do not fork `PostgresLedgerStore` or rewrite migrations. A supported provider must offer:
+
+- PostgreSQL **15–17** (writable primary)
+- **pgvector** 0.7+ with `halfvec` and **HNSW**
+- A **direct or session** endpoint for migrations (`DATABASE_MIGRATION_URL`)
+- A runtime endpoint compatible with `DATABASE_POOL_MODE` (`direct` \| `session` \| `transaction`)
+- TLS via standard PostgreSQL URL parameters (e.g. `?sslmode=verify-full`) — no provider-specific TLS env vars
+- Migrator role: create schemas/tables/indexes and enable/consume approved extensions
+- Runtime role: DML + sequence privileges **without** DDL
+
+### Provider notes
+
+| Provider                          | Migrations                                 | Runtime                                   | Notes                                                                                                                                                     |
+| --------------------------------- | ------------------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Supabase**                      | Direct (5432) or Supavisor **session** URL | Direct or Supavisor (session/transaction) | Set `DATABASE_POOL_MODE=transaction` only for port **6543** transaction mode. Prefer canonical `DATABASE_*` vars; legacy `SUPABASE_DB_URL` still aliases. |
+| **Azure Database for PostgreSQL** | Direct admin/migrator connection           | Same or pooled runtime URL                | Allowlist the `vector` extension; configure firewall / private DNS and TLS (`sslmode=verify-full`).                                                       |
+| **Neon**                          | Direct (non-pooler) URL                    | Direct or pooled runtime URL              | Keep migrations off the transaction pooler.                                                                                                               |
+| **Generic PG 15–17**              | Direct/session                             | As configured                             | Supported only when capability preflight (`verify`) passes.                                                                                               |
+
+### Least-privilege credentials
+
+- **`DATABASE_MIGRATION_URL`**: owner/migrator — DDL + extension privileges. Used only by `scripts/db-migrations.mts` / `pnpm db:migrate`. Never point the long-lived API process at this role in production.
+- **`DATABASE_URL`**: runtime — DML/SELECT/USAGE on ledger, projections, knowledge, and sequences. Should **deny** DDL (`CREATE`/`ALTER`/`DROP`).
+- **`DATABASE_TEST_URL`**: disposable `jpx_test_*` database only. Never reuse the production `DATABASE_URL` for destructive tests.
+
+### Validation runbook (hosted credentials)
+
+Run these against the **real** CLIs — flags match [`scripts/db.mts`](../scripts/db.mts) and [`scripts/db-migrations.mts`](../scripts/db-migrations.mts):
+
+1. **Doctor (local Compose optional):** `pnpm db:doctor` — reports Docker/Compose and, when up, server/vector status for this clone's project.
+2. **Migration status (read-only):**  
+   `tsx scripts/db-migrations.mts status --database-url "$DATABASE_MIGRATION_URL"`
+3. **Apply + capability assertions:**  
+   `tsx scripts/db-migrations.mts migrate --database-url "$DATABASE_MIGRATION_URL"`  
+   (or `pnpm db:migrate` when targeting the local `jpx_dev` from `pnpm db:up`)
+4. **Verify capabilities only (no schema changes):**  
+   `tsx scripts/db-migrations.mts verify --database-url "$DATABASE_MIGRATION_URL"`
+5. **Replay no-op check:**  
+   `tsx scripts/db-migrations.mts replay --database-url "$DATABASE_MIGRATION_URL"`
+6. **Strict integration suite** against a disposable DB named `jpx_test_*`:
+   - With Docker: `pnpm db:test`
+   - Without Docker:  
+     `DATABASE_TEST_URL=postgres://…/jpx_test_… JPX_REQUIRE_DATABASE_TESTS=true pnpm test:integration`  
+     (`pnpm db:test` still expects Compose today for local create/drop; external mode uses `DATABASE_TEST_URL` + the require flag.)
+7. **Runtime-role negative check:** connect as the runtime role and confirm DDL is denied (e.g. `CREATE TABLE` fails) while `SELECT 1` / ledger DML succeed.
+8. Full environment-specific auth/storage/AI smoke belongs in the deployment plan — out of scope for the DB gate.
+
+Never commit connection strings, JWTs, or dumps containing tenant data. Destructive reset/drop commands may act only on tool-managed local databases or explicit `jpx_test_*` databases.

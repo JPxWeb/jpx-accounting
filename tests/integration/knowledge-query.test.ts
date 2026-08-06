@@ -3,27 +3,43 @@ import test from "node:test";
 
 import { knowledgePassageSchema } from "@jpx-accounting/contracts";
 import {
-  closePostgresClient,
-  createPostgresClient,
   KNOWLEDGE_EMBEDDING_DIMENSIONS,
   queryKnowledgeByEmbedding,
   upsertKnowledgeDocuments,
   type KnowledgeDocumentInput,
 } from "@jpx-accounting/persistence-postgres";
 
-// Integration test: gated on `SUPABASE_DB_URL` (same pattern as
-// postgres-ledger.test.ts) — skips silently when unset so CI without a live
-// DB still passes. Requires migration 0003_pgvector.sql (knowledge.documents
-// + halfvec(1536) + HNSW cosine index) and 0007_knowledge_tenant_pk.sql
-// (tenant-scoped PK).
-//
-// Manual end-to-end smoke for the full RAG loop (real embeddings instead of
-// the fixture vectors used here): export SUPABASE_DB_URL + AZURE_OPENAI_*,
-// run `pnpm ingest:knowledge`, start the API in normal mode, and POST
-// /api/knowledge/query — the response should report `mode: "vector"`.
+import {
+  openPostgresTestContext,
+  preparePostgresIntegrationGate,
+  type PostgresTestContext,
+} from "./helpers/postgres-test-context";
 
-const databaseUrl = process.env.SUPABASE_DB_URL;
-const skip = !databaseUrl;
+// Strict Postgres integration: DATABASE_TEST_URL → DATABASE_URL → SUPABASE_DB_URL.
+// Requires migrations 0003 (pgvector) + 0007 (tenant-scoped PK). Prefer `pnpm db:test`.
+
+const gate = preparePostgresIntegrationGate();
+const skip = gate.skip;
+
+let ctx: PostgresTestContext | undefined;
+
+test.before(async () => {
+  if (!gate.skip) {
+    ctx = await openPostgresTestContext(gate);
+  }
+});
+
+test.after(async () => {
+  await ctx?.close();
+  ctx = undefined;
+});
+
+function requireCtx(): PostgresTestContext {
+  if (!ctx) {
+    throw new Error("Postgres test context was not opened — gate.skip should have skipped this test");
+  }
+  return ctx;
+}
 
 /** Unit vector along one axis — exact cosine expectations, fp16-safe. */
 function axisVector(axis: number, value = 1): number[] {
@@ -56,14 +72,10 @@ function fixtureDoc(
 }
 
 test("knowledge.documents vector query ranks by cosine distance with passage-shaped rows", { skip }, async () => {
-  if (!databaseUrl) return; // belt-and-braces for the type narrower
-
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const { organizationId: orgId, workspaceId: wsId, runId } = requireCtx().createNamespace("knowledge");
   const scope = { organizationId: orgId, workspaceId: wsId };
-  const runId = `${orgId}_${wsId}`;
+  const client = requireCtx().client;
 
-  const client = createPostgresClient({ connectionString: databaseUrl });
   try {
     // Two fixture chunks with orthogonal mock embeddings: axis 0 vs axis 1.
     const near = fixtureDoc(runId, 0, axisVector(0));
@@ -115,20 +127,15 @@ test("knowledge.documents vector query ranks by cosine distance with passage-sha
     );
     assert.equal(elsewhere.length, 0);
   } finally {
-    await client`delete from knowledge.documents where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
 test("upsertKnowledgeDocuments is idempotent — re-ingest updates in place, no duplicates", { skip }, async () => {
-  if (!databaseUrl) return;
-
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const { organizationId: orgId, workspaceId: wsId, runId } = requireCtx().createNamespace("knowledge-idem");
   const scope = { organizationId: orgId, workspaceId: wsId };
-  const runId = `${orgId}_${wsId}`;
+  const client = requireCtx().client;
 
-  const client = createPostgresClient({ connectionString: databaseUrl });
   try {
     const original = fixtureDoc(runId, 0, axisVector(0));
     await upsertKnowledgeDocuments(client, scope, [original, fixtureDoc(runId, 1, axisVector(1))]);
@@ -151,8 +158,7 @@ test("upsertKnowledgeDocuments is idempotent — re-ingest updates in place, no 
     assert.ok(Math.abs((passages[0]?.score ?? 0) - 1) < 0.01, "identical vector → score ≈ 1");
     assert.ok(passages[0]?.excerpt.includes("representation"), "updated text must replace the old excerpt");
   } finally {
-    await client`delete from knowledge.documents where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
@@ -160,16 +166,15 @@ test(
   "migration 0007 (B7c): knowledge.documents PK is tenant-scoped — the same chunk id lives independently per workspace",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsA = `ws_a_${Math.random().toString(36).slice(2, 8)}`;
-    const wsB = `ws_b_${Math.random().toString(36).slice(2, 8)}`;
+    const ns = requireCtx().createNamespace("knowledge-pk");
+    const orgId = ns.organizationId;
+    const wsA = `ws_a_${ns.runId.replace(/-/g, "").slice(0, 10)}`;
+    const wsB = `ws_b_${ns.runId.replace(/-/g, "").slice(10, 20)}`;
     const scopeA = { organizationId: orgId, workspaceId: wsA };
     const scopeB = { organizationId: orgId, workspaceId: wsB };
-    const runId = `${orgId}_pk`;
+    const runId = ns.runId;
+    const client = requireCtx().client;
 
-    const client = createPostgresClient({ connectionString: databaseUrl });
     try {
       // Schema pin: the PK covers exactly (organization_id, workspace_id, id)
       // in that order — a partial environment where 0007 silently no-opped
@@ -224,8 +229,7 @@ test(
       assert.equal(passagesB[0]?.id, shared.id);
       assert.ok(passagesB[0]?.excerpt.includes("Workspace B"), "B keeps its own content after A's re-ingest");
     } finally {
-      await client`delete from knowledge.documents where organization_id = ${orgId}`;
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );

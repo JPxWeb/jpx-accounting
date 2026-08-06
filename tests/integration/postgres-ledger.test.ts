@@ -15,22 +15,44 @@ import {
   summarizeEventIntegrity,
   today,
 } from "@jpx-accounting/domain";
-import { closePostgresClient, createPostgresClient, PostgresLedgerStore } from "@jpx-accounting/persistence-postgres";
+import { PostgresLedgerStore } from "@jpx-accounting/persistence-postgres";
 
-// Integration test: gated on `SUPABASE_DB_URL`. Skips silently when not set so CI without a live DB
-// still passes. Requires migrations 0001–0007 applied in order — see scripts/integration-db.md for
-// the exact docker + psql + run commands (pgvector/pgvector:pg17 container on port 54329).
+import {
+  openPostgresTestContext,
+  preparePostgresIntegrationGate,
+  type PostgresTestContext,
+} from "./helpers/postgres-test-context";
 
-const databaseUrl = process.env.SUPABASE_DB_URL;
-const skip = !databaseUrl;
+// Strict Postgres integration: DATABASE_TEST_URL → DATABASE_URL → SUPABASE_DB_URL.
+// DB name must be jpx_test_*. JPX_REQUIRE_DATABASE_TESTS=true throws if missing/unreachable;
+// otherwise the suite skips silently. Prefer `pnpm db:test` (Compose) over ad-hoc containers.
+
+const gate = preparePostgresIntegrationGate();
+const skip = gate.skip;
+
+let ctx: PostgresTestContext | undefined;
+
+test.before(async () => {
+  if (!gate.skip) {
+    ctx = await openPostgresTestContext(gate);
+  }
+});
+
+test.after(async () => {
+  await ctx?.close();
+  ctx = undefined;
+});
+
+function requireCtx(): PostgresTestContext {
+  if (!ctx) {
+    throw new Error("Postgres test context was not opened — gate.skip should have skipped this test");
+  }
+  return ctx;
+}
 
 test("PostgresLedgerStore round-trips evidence creation, review approval, and report rebuild", { skip }, async () => {
-  if (!databaseUrl) return; // belt-and-braces for the type narrower
-
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -79,22 +101,13 @@ test("PostgresLedgerStore round-trips evidence creation, review approval, and re
     assert.equal((await store.getReports()).journal.length, journalAfter, "replay must not duplicate ledger lines");
   } finally {
     // Clean up the test workspace so re-runs are deterministic.
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
 test("migration 0005: ledger.events.id is text and created_at orders same-transaction batches", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     // Schema pin: 0001 shipped id as `uuid default gen_random_uuid()`, which
     // rejected every `createId('evt')` insert with 22P02. 0005 aligns it.
@@ -160,22 +173,13 @@ test("migration 0005: ledger.events.id is text and created_at orders same-transa
       );
     }
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
 test("PostgresLedgerStore.createEvidence upload metadata round-trip + Memory field parity", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -220,14 +224,7 @@ test("PostgresLedgerStore.createEvidence upload metadata round-trip + Memory fie
     assert.equal(created.evidence.blobPath, memCreated.evidence.blobPath);
     assert.equal(created.evidence.sizeBytes, memCreated.evidence.sizeBytes);
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
@@ -235,11 +232,9 @@ test(
   "WS-D R19: createEvidence dedupes identical (workspace, sha256, sizeBytes), appends nothing, and survives a concurrent race",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
-    const racerClient = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
+    const racerClient = requireCtx().createExtraClient();
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const dedupeInput = () => ({
@@ -313,25 +308,17 @@ test(
       `;
       assert.equal(indexRows.length, 1, "migration 0008 dedupe index must exist");
     } finally {
-      await client`delete from ledger.events where organization_id = ${orgId}`;
-      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_packet_items
-        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-      await closePostgresClient(racerClient);
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );
 
 test("WS-D R19: createEvidence never dedupes across workspaces and skips dedupe without sha256", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsA = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const wsB = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const ns = requireCtx().createNamespace("dual");
+  const orgId = ns.organizationId;
+  const wsA = `ws_a_${ns.runId.replace(/-/g, "").slice(0, 10)}`;
+  const wsB = `ws_b_${ns.runId.replace(/-/g, "").slice(10, 20)}`;
+  const client = requireCtx().client;
   try {
     const storeA = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsA });
     const storeB = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsB });
@@ -365,14 +352,7 @@ test("WS-D R19: createEvidence never dedupes across workspaces and skips dedupe 
     assert.notEqual(legacySecond.evidence.id, legacyFirst.evidence.id, "hash-less creates must never collapse");
     assert.equal((await storeA.getEvents()).length, 12, "three genuine creates in workspace A");
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
@@ -380,10 +360,8 @@ test(
   "PostgresLedgerStore.updateEvidenceExtraction persists refresh, chains events, guards decided vouchers + Memory parity",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -456,14 +434,7 @@ test(
       assert.equal(updated.review.blockedReason, memUpdated.review?.blockedReason);
       assert.equal(updated.review.suggestedAction, memUpdated.review?.suggestedAction);
     } finally {
-      await client`delete from ledger.events where organization_id = ${orgId}`;
-      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );
@@ -472,10 +443,8 @@ test(
   "PostgresLedgerStore.applyReviewDecision honors edits append-only + PostedToLedger lines parity",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -573,14 +542,7 @@ test(
         "PostedToLedger payload lines parity",
       );
     } finally {
-      await client`delete from ledger.events where organization_id = ${orgId}`;
-      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );
@@ -589,10 +551,8 @@ test(
   "PostgresLedgerStore R13: postings dated by the voucher transaction date; edited bookedAt round-trips; Memory parity",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -716,23 +676,14 @@ test(
         lines.map((line) => [line.accountNumber, line.debit, line.credit, line.vatCode, line.bookedAt]);
       assert.deepEqual(stableWithDate(postedLines), stableWithDate(memLines), "bookedAt derivation parity");
     } finally {
-      await client`delete from ledger.events where organization_id = ${orgId}`;
-      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );
 
 test("PostgresLedgerStore.runSimulation real diff + ReviewNotFoundError", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -768,14 +719,7 @@ test("PostgresLedgerStore.runSimulation real diff + ReviewNotFoundError", { skip
       (err) => err instanceof ReviewNotFoundError,
     );
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
@@ -783,10 +727,8 @@ test(
   "PostgresLedgerStore.importSie appends VoucherImported events, replays into reports + Memory parity",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -851,8 +793,7 @@ test(
           .map((entry) => [entry.accountNumber, entry.accountName, entry.debit, entry.credit, entry.bookedAt]);
       assert.deepEqual(stable(journal), stable(memJournal));
     } finally {
-      await client`delete from ledger.events where organization_id = ${orgId}`;
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );
@@ -861,10 +802,8 @@ test(
   "PostgresLedgerStore.getReports(range) windows + getReportPack parity with Memory (modulo generatedAt)",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const memory = new MemoryLedgerStore();
@@ -912,17 +851,14 @@ test(
         (error) => error instanceof InvalidPeriodTokenError,
       );
     } finally {
-      await client`delete from ledger.events where organization_id = ${orgId}`;
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );
 
 test("PostgresLedgerStore.getSnapshot exposes org/workspace-scoped packets + Memory parity", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -971,14 +907,7 @@ test("PostgresLedgerStore.getSnapshot exposes org/workspace-scoped packets + Mem
     const memPacket = memSnapshot.packets.find((packet) => packet.id === memCreated.voucher.evidencePacketId);
     assert.deepEqual(memPacket?.evidenceIds, [memCreated.evidence.id]);
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
@@ -986,10 +915,8 @@ test(
   "PostgresLedgerStore.composeEvidence relinks voucher + converges getEvidenceContext and getSnapshot (§A N9/N10)",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -1069,23 +996,14 @@ test(
       assert.equal(memRelinkEvt?.payload.packetId, memComposed.id);
       assert.deepEqual(Object.keys(memRelinkEvt?.payload ?? {}).sort(), Object.keys(relinkEvt?.payload ?? {}).sort());
     } finally {
-      await client`delete from ledger.events where organization_id = ${orgId}`;
-      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_packet_items
-        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );
 
 test("PostgresLedgerStore.getSnapshot sources alerts from compliance_alerts (§2.2)", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -1102,16 +1020,13 @@ test("PostgresLedgerStore.getSnapshot sources alerts from compliance_alerts (§2
     );
     assert.deepEqual(snapshot.assistantExamples, [], "assistantExamples stays empty until a read model lands");
   } finally {
-    await client`delete from ledger.compliance_alerts where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
 test("PostgresLedgerStore.getReviewFeed orders by created_at DESC, id DESC (§A N12)", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -1139,22 +1054,13 @@ test("PostgresLedgerStore.getReviewFeed orders by created_at DESC, id DESC (§A 
     assert.equal(feed[0]?.id, second.review.id, "newest review first");
     assert.equal(feed[1]?.id, first.review.id);
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
 test("PostgresLedgerStore.answerAssistantQuestion delegates + persists", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
     const session = await store.answerAssistantQuestion("Can I deduct this?");
@@ -1167,16 +1073,13 @@ test("PostgresLedgerStore.answerAssistantQuestion delegates + persists", { skip 
     `;
     assert.equal(rows[0]?.question, "Can I deduct this?");
   } finally {
-    await client`delete from ledger.assistant_sessions where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
 test("PostgresLedgerStore.refreshComplianceAlerts is idempotent (same input → same set)", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -1186,16 +1089,13 @@ test("PostgresLedgerStore.refreshComplianceAlerts is idempotent (same input → 
     assert.equal(first.length, second.length);
     assert.deepEqual(first.map((a) => a.id).sort(), second.map((a) => a.id).sort());
   } finally {
-    await client`delete from ledger.compliance_alerts where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
 test("PostgresLedgerStore.getCompanySettings/putCompanySettings round-trip", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
     assert.equal(await store.getCompanySettings(), null);
@@ -1224,16 +1124,13 @@ test("PostgresLedgerStore.getCompanySettings/putCompanySettings round-trip", { s
     assert.equal(loaded?.profile.currency, "EUR");
     assert.equal(loaded?.profile.fiscalYearStart, "07-01");
   } finally {
-    await client`delete from ledger.organization_settings where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
 test("PostgresLedgerStore.getCompanySettings normalizes legacy jsonb rows without a profile", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
     const legacyJson = {
@@ -1258,8 +1155,7 @@ test("PostgresLedgerStore.getCompanySettings normalizes legacy jsonb rows withou
       vatPeriod: "quarterly",
     });
   } finally {
-    await client`delete from ledger.organization_settings where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
@@ -1267,10 +1163,8 @@ test(
   "PostgresLedgerStore.getCloseRun returns the honest empty shell: close_unavailable, real local month, empty checklist + Memory parity",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const closeRun = await store.getCloseRun();
@@ -1291,7 +1185,6 @@ test(
       assert.equal(memCloseRun.period, closeRun.period);
       assert.deepEqual(memCloseRun.checklist, closeRun.checklist);
     } finally {
-      await closePostgresClient(client);
     }
   },
 );
@@ -1301,10 +1194,8 @@ test(
 // ---------------------------------------------------------------------------
 
 test("R14: appended events carry SHA-256 hashes that recompute from the stored jsonb payloads", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -1343,22 +1234,13 @@ test("R14: appended events carry SHA-256 hashes that recompute from the stored j
     assert.equal(summary.recomputedEventCount, events.length);
     assert.equal(summary.legacyEventCount, 0);
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
 test("R14: a legacy djb2 prefix + new SHA-256 appends verify as one mixed chain", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     // 1. Fabricate the pre-cutover state exactly as the old append path wrote
     //    it: djb2 over `previousHash + ":" + JSON.stringify(payload)`. These
@@ -1411,22 +1293,13 @@ test("R14: a legacy djb2 prefix + new SHA-256 appends verify as one mixed chain"
     assert.equal(summary.payloadMismatchCount, 0);
     assert.equal(summary.payloadVerified, true);
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
 test("R14: an in-place jsonb payload edit is invisible to linkage but flagged by recomputation", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
     await store.createEvidence({
@@ -1459,14 +1332,7 @@ test("R14: an in-place jsonb payload edit is invisible to linkage but flagged by
     assert.equal(recomputed.payloadMismatchCount, 1);
     assert.equal(recomputed.recomputedEventCount, events.length);
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
@@ -1489,8 +1355,7 @@ test("R14: an in-place jsonb payload edit is invisible to linkage but flagged by
 // ---------------------------------------------------------------------------
 
 test("R15: migration 0006 schema pins — seq identity, fork-guard constraint, seq index", { skip }, async () => {
-  if (!databaseUrl) return;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const client = requireCtx().client;
   try {
     // seq must be a bigint GENERATED ALWAYS identity. is_identity guards the
     // Rule 18 caveat: ADD COLUMN IF NOT EXISTS only checks the column name,
@@ -1527,7 +1392,6 @@ test("R15: migration 0006 schema pins — seq identity, fork-guard constraint, s
       "ORDER BY-stable (org, workspace, seq) index must exist (migration 0006)",
     );
   } finally {
-    await closePostgresClient(client);
   }
 });
 
@@ -1535,10 +1399,8 @@ test(
   "R15: a second event with the same previous_hash dies as 23505 on the fork-guard constraint",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
     const insertRaw = async (id: string, previousHash: string) => {
       const payload = { raw: id };
       await client`
@@ -1580,22 +1442,19 @@ test(
       )
     `;
     } finally {
-      await client`delete from ledger.events where organization_id = ${orgId}`;
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );
 
 test("R15: two concurrent connections appending to one workspace produce a single linear chain", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
   // Two real connections: separate postgres-js clients, one store each, SAME
   // workspace. Under the old FOR UPDATE serialization this interleaving forked
   // the chain (blocked waiter re-read a stale tail; nothing at all guarded
   // GENESIS) and duplicated voucher numbers off the racing COUNT(*).
-  const clientA = createPostgresClient({ connectionString: databaseUrl });
-  const clientB = createPostgresClient({ connectionString: databaseUrl });
+  const clientA = requireCtx().client;
+  const clientB = requireCtx().createExtraClient();
   try {
     const storeA = new PostgresLedgerStore(clientA, { organizationId: orgId, workspaceId: wsId });
     const storeB = new PostgresLedgerStore(clientB, { organizationId: orgId, workspaceId: wsId });
@@ -1663,23 +1522,13 @@ test("R15: two concurrent connections appending to one workspace produce a singl
     const voucherNumbers = snapshot.vouchers.map((voucher) => voucher.voucherNumber);
     assert.equal(new Set(voucherNumbers).size, 8, "8 distinct voucher numbers under concurrency");
   } finally {
-    await clientA`delete from ledger.events where organization_id = ${orgId}`;
-    await clientA`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await clientA`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await clientA`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await clientA`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await clientA`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(clientA);
-    await closePostgresClient(clientB);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
 test("R15: batched importSie chains hashes in JS order and seq preserves the batch order", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -1728,8 +1577,7 @@ test("R15: batched importSie chains hashes in JS order and seq preserves the bat
       "batch order parity Memory vs Postgres",
     );
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
@@ -1742,11 +1590,9 @@ type TailReadSeam = {
 };
 
 test("R15: a chain fork from an out-of-band writer is absorbed by one internal retry", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
-  const rogueClient = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
+  const rogueClient = requireCtx().createExtraClient();
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -1809,24 +1655,14 @@ test("R15: a chain fork from an out-of-band writer is absorbed by one internal r
     assert.equal(summary.chainLinked, true);
     assert.equal(summary.payloadVerified, true);
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
-    await closePostgresClient(rogueClient);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
 test("R15: a persistent forker exhausts the retry and surfaces the typed retryable conflict", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
-  const rogueClient = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
+  const rogueClient = requireCtx().createExtraClient();
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -1891,15 +1727,7 @@ test("R15: a persistent forker exhausts the retry and surfaces the typed retryab
     const summary = summarizeEventIntegrity(events, { verifiedAt: new Date().toISOString(), verifyPayloads: true });
     assert.equal(summary.chainLinked, true, "the rejected forks never corrupted the persisted chain");
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
-    await closePostgresClient(rogueClient);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
 
@@ -1907,10 +1735,8 @@ test(
   "B5: edited approvals validate account/VAT against the registry and server-resolve accountName + Memory parity",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const created = await store.createEvidence({
@@ -1999,14 +1825,7 @@ test(
       });
       assert.equal(memDecided?.suggestion?.accountName, decided.suggestion?.accountName, "server-resolved name parity");
     } finally {
-      await client`delete from ledger.events where organization_id = ${orgId}`;
-      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_packet_items
-        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );
@@ -2015,11 +1834,9 @@ test(
   "B6a: book-without-vat emits ReviewBookedWithoutVat; legacy ReviewRejected+PostedToLedger streams still project",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const wsLegacy = `ws_legacy_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId, runId } = requireCtx().createNamespace("b6a");
+    const wsLegacy = `ws_legacy_${runId.replace(/-/g, "").slice(0, 12)}`;
+    const client = requireCtx().client;
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const created = await store.createEvidence({
@@ -2127,14 +1944,7 @@ test(
       });
       assert.equal(legacySummary.chainLinked, true, "the legacy-vocabulary chain still verifies");
     } finally {
-      await client`delete from ledger.events where organization_id = ${orgId}`;
-      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_packet_items
-        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );
@@ -2143,10 +1953,8 @@ test(
   "B7a: alert re-detection preserves acknowledged/dismissed and first detected_at; auto-reopen clears resolution metadata",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const created = await store.createEvidence({
@@ -2225,15 +2033,7 @@ test(
       assert.equal(reopenedRow[0]?.resolved_at, null, "reopen clears resolved_at");
       assert.equal(reopenedRow[0]?.resolved_by, null, "reopen clears resolved_by");
     } finally {
-      await client`delete from ledger.compliance_alerts where organization_id = ${orgId}`;
-      await client`delete from ledger.events where organization_id = ${orgId}`;
-      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_packet_items
-        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );
@@ -2242,10 +2042,8 @@ test(
   "B7b: suggestVoucher updates the pending review read model but never clobbers a decided one + Memory parity",
   { skip },
   async () => {
-    if (!databaseUrl) return;
-    const orgId = `org_test_${Date.now().toString(36)}`;
-    const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-    const client = createPostgresClient({ connectionString: databaseUrl });
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const created = await store.createEvidence({
@@ -2306,23 +2104,14 @@ test(
         "Memory decided-review guard parity",
       );
     } finally {
-      await client`delete from ledger.events where organization_id = ${orgId}`;
-      await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-      await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_packet_items
-        where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-      await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-      await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-      await closePostgresClient(client);
+      await requireCtx().cleanupOrganization(orgId);
     }
   },
 );
 
 test("R15 follow-up: appends survive a wall-clock inversion (seq-primary tail pick)", { skip }, async () => {
-  if (!databaseUrl) return;
-  const orgId = `org_test_${Date.now().toString(36)}`;
-  const wsId = `ws_${Math.random().toString(36).slice(2, 8)}`;
-  const client = createPostgresClient({ connectionString: databaseUrl });
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
@@ -2386,13 +2175,6 @@ test("R15 follow-up: appends survive a wall-clock inversion (seq-primary tail pi
     assert.equal(summary.chainLinked, true, "chain must verify in seq order despite occurred_at inversion");
     assert.equal(summary.payloadMismatchCount, 0);
   } finally {
-    await client`delete from ledger.events where organization_id = ${orgId}`;
-    await client`delete from ledger.review_tasks where organization_id = ${orgId}`;
-    await client`delete from ledger.vouchers where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_packet_items
-      where evidence_packet_id in (select id from ledger.evidence_packets where organization_id = ${orgId})`;
-    await client`delete from ledger.evidence_packets where organization_id = ${orgId}`;
-    await client`delete from ledger.evidence_objects where organization_id = ${orgId}`;
-    await closePostgresClient(client);
+    await requireCtx().cleanupOrganization(orgId);
   }
 });
