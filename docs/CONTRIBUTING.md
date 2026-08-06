@@ -4,6 +4,8 @@ JPX Accounting is a **pnpm workspace** targeting **Node 24** (`.node-version`; m
 
 ## Repo map
 
+> For the full navigation index — API/web route inventories, per-module export maps, event vocabulary, feature→files traces per journey stage, and newcomer gotchas — see [REPO_MAP.md](REPO_MAP.md). The table below is the one-glance workspace summary.
+
 | Path                                                           | Responsibility                                                                                                                                                                       |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `apps/web`                                                     | Next.js 16 App Router PWA (`pnpm dev` / `pnpm dev:web`; default dev port **3002** via `apps/web/package.json`).                                                                      |

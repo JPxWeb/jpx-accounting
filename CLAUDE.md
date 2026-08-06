@@ -191,6 +191,8 @@ Key env vars (see `.env.example` for full list):
 
 See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for trust boundaries, the env matrix, and build/deploy subtleties.
 
+**Repo navigation map:** see [docs/REPO_MAP.md](docs/REPO_MAP.md) for the WHERE-IS-WHAT index — full API/web route inventories, per-module export maps, ledger event vocabulary (incl. which of the 19 event types are reserved/never emitted), feature→files traces per user-journey stage, client-storage registry, and a "gotchas" list of things that mislead newcomers. Start there when you need to locate code.
+
 **Conventions / anti-patterns:** see [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for 29 rules distilled from past incidents — schema-contract sync, partial-index pitfalls, store parity between `MemoryLedgerStore` and `PostgresLedgerStore`, citation provenance, audit attribution sentinels, bounded accumulation. Consult before changes that touch contracts, migrations, or `LedgerStore` implementations.
 
 **Development status / port progress:** see [docs/DEV_STATUS.md](docs/DEV_STATUS.md) for the advisory-pivot phase status (Phases 0–5 COMPLETE, landed on main via PR #30, each with its documented limitations), the 2026-05-27 deploy→main port history, and the remaining UI follow-ups.
