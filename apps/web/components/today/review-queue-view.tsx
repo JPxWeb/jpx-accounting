@@ -243,13 +243,17 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
       // The edit sheet is modal: while it is open the review hotkeys (Y/N/E/B/Enter)
       // must not fire competing decisions underneath it.
       if (editingReviewId) return;
+      // Wave D′: mirror the server ApprovalGate — Accept/Edit are dead ends while
+      // blockedReason is set (hotkeys still fire even when the Accept button is disabled).
+      const review = reviews.find((item) => item.id === id);
+      if (review?.blockedReason && (action === "accept" || action === "edit")) return;
       if (action === "accept") approveReview.mutate(id);
       else if (action === "reject") rejectReview.mutate(id);
       else if (action === "book-without-vat") bookWithoutVatReview.mutate(id);
       // "edit" opens the editor sheet (button click or hotkey E — both route here).
       else setEditingReviewId(id);
     },
-    [approveReview, rejectReview, bookWithoutVatReview, editingReviewId],
+    [approveReview, rejectReview, bookWithoutVatReview, editingReviewId, reviews],
   );
 
   const onAccept = useCallback((id: string) => handleAction(id, "accept"), [handleAction]);

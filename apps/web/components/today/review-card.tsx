@@ -228,7 +228,11 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
             <p className="mt-4 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">{review.blockedReason}</p>
           ) : null}
 
-          <ReviewCardActions onAction={onAction} disabled={!isActionable} />
+          <ReviewCardActions
+            onAction={onAction}
+            disabled={!isActionable}
+            approveDisabled={Boolean(review.blockedReason)}
+          />
         </div>
       </div>
     </motion.article>

@@ -1,8 +1,8 @@
 import type { ReviewDecisionEdit, WorkspaceSnapshot } from "@jpx-accounting/contracts";
 
 import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
+import { validEditVatCodes } from "./store-shared";
 import { getVatRegime } from "./vat/regime";
-import { validEditVatCodes } from "./store";
 
 /**
  * Structural twin of the advisor package's `ReviewActionProposal` / the API
