@@ -4,9 +4,18 @@ import { describe, it } from "node:test";
 
 import { buildJoyrideLocale } from "../../apps/web/lib/onboarding/joyride-locale";
 
+type OnboardingControls = Record<string, string> & {
+  back: string;
+  close: string;
+  last: string;
+  next: string;
+  nextWithProgress: string;
+  skip: string;
+};
+
 type OnboardingMessages = {
   onboarding: {
-    controls: Record<string, string>;
+    controls: OnboardingControls;
   };
 };
 
@@ -18,9 +27,13 @@ function loadMessages(locale: "en" | "sv"): OnboardingMessages {
 function createStrictFakeTranslator(messages: OnboardingMessages) {
   const controls = messages.onboarding.controls;
 
-  const resolve = (key: string) => {
+  const resolve = (key: string): string => {
     const shortKey = key.startsWith("controls.") ? key.slice("controls.".length) : key;
-    return controls[shortKey];
+    const message = controls[shortKey];
+    if (message === undefined) {
+      throw new Error(`MISSING_KEY: "${key}"`);
+    }
+    return message;
   };
 
   const t = ((key: string) => {
@@ -31,7 +44,7 @@ function createStrictFakeTranslator(messages: OnboardingMessages) {
     return message;
   }) as Parameters<typeof buildJoyrideLocale>[0];
 
-  t.raw = (key: "controls.nextWithProgress") => resolve(key);
+  t.raw = (key: "controls.nextWithProgress"): string => resolve(key);
 
   return t;
 }
