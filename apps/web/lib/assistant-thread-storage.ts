@@ -19,11 +19,24 @@ export const ASSISTANT_THREADS_LEGACY_STORAGE_KEY = LEGACY_STORAGE_KEY;
 const MAX_THREADS = 30;
 const MAX_TITLE_CHARS = 80;
 
+/**
+ * Machine-readable Art. 50(2)-shaped marking for persisted advisor threads
+ * (Wave E-1). Additive on `assistantThreads.v2` — no storage-version bump.
+ * External/counsel use of compliance claims stays gated; see
+ * `docs/compliance/article-50-assessment.md`.
+ */
+export type AssistantThreadAiTransparency = {
+  labeling: "eu-ai-act-article-50";
+  source: "advisor";
+  markedAt: string;
+};
+
 export type StoredAssistantThread = {
   id: string;
   title: string;
   messages: AdvisorUIMessage[];
   savedAt: string;
+  aiTransparency?: AssistantThreadAiTransparency;
 };
 
 type LegacyStoredThread = {
@@ -33,14 +46,32 @@ type LegacyStoredThread = {
   savedAt?: string;
 };
 
+function isAiTransparency(value: unknown): value is AssistantThreadAiTransparency {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as AssistantThreadAiTransparency;
+  return row.labeling === "eu-ai-act-article-50" && row.source === "advisor" && typeof row.markedAt === "string";
+}
+
 function isStoredThread(row: unknown): row is StoredAssistantThread {
-  return (
-    typeof row === "object" &&
-    row !== null &&
-    typeof (row as StoredAssistantThread).id === "string" &&
-    typeof (row as StoredAssistantThread).title === "string" &&
-    Array.isArray((row as StoredAssistantThread).messages)
-  );
+  if (
+    typeof row !== "object" ||
+    row === null ||
+    typeof (row as StoredAssistantThread).id !== "string" ||
+    typeof (row as StoredAssistantThread).title !== "string" ||
+    !Array.isArray((row as StoredAssistantThread).messages)
+  ) {
+    return false;
+  }
+  const transparency = (row as StoredAssistantThread).aiTransparency;
+  return transparency === undefined || isAiTransparency(transparency);
+}
+
+function buildAiTransparency(markedAt: string = new Date().toISOString()): AssistantThreadAiTransparency {
+  return {
+    labeling: "eu-ai-act-article-50",
+    source: "advisor",
+    markedAt,
+  };
 }
 
 function safeParseV2(raw: string | null): StoredAssistantThread[] {
@@ -68,17 +99,27 @@ function migrateLegacyThreads(raw: string | null): StoredAssistantThread[] {
           typeof (row as LegacyStoredThread).id === "string" &&
           typeof (row as LegacyStoredThread).question === "string",
       )
-      .map((row) => ({
-        id: row.id,
-        title: truncateTitle(row.question),
-        savedAt: row.savedAt ?? new Date().toISOString(),
-        messages: [
-          { id: `${row.id}-q`, role: "user" as const, parts: [{ type: "text" as const, text: row.question }] },
-          ...(typeof row.answer === "string" && row.answer.length > 0
-            ? [{ id: `${row.id}-a`, role: "assistant" as const, parts: [{ type: "text" as const, text: row.answer }] }]
-            : []),
-        ],
-      }))
+      .map((row) => {
+        const savedAt = row.savedAt ?? new Date().toISOString();
+        return {
+          id: row.id,
+          title: truncateTitle(row.question),
+          savedAt,
+          aiTransparency: buildAiTransparency(savedAt),
+          messages: [
+            { id: `${row.id}-q`, role: "user" as const, parts: [{ type: "text" as const, text: row.question }] },
+            ...(typeof row.answer === "string" && row.answer.length > 0
+              ? [
+                  {
+                    id: `${row.id}-a`,
+                    role: "assistant" as const,
+                    parts: [{ type: "text" as const, text: row.answer }],
+                  },
+                ]
+              : []),
+          ],
+        };
+      })
       .slice(0, MAX_THREADS);
   } catch {
     return [];
@@ -121,8 +162,14 @@ export function prependAssistantThread(thread: {
   id: string;
   title: string;
   messages: AdvisorUIMessage[];
+  aiTransparency?: AssistantThreadAiTransparency;
 }): StoredAssistantThread[] {
-  const next: StoredAssistantThread = { ...thread, savedAt: new Date().toISOString() };
+  const savedAt = new Date().toISOString();
+  const next: StoredAssistantThread = {
+    ...thread,
+    savedAt,
+    aiTransparency: thread.aiTransparency ?? buildAiTransparency(savedAt),
+  };
   if (typeof window === "undefined") return [next];
   const prev = loadAssistantThreads().filter((entry) => entry.id !== next.id);
   const merged = [next, ...prev].slice(0, MAX_THREADS);

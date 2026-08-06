@@ -84,6 +84,15 @@ export function AdvisorChat({
 
   const busy = status === "submitted" || status === "streaming";
 
+  // Wave E-2: normal-mode streams `data-retrieval` with the honest mode from
+  // queryKnowledge → selectChatPassages. Keyword means vector fell back (or
+  // never ran) — surface that once per conversation chrome, not per message.
+  const keywordDegraded = messages.some(
+    (message) =>
+      message.role === "assistant" &&
+      message.parts.some((part) => part.type === "data-retrieval" && part.data.mode === "keyword"),
+  );
+
   function submitQuestion(text: string) {
     const trimmed = text.trim();
     if (!trimmed || busy) return;
@@ -93,6 +102,15 @@ export function AdvisorChat({
 
   return (
     <div className="space-y-4" data-tour="advisor-chat">
+      {keywordDegraded ? (
+        <div
+          className="rounded-xl bg-warning-soft px-4 py-3 text-sm text-warning"
+          role="status"
+          data-testid="advisor-keyword-degrade-banner"
+        >
+          {t("retrieval.keywordDegrade")}
+        </div>
+      ) : null}
       {messages.length === 0 ? (
         <div className="space-y-4">
           <p className="text-sm leading-6 text-muted-foreground">{t("emptyState")}</p>

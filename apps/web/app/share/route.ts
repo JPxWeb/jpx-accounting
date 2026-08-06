@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { sha256Hex } from "../../lib/hash";
 import { getWebServerRuntimeConfig } from "../../lib/server-runtime-config";
+import { decideShareFileIntake } from "../../lib/share-intake-policy";
 
 // PWA share target intake. The manifest declares method=POST + multipart/form-data, so the
 // browser POSTs shared content (text + url + files) here. Files are forwarded server-side
@@ -10,10 +11,11 @@ import { getWebServerRuntimeConfig } from "../../lib/server-runtime-config";
 //
 // LIMITATION: this handler runs server-side, so there is no client context (and no service
 // worker) that could stash the shared files into the local draft queue / evidence blob cache.
-// When `ACCOUNTING_API_BASE_URL` is unset or the API is unreachable, the bytes have nowhere to
-// go — we fall back to the legacy `shared=1&pending=<n>` params so /capture can surface an
-// honest "add them again" hint. Shared-file evidence also has no local blob, so the detail
-// preview falls back to the read-SAS or the honest empty state.
+// Wave Share′ (S-fail): in `normal` mode the API is always JWKS-gated and this route has no
+// session source (Supabase tokens live in localStorage) — file shares are refused with
+// `shared=1&pending=<n>&authRequired=1` so /capture shows a distinct auth banner, never the
+// generic "add them again" misattribution. Demo mode still forwards when the API is reachable;
+// when `ACCOUNTING_API_BASE_URL` is unset, demo falls back to `shared=1&pending=<n>` only.
 //
 // GET requests (someone navigating to /share manually) get redirected straight to /capture.
 
@@ -174,10 +176,23 @@ export async function POST(request: Request): Promise<Response> {
     // Empty file parts (size 0, no name) show up when the share sheet sends no files.
     const files = form.getAll("files").filter((entry): entry is File => entry instanceof File && entry.size > 0);
 
-    const { apiBaseUrl } = getWebServerRuntimeConfig();
+    const { apiBaseUrl, runtimeMode } = getWebServerRuntimeConfig();
     let anyPromoted = false;
+    const intake = decideShareFileIntake({
+      fileCount: files.length,
+      runtimeMode,
+      apiBaseUrl,
+    });
 
-    if (files.length > 0 && apiBaseUrl) {
+    if (intake.kind === "refuse-auth") {
+      // Normal mode always runs behind SUPABASE_JWKS_URL (the API refuses to boot
+      // without it) and this server route has no session source — Supabase sessions
+      // live in browser localStorage. Fail closed instead of silently 401ing into
+      // the generic "add them again" banner (P0-4 / Wave Share′ S-fail).
+      params.set("shared", "1");
+      params.set("pending", String(intake.pending));
+      params.set("authRequired", "1");
+    } else if (intake.kind === "forward" && apiBaseUrl) {
       const outcome = await forwardSharedFiles(
         apiBaseUrl,
         files,
@@ -191,10 +206,10 @@ export async function POST(request: Request): Promise<Response> {
         params.set("shared", "1");
         params.set("pending", String(outcome.failed));
       }
-    } else if (files.length > 0) {
+    } else if (intake.kind === "pending-unreachable") {
       // No reachable API — legacy fallback (see the limitation note above).
       params.set("shared", "1");
-      params.set("pending", String(files.length));
+      params.set("pending", String(intake.pending));
     }
 
     // Param-only shares (and total staging failure) hand title/text/url to /capture, which

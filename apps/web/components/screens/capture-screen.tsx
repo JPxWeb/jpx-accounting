@@ -29,8 +29,9 @@ export function CaptureScreen() {
     shared: parseAsString,
     pending: parseAsInteger,
     promoted: parseAsInteger,
+    authRequired: parseAsString,
   });
-  const { title, text, url, shared, pending, promoted } = shareParams;
+  const { title, text, url, shared, pending, promoted, authRequired } = shareParams;
 
   // Ref guard: Strict Mode double-invokes effects and the params are cleared
   // asynchronously — without the guard the same share would create two drafts.
@@ -99,13 +100,21 @@ export function CaptureScreen() {
   }, [queryClient, tPromotion]);
 
   const pendingSharedCount = shared === "1" ? (pending ?? 0) : 0;
+  const sharedNeedsAuth = authRequired === "1";
 
   return (
     <div className="page-shell space-y-6">
       <ScreenHeader eyebrow={t("eyebrow")} title={t("title")} description={t("description")} />
       {pendingSharedCount > 0 ? (
-        <div className="glass-panel rounded-xl p-4 text-sm" role="status" data-testid="capture-shared-banner">
-          {tShared("pendingBanner", { count: pendingSharedCount })}
+        <div
+          className="glass-panel rounded-xl p-4 text-sm"
+          role="status"
+          data-testid="capture-shared-banner"
+          data-auth-required={sharedNeedsAuth ? "true" : undefined}
+        >
+          {sharedNeedsAuth
+            ? tShared("authRequiredBanner", { count: pendingSharedCount })
+            : tShared("pendingBanner", { count: pendingSharedCount })}
         </div>
       ) : null}
       <QuickAddGrid onDraftSaved={() => queryClient.invalidateQueries({ queryKey: ["capture-drafts"] })} />

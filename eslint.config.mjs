@@ -79,6 +79,17 @@ export default defineConfig([
           message:
             "No arbitrary-value color classes — use the bridged semantic utilities (text-foreground, bg-primary-soft, bg-surface-muted, …).",
         },
+        // Wave E-4 ratchet: UnavailableState / workspace-unavailable copy must stay i18n'd.
+        {
+          selector: "Literal[value='Workspace unavailable']",
+          message:
+            "Use dashboard.unavailable / today.unavailable message keys — do not hardcode Workspace unavailable (Wave E-4).",
+        },
+        {
+          selector: "JSXText[value=/Unavailable/]",
+          message:
+            "UnavailableState eyebrow is i18n'd via common.unavailable.eyebrow — do not hardcode Unavailable (Wave E-4).",
+        },
       ],
     },
   },
