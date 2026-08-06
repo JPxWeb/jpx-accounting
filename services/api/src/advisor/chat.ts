@@ -21,6 +21,7 @@ import {
   type RuntimeMode,
 } from "@jpx-accounting/contracts";
 import {
+  DEFAULT_RETRIEVAL_TOP_K,
   UNTRUSTED_DATA_PROMPT_CLAUSE,
   buildAdvisorGrounding,
   buildDemoAdvisorTurn,
@@ -35,12 +36,11 @@ import {
 import {
   buildTaxTimeline,
   currentMonthToken,
-  defaultCoaTemplate,
   DEMO_ACTOR_ID,
-  findCoaAccount,
-  getVatRegime,
+  rejectReviewProposal,
+  ReviewBlockedError,
   today,
-  validEditVatCodes,
+  type ApprovalGate,
   type LedgerStore,
 } from "@jpx-accounting/domain";
 import { buildObservations } from "@jpx-accounting/reporting";
@@ -63,10 +63,6 @@ export const MAX_ADVISOR_MESSAGES = 40;
 /** Per-message serialized ceiling: 8 KiB. */
 export const MAX_ADVISOR_MESSAGE_BYTES = 8 * 1024;
 
-/** Cost envelope (WS-D): default output-token cap per normal-mode turn. */
-export const DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS = 2048;
-/** Cost envelope (WS-D): default wall-clock ceiling for one normal-mode stream. */
-export const DEFAULT_ADVISOR_STREAM_TIMEOUT_MS = 90_000;
 /** History truncation: at most this many client messages reach the model. */
 export const MAX_MODEL_HISTORY_MESSAGES = 20;
 /** History truncation: serialized client history is capped at 96 KiB. */
@@ -78,40 +74,6 @@ export const MAX_MODEL_HISTORY_BYTES = 96 * 1024;
  * keyword path gets the same property from its stopword gate).
  */
 export const ADVISOR_VECTOR_MIN_SIMILARITY = 0.25;
-/** Grounding passages per turn — matches services/api/src/knowledge.ts. */
-const RETRIEVAL_TOP_K = 4;
-
-export type AdvisorStreamLimits = { maxOutputTokens: number; streamTimeoutMs: number };
-
-/**
- * Resolve the cost-envelope knobs from env (ADVISOR_MAX_OUTPUT_TOKENS,
- * ADVISOR_STREAM_TIMEOUT_MS). Called once at handler creation; malformed
- * values throw at boot instead of silently running uncapped (§A N5 fail
- * closed — a typo must not disable the cost envelope).
- */
-export function resolveAdvisorStreamLimits(env: NodeJS.ProcessEnv = process.env): AdvisorStreamLimits {
-  const parsePositiveInt = (name: string, raw: string | undefined, fallback: number): number => {
-    const trimmed = raw?.trim();
-    if (!trimmed) return fallback;
-    const value = Number(trimmed);
-    if (!Number.isInteger(value) || value <= 0) {
-      throw new Error(`Invalid ${name} ${JSON.stringify(raw)} — expected a positive integer.`);
-    }
-    return value;
-  };
-  return {
-    maxOutputTokens: parsePositiveInt(
-      "ADVISOR_MAX_OUTPUT_TOKENS",
-      env.ADVISOR_MAX_OUTPUT_TOKENS,
-      DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
-    ),
-    streamTimeoutMs: parsePositiveInt(
-      "ADVISOR_STREAM_TIMEOUT_MS",
-      env.ADVISOR_STREAM_TIMEOUT_MS,
-      DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
-    ),
-  };
-}
 
 /**
  * Truncate chat history for the model call: drop the OLDEST messages first until
@@ -219,9 +181,13 @@ export type AdvisorChatHandlerOptions = {
    * corpus and ignores this.
    */
   retrievePassages?: ((question: string) => Promise<KnowledgePassage[]>) | undefined;
-  /** Cost-envelope overrides (tests). Default: `resolveAdvisorStreamLimits(process.env)`. */
-  maxOutputTokens?: number | undefined;
-  streamTimeoutMs?: number | undefined;
+  /**
+   * Cost envelope — required (Wave G′ / P1-16). Boot wiring threads values from
+   * `ApiRuntimeConfig.advisor`; tests pass defaults or overrides explicitly.
+   * Env is no longer re-read here.
+   */
+  maxOutputTokens: number;
+  streamTimeoutMs: number;
 };
 
 /** The tool output shape both modes stream, so the client renders one confirmation row. */
@@ -344,34 +310,8 @@ export async function validateProposalAgainstStore(
   store: LedgerStore,
   proposal: ReviewActionProposal,
 ): Promise<string | undefined> {
-  const snapshot = await store.getSnapshot();
-
-  const review = snapshot.reviews.find((item) => item.id === proposal.reviewId);
-  if (!review) {
-    return `Granskningen "${proposal.reviewTitle}" (${proposal.reviewId}) finns inte i arbetsytan — ingenting bokfördes.`;
-  }
-  if (review.voucherId !== proposal.voucherId) {
-    return `Förslaget pekar på fel verifikat (${proposal.voucherId}, granskningen gäller ${review.voucherId}) — ingenting bokfördes.`;
-  }
-  if (review.status !== "needs-review") {
-    return `Granskningen "${proposal.reviewTitle}" är redan avgjord (${review.status}) — ingenting bokfördes.`;
-  }
-  const voucher = snapshot.vouchers.find((item) => item.id === review.voucherId);
-  if (!voucher) {
-    return `Verifikatet (${review.voucherId}) för granskningen finns inte — ingenting bokfördes.`;
-  }
-  // Belt and braces: the zod inputSchema already pins the literal.
-  if (proposal.action !== "approve") {
-    return `Åtgärden "${String(proposal.action)}" stöds inte — ingenting bokfördes.`;
-  }
-  if (!findCoaAccount(defaultCoaTemplate, proposal.edited.accountNumber)) {
-    return `Konto ${proposal.edited.accountNumber} finns inte i kontoplanen (${defaultCoaTemplate.id}) — ingenting bokfördes.`;
-  }
-  const vatVocabulary = validEditVatCodes(getVatRegime(defaultCoaTemplate.country));
-  if (!vatVocabulary.has(proposal.edited.vatCode)) {
-    return `Momskoden ${proposal.edited.vatCode} är inte giltig (tillåtna: ${[...vatVocabulary].join(", ")}) — ingenting bokfördes.`;
-  }
-  return undefined;
+  // Wave E′ / P1-7: ONE pure check shared with the web demo transport.
+  return rejectReviewProposal(await store.getSnapshot(), proposal);
 }
 
 /**
@@ -389,27 +329,39 @@ export async function executeReviewApproval(
   store: LedgerStore,
   proposal: ReviewActionProposal,
   actorId: string = DEMO_ACTOR_ID,
+  gate: ApprovalGate = {},
 ): Promise<ReviewActionOutcome> {
   const rejection = await validateProposalAgainstStore(store, proposal);
   if (rejection) {
     return { approved: false, resultText: rejection };
   }
 
-  const review = await store.applyReviewDecision(proposal.reviewId, "approve", {
-    actorId,
-    notes: ADVISOR_APPROVAL_NOTES,
-    edited: proposal.edited,
-  });
-  if (!review) {
+  try {
+    const review = await store.applyReviewDecision(proposal.reviewId, "approve", {
+      actorId,
+      notes: ADVISOR_APPROVAL_NOTES,
+      edited: proposal.edited,
+      enforceBlockedReason: gate.enforceBlockedReason,
+    });
+    if (!review) {
+      return {
+        approved: false,
+        resultText: `Granskningen "${proposal.reviewTitle}" hittades inte — ingenting bokfördes.`,
+      };
+    }
     return {
-      approved: false,
-      resultText: `Granskningen "${proposal.reviewTitle}" hittades inte — ingenting bokfördes.`,
+      approved: true,
+      resultText: `Granskningen "${proposal.reviewTitle}" godkändes via granskningskön (konto ${proposal.edited.accountNumber} ${proposal.edited.accountName}, momskod ${proposal.edited.vatCode}).`,
     };
+  } catch (error) {
+    if (error instanceof ReviewBlockedError) {
+      return {
+        approved: false,
+        resultText: `Granskningen "${proposal.reviewTitle}" är blockerad — ingenting bokfördes.`,
+      };
+    }
+    throw error;
   }
-  return {
-    approved: true,
-    resultText: `Granskningen "${proposal.reviewTitle}" godkändes via granskningskön (konto ${proposal.edited.accountNumber} ${proposal.edited.accountName}, momskod ${proposal.edited.vatCode}).`,
-  };
 }
 
 /**
@@ -519,17 +471,27 @@ export function buildSystemPrompt(grounding: string, passages: readonly Knowledg
   ].join("\n\n");
 }
 
+/** Retrieval result for one advisor turn — passages plus the honest mode signal. */
+export type ChatRetrieval = {
+  passages: KnowledgePassage[];
+  mode: KnowledgeQueryResult["mode"];
+};
+
 /**
  * Post-filter one `queryKnowledge` result for chat grounding: vector passages
  * below the cosine-similarity floor are dropped (pgvector always returns
  * nearest neighbours, relevant or not); keyword passages pass through — the
- * BM25 stopword gate already applied. Pure; exported for regression tests.
+ * BM25 stopword gate already applied. Preserves `mode` so the SSE stream can
+ * surface keyword degrade honestly (Wave E-2). Pure; exported for regression tests.
  */
-export function selectChatPassages(result: KnowledgeQueryResult): KnowledgePassage[] {
+export function selectChatPassages(result: KnowledgeQueryResult): ChatRetrieval {
   if (result.mode === "vector") {
-    return result.passages.filter((passage) => passage.score >= ADVISOR_VECTOR_MIN_SIMILARITY);
+    return {
+      mode: result.mode,
+      passages: result.passages.filter((passage) => passage.score >= ADVISOR_VECTOR_MIN_SIMILARITY),
+    };
   }
-  return result.passages;
+  return { mode: result.mode, passages: result.passages };
 }
 
 /**
@@ -539,28 +501,34 @@ export function selectChatPassages(result: KnowledgeQueryResult): KnowledgePassa
  * advisor). Content-free queries (smalltalk) skip the embedding call entirely
  * and weak vector neighbours are dropped by the similarity floor.
  */
-async function queryKnowledgePassagesForChat(question: string): Promise<KnowledgePassage[]> {
-  if (!hasRetrievableContent(question)) return [];
+async function queryKnowledgePassagesForChat(question: string): Promise<ChatRetrieval> {
+  if (!hasRetrievableContent(question)) return { passages: [], mode: "keyword" };
   return selectChatPassages(await queryKnowledge(question));
 }
 
 /**
  * Retrieve grounding passages for one advisor turn. Demo mode stays on the
- * deterministic bundled corpus; normal mode goes through the vector path (or
- * an injected retriever) and falls back to the keyword corpus on ANY failure.
+ * deterministic bundled corpus (no degrade banner — keyword is the intended
+ * path); normal mode goes through the vector path (or an injected retriever)
+ * and falls back to the keyword corpus on ANY failure, preserving `mode`.
  */
-async function retrieveChatPassages(question: string, options: AdvisorChatHandlerOptions): Promise<KnowledgePassage[]> {
+async function retrieveChatPassages(question: string, options: AdvisorChatHandlerOptions): Promise<ChatRetrieval> {
   if (options.runtimeMode === "demo") {
-    return retrieveKnowledge(question, { topK: RETRIEVAL_TOP_K });
+    // Demo keyword path is intentional — no degrade banner (mode stays honest).
+    return { passages: retrieveKnowledge(question, { topK: DEFAULT_RETRIEVAL_TOP_K }), mode: "keyword" };
   }
   try {
-    const retrieve = options.retrievePassages ?? queryKnowledgePassagesForChat;
-    return await retrieve(question);
+    if (options.retrievePassages) {
+      // Injected seam returns passages only — treat success as vector (tests
+      // inject pgvector hits); the catch path below still marks keyword.
+      return { passages: await options.retrievePassages(question), mode: "vector" };
+    }
+    return await queryKnowledgePassagesForChat(question);
   } catch (error) {
     logAdvisor("warn", "Passage retrieval failed — falling back to keyword passages", {
       error: error instanceof Error ? error.message : String(error),
     });
-    return retrieveKnowledge(question, { topK: RETRIEVAL_TOP_K });
+    return { passages: retrieveKnowledge(question, { topK: DEFAULT_RETRIEVAL_TOP_K }), mode: "keyword" };
   }
 }
 
@@ -579,10 +547,8 @@ export type AdvisorRequestContext = { actorId?: string | undefined };
 export function createAdvisorChatHandler(
   options: AdvisorChatHandlerOptions,
 ): (request: Request, requestContext?: AdvisorRequestContext) => Promise<Response> {
-  // Cost envelope resolved once at boot: malformed env throws here, not per request.
-  const envLimits = resolveAdvisorStreamLimits();
-  const maxOutputTokens = options.maxOutputTokens ?? envLimits.maxOutputTokens;
-  const streamTimeoutMs = options.streamTimeoutMs ?? envLimits.streamTimeoutMs;
+  // Cost envelope comes from ApiRuntimeConfig (Wave G′ / P1-16) — no env re-read here.
+  const { maxOutputTokens, streamTimeoutMs } = options;
 
   return async (request, requestContext) => {
     const actorId = requestContext?.actorId ?? DEMO_ACTOR_ID;
@@ -614,11 +580,14 @@ export function createAdvisorChatHandler(
     const observations = buildObservations({ pack, snapshot, deadlines, today: localToday });
     const pendingReviews = snapshot.reviews.filter((review) => review.status === "needs-review");
     const question = latestUserQuestion(messages);
-    const passages = await retrieveChatPassages(question, options);
+    const retrieval = await retrieveChatPassages(question, options);
+    const passages = retrieval.passages;
     const groundingInput = { pack, observations, deadlines, pendingReviews };
 
     if (options.runtimeMode === "demo") {
       // Demo grounding is DISPLAY text (no LLM) — untrusted values stay verbatim.
+      // Demo retrieval is always the bundled keyword corpus by design — do not
+      // emit a keyword-degrade signal (that banner is for normal-mode fallback).
       const grounding = buildAdvisorGrounding(groundingInput);
       const approvalResponse = findApprovalResponse(messages);
 
@@ -632,6 +601,7 @@ export function createAdvisorChatHandler(
         // Human answered the proposal: execute through the review gate on
         // approval, or skip entirely on denial. Executed BEFORE streaming so
         // store errors surface as proper HTTP errors, not mid-stream noise.
+        // Demo path: ApprovalGate omitted — blockedReason stays advisory (D′).
         const outcome = approvalResponse.approved
           ? await executeReviewApproval(store, approvalResponse.proposal, actorId)
           : undefined;
@@ -683,7 +653,10 @@ export function createAdvisorChatHandler(
           "vid godkännande bokförs posten via den vanliga granskningsgrinden (applyReviewDecision). " +
           "Kopiera kontering, moms och resonemang ordagrant från det lagrade förslaget — hitta aldrig på värden.",
         inputSchema: reviewActionProposalSchema,
-        execute: async (proposal): Promise<ReviewActionOutcome> => executeReviewApproval(store, proposal, actorId),
+        execute: async (proposal): Promise<ReviewActionOutcome> =>
+          executeReviewApproval(store, proposal, actorId, {
+            enforceBlockedReason: options.runtimeMode === "normal",
+          }),
       }),
     };
 
@@ -728,6 +701,9 @@ export function createAdvisorChatHandler(
     // (`data-provenance` with `{ passages }` — see demoTurnResponse above and
     // apps/web/components/advisor/local-demo-transport.ts). Grounding sources
     // are known before the model streams, so the part is written up front.
+    // Wave E-2: also stream `data-retrieval` with the honest mode so the UI can
+    // banner keyword degrade (the JSON `/api/knowledge/query` already exposed
+    // mode; chat used to drop it in selectChatPassages).
     // Approval-response replays continue the previous assistant message
     // (originalMessages persistence mode) which already carries its provenance
     // part — re-emitting would duplicate the chips.
@@ -736,8 +712,11 @@ export function createAdvisorChatHandler(
       originalMessages: messages,
       execute: ({ writer }) => {
         writer.write({ type: "start" });
-        if (!isContinuationTurn && passages.length > 0) {
-          writer.write({ type: "data-provenance", data: { passages: [...passages] } });
+        if (!isContinuationTurn) {
+          writer.write({ type: "data-retrieval", data: { mode: retrieval.mode } });
+          if (passages.length > 0) {
+            writer.write({ type: "data-provenance", data: { passages: [...passages] } });
+          }
         }
         writer.merge(result.toUIMessageStream({ sendStart: false }));
       },

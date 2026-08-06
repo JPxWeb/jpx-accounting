@@ -20,7 +20,21 @@ export interface DocumentExtractionResult {
   rawFields: Record<string, unknown>;
 }
 
+/**
+ * Discriminator for Document Intelligence backends (Wave D′ / G′).
+ * - `stub` — deterministic demo / missing-env fallback (demo only)
+ * - `azure` — live Azure Document Intelligence
+ * - `unavailable` — fail-closed normal mode when DocIntel env is missing
+ */
+export type DocumentIntelligenceKind = "stub" | "azure" | "unavailable";
+
 export interface DocumentIntelligenceClient {
+  /**
+   * Which implementation backs this client — mirrors `BlobUploader.kind` so
+   * `/ready.checks.docintel` and normal-mode OCR policy can tell stub fiction
+   * from real OCR without instanceof checks.
+   */
+  readonly kind: DocumentIntelligenceKind;
   /** Run extraction over a remote URL or raw bytes. Throws if the service returns a non-2xx. */
   extract(input: ExtractInput): Promise<DocumentExtractionResult>;
 }
@@ -53,6 +67,7 @@ export function pickModelForDocument(input: { filename?: string; mimeType?: stri
 }
 
 class StubDocumentIntelligenceClient implements DocumentIntelligenceClient {
+  readonly kind = "stub" as const;
   // Returned in demo mode and when DocIntel env vars are unset. Derives the same
   // deterministic file-seeded fields as `createEvidence` (shared derivation in
   // @jpx-accounting/domain), so an extraction refresh over freshly-created
@@ -76,6 +91,7 @@ export type AzureDocumentIntelligenceConfig = {
 };
 
 class AzureDocumentIntelligenceClient implements DocumentIntelligenceClient {
+  readonly kind = "azure" as const;
   private readonly client: ReturnType<typeof DocumentIntelligence>;
 
   constructor(config: AzureDocumentIntelligenceConfig) {
@@ -184,14 +200,36 @@ export function mapFieldsToContract(
   return fields;
 }
 
+/** Fail-closed peripheral for normal mode when Azure Document Intelligence env is missing. */
+export class UnavailableDocumentIntelligenceClient implements DocumentIntelligenceClient {
+  readonly kind = "unavailable" as const;
+
+  constructor(private readonly reason: string) {}
+
+  async extract(_input: ExtractInput): Promise<DocumentExtractionResult> {
+    throw new DocumentIntelligenceUnavailableError(this.reason);
+  }
+}
+
 export type DocumentIntelligenceConfig = {
   endpoint?: string | undefined;
   apiKey?: string | undefined;
+  /**
+   * When true and DocIntel env is missing, return `UnavailableDocumentIntelligenceClient`
+   * instead of the demo stub. Neutral flag — callers map `runtimeMode === "normal"`;
+   * this package stays free of runtimeMode concepts.
+   */
+  failClosed?: boolean | undefined;
 };
 
 export function createDocumentIntelligenceClient(config: DocumentIntelligenceConfig): DocumentIntelligenceClient {
   if (config.endpoint && config.apiKey) {
     return new AzureDocumentIntelligenceClient({ endpoint: config.endpoint, apiKey: config.apiKey });
+  }
+  if (config.failClosed) {
+    return new UnavailableDocumentIntelligenceClient(
+      "Document Intelligence is unavailable in normal mode until AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_API_KEY are configured.",
+    );
   }
   return new StubDocumentIntelligenceClient();
 }

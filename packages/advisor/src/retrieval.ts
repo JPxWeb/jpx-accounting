@@ -47,8 +47,11 @@ export interface KnowledgePassage {
   score: number;
 }
 
+/** Default grounding passages per turn — ONE constant for chat, knowledge, and demo transport (Wave E′ / P1-7). */
+export const DEFAULT_RETRIEVAL_TOP_K = 4;
+
 export interface RetrieveKnowledgeOptions {
-  /** Maximum number of passages to return. Default 4. */
+  /** Maximum number of passages to return. Default {@link DEFAULT_RETRIEVAL_TOP_K}. */
   topK?: number;
   /** Corpus to search. Defaults to the bundled `KNOWLEDGE_CORPUS`. */
   corpus?: KnowledgeChunk[];
@@ -175,7 +178,7 @@ function inverseDocumentFrequency(corpusSize: number, documentFrequency: number)
  * yields zero passages, so smalltalk never dresses itself in sources.
  */
 export function retrieveKnowledge(query: string, options: RetrieveKnowledgeOptions = {}): KnowledgePassage[] {
-  const { topK = 4, corpus = KNOWLEDGE_CORPUS, minScore = 0 } = options;
+  const { topK = DEFAULT_RETRIEVAL_TOP_K, corpus = KNOWLEDGE_CORPUS, minScore = 0 } = options;
   if (topK <= 0 || corpus.length === 0) return [];
 
   const index = indexCorpus(corpus);

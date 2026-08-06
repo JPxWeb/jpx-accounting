@@ -1,5 +1,5 @@
-import { retrieveKnowledge } from "@jpx-accounting/advisor";
-import { createAiRuntime, isAiRuntimeOperational } from "@jpx-accounting/ai-core";
+import { DEFAULT_RETRIEVAL_TOP_K, retrieveKnowledge } from "@jpx-accounting/advisor";
+import { isAiRuntimeOperational, type AiRuntime } from "@jpx-accounting/ai-core";
 import {
   knowledgeQueryResultSchema,
   type KnowledgePassage,
@@ -8,10 +8,8 @@ import {
 import { DEFAULT_TENANT_SCOPE } from "@jpx-accounting/domain";
 import { queryKnowledgeByEmbedding, type PostgresClient } from "@jpx-accounting/persistence-postgres";
 
-import { readApiRuntimeConfig } from "./config";
-
 /**
- * Knowledge retrieval behind `POST /api/knowledge/query` (Tasks 5.7 + 5.11).
+ * Knowledge retrieval behind `POST /api/knowledge/query` (Tasks 5.7 + 5.11 + Wave G′ P1-15).
  *
  * Two modes, honestly reported via the result's `mode` field:
  *
@@ -19,64 +17,53 @@ import { readApiRuntimeConfig } from "./config";
  *   (`@jpx-accounting/advisor`); every passage carries verbatim source
  *   provenance (CONVENTIONS Rule 10). Always available; the only mode in demo.
  * - **vector** — pgvector cosine search over `knowledge.documents`
- *   (`pnpm ingest:knowledge` fills it). Active only in normal mode with a
- *   DB-backed store (`DATABASE_URL`, or the legacy `SUPABASE_DB_URL` alias)
- *   AND an operational AI runtime (`AZURE_OPENAI_*`) — the same env surface
- *   `runtime.ts` wires, which also injects the shared Postgres client via
- *   `configureKnowledgeDatabaseClient` (Task 3 connection ownership: one
- *   pool, not a second one opened here). ANY vector failure (embedding call,
- *   DB query, empty index) falls back to keyword with a structured warn:
- *   retrieval must never 500 the advisor.
+ *   (`pnpm ingest:knowledge` fills it). Active only when boot wiring injects
+ *   a shared Postgres client AND an operational AiRuntime — the same surfaces
+ *   `runtime.ts` builds. ANY vector failure (embedding call, DB query, empty
+ *   index) falls back to keyword with a structured warn: retrieval must never
+ *   500 the advisor.
  */
-
-const RETRIEVAL_TOP_K = 4;
 
 /** Fixed normal-mode workspace — shared DEFAULT_TENANT_SCOPE (runtime store + ingest). */
 const KNOWLEDGE_SCOPE = DEFAULT_TENANT_SCOPE;
 
-/** Injectable seam for tests; production resolves a default lazily from env. */
+/** Injectable seam for tests; production resolves a default from boot wiring. */
 export type VectorKnowledgeRetriever = {
   embedQuery(query: string): Promise<number[]>;
   search(embedding: number[], topK: number): Promise<KnowledgePassage[]>;
 };
 
 /**
- * The ONE shared Postgres client `createApiRuntimeDependencies` (runtime.ts) creates for the
- * ledger store — injected here so vector retrieval reuses it instead of opening its own second,
- * never-closed pool (Task 3 connection ownership). `null` means "no client available": demo mode,
- * normal mode without a runtime DB URL, or not yet wired (e.g. this module used standalone).
+ * Boot wiring from `createApiRuntimeDependencies` — the ONE shared Postgres
+ * client + THE boot AiRuntime. No env re-reads and no second `createAiRuntime`
+ * here (Wave G′ / P1-15).
  */
-let injectedDatabaseClient: PostgresClient | null = null;
+export type KnowledgeRetrievalWiring = {
+  /** Shared runtime Postgres client; null = vector off (demo / no DATABASE_URL). */
+  client: PostgresClient | null;
+  /** THE boot AiRuntime; UnavailableAiRuntime (or null) = vector off. */
+  aiRuntime: AiRuntime | null;
+};
+
+let wiring: KnowledgeRetrievalWiring = { client: null, aiRuntime: null };
 
 /**
- * Called once by `createApiRuntimeDependencies` at boot. Resets the memoized default retriever so
- * the next `queryKnowledge()` call picks up the newly injected (or cleared) client.
+ * Called once per boot by `createApiRuntimeDependencies`. Resets the memoized
+ * default retriever so the next `queryKnowledge()` call picks up the new wiring.
  */
-export function configureKnowledgeDatabaseClient(client: PostgresClient | null): void {
-  injectedDatabaseClient = client;
+export function configureKnowledgeRetrieval(next: KnowledgeRetrievalWiring): void {
+  wiring = next;
   defaultVectorRetriever = undefined;
 }
 
 /**
- * Build the vector retriever from env + the injected shared client, or null when vector mode
- * should stay off (demo mode, no injected client, or unconfigured AI). Any downstream failure
- * (embedding call, DB query, empty index) still lands in the keyword fallback in `queryKnowledge`
- * rather than failing the boot or the request.
+ * Build the vector retriever from boot wiring, or null when vector mode should
+ * stay off. Downstream failures still land in the keyword fallback in
+ * `queryKnowledge` rather than failing the boot or the request.
  */
 function buildVectorRetriever(): VectorKnowledgeRetriever | null {
-  const config = readApiRuntimeConfig();
-  if (config.runtimeMode !== "normal") return null;
-  if (!config.database.runtimeUrl) return null;
-  const client = injectedDatabaseClient;
-  if (!client) return null;
-
-  const aiRuntime = createAiRuntime({
-    runtimeMode: config.runtimeMode,
-    endpoint: config.azureOpenAi.endpoint,
-    apiKey: config.azureOpenAi.apiKey,
-    model: config.azureOpenAi.model,
-  });
-  if (!isAiRuntimeOperational(aiRuntime)) return null;
+  const { client, aiRuntime } = wiring;
+  if (!client || !aiRuntime || !isAiRuntimeOperational(aiRuntime)) return null;
 
   return {
     embedQuery: async (query) => {
@@ -112,8 +99,8 @@ function warnVectorFallback(reason: string, error?: unknown): void {
 
 /**
  * Answer a knowledge query. Pass `vectorRetriever` explicitly to inject (or
- * disable with `null`) the vector path; omit it to use the env-derived
- * default. The keyword path is the universal fallback and never throws.
+ * disable with `null`) the vector path; omit it to use the boot-wired default.
+ * The keyword path is the universal fallback and never throws.
  */
 export async function queryKnowledge(
   query: string,
@@ -124,7 +111,7 @@ export async function queryKnowledge(
   if (retriever) {
     try {
       const embedding = await retriever.embedQuery(query);
-      const passages = await retriever.search(embedding, RETRIEVAL_TOP_K);
+      const passages = await retriever.search(embedding, DEFAULT_RETRIEVAL_TOP_K);
       if (passages.length > 0) {
         return knowledgeQueryResultSchema.parse({ query, mode: "vector", passages });
       }
@@ -135,6 +122,6 @@ export async function queryKnowledge(
     }
   }
 
-  const passages = retrieveKnowledge(query, { topK: RETRIEVAL_TOP_K });
+  const passages = retrieveKnowledge(query, { topK: DEFAULT_RETRIEVAL_TOP_K });
   return knowledgeQueryResultSchema.parse({ query, mode: "keyword", passages });
 }

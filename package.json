@@ -39,7 +39,8 @@
     "test:e2e:install": "playwright install chromium",
     "test:e2e:visual": "corepack pnpm build:e2e && playwright test tests/e2e/visual-regression.spec.ts",
     "test:e2e:visual:update": "corepack pnpm build:e2e && playwright test tests/e2e/visual-regression.spec.ts --update-snapshots",
-    "prepare": "husky"
+    "prepare": "husky",
+    "check:seams": "bash scripts/check-seams.sh"
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs,cjs,jsx,json,md,css,yml,yaml}": "prettier --write --ignore-unknown",

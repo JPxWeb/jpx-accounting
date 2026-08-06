@@ -518,11 +518,6 @@ export const reviewDecisionInputSchema = z.object({
   edited: reviewDecisionEditSchema.optional(),
 });
 
-export const assistantRequestSchema = z.object({
-  question: z.string(),
-  contextVoucherId: z.string().optional(),
-});
-
 export const knowledgeQuerySchema = z.object({
   query: z.string(),
 });
@@ -650,7 +645,8 @@ export const workspaceSnapshotSchema = z.object({
   vouchers: z.array(voucherSchema),
   reviews: z.array(reviewTaskSchema),
   reports: reportBundleSchema,
-  assistantExamples: z.array(assistantSessionSchema),
+  // Staged empty default — retired one-shot assistant scaffold (P2-6 / F-7).
+  assistantExamples: z.array(assistantSessionSchema).default([]),
   closeRun: closeRunSchema,
   alerts: z.array(complianceAlertSchema),
   /**
@@ -829,7 +825,6 @@ export type WorkspaceSnapshot = z.infer<typeof workspaceSnapshotSchema>;
 export type EvidenceCreateInput = z.infer<typeof evidenceCreateInputSchema>;
 export type EvidenceComposeInput = z.infer<typeof evidenceComposeInputSchema>;
 export type ReviewDecisionInput = z.infer<typeof reviewDecisionInputSchema>;
-export type AssistantRequest = z.infer<typeof assistantRequestSchema>;
 export type KnowledgeQuery = z.infer<typeof knowledgeQuerySchema>;
 export type SimulationRequest = z.infer<typeof simulationRequestSchema>;
 export type SuggestionRequest = z.infer<typeof suggestionRequestSchema>;

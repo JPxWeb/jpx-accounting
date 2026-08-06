@@ -1,6 +1,7 @@
 import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
 
 import {
+  DEFAULT_RETRIEVAL_TOP_K,
   buildAdvisorGrounding,
   buildDemoAdvisorTurn,
   retrieveKnowledge,
@@ -10,7 +11,7 @@ import {
   type ReviewActionProposal,
 } from "@jpx-accounting/advisor";
 import { DEFAULT_AI_POSTURE, DEFAULT_WORKSPACE_PROFILE } from "@jpx-accounting/contracts";
-import { buildTaxTimeline, currentMonthToken, today } from "@jpx-accounting/domain";
+import { buildTaxTimeline, currentMonthToken, rejectReviewProposal, today } from "@jpx-accounting/domain";
 import { buildObservations } from "@jpx-accounting/reporting";
 
 import { apiClient } from "../../lib/client";
@@ -44,9 +45,11 @@ const ADVISOR_APPROVAL_NOTES = "Approved via advisor";
 /** The tool output shape both modes stream, so the client renders one confirmation row. */
 export type ReviewActionOutcome = { approved: boolean; resultText: string };
 
-/** Custom data parts the advisor streams (`data-provenance`). */
+/** Custom data parts the advisor streams (`data-provenance`, `data-retrieval`). */
 export type AdvisorDataParts = {
   provenance: { passages: KnowledgePassage[] };
+  /** Normal-mode retrieval honesty (Wave E-2) — absent in offline demo replay. */
+  retrieval: { mode: "vector" | "keyword" };
 };
 
 /** Typed tool set for `tool-proposeReviewAction` parts. */
@@ -182,7 +185,7 @@ async function buildTurnParts(messages: AdvisorUIMessage[]): Promise<DemoTurnPar
   const observations = buildObservations({ pack, snapshot, deadlines, today: localToday });
   const pendingReviews = snapshot.reviews.filter((review) => review.status === "needs-review");
   const question = latestUserQuestion(messages);
-  const passages = retrieveKnowledge(question, { topK: 4 });
+  const passages = retrieveKnowledge(question, { topK: DEFAULT_RETRIEVAL_TOP_K });
   const grounding = buildAdvisorGrounding({ pack, observations, deadlines, pendingReviews });
 
   const approvalResponse = findApprovalResponse(messages);
@@ -192,12 +195,17 @@ async function buildTurnParts(messages: AdvisorUIMessage[]): Promise<DemoTurnPar
     // or skip entirely on denial.
     let approved = false;
     if (approvalResponse.approved) {
-      // No actorId (WS-C R5): the fallback store attributes to the demo sentinel.
-      const review = await apiClient.approveReview(approvalResponse.proposal.reviewId, {
-        notes: ADVISOR_APPROVAL_NOTES,
-        edited: approvalResponse.proposal.edited,
-      });
-      approved = Boolean(review);
+      // Wave E′ / P1-7: re-validate against store truth before approve so a
+      // stale offline approval cannot report success (server streams denial).
+      const rejection = rejectReviewProposal(snapshot, approvalResponse.proposal);
+      if (!rejection) {
+        // No actorId (WS-C R5): the fallback store attributes to the demo sentinel.
+        const review = await apiClient.approveReview(approvalResponse.proposal.reviewId, {
+          notes: ADVISOR_APPROVAL_NOTES,
+          edited: approvalResponse.proposal.edited,
+        });
+        approved = Boolean(review);
+      }
     }
     return buildDemoAdvisorTurn({
       question,

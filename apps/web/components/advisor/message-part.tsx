@@ -10,6 +10,7 @@ import { ProvenanceChips } from "./provenance-chips";
  * Renders one advisor UI-message part:
  * - `text` → prose
  * - `data-provenance` → sourced passage chips
+ * - `data-retrieval` → consumed by AdvisorChat chrome (keyword degrade banner)
  * - `tool-proposeReviewAction` approval states → the human approval card
  * - `tool-proposeReviewAction` outputs → a confirmation row (executed through
  *   the review gate, or denied with nothing posted)
@@ -31,6 +32,11 @@ export function MessagePart({
 
   if (part.type === "data-provenance") {
     return <ProvenanceChips passages={part.data.passages} />;
+  }
+
+  if (part.type === "data-retrieval") {
+    // Banner lives on AdvisorChat — keep the part in the message for replay.
+    return null;
   }
 
   if (part.type === PROPOSE_REVIEW_ACTION_PART_TYPE) {

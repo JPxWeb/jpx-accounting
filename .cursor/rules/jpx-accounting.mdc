@@ -5,7 +5,7 @@ alwaysApply: true
 ---
 
 Read `AGENTS.md` first — it is the cross-tool agent contract (JPx ADR DL-001) and wins on
-conflict. `CLAUDE.md` carries the deep project memory; `docs/CONVENTIONS.md` the 28
+conflict. `CLAUDE.md` carries the deep project memory; `docs/CONVENTIONS.md` the 29
 incident-derived rules.
 
 Non-negotiables while editing here:

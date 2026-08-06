@@ -74,11 +74,20 @@ export type ApiRuntimeConfig = {
      * keeps local/offline runs working; production sets ADVISOR_TOOL_APPROVAL_SECRET.
      */
     toolApprovalSecret: string;
+    /** Cost envelope: max output tokens per normal-mode advisor turn (Wave G′ / P1-16). */
+    maxOutputTokens: number;
+    /** Cost envelope: wall-clock ceiling for one normal-mode stream (ms). */
+    streamTimeoutMs: number;
   };
 };
 
 /** Demo fallback for ADVISOR_TOOL_APPROVAL_SECRET — not a production credential. */
 export const DEMO_ADVISOR_TOOL_APPROVAL_SECRET = "jpx-demo-advisor-tool-approval-secret";
+
+/** Cost envelope (WS-D / Wave G′ P1-16): default output-token cap per normal-mode turn. */
+export const DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS = 2048;
+/** Cost envelope (WS-D / Wave G′ P1-16): default wall-clock ceiling for one normal-mode stream. */
+export const DEFAULT_ADVISOR_STREAM_TIMEOUT_MS = 90_000;
 
 /** Mirrors `hono/jwk`'s `AsymmetricAlgorithm` union — kept local so config.ts stays framework-import-free. */
 export const SUPABASE_JWT_ALGORITHMS = [
@@ -289,11 +298,24 @@ function resolveDatabaseMigrationUrl(env: NodeJS.ProcessEnv): string | undefined
 }
 
 /**
+ * Positive-integer env knob: unset → fallback; garbage throws at config-read
+ * (§A N5 fail-closed — a typo must not disable the cost envelope).
+ */
+function resolvePositiveInt(name: string, raw: string | undefined, fallback: number): number {
+  const trimmed = raw?.trim();
+  if (!trimmed) return fallback;
+  const value = Number(trimmed);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Invalid ${name} ${JSON.stringify(raw)} — expected a positive integer.`);
+  }
+  return value;
+}
+
+/**
  * Resolved boot posture for the single structured boot log line (§A N5e) —
  * emitted once by `createApiRuntimeDependencies` in runtime.ts, NOT here:
- * `readApiRuntimeConfig` is also re-read lazily (knowledge.ts) and must stay
- * side-effect free. Derivable from config alone — never carries secrets or
- * connection strings.
+ * `readApiRuntimeConfig` must stay side-effect free. Derivable from config
+ * alone — never carries secrets or connection strings.
  */
 export function describeBootPosture(config: ApiRuntimeConfig) {
   return {
@@ -371,6 +393,16 @@ export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiR
     },
     advisor: {
       toolApprovalSecret: resolveAdvisorToolApprovalSecret(mode, env.ADVISOR_TOOL_APPROVAL_SECRET),
+      maxOutputTokens: resolvePositiveInt(
+        "ADVISOR_MAX_OUTPUT_TOKENS",
+        env.ADVISOR_MAX_OUTPUT_TOKENS,
+        DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
+      ),
+      streamTimeoutMs: resolvePositiveInt(
+        "ADVISOR_STREAM_TIMEOUT_MS",
+        env.ADVISOR_STREAM_TIMEOUT_MS,
+        DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
+      ),
     },
   };
 

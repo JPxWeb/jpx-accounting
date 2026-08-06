@@ -174,7 +174,13 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
 
           <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)]">
             {suggestionsEnabled ? (
-              <div className="glass-panel-soft rounded-lg p-4">
+              <div className="glass-panel-soft rounded-lg p-4" data-testid="review-ai-suggestion">
+                <p
+                  data-testid="ai-generated-marker"
+                  className="text-caption mb-2 inline-flex rounded-md bg-info-soft px-2 py-0.5 font-semibold text-info"
+                >
+                  {t("aiGeneratedMarker")}
+                </p>
                 <SectionLabel>{t("aiSuggestion")}</SectionLabel>
                 <p className="mt-3 text-sm leading-6 text-muted-foreground">{review.suggestion?.reasoning}</p>
               </div>
@@ -222,7 +228,11 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
             <p className="mt-4 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">{review.blockedReason}</p>
           ) : null}
 
-          <ReviewCardActions onAction={onAction} disabled={!isActionable} />
+          <ReviewCardActions
+            onAction={onAction}
+            disabled={!isActionable}
+            approveDisabled={Boolean(review.blockedReason)}
+          />
         </div>
       </div>
     </motion.article>

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 
-import { retrieveKnowledge, type ReviewActionProposal } from "@jpx-accounting/advisor";
+import { DEFAULT_RETRIEVAL_TOP_K, retrieveKnowledge, type ReviewActionProposal } from "@jpx-accounting/advisor";
 import type { KnowledgePassage } from "@jpx-accounting/contracts";
 import { DEMO_ACTOR_ID, MemoryLedgerStore } from "@jpx-accounting/domain";
 
@@ -71,7 +71,7 @@ function createNormalModeApp(mock: MockOpenAiResponsesServer) {
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: {},
-    advisor: { toolApprovalSecret: TOOL_APPROVAL_SECRET },
+    advisor: { toolApprovalSecret: TOOL_APPROVAL_SECRET, maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
   });
   const app = createApp({ ...dependencies, store, allowTestReset: false });
   return { app, store };
@@ -248,7 +248,7 @@ test("normal mode streams UI-message SSE through the real Azure provider wiring,
     assert.ok(textStartIndex > provenanceIndex, "provenance must precede the streamed text");
     const provenanceData = (chunks[provenanceIndex] as { data?: { passages?: KnowledgePassage[] } }).data;
     // No DB in this run → deterministic keyword fallback over the bundled corpus.
-    assert.deepEqual(provenanceData?.passages, retrieveKnowledge(question, { topK: 4 }));
+    assert.deepEqual(provenanceData?.passages, retrieveKnowledge(question, { topK: DEFAULT_RETRIEVAL_TOP_K }));
 
     assert.equal(textOf(chunks), "Representation ger begränsat momsavdrag.");
     assert.ok(

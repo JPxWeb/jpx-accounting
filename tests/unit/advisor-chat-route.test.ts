@@ -1,26 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { UNTRUSTED_DATA_PROMPT_CLAUSE, retrieveKnowledge } from "@jpx-accounting/advisor";
+import {
+  DEFAULT_RETRIEVAL_TOP_K,
+  UNTRUSTED_DATA_PROMPT_CLAUSE,
+  retrieveKnowledge,
+  type ReviewActionProposal,
+} from "@jpx-accounting/advisor";
 import type { KnowledgePassage } from "@jpx-accounting/contracts";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
 
 import {
   ADVISOR_VECTOR_MIN_SIMILARITY,
   AdvisorValidationError,
-  DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
-  DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
   MAX_MODEL_HISTORY_MESSAGES,
   buildSystemPrompt,
   createAdvisorChatHandler,
   executeReviewApproval,
-  resolveAdvisorStreamLimits,
   selectChatPassages,
   truncateAdvisorHistory,
   validateProposalAgainstStore,
   type AdvisorChatHandlerOptions,
 } from "../../services/api/src/advisor/chat";
-import type { ReviewActionProposal } from "@jpx-accounting/advisor";
+import { DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS, DEFAULT_ADVISOR_STREAM_TIMEOUT_MS } from "../../services/api/src/config";
 
 /**
  * WS-D regression tests for the advisor chat route: R23 (provenance parts in
@@ -103,6 +105,8 @@ function createNormalHandler(store: MemoryLedgerStore, overrides: HandlerOverrid
     runtimeMode: "normal",
     model: createRecordingModel(recorded),
     toolApprovalSecret: "test-advisor-approval-secret",
+    maxOutputTokens: DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
+    streamTimeoutMs: DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
     ...overrides,
   });
   return { handler, recorded };
@@ -152,6 +156,8 @@ test("normal mode streams the demo-shaped data-provenance part up front", async 
     runtimeMode: "demo",
     model: undefined,
     toolApprovalSecret: "test-advisor-approval-secret",
+    maxOutputTokens: DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
+    streamTimeoutMs: DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
   });
   const demoChunks = parseSseChunks(await (await demoHandler(chatRequest([userMessage(question)]))).text());
   const demoProvenance = demoChunks.find((chunk) => chunk.type === "data-provenance");
@@ -321,6 +327,8 @@ test("demo approval replay of a stale proposal streams a denial and never re-pos
     runtimeMode: "demo",
     model: undefined,
     toolApprovalSecret: "test-advisor-approval-secret",
+    maxOutputTokens: DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
+    streamTimeoutMs: DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
   });
 
   const toolCallId = "demo-tool-call";
@@ -353,33 +361,14 @@ test("demo approval replay of a stale proposal streams a denial and never re-pos
 // Cost/abort envelope
 // ---------------------------------------------------------------------------
 
-test("resolveAdvisorStreamLimits: defaults, env overrides, and fail-closed parsing", () => {
-  assert.deepEqual(resolveAdvisorStreamLimits({}), {
-    maxOutputTokens: DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
-    streamTimeoutMs: DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
-  });
-  assert.deepEqual(
-    resolveAdvisorStreamLimits({ ADVISOR_MAX_OUTPUT_TOKENS: "512", ADVISOR_STREAM_TIMEOUT_MS: "30000" }),
-    { maxOutputTokens: 512, streamTimeoutMs: 30_000 },
-  );
-  assert.throws(() => resolveAdvisorStreamLimits({ ADVISOR_MAX_OUTPUT_TOKENS: "unlimited" }), /positive integer/);
-  assert.throws(() => resolveAdvisorStreamLimits({ ADVISOR_STREAM_TIMEOUT_MS: "-5" }), /positive integer/);
-});
-
 test("maxOutputTokens reaches the model call (default and override)", async () => {
-  const savedEnv = process.env.ADVISOR_MAX_OUTPUT_TOKENS;
-  delete process.env.ADVISOR_MAX_OUTPUT_TOKENS;
-  try {
-    const defaultCase = createNormalHandler(new MemoryLedgerStore());
-    await (await defaultCase.handler(chatRequest([userMessage("Hur ser kassan ut?")]))).text();
-    assert.equal(defaultCase.recorded[0]?.maxOutputTokens, DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS);
+  const defaultCase = createNormalHandler(new MemoryLedgerStore());
+  await (await defaultCase.handler(chatRequest([userMessage("Hur ser kassan ut?")]))).text();
+  assert.equal(defaultCase.recorded[0]?.maxOutputTokens, DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS);
 
-    const overrideCase = createNormalHandler(new MemoryLedgerStore(), { maxOutputTokens: 128 });
-    await (await overrideCase.handler(chatRequest([userMessage("Hur ser kassan ut?")]))).text();
-    assert.equal(overrideCase.recorded[0]?.maxOutputTokens, 128);
-  } finally {
-    if (savedEnv !== undefined) process.env.ADVISOR_MAX_OUTPUT_TOKENS = savedEnv;
-  }
+  const overrideCase = createNormalHandler(new MemoryLedgerStore(), { maxOutputTokens: 128 });
+  await (await overrideCase.handler(chatRequest([userMessage("Hur ser kassan ut?")]))).text();
+  assert.equal(overrideCase.recorded[0]?.maxOutputTokens, 128);
 });
 
 test("client abort propagates into the model abortSignal", async () => {
@@ -497,13 +486,17 @@ test("selectChatPassages floors vector passages but passes keyword results throu
     mode: "vector" as const,
     passages: [passage("strong#0", 0.62), passage("weak#0", ADVISOR_VECTOR_MIN_SIMILARITY - 0.01)],
   };
+  const vectorSelected = selectChatPassages(vector);
+  assert.equal(vectorSelected.mode, "vector");
   assert.deepEqual(
-    selectChatPassages(vector).map((item) => item.id),
+    vectorSelected.passages.map((item) => item.id),
     ["strong#0"],
   );
   const keyword = { query: "q", mode: "keyword" as const, passages: [passage("kw#0", 0.05)] };
+  const keywordSelected = selectChatPassages(keyword);
+  assert.equal(keywordSelected.mode, "keyword");
   assert.deepEqual(
-    selectChatPassages(keyword).map((item) => item.id),
+    keywordSelected.passages.map((item) => item.id),
     ["kw#0"],
   );
 });
@@ -540,9 +533,34 @@ test("a failing retriever falls back to keyword passages instead of erroring", a
   const chunks = parseSseChunks(await response.text());
   const provenance = chunks.find((chunk) => chunk.type === "data-provenance");
   assert.ok(provenance, "keyword fallback passages must still stream");
-  const expected = retrieveKnowledge(question, { topK: 4 });
+  const expected = retrieveKnowledge(question, { topK: DEFAULT_RETRIEVAL_TOP_K });
   assert.deepEqual(
     (provenance.data as { passages: KnowledgePassage[] }).passages.map((item) => item.id),
     expected.map((item) => item.id),
   );
+  const retrieval = chunks.find((chunk) => chunk.type === "data-retrieval");
+  assert.ok(retrieval, "keyword fallback must stream data-retrieval mode");
+  assert.deepEqual(retrieval.data, { mode: "keyword" });
+});
+
+test("normal mode streams data-retrieval mode from an injected vector retriever", async () => {
+  const vectorPassage: KnowledgePassage = {
+    id: "vec#2",
+    docId: "vec",
+    title: "Vektor",
+    excerpt: "Träff",
+    source: "Test",
+    score: 0.9,
+  };
+  const { handler } = createNormalHandler(new MemoryLedgerStore(), {
+    retrievePassages: async () => [vectorPassage],
+  });
+  const response = await handler(chatRequest([userMessage("Vad gäller för representation?")]));
+  const chunks = parseSseChunks(await response.text());
+  const retrieval = chunks.find((chunk) => chunk.type === "data-retrieval");
+  assert.ok(retrieval, "expected a data-retrieval part");
+  assert.deepEqual(retrieval.data, { mode: "vector" });
+  const retrievalIndex = chunks.findIndex((chunk) => chunk.type === "data-retrieval");
+  const provenanceIndex = chunks.findIndex((chunk) => chunk.type === "data-provenance");
+  assert.ok(retrievalIndex > 0 && retrievalIndex < provenanceIndex);
 });

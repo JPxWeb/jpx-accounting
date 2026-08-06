@@ -45,7 +45,7 @@ function createTestApiApp(runtimeMode: "demo" | "normal", overrides: TestAppOver
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: { jwksUrl: overrides.jwksUrl },
-    advisor: { toolApprovalSecret: "test-advisor-approval-secret" },
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
   });
 
   return createApp({
@@ -310,6 +310,8 @@ test("advisor approval execution attributes to the actor threaded from the route
     runtimeMode: "demo",
     model: undefined,
     toolApprovalSecret: "test-advisor-approval-secret",
+    maxOutputTokens: 2048,
+    streamTimeoutMs: 90_000,
   });
 
   const toolCallId = "attribution-tool-call";
