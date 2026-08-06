@@ -45,9 +45,11 @@ const ADVISOR_APPROVAL_NOTES = "Approved via advisor";
 /** The tool output shape both modes stream, so the client renders one confirmation row. */
 export type ReviewActionOutcome = { approved: boolean; resultText: string };
 
-/** Custom data parts the advisor streams (`data-provenance`). */
+/** Custom data parts the advisor streams (`data-provenance`, `data-retrieval`). */
 export type AdvisorDataParts = {
   provenance: { passages: KnowledgePassage[] };
+  /** Normal-mode retrieval honesty (Wave E-2) — absent in offline demo replay. */
+  retrieval: { mode: "vector" | "keyword" };
 };
 
 /** Typed tool set for `tool-proposeReviewAction` parts. */

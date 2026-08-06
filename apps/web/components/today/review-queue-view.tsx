@@ -271,11 +271,8 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
     return (
       <UnavailableState
         testId="workspace-unavailable"
-        title="Workspace unavailable"
-        message={getErrorMessage(
-          workspaceQuery.error,
-          "The accounting workspace could not be loaded. Check the runtime configuration and API availability.",
-        )}
+        title={t("unavailable.title")}
+        message={getErrorMessage(workspaceQuery.error, t("unavailable.message"))}
       />
     );
   }

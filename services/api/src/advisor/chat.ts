@@ -471,17 +471,27 @@ export function buildSystemPrompt(grounding: string, passages: readonly Knowledg
   ].join("\n\n");
 }
 
+/** Retrieval result for one advisor turn — passages plus the honest mode signal. */
+export type ChatRetrieval = {
+  passages: KnowledgePassage[];
+  mode: KnowledgeQueryResult["mode"];
+};
+
 /**
  * Post-filter one `queryKnowledge` result for chat grounding: vector passages
  * below the cosine-similarity floor are dropped (pgvector always returns
  * nearest neighbours, relevant or not); keyword passages pass through — the
- * BM25 stopword gate already applied. Pure; exported for regression tests.
+ * BM25 stopword gate already applied. Preserves `mode` so the SSE stream can
+ * surface keyword degrade honestly (Wave E-2). Pure; exported for regression tests.
  */
-export function selectChatPassages(result: KnowledgeQueryResult): KnowledgePassage[] {
+export function selectChatPassages(result: KnowledgeQueryResult): ChatRetrieval {
   if (result.mode === "vector") {
-    return result.passages.filter((passage) => passage.score >= ADVISOR_VECTOR_MIN_SIMILARITY);
+    return {
+      mode: result.mode,
+      passages: result.passages.filter((passage) => passage.score >= ADVISOR_VECTOR_MIN_SIMILARITY),
+    };
   }
-  return result.passages;
+  return { mode: result.mode, passages: result.passages };
 }
 
 /**
@@ -491,28 +501,34 @@ export function selectChatPassages(result: KnowledgeQueryResult): KnowledgePassa
  * advisor). Content-free queries (smalltalk) skip the embedding call entirely
  * and weak vector neighbours are dropped by the similarity floor.
  */
-async function queryKnowledgePassagesForChat(question: string): Promise<KnowledgePassage[]> {
-  if (!hasRetrievableContent(question)) return [];
+async function queryKnowledgePassagesForChat(question: string): Promise<ChatRetrieval> {
+  if (!hasRetrievableContent(question)) return { passages: [], mode: "keyword" };
   return selectChatPassages(await queryKnowledge(question));
 }
 
 /**
  * Retrieve grounding passages for one advisor turn. Demo mode stays on the
- * deterministic bundled corpus; normal mode goes through the vector path (or
- * an injected retriever) and falls back to the keyword corpus on ANY failure.
+ * deterministic bundled corpus (no degrade banner — keyword is the intended
+ * path); normal mode goes through the vector path (or an injected retriever)
+ * and falls back to the keyword corpus on ANY failure, preserving `mode`.
  */
-async function retrieveChatPassages(question: string, options: AdvisorChatHandlerOptions): Promise<KnowledgePassage[]> {
+async function retrieveChatPassages(question: string, options: AdvisorChatHandlerOptions): Promise<ChatRetrieval> {
   if (options.runtimeMode === "demo") {
-    return retrieveKnowledge(question, { topK: DEFAULT_RETRIEVAL_TOP_K });
+    // Demo keyword path is intentional — no degrade banner (mode stays honest).
+    return { passages: retrieveKnowledge(question, { topK: DEFAULT_RETRIEVAL_TOP_K }), mode: "keyword" };
   }
   try {
-    const retrieve = options.retrievePassages ?? queryKnowledgePassagesForChat;
-    return await retrieve(question);
+    if (options.retrievePassages) {
+      // Injected seam returns passages only — treat success as vector (tests
+      // inject pgvector hits); the catch path below still marks keyword.
+      return { passages: await options.retrievePassages(question), mode: "vector" };
+    }
+    return await queryKnowledgePassagesForChat(question);
   } catch (error) {
     logAdvisor("warn", "Passage retrieval failed — falling back to keyword passages", {
       error: error instanceof Error ? error.message : String(error),
     });
-    return retrieveKnowledge(question, { topK: DEFAULT_RETRIEVAL_TOP_K });
+    return { passages: retrieveKnowledge(question, { topK: DEFAULT_RETRIEVAL_TOP_K }), mode: "keyword" };
   }
 }
 
@@ -564,11 +580,14 @@ export function createAdvisorChatHandler(
     const observations = buildObservations({ pack, snapshot, deadlines, today: localToday });
     const pendingReviews = snapshot.reviews.filter((review) => review.status === "needs-review");
     const question = latestUserQuestion(messages);
-    const passages = await retrieveChatPassages(question, options);
+    const retrieval = await retrieveChatPassages(question, options);
+    const passages = retrieval.passages;
     const groundingInput = { pack, observations, deadlines, pendingReviews };
 
     if (options.runtimeMode === "demo") {
       // Demo grounding is DISPLAY text (no LLM) — untrusted values stay verbatim.
+      // Demo retrieval is always the bundled keyword corpus by design — do not
+      // emit a keyword-degrade signal (that banner is for normal-mode fallback).
       const grounding = buildAdvisorGrounding(groundingInput);
       const approvalResponse = findApprovalResponse(messages);
 
@@ -683,6 +702,9 @@ export function createAdvisorChatHandler(
     // (`data-provenance` with `{ passages }` — see demoTurnResponse above and
     // apps/web/components/advisor/local-demo-transport.ts). Grounding sources
     // are known before the model streams, so the part is written up front.
+    // Wave E-2: also stream `data-retrieval` with the honest mode so the UI can
+    // banner keyword degrade (the JSON `/api/knowledge/query` already exposed
+    // mode; chat used to drop it in selectChatPassages).
     // Approval-response replays continue the previous assistant message
     // (originalMessages persistence mode) which already carries its provenance
     // part — re-emitting would duplicate the chips.
@@ -691,8 +713,11 @@ export function createAdvisorChatHandler(
       originalMessages: messages,
       execute: ({ writer }) => {
         writer.write({ type: "start" });
-        if (!isContinuationTurn && passages.length > 0) {
-          writer.write({ type: "data-provenance", data: { passages: [...passages] } });
+        if (!isContinuationTurn) {
+          writer.write({ type: "data-retrieval", data: { mode: retrieval.mode } });
+          if (passages.length > 0) {
+            writer.write({ type: "data-provenance", data: { passages: [...passages] } });
+          }
         }
         writer.merge(result.toUIMessageStream({ sendStart: false }));
       },

@@ -1,6 +1,9 @@
 {
   "common": {
     "skipToContent": "Skip to content",
+    "unavailable": {
+      "eyebrow": "Unavailable"
+    },
     "theme": {
       "groupLabel": "Theme",
       "system": "System theme",
@@ -110,6 +113,10 @@
     "emptyFiltered": "No reviews match these filters.",
     "emptyQueue": "No reviews in the queue.",
     "clearFilters": "Clear filters",
+    "unavailable": {
+      "title": "Workspace unavailable",
+      "message": "The accounting workspace could not be loaded. Check the runtime configuration and API availability."
+    },
     "editSheet": {
       "eyebrow": "Review edit",
       "title": "Edit before approval",
@@ -138,6 +145,7 @@
       "gross": "Gross",
       "vat": "VAT",
       "aiSuggestion": "AI suggestion",
+      "aiGeneratedMarker": "AI-generated",
       "ruleHits": "Rule hits and provenance",
       "cited": "Cited: {title}",
       "band": {
@@ -239,7 +247,8 @@
     "shared": {
       "draftSaved": "Shared content saved as a draft.",
       "promoted": "{count, plural, one {Shared file promoted to ledger evidence.} other {# shared files promoted to ledger evidence.}}",
-      "pendingBanner": "{count, plural, one {One shared file} other {# shared files}} could not be staged into evidence. Add {count, plural, one {it} other {them}} again from Quick add."
+      "pendingBanner": "{count, plural, one {One shared file} other {# shared files}} could not be staged into evidence. Add {count, plural, one {it} other {them}} again from Quick add.",
+      "authRequiredBanner": "{count, plural, one {# shared file} other {# shared files}} could not be staged — sign in on this device and add {count, plural, one {it} other {them}} again from Quick add. OS share cannot carry your session into the intake route."
     },
     "eyebrow": "Capture",
     "title": "Add evidence, see drafts, browse the archive.",
@@ -490,6 +499,10 @@
     }
   },
   "dashboard": {
+    "unavailable": {
+      "title": "Workspace unavailable",
+      "message": "The accounting workspace could not be loaded. Check the runtime configuration and API availability."
+    },
     "chrome": {
       "dragHandleAria": "Reorder {title}",
       "removeAria": "Hide {title}",
@@ -685,6 +698,9 @@
       "statement": "You are chatting with an AI system (EU AI Act, Article 50). Answers are AI-generated and grounded in your report pack; any action the advisor proposes executes only after your explicit approval through the ordinary review queue."
     },
     "aiGeneratedMarker": "AI-generated",
+    "retrieval": {
+      "keywordDegrade": "Knowledge retrieval fell back to keyword search for this conversation — answers may be less precise until vector search is available again."
+    },
     "emptyState": "Ask about your cash position, VAT, deadlines, or the review queue. Answers cite their sources, and proposals always wait for your approval.",
     "promptsLabel": "Suggested questions",
     "input": {

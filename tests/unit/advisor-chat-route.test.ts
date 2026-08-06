@@ -486,13 +486,17 @@ test("selectChatPassages floors vector passages but passes keyword results throu
     mode: "vector" as const,
     passages: [passage("strong#0", 0.62), passage("weak#0", ADVISOR_VECTOR_MIN_SIMILARITY - 0.01)],
   };
+  const vectorSelected = selectChatPassages(vector);
+  assert.equal(vectorSelected.mode, "vector");
   assert.deepEqual(
-    selectChatPassages(vector).map((item) => item.id),
+    vectorSelected.passages.map((item) => item.id),
     ["strong#0"],
   );
   const keyword = { query: "q", mode: "keyword" as const, passages: [passage("kw#0", 0.05)] };
+  const keywordSelected = selectChatPassages(keyword);
+  assert.equal(keywordSelected.mode, "keyword");
   assert.deepEqual(
-    selectChatPassages(keyword).map((item) => item.id),
+    keywordSelected.passages.map((item) => item.id),
     ["kw#0"],
   );
 });
@@ -534,4 +538,29 @@ test("a failing retriever falls back to keyword passages instead of erroring", a
     (provenance.data as { passages: KnowledgePassage[] }).passages.map((item) => item.id),
     expected.map((item) => item.id),
   );
+  const retrieval = chunks.find((chunk) => chunk.type === "data-retrieval");
+  assert.ok(retrieval, "keyword fallback must stream data-retrieval mode");
+  assert.deepEqual(retrieval.data, { mode: "keyword" });
+});
+
+test("normal mode streams data-retrieval mode from an injected vector retriever", async () => {
+  const vectorPassage: KnowledgePassage = {
+    id: "vec#2",
+    docId: "vec",
+    title: "Vektor",
+    excerpt: "Träff",
+    source: "Test",
+    score: 0.9,
+  };
+  const { handler } = createNormalHandler(new MemoryLedgerStore(), {
+    retrievePassages: async () => [vectorPassage],
+  });
+  const response = await handler(chatRequest([userMessage("Vad gäller för representation?")]));
+  const chunks = parseSseChunks(await response.text());
+  const retrieval = chunks.find((chunk) => chunk.type === "data-retrieval");
+  assert.ok(retrieval, "expected a data-retrieval part");
+  assert.deepEqual(retrieval.data, { mode: "vector" });
+  const retrievalIndex = chunks.findIndex((chunk) => chunk.type === "data-retrieval");
+  const provenanceIndex = chunks.findIndex((chunk) => chunk.type === "data-provenance");
+  assert.ok(retrievalIndex > 0 && retrievalIndex < provenanceIndex);
 });

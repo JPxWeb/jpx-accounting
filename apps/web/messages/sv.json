@@ -22,6 +22,9 @@
     "integrityChip": {
       "intact": "hashkedjan intakt · {template} · {count, plural, one {# händelse} other {# händelser}}",
       "broken": "hashkedjan kunde inte verifieras · {template} · {count, plural, one {# händelse} other {# händelser}}"
+    },
+    "unavailable": {
+      "eyebrow": "Otillgängligt"
     }
   },
   "shell": {
@@ -110,6 +113,10 @@
     "emptyFiltered": "Inga granskningar matchar de här filtren.",
     "emptyQueue": "Inga granskningar i kön.",
     "clearFilters": "Rensa filter",
+    "unavailable": {
+      "title": "Arbetsytan otillgänglig",
+      "message": "Bokföringsarbetsytan kunde inte laddas. Kontrollera körningskonfigurationen och API-tillgängligheten."
+    },
     "editSheet": {
       "eyebrow": "Redigera granskning",
       "title": "Redigera före godkännande",
@@ -138,6 +145,7 @@
       "gross": "Brutto",
       "vat": "Moms",
       "aiSuggestion": "AI-förslag",
+      "aiGeneratedMarker": "AI-genererat",
       "ruleHits": "Regelträffar och proveniens",
       "cited": "Citerad: {title}",
       "band": {
@@ -239,7 +247,8 @@
     "shared": {
       "draftSaved": "Delat innehåll sparat som utkast.",
       "promoted": "{count, plural, one {Delad fil lyft till bokföringsunderlag.} other {# delade filer lyfta till bokföringsunderlag.}}",
-      "pendingBanner": "{count, plural, one {En delad fil} other {# delade filer}} kunde inte läggas in som underlag. Lägg till {count, plural, one {den} other {dem}} igen från Snabbtillägg."
+      "pendingBanner": "{count, plural, one {En delad fil} other {# delade filer}} kunde inte läggas in som underlag. Lägg till {count, plural, one {den} other {dem}} igen från Snabbtillägg.",
+      "authRequiredBanner": "{count, plural, one {# delad fil} other {# delade filer}} kunde inte läggas in — logga in på den här enheten och lägg till {count, plural, one {den} other {dem}} igen från Snabbtillägg. Operativsystemets delning kan inte bära din session till intagsvägen."
     },
     "eyebrow": "Fånga",
     "title": "Lägg till underlag, se utkast, bläddra i arkivet.",
@@ -490,6 +499,10 @@
     }
   },
   "dashboard": {
+    "unavailable": {
+      "title": "Arbetsytan otillgänglig",
+      "message": "Bokföringsarbetsytan kunde inte laddas. Kontrollera körningskonfigurationen och API-tillgängligheten."
+    },
     "chrome": {
       "dragHandleAria": "Ändra ordning på {title}",
       "removeAria": "Dölj {title}",
@@ -685,6 +698,9 @@
       "statement": "Du chattar med ett AI-system (EU:s AI-förordning, artikel 50). Svaren är AI-genererade och grundade i ditt rapportpaket; åtgärder som rådgivaren föreslår utförs först efter ditt uttryckliga godkännande via den vanliga granskningskön."
     },
     "aiGeneratedMarker": "AI-genererat",
+    "retrieval": {
+      "keywordDegrade": "Kunskapssökningen föll tillbaka till nyckelordssökning i den här konversationen — svaren kan vara mindre precisa tills vektorsökningen fungerar igen."
+    },
     "emptyState": "Fråga om kassaläget, momsen, deadlines eller granskningskön. Svaren citerar sina källor och förslag väntar alltid på ditt godkännande.",
     "promptsLabel": "Föreslagna frågor",
     "input": {
