@@ -383,17 +383,21 @@ function assertSiblingScriptExists(scriptPath: string, humanName: string): void 
   }
 }
 
-async function runMigrationsAgainst(url: string, extraArgs: string[] = []): Promise<void> {
-  assertSiblingScriptExists(MIGRATIONS_SCRIPT, "The migration runner");
-  // Contract: tsx scripts/db-migrations.mts <command> [--database-url <url>] (see that file's header).
-  const code = await runInherit(process.execPath, [
+async function runMigrationSubcommand(subcommand: string, url: string, extraArgs: string[] = []): Promise<number> {
+  return runInherit(process.execPath, [
     TSX_CLI,
     MIGRATIONS_SCRIPT,
-    "migrate",
+    subcommand,
     "--database-url",
     url,
     ...extraArgs,
   ]);
+}
+
+async function runMigrationsAgainst(url: string, extraArgs: string[] = []): Promise<void> {
+  assertSiblingScriptExists(MIGRATIONS_SCRIPT, "The migration runner");
+  // Contract: tsx scripts/db-migrations.mts <command> [--database-url <url>] (see that file's header).
+  const code = await runMigrationSubcommand("migrate", url, extraArgs);
   if (code !== 0) {
     throw new Error(`Migrations failed against ${redactUrl(url)} (exit code ${code}).`);
   }
@@ -467,20 +471,9 @@ async function cmdTest(extraArgs: string[]): Promise<void> {
       console.log(
         `Integration suite failed — migration status/capabilities for "${testDatabase}" (before drop):`,
       );
-      await runInherit(process.execPath, [
-        TSX_CLI,
-        MIGRATIONS_SCRIPT,
-        "status",
-        "--database-url",
-        testUrl,
-      ]).catch(() => 1);
-      await runInherit(process.execPath, [
-        TSX_CLI,
-        MIGRATIONS_SCRIPT,
-        "verify",
-        "--database-url",
-        testUrl,
-      ]).catch(() => 1);
+      for (const subcommand of ["status", "verify"]) {
+        await runMigrationSubcommand(subcommand, testUrl).catch(() => 1);
+      }
     }
   } finally {
     console.log(`Dropping test database "${testDatabase}"...`);
