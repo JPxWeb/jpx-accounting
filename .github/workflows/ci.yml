@@ -168,6 +168,7 @@ jobs:
             pnpm db:doctor || true
           } > artifacts/db-diagnostics/doctor.txt 2>&1
 
+          # Inline hash mirrors resolveProjectName() in scripts/db.mts (P2-16 will dedupe).
           PROJECT="jpx-pgdev-$(node -e "const {createHash}=require('crypto');const p=require('path').resolve('.').replace(/\\\\/g,'/').toLowerCase();process.stdout.write(createHash('sha256').update(p).digest('hex').slice(0,12)+'-'+process.env.JPX_DB_INSTANCE)")"
           {
             echo "compose_project=$PROJECT"
@@ -177,12 +178,19 @@ jobs:
             docker compose -p "$PROJECT" -f compose.db.yml logs --no-color --tail 200 db || true
           } > artifacts/db-diagnostics/compose.txt 2>&1
 
-          # Migration filenames/checksums + sanitized capability report (never log URLs).
-          if URL=$(pnpm db:url 2>/dev/null); then
-            corepack pnpm exec tsx scripts/db-migrations.mts status --database-url "$URL" \
-              > artifacts/db-diagnostics/migrations-status.txt 2>&1 || true
-            corepack pnpm exec tsx scripts/db-migrations.mts verify --database-url "$URL" \
-              > artifacts/db-diagnostics/capabilities.txt 2>&1 || true
+          # NOTE: jpx_test_* is already dropped by db:test's finally. This block probes
+          # the tool-managed jpx_dev DB only. Real failure diagnostics are in the
+          # db:test step log (status/verify emitted before drop).
+          # pnpm 10.29.2 writes its run banner to stdout — always use --silent for capture.
+          if URL=$(corepack pnpm --silent db:url 2>/dev/null); then
+            {
+              echo "NOTE: inspects tool-managed jpx_dev, NOT the dropped jpx_test_* DB"
+              corepack pnpm exec tsx scripts/db-migrations.mts status --database-url "$URL" || true
+            } > artifacts/db-diagnostics/migrations-status.txt 2>&1
+            {
+              echo "NOTE: inspects tool-managed jpx_dev, NOT the dropped jpx_test_* DB"
+              corepack pnpm exec tsx scripts/db-migrations.mts verify --database-url "$URL" || true
+            } > artifacts/db-diagnostics/capabilities.txt 2>&1
             sed -i -E 's#postgres(ql)?://[^[:space:]]+#<redacted-url>#g' \
               artifacts/db-diagnostics/*.txt || true
           else

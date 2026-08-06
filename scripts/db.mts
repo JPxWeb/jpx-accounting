@@ -462,6 +462,26 @@ async function cmdTest(extraArgs: string[]): Promise<void> {
         JPX_REQUIRE_DATABASE_TESTS: "true",
       },
     });
+
+    if (exitCode !== 0) {
+      console.log(
+        `Integration suite failed — migration status/capabilities for "${testDatabase}" (before drop):`,
+      );
+      await runInherit(process.execPath, [
+        TSX_CLI,
+        MIGRATIONS_SCRIPT,
+        "status",
+        "--database-url",
+        testUrl,
+      ]).catch(() => 1);
+      await runInherit(process.execPath, [
+        TSX_CLI,
+        MIGRATIONS_SCRIPT,
+        "verify",
+        "--database-url",
+        testUrl,
+      ]).catch(() => 1);
+    }
   } finally {
     console.log(`Dropping test database "${testDatabase}"...`);
     const cleanupClient = createPostgresClient({ connectionString: adminUrl, max: 1 });
