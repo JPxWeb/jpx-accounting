@@ -100,8 +100,7 @@ export function guessAccountingMethod(input: EvidenceCreateInput): AccountingMet
   return text.includes("invoice") ? "invoice" : "cash";
 }
 
-export function initialLedgerLines(): LedgerLine[] {
-  const bookedAt = nowIso();
+export function initialLedgerLines(bookedAt: string = nowIso()): LedgerLine[] {
   const coa = defaultCoaTemplate;
   const itServices = findCoaAccount(coa, "6540")!;
   const inputVat = findCoaAccount(coa, coa.roles.inputVat)!;

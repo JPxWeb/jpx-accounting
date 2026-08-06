@@ -777,6 +777,24 @@ test(
 );
 
 test(
+  "PostgresLedgerStore.getReports() on a fresh namespace is an honest empty workspace (no demo seed)",
+  { skip },
+  async () => {
+    const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+    const client = requireCtx().client;
+    try {
+      const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+      const reports = await store.getReports();
+      assert.equal(reports.journal.length, 0, "fresh PG journal must not prepend demo seed lines");
+      assert.deepEqual(reports.balances, []);
+      assert.deepEqual(reports.vat, []);
+    } finally {
+      await requireCtx().cleanupOrganization(orgId);
+    }
+  },
+);
+
+test(
   "PostgresLedgerStore.getReports(range) windows + getReportPack parity with Memory (modulo generatedAt)",
   { skip },
   async () => {
@@ -786,8 +804,8 @@ test(
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const memory = new MemoryLedgerStore();
 
-      // The fixture is pinned to 2026-03-15 while seed lines are booked "now"
-      // — a permanent out-of-current-period voucher (Phase 4 finding 8).
+      // The fixture is pinned to 2026-03-15. Memory still carries demo seed
+      // lines booked "now" (out of March); Postgres has no seed prepend.
       const file = parseSie(
         [
           "#SIETYP 4",
@@ -813,7 +831,7 @@ test(
       );
       assert.equal((await store.getReports({ from: "2026-04-01", to: "2026-04-30" })).journal.length, 0);
       const unfiltered = await store.getReports();
-      assert.equal(unfiltered.journal.length, 5, "no-arg getReports stays unfiltered (3 seed + 2 imported)");
+      assert.equal(unfiltered.journal.length, 2, "no-arg getReports stays unfiltered (2 imported; no demo seed)");
 
       // Pack parity: the two stores must build the SAME pack for the same
       // period, modulo the generatedAt timestamp (CONVENTIONS Rules 6, 11).
@@ -1873,8 +1891,8 @@ test(
       `;
 
       const legacyJournal = (await legacyStore.getReports()).journal;
-      assert.equal(legacyJournal.length, 3 + 2, "seed lines + the legacy stream's posted lines");
-      const [legacyExpense, legacyBank] = legacyJournal.slice(-2);
+      assert.equal(legacyJournal.length, 2, "legacy stream's posted lines only (no demo seed)");
+      const [legacyExpense, legacyBank] = legacyJournal;
       assert.equal(legacyExpense?.accountNumber, "6110");
       assert.equal(legacyExpense?.debit, 100);
       assert.equal(legacyBank?.credit, 100);

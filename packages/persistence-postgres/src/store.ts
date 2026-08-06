@@ -45,7 +45,6 @@ import {
   evaluateVoucherRules,
   filterLedgerLines,
   guessAccountingMethod,
-  initialLedgerLines,
   isDuplicateEvidence,
   mergeExtractedFields,
   nowIso,
@@ -90,9 +89,10 @@ type EventInput = {
   payload: Record<string, unknown>;
 };
 
-// `buildExtractedFields`, `guessSupplier`, `guessAccountingMethod`,
-// `initialLedgerLines`, and `buildPostingLines` are now imported from
-// `@jpx-accounting/domain` so the memory and postgres stores stay in lockstep.
+// `buildExtractedFields`, `guessSupplier`, `guessAccountingMethod`, and
+// `buildPostingLines` are imported from `@jpx-accounting/domain` so posting
+// helpers stay in lockstep with MemoryLedgerStore. Demo seed lines
+// (`initialLedgerLines`) stay Memory-only — Postgres replays event payloads.
 
 // ---------------------------------------------------------------------------
 // Hash-chain fork guard (WS-B R15)
@@ -1301,15 +1301,14 @@ export class PostgresLedgerStore implements LedgerStore {
   }
 
   /**
-   * Rebuild the workspace's full ledger-line stream. Always prepends the
-   * seeded ledger lines so projection output matches the MemoryLedgerStore
-   * baseline. Anything posted via approved/booked-without-VAT reviews or
-   * imported from SIE is replayed from event payload `lines` (PostedToLedger
-   * + VoucherImported both carry them — Rule 13). Shared by `getReports` and
-   * `getReportPack` so the two read paths can never diverge.
+   * Rebuild the workspace's full ledger-line stream from event payloads only
+   * (PostedToLedger + VoucherImported — Rule 13). No demo seed prepend —
+   * `initialLedgerLines` is Memory/demo-only so normal-mode Postgres reads
+   * stay honest empties until real postings exist. Shared by `getReports`
+   * and `getReportPack` so the two read paths can never diverge.
    */
   private async collectLedgerLines(): Promise<LedgerLine[]> {
-    const lines: LedgerLine[] = [...initialLedgerLines()];
+    const lines: LedgerLine[] = [];
 
     const rows = await this.client<{ payload: Record<string, unknown> }[]>`
       SELECT payload
