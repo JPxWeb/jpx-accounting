@@ -73,6 +73,27 @@ function postgresError(code: string, message: string): Error {
   return Object.assign(new Error(message), { name: "PostgresError", code });
 }
 
+test("createApiRuntimeDependencies exposes closeDatabase in both modes", () => {
+  const corsPolicy = { kind: "wildcard" } as const;
+  const baseConfig = {
+    port: 0,
+    allowTestReset: false,
+    corsPolicy,
+    azureOpenAi: {},
+    database: { poolMode: "direct" as const, poolMax: 10 },
+    azureStorage: {},
+    azureDocumentIntelligence: {},
+    auth: { jwksUrl: undefined },
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret" },
+  };
+
+  const demo = createApiRuntimeDependencies({ ...baseConfig, runtimeMode: "demo" });
+  assert.equal(typeof demo.closeDatabase, "function");
+
+  const normal = createApiRuntimeDependencies({ ...baseConfig, runtimeMode: "normal" });
+  assert.equal(typeof normal.closeDatabase, "function");
+});
+
 test("demo runtime exposes the seeded workspace", async () => {
   const app = createTestApiApp("demo");
 

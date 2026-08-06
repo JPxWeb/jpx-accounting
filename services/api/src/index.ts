@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app";
 import { readApiRuntimeConfig } from "./config";
 import { createApiRuntimeDependencies } from "./runtime";
+import { registerGracefulShutdown } from "./shutdown";
 import { initTelemetry } from "./telemetry";
 
 // Telemetry first (WS-A5): no-op without APPLICATIONINSIGHTS_CONNECTION_STRING, and initTelemetry
@@ -19,7 +20,7 @@ const app = createApp({
   allowTestReset: config.allowTestReset,
 });
 
-serve(
+const server = serve(
   {
     fetch: app.fetch,
     port: config.port,
@@ -30,3 +31,6 @@ serve(
     console.log(`JPX Accounting API (${config.runtimeMode}) listening on http://${info.address}:${info.port}`);
   },
 );
+
+// P1-13: drain the shared Postgres pool on recycle instead of abandoning connections.
+registerGracefulShutdown({ server, closeDatabase: runtime.closeDatabase });
