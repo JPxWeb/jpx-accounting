@@ -31,15 +31,15 @@
 
 ## Re-verification deltas (2026-08-06, against `feat/repo-health-wave-b` @ `2af7b7f`)
 
-| Item | Consolidation plan claim | Live tree | Action |
-| ---- | ------------------------ | --------- | ------ |
-| **P0-2** seed prepend | PG `collectLedgerLines` prepends `initialLedgerLines()` @ ~1311 | **ALREADY FIXED** — PG `collectLedgerLines` @ `packages/persistence-postgres/src/store.ts:1310-1332` starts `const lines: LedgerLine[] = []`; doc comment says no demo seed; import of `initialLedgerLines` removed from PG store | **Verify only** — Task 1 |
-| **P0-2** seed helper | Optional `initialLedgerLines(bookedAt?)` | **ALREADY FIXED** — `packages/domain/src/evidence-defaults.ts:103` `export function initialLedgerLines(bookedAt: string = nowIso())` | Verify only |
-| **P0-2** pins | Update 5→2 @ :839, 3+2→2 @ :1937, add empty-reports | **ALREADY FIXED** — empty pin @ `postgres-ledger.test.ts:780-788`; unfiltered `journal.length === 2` @ `:834`; legacy `=== 2` @ `:1894` (line drift vs plan 839/1937) | Verify only |
-| **P1-2** planners | Extract `store-planning.ts` | **Still open** — no `store-planning.ts`; `AUTO_DETECTED_KINDS` still private @ `domain/store.ts:424`; create/decision/extraction bodies still duplicated (Memory `createEvidenceSync` `:687`, `applyReviewDecision` `:1113`, `updateEvidenceExtraction` `:890`; PG `createEvidence` `:601`, `applyReviewDecision` `:1470`, `updateEvidenceExtraction` `:1012`) | Implement Tasks 2–3 |
-| **P1-2** chain assert | Soft break + fields-only | **Still open** — `ledger-store-conformance.ts:363-387` still early-`break`s; no `chainLinear` flag; 7 scenarios, no reject/edit scenario | Implement Task 3 |
-| **P1-3** shared collector | `collectLedgerLinesFromEvents` | **Still open** — PG private loop @ `:1310-1332`; Memory still `ledgerLines.push` @ `:1016` / `:1192` and reads array in `getReports` `:1056` / `getReportPack` `:1065` | Implement Task 4 |
-| Line-number drift | Plan cites pre-Wave-A lines | Wave A shifted some PG/test lines; citations below use **current** locations | Cite live lines in tasks |
+| Item                      | Consolidation plan claim                                        | Live tree                                                                                                                                                                                                                                                                                                                                                      | Action                   |
+| ------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **P0-2** seed prepend     | PG `collectLedgerLines` prepends `initialLedgerLines()` @ ~1311 | **ALREADY FIXED** — PG `collectLedgerLines` @ `packages/persistence-postgres/src/store.ts:1310-1332` starts `const lines: LedgerLine[] = []`; doc comment says no demo seed; import of `initialLedgerLines` removed from PG store                                                                                                                              | **Verify only** — Task 1 |
+| **P0-2** seed helper      | Optional `initialLedgerLines(bookedAt?)`                        | **ALREADY FIXED** — `packages/domain/src/evidence-defaults.ts:103` `export function initialLedgerLines(bookedAt: string = nowIso())`                                                                                                                                                                                                                           | Verify only              |
+| **P0-2** pins             | Update 5→2 @ :839, 3+2→2 @ :1937, add empty-reports             | **ALREADY FIXED** — empty pin @ `postgres-ledger.test.ts:780-788`; unfiltered `journal.length === 2` @ `:834`; legacy `=== 2` @ `:1894` (line drift vs plan 839/1937)                                                                                                                                                                                          | Verify only              |
+| **P1-2** planners         | Extract `store-planning.ts`                                     | **Still open** — no `store-planning.ts`; `AUTO_DETECTED_KINDS` still private @ `domain/store.ts:424`; create/decision/extraction bodies still duplicated (Memory `createEvidenceSync` `:687`, `applyReviewDecision` `:1113`, `updateEvidenceExtraction` `:890`; PG `createEvidence` `:601`, `applyReviewDecision` `:1470`, `updateEvidenceExtraction` `:1012`) | Implement Tasks 2–3      |
+| **P1-2** chain assert     | Soft break + fields-only                                        | **Still open** — `ledger-store-conformance.ts:363-387` still early-`break`s; no `chainLinear` flag; 7 scenarios, no reject/edit scenario                                                                                                                                                                                                                       | Implement Task 3         |
+| **P1-3** shared collector | `collectLedgerLinesFromEvents`                                  | **Still open** — PG private loop @ `:1310-1332`; Memory still `ledgerLines.push` @ `:1016` / `:1192` and reads array in `getReports` `:1056` / `getReportPack` `:1065`                                                                                                                                                                                         | Implement Task 4         |
+| Line-number drift         | Plan cites pre-Wave-A lines                                     | Wave A shifted some PG/test lines; citations below use **current** locations                                                                                                                                                                                                                                                                                   | Cite live lines in tasks |
 
 **§6 conflict resolutions that bind Wave B (exact order):**
 
@@ -51,38 +51,40 @@
 
 ## File ownership (disjoint)
 
-| Task | Owner surfaces | May touch |
-| ---- | -------------- | --------- |
-| 1 | verify-only | read-only (+ progress ledger) |
-| 2 | domain planners + both stores | `packages/domain/src/store-planning.ts` (new), `packages/domain/src/store.ts`, `packages/domain/src/index.ts`, `packages/persistence-postgres/src/store.ts`, `tests/unit/store-planning.test.ts` (new) |
-| 3 | conformance helpers | `tests/integration/helpers/ledger-store-conformance.ts` (+ callers if outcome shape requires), optionally thin asserts in `tests/integration/*` that read new flags |
-| 4 | projection collection | `packages/domain/src/projections.ts`, `packages/domain/src/store.ts`, `packages/persistence-postgres/src/store.ts`, `tests/unit/ledger-store.test.ts` |
+| Task | Owner surfaces                | May touch                                                                                                                                                                                              |
+| ---- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1    | verify-only                   | read-only (+ progress ledger)                                                                                                                                                                          |
+| 2    | domain planners + both stores | `packages/domain/src/store-planning.ts` (new), `packages/domain/src/store.ts`, `packages/domain/src/index.ts`, `packages/persistence-postgres/src/store.ts`, `tests/unit/store-planning.test.ts` (new) |
+| 3    | conformance helpers           | `tests/integration/helpers/ledger-store-conformance.ts` (+ callers if outcome shape requires), optionally thin asserts in `tests/integration/*` that read new flags                                    |
+| 4    | projection collection         | `packages/domain/src/projections.ts`, `packages/domain/src/store.ts`, `packages/persistence-postgres/src/store.ts`, `tests/unit/ledger-store.test.ts`                                                  |
 
 **Never touch this wave:** `messages/*`, `apps/web/**` (except if a type import breaks — should not), dep pins, `scripts/db*.mts`, advisor/tool-approval, Art. 50 docs.
 
 ## Verification gates
 
-| Gate | When | Command (Windows PATH first) |
-| ---- | ---- | ---------------------------- |
-| Unit planners | Task 2 | `tsx --test tests/unit/store-planning.test.ts` |
-| Unit ledger | Tasks 2–4 | `tsx --test tests/unit/ledger-store.test.ts` |
-| Unit suite | After Tasks 2–4 | `pnpm test:unit` |
-| Typecheck | After Tasks 2–4 | `pnpm typecheck` ; `pnpm typecheck:tests` |
-| Integration | After Tasks 2–4 (required Wave B gate) | `pnpm db:test` |
-| Full merge gate | Wave B complete | `pnpm check` then note format:check CRLF baseline caveat from Wave A |
-| E2E | Only if opening a PR that needs the label | `pnpm build:e2e` then Playwright; apply `run-e2e` on the PR — **default: no push/PR** unless human asks |
+| Gate            | When                                      | Command (Windows PATH first)                                                                            |
+| --------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Unit planners   | Task 2                                    | `tsx --test tests/unit/store-planning.test.ts`                                                          |
+| Unit ledger     | Tasks 2–4                                 | `tsx --test tests/unit/ledger-store.test.ts`                                                            |
+| Unit suite      | After Tasks 2–4                           | `pnpm test:unit`                                                                                        |
+| Typecheck       | After Tasks 2–4                           | `pnpm typecheck` ; `pnpm typecheck:tests`                                                               |
+| Integration     | After Tasks 2–4 (required Wave B gate)    | `pnpm db:test`                                                                                          |
+| Full merge gate | Wave B complete                           | `pnpm check` then note format:check CRLF baseline caveat from Wave A                                    |
+| E2E             | Only if opening a PR that needs the label | `pnpm build:e2e` then Playwright; apply `run-e2e` on the PR — **default: no push/PR** unless human asks |
 
 ---
 
 ### Task 1: P0-2 verify-only (ALREADY FIXED)
 
 **Files:**
+
 - Read: `packages/persistence-postgres/src/store.ts:1303-1332`
 - Read: `packages/domain/src/evidence-defaults.ts:103`
 - Read: `tests/integration/postgres-ledger.test.ts:780-834`, `:1894`
 - Modify: none (code). Update `.superpowers/sdd/progress.md` only after verify.
 
 **Interfaces:**
+
 - Consumes: Wave A commits that removed PG seed prepend
 - Produces: confirmation that Tasks 2–4 may proceed without redoing P0-2
 
@@ -116,6 +118,7 @@ Expected: pass (including empty-reports pin). If Docker unavailable, document BL
 ### Task 2: P1-2 Extract shared store planners + wire both stores
 
 **Files:**
+
 - Create: `packages/domain/src/store-planning.ts`
 - Create: `tests/unit/store-planning.test.ts`
 - Modify: `packages/domain/src/index.ts` (add `export * from "./store-planning";`)
@@ -125,6 +128,7 @@ Expected: pass (including empty-reports pin). If Docker unavailable, document BL
 - **Do not** edit `postgres-ledger.test.ts` pins in this task
 
 **Interfaces:**
+
 - Consumes: existing `resolveReviewDecisionEdit`, `buildPostingLines`, `buildExtractedFields`, `deriveVoucherFields`, `guessAccountingMethod`, `evaluateVoucherRules`, `buildDeterministicSuggestion`, `detectComplianceIssues`, `DEMO_ACTOR_ID`, `ActorAttribution`, `createId`, `nowIso`, `DEFAULT_TENANT_SCOPE` / local defaults
 - Produces (exact):
 
@@ -178,10 +182,7 @@ export type ExtractionRefreshPlan =
 
 export function planExtractionRefresh(/* mirror shared Memory/PG body steps 1–8 */): ExtractionRefreshPlan;
 
-export const AUTO_DETECTED_ALERT_KINDS: ReadonlySet<string> = new Set([
-  "stale-blocked",
-  "missing-supplier-vat",
-]);
+export const AUTO_DETECTED_ALERT_KINDS: ReadonlySet<string> = new Set(["stale-blocked", "missing-supplier-vat"]);
 
 export type ComplianceMergePlan = { upserts: ComplianceAlert[]; resolveIds: string[] };
 
@@ -247,8 +248,8 @@ describe("planEvidenceCreate", () => {
 
 describe("planReviewDecision", () => {
   it("returns replay when review is already decided", () => {
-    const review = { id: "r1", status: "approved", voucherId: "v1", /* …minimal */ } as ReviewTask;
-    const voucher = { id: "v1", status: "approved", /* …minimal */ } as Voucher;
+    const review = { id: "r1", status: "approved", voucherId: "v1" /* …minimal */ } as ReviewTask;
+    const voucher = { id: "v1", status: "approved" /* …minimal */ } as Voucher;
     const plan = planReviewDecision(review, voucher, "approve", { actorId: "user:x" });
     assert.equal(plan.kind, "replay");
   });
@@ -288,6 +289,7 @@ Expected: FAIL — module/export missing.
 Move the shared orchestration bodies from Memory (`createEvidenceSync` ~687–814, `applyReviewDecision` decision core ~1119–1206, `updateEvidenceExtraction` steps 1–8 ~890–997) into pure planners. Use `ctx.organizationId` / `ctx.workspaceId` (pass `DEFAULT_TENANT_SCOPE` fields from Memory; PG passes `this.defaults.*`).
 
 `planReviewDecision` must:
+
 1. If `review.status !== "needs-review"` → `{ kind: "replay", review: { ...review } }`
 2. Else apply edit via `resolveReviewDecisionEdit` when `edited` present (non-reject)
 3. Build status/timeline/eventType maps identical to current Memory
@@ -363,11 +365,13 @@ EOF
 ### Task 3: P1-2 Harden conformance chainLinear + reject/edit scenarios
 
 **Files:**
+
 - Modify: `tests/integration/helpers/ledger-store-conformance.ts`
 - Modify: any integration runner that asserts scenario outcome keys (grep `chainFieldsPresent` / `CONFORMANCE_SCENARIOS`)
 - Test via: `pnpm db:test`
 
 **Interfaces:**
+
 - Consumes: planners from Task 2 (behavior-preserving)
 - Produces: `chainLinear` + `chainFieldsPresent` on append-only scenario; two new scenarios in `CONFORMANCE_SCENARIOS`
 
@@ -396,7 +400,13 @@ Keep the existing `relevant`/`vocabulary` computation for the has\* flags (those
 
 ```typescript
 export async function scenarioReviewReject(h: ConformanceHarness): Promise<ConformanceOutcome> {
-  const created = await h.store.createEvidence({ /* minimal valid */ title: "...", modalities: ["image"], originalFilename: "r.jpg", mimeType: "image/jpeg", actorId: h.actorId });
+  const created = await h.store.createEvidence({
+    /* minimal valid */ title: "...",
+    modalities: ["image"],
+    originalFilename: "r.jpg",
+    mimeType: "image/jpeg",
+    actorId: h.actorId,
+  });
   const before = (await h.store.getReports()).journal.length;
   await h.store.applyReviewDecision(created.review.id, "reject", { actorId: h.actorId });
   const after = (await h.store.getReports()).journal.length;
@@ -405,9 +415,7 @@ export async function scenarioReviewReject(h: ConformanceHarness): Promise<Confo
     journalDelta: after - before, // expect 0
     hasReviewRejected: events.some((e) => e.eventType === "ReviewRejected"),
     hasPostedToLedger: events.some(
-      (e) =>
-        e.eventType === "PostedToLedger" &&
-        (e.payload as { voucherId?: string }).voucherId === created.voucher.id,
+      (e) => e.eventType === "PostedToLedger" && (e.payload as { voucherId?: string }).voucherId === created.voucher.id,
     ), // expect false — payload may key differently; assert no new PostedToLedger after reject by journalDelta + event scan for this review's decision path
   };
 }
@@ -441,6 +449,7 @@ test(integration): harden ledger chainLinear and add reject/edit conformance
 ### Task 4: P1-3 Unify projection collection on event replay
 
 **Files:**
+
 - Modify: `packages/domain/src/projections.ts` — add `collectLedgerLinesFromEvents`
 - Modify: `packages/domain/src/store.ts` — Memory option **(a)**: frozen `seedLines` + replay; delete push sites
 - Modify: `packages/persistence-postgres/src/store.ts` — `collectLedgerLines` delegates to shared helper (keep filtered SQL)
@@ -448,13 +457,12 @@ test(integration): harden ledger chainLinear and add reject/edit conformance
 - Test: `tsx --test tests/unit/ledger-store.test.ts` ; `pnpm db:test`
 
 **Interfaces:**
+
 - Consumes: Task 1 (no PG seed); Task 2 (`PostedToLedger.payload.lines` still present)
 - Produces:
 
 ```typescript
-export function collectLedgerLinesFromEvents(
-  events: Array<Pick<LedgerEvent, "eventType" | "payload">>,
-): LedgerLine[];
+export function collectLedgerLinesFromEvents(events: Array<Pick<LedgerEvent, "eventType" | "payload">>): LedgerLine[];
 ```
 
 - [ ] **Step 1: Write failing unit test for replay equivalence**
@@ -465,7 +473,9 @@ In `tests/unit/ledger-store.test.ts`, add:
 it("getReports journal equals seed lines plus event-payload replay", async () => {
   const store = new MemoryLedgerStore();
   const seedCount = (await store.getReports()).journal.length; // demo seed
-  const created = await store.createEvidence({ /* … */ });
+  const created = await store.createEvidence({
+    /* … */
+  });
   await store.applyReviewDecision(created.review.id, "approve", { actorId: "user:test" });
   // Optional: importSie small fixture if existing tests already have one handy
   const reports = await store.getReports();
@@ -485,9 +495,7 @@ import type { LedgerEvent } from "@jpx-accounting/contracts";
 
 const LINE_CARRYING_EVENT_TYPES = new Set(["PostedToLedger", "VoucherImported"]);
 
-export function collectLedgerLinesFromEvents(
-  events: Array<Pick<LedgerEvent, "eventType" | "payload">>,
-): LedgerLine[] {
+export function collectLedgerLinesFromEvents(events: Array<Pick<LedgerEvent, "eventType" | "payload">>): LedgerLine[] {
   const lines: LedgerLine[] = [];
   for (const event of events) {
     if (!LINE_CARRYING_EVENT_TYPES.has(event.eventType)) continue;

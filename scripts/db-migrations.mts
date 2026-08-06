@@ -152,10 +152,7 @@ type ResolvedConnection = { url: string; source: string };
  * needing to migrate through a pooled provider must point DATABASE_MIGRATION_URL at a
  * direct or session-mode endpoint instead.
  */
-export function resolveDatabaseUrl(
-  cliUrl: string | undefined,
-  env: NodeJS.ProcessEnv,
-): ResolvedConnection {
+export function resolveDatabaseUrl(cliUrl: string | undefined, env: NodeJS.ProcessEnv): ResolvedConnection {
   const poolMode = env.DATABASE_POOL_MODE?.trim();
   if (poolMode === "transaction") {
     throw new MigrationConfigError(
@@ -211,10 +208,7 @@ export const MIGRATION_ADVISORY_LOCK_KEY = 624442838906982426n;
  * connections. `postgres-js`'s `reserve()` is exactly the documented mechanism for this
  * (advisory locks / LISTEN).
  */
-async function withAdvisoryLock<T>(
-  client: PostgresClient,
-  fn: (reserved: ReservedSql) => Promise<T>,
-): Promise<T> {
+async function withAdvisoryLock<T>(client: PostgresClient, fn: (reserved: ReservedSql) => Promise<T>): Promise<T> {
   const reserved = await client.reserve();
   // Passed as a string + explicit ::bigint cast, not a raw JS bigint: postgres-js 3.4.5's
   // published types omit bigint from its serializable-parameter union (even though the
@@ -272,11 +266,7 @@ async function ensureMigrationHistoryTable(sql: ReservedSql): Promise<void> {
   `);
 }
 
-async function tableExists(
-  sql: PostgresClient | ReservedSql,
-  schema: string,
-  table: string,
-): Promise<boolean> {
+async function tableExists(sql: PostgresClient | ReservedSql, schema: string, table: string): Promise<boolean> {
   const rows = await sql<{ exists: boolean }[]>`
     select to_regclass(${`${schema}.${table}`}) is not null as exists
   `;
@@ -407,11 +397,7 @@ async function constraintExists(
   return rows.length > 0;
 }
 
-async function primaryKeyColumns(
-  sql: PostgresClient | ReservedSql,
-  schema: string,
-  table: string,
-): Promise<string[]> {
+async function primaryKeyColumns(sql: PostgresClient | ReservedSql, schema: string, table: string): Promise<string[]> {
   const rows = await sql<{ attname: string }[]>`
     select a.attname
     from pg_constraint c
@@ -456,9 +442,7 @@ export async function runCapabilityAssertions(sql: PostgresClient | ReservedSql)
       return {
         name: "writable-primary",
         pass: !inRecovery,
-        detail: inRecovery
-          ? "pg_is_in_recovery() = true (read replica / standby)."
-          : "Server is a writable primary.",
+        detail: inRecovery ? "pg_is_in_recovery() = true (read replica / standby)." : "Server is a writable primary.",
         ...(inRecovery
           ? { remediation: "Point the migration URL at the primary/writer endpoint, not a read replica." }
           : {}),
@@ -478,7 +462,9 @@ export async function runCapabilityAssertions(sql: PostgresClient | ReservedSql)
         name: "server-version",
         pass,
         detail: `PostgreSQL major version ${major} (server_version_num=${versionNum}).`,
-        ...(pass ? {} : { remediation: "Use PostgreSQL 15, 16, or 17 (pgvector/pgvector:0.8.5-pg17-bookworm locally)." }),
+        ...(pass
+          ? {}
+          : { remediation: "Use PostgreSQL 15, 16, or 17 (pgvector/pgvector:0.8.5-pg17-bookworm locally)." }),
       };
     }),
   );
@@ -494,7 +480,8 @@ export async function runCapabilityAssertions(sql: PostgresClient | ReservedSql)
           name: "vector-extension",
           pass: false,
           detail: "The 'vector' extension is not installed.",
-          remediation: "Run `create extension vector;` (pgvector >= 0.7 for halfvec) — see migration 0003_pgvector.sql.",
+          remediation:
+            "Run `create extension vector;` (pgvector >= 0.7 for halfvec) — see migration 0003_pgvector.sql.",
         };
       }
       let halfvecOk = false;
@@ -546,7 +533,9 @@ export async function runCapabilityAssertions(sql: PostgresClient | ReservedSql)
         detail: info
           ? `ledger.events.created_at column_default = ${info.column_default ?? "null"}.`
           : "ledger.events.created_at column not found.",
-        ...(pass ? {} : { remediation: "Apply migration 0005_events_id_text.sql (sets created_at default to clock_timestamp())." }),
+        ...(pass
+          ? {}
+          : { remediation: "Apply migration 0005_events_id_text.sql (sets created_at default to clock_timestamp())." }),
       };
     }),
   );
@@ -745,18 +734,14 @@ async function cmdReplay(url: string): Promise<void> {
         beforeRow.sha256 !== afterRow.sha256 ||
         beforeRow.appliedAt !== afterRow.appliedAt
       ) {
-        throw new Error(
-          `Replay is not a no-op: migration history row for "${beforeRow?.filename ?? "?"}" changed.`,
-        );
+        throw new Error(`Replay is not a no-op: migration history row for "${beforeRow?.filename ?? "?"}" changed.`);
       }
     }
 
     const assertions = await runCapabilityAssertions(client);
     const failed = assertions.filter((result) => !result.pass);
     if (failed.length > 0) {
-      throw new CapabilityAssertionError(
-        `Replay capability assertions failed:\n${formatAssertions(failed)}`,
-      );
+      throw new CapabilityAssertionError(`Replay capability assertions failed:\n${formatAssertions(failed)}`);
     }
 
     console.log(

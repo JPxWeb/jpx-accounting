@@ -31,20 +31,20 @@
 
 ## Re-verification deltas (2026-08-06, against Wave B HEAD `5b5789e`)
 
-| Item | Consolidation plan claim | Live tree @ `5b5789e` | Action |
-| ---- | ------------------------ | --------------------- | ------ |
-| **P0-5** pins | next 16.2.0 / hono 4.12.8 / node-server 1.19.11 → exact 16.2.12 / 4.12.34 / 1.19.17 | **Still open** — root + web `next`/`eslint-config-next` `16.2.0`; api `hono` `4.12.8`, `@hono/node-server` `1.19.11` | Implement Task 1 |
-| **P1-19** diagnostics | `cmdTest` emits status/verify before drop; CI `--silent` capture | **Still open** — `ci.yml:181` `URL=$(pnpm db:url 2>/dev/null)` (banner pollution); `db.mts:531` unconditional `main()`; `cmdTest` drops DB with no pre-drop status/verify | Implement Task 2 |
-| **P1-10** CI split | two steps in one job: `--grep-invert "visual:"` then visual spec | **Still open** — `ci.yml:257` single `npx playwright test` | Implement Task 3 |
-| **P1-10** Playwright pin | exact `1.58.2` (drop caret) | **Still open** — root `package.json` `"@playwright/test": "^1.58.2"` | Implement Task 3 |
-| **P1-10** mobile flakes | onboarding force-clicks + home/books/reports/assistant raw clicks via `activateControl`; NOT dark-mode | **Still open** — onboarding `:29/54/80` use `click({ force: isMobile })`; home `:30/32`, books-drilldown `:13/19/28/37`, reports `:146`, assistant `:119` still raw `.click()`; dark-mode still correctly skips mobile | Implement Task 3 |
-| **P1-10 / C3** masks | tax-timeline widget, observations title, reports periodLabel, period-selector | **Still open** — only `tax-timeline-row.tsx:79` due-date masked; widget periodLabel/dueDate, observations title, period-selector trigger unmasked | Implement Task 4 |
-| **P1-12** `.npmrc` / Renovate | `save-exact=true` + `renovate.json` | **Still open** — both missing at repo root | Implement Task 5 |
-| **P1-12** recharts / react-is | recharts `3.10.1` exact + react-is `19.2.8` | **Still open** — web `recharts` `^3.9.2`; lockfile still `react-is@16.13.1` via recharts peer | Implement Task 5 |
-| **P1-12** deny-flow test | mandatory BEFORE AI bump | **Still open** — no `approved: false` / `tool-output-denied` pin in `advisor-normal-mode.test.ts` | Implement Task 6 |
-| **P1-12** AI SDK bump | `ai` 7.0.15→7.0.55 + `@ai-sdk/react` 4.0.16→4.0.58; **keep** workaround | **Still open** — pins at 7.0.15 / 4.0.16; `tool-approval.ts` present (must remain) | Implement Task 7 |
-| **P1-12** Joyride lazy | original plan wording; unverified | Eager `import { Joyride, … } from "react-joyride"` in `onboarding-shell.tsx:7` | **Defer to residual** — not required for Wave C security/CI gate; shell-eager load is polish, not a pin CVE |
-| Wave B residual minors | store↔planning circular import; vocabulary `PostedToLedger` filter; `planComplianceMerge` PG-only; blocked-create pin; unit journal-tail pin | Still present in domain/tests | **Out of Wave C** — note for Wave F / later; none are P0-5/P1-10/12/19 |
+| Item                          | Consolidation plan claim                                                                                                                     | Live tree @ `5b5789e`                                                                                                                                                                                                  | Action                                                                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **P0-5** pins                 | next 16.2.0 / hono 4.12.8 / node-server 1.19.11 → exact 16.2.12 / 4.12.34 / 1.19.17                                                          | **Still open** — root + web `next`/`eslint-config-next` `16.2.0`; api `hono` `4.12.8`, `@hono/node-server` `1.19.11`                                                                                                   | Implement Task 1                                                                                            |
+| **P1-19** diagnostics         | `cmdTest` emits status/verify before drop; CI `--silent` capture                                                                             | **Still open** — `ci.yml:181` `URL=$(pnpm db:url 2>/dev/null)` (banner pollution); `db.mts:531` unconditional `main()`; `cmdTest` drops DB with no pre-drop status/verify                                              | Implement Task 2                                                                                            |
+| **P1-10** CI split            | two steps in one job: `--grep-invert "visual:"` then visual spec                                                                             | **Still open** — `ci.yml:257` single `npx playwright test`                                                                                                                                                             | Implement Task 3                                                                                            |
+| **P1-10** Playwright pin      | exact `1.58.2` (drop caret)                                                                                                                  | **Still open** — root `package.json` `"@playwright/test": "^1.58.2"`                                                                                                                                                   | Implement Task 3                                                                                            |
+| **P1-10** mobile flakes       | onboarding force-clicks + home/books/reports/assistant raw clicks via `activateControl`; NOT dark-mode                                       | **Still open** — onboarding `:29/54/80` use `click({ force: isMobile })`; home `:30/32`, books-drilldown `:13/19/28/37`, reports `:146`, assistant `:119` still raw `.click()`; dark-mode still correctly skips mobile | Implement Task 3                                                                                            |
+| **P1-10 / C3** masks          | tax-timeline widget, observations title, reports periodLabel, period-selector                                                                | **Still open** — only `tax-timeline-row.tsx:79` due-date masked; widget periodLabel/dueDate, observations title, period-selector trigger unmasked                                                                      | Implement Task 4                                                                                            |
+| **P1-12** `.npmrc` / Renovate | `save-exact=true` + `renovate.json`                                                                                                          | **Still open** — both missing at repo root                                                                                                                                                                             | Implement Task 5                                                                                            |
+| **P1-12** recharts / react-is | recharts `3.10.1` exact + react-is `19.2.8`                                                                                                  | **Still open** — web `recharts` `^3.9.2`; lockfile still `react-is@16.13.1` via recharts peer                                                                                                                          | Implement Task 5                                                                                            |
+| **P1-12** deny-flow test      | mandatory BEFORE AI bump                                                                                                                     | **Still open** — no `approved: false` / `tool-output-denied` pin in `advisor-normal-mode.test.ts`                                                                                                                      | Implement Task 6                                                                                            |
+| **P1-12** AI SDK bump         | `ai` 7.0.15→7.0.55 + `@ai-sdk/react` 4.0.16→4.0.58; **keep** workaround                                                                      | **Still open** — pins at 7.0.15 / 4.0.16; `tool-approval.ts` present (must remain)                                                                                                                                     | Implement Task 7                                                                                            |
+| **P1-12** Joyride lazy        | original plan wording; unverified                                                                                                            | Eager `import { Joyride, … } from "react-joyride"` in `onboarding-shell.tsx:7`                                                                                                                                         | **Defer to residual** — not required for Wave C security/CI gate; shell-eager load is polish, not a pin CVE |
+| Wave B residual minors        | store↔planning circular import; vocabulary `PostedToLedger` filter; `planComplianceMerge` PG-only; blocked-create pin; unit journal-tail pin | Still present in domain/tests                                                                                                                                                                                          | **Out of Wave C** — note for Wave F / later; none are P0-5/P1-10/12/19                                      |
 
 **No "ALREADY FIXED — verify only" items in Wave C.** All four backlog items remain open.
 
@@ -62,39 +62,40 @@
 
 ## File ownership (disjoint per task)
 
-| Task | Owner surfaces | May touch |
-| ---- | -------------- | --------- |
-| 0 | plan doc | `docs/superpowers/plans/2026-08-06-repo-health-wave-c-execution-plan.md`, `.superpowers/sdd/progress.md` |
-| 1 P0-5 | deps security | root `package.json`, `apps/web/package.json`, `services/api/package.json`, `pnpm-lock.yaml` |
-| 2 P1-19 | CI + db.mts diagnostics | `scripts/db.mts` (`cmdTest` only + optional comment), `.github/workflows/ci.yml` (diagnostics step only) |
-| 3 P1-10 e2e/ci | Playwright pin + CI split + activateControl | root `package.json` + lockfile (`@playwright/test` only), `.github/workflows/ci.yml` (e2e job steps), `tests/e2e/onboarding.spec.ts`, `home.spec.ts`, `books-drilldown.spec.ts`, `reports.spec.ts`, `assistant.spec.ts` |
-| 4 P1-10 masks | web visual masks | `apps/web/components/dashboard/widgets/tax-timeline-widget.tsx`, `observations-widget.tsx`, `apps/web/components/reports/tax-timeline-row.tsx`, `apps/web/components/period/period-selector.tsx`, visual baselines under `tests/e2e/**` only after human-grade diff review |
-| 5 P1-12 hygiene | save-exact + Renovate + recharts | root `.npmrc` (new), root `renovate.json` (new), `apps/web/package.json` (recharts + react-is), `pnpm-lock.yaml` |
-| 6 P1-12 deny test | advisor integration | `tests/integration/advisor-normal-mode.test.ts` only |
-| 7 P1-12 AI bump | AI SDK pins + keep workaround | `services/api/package.json`, `apps/web/package.json` (`ai`, `@ai-sdk/*`), `pnpm-lock.yaml`; may add a short comment in `tool-approval.ts` / `advisor-chat.tsx` linking #13670 — **must not delete** those files |
-| 8 verify+simplify | orchestrator | gates + polish commits |
+| Task              | Owner surfaces                              | May touch                                                                                                                                                                                                                                                                  |
+| ----------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0                 | plan doc                                    | `docs/superpowers/plans/2026-08-06-repo-health-wave-c-execution-plan.md`, `.superpowers/sdd/progress.md`                                                                                                                                                                   |
+| 1 P0-5            | deps security                               | root `package.json`, `apps/web/package.json`, `services/api/package.json`, `pnpm-lock.yaml`                                                                                                                                                                                |
+| 2 P1-19           | CI + db.mts diagnostics                     | `scripts/db.mts` (`cmdTest` only + optional comment), `.github/workflows/ci.yml` (diagnostics step only)                                                                                                                                                                   |
+| 3 P1-10 e2e/ci    | Playwright pin + CI split + activateControl | root `package.json` + lockfile (`@playwright/test` only), `.github/workflows/ci.yml` (e2e job steps), `tests/e2e/onboarding.spec.ts`, `home.spec.ts`, `books-drilldown.spec.ts`, `reports.spec.ts`, `assistant.spec.ts`                                                    |
+| 4 P1-10 masks     | web visual masks                            | `apps/web/components/dashboard/widgets/tax-timeline-widget.tsx`, `observations-widget.tsx`, `apps/web/components/reports/tax-timeline-row.tsx`, `apps/web/components/period/period-selector.tsx`, visual baselines under `tests/e2e/**` only after human-grade diff review |
+| 5 P1-12 hygiene   | save-exact + Renovate + recharts            | root `.npmrc` (new), root `renovate.json` (new), `apps/web/package.json` (recharts + react-is), `pnpm-lock.yaml`                                                                                                                                                           |
+| 6 P1-12 deny test | advisor integration                         | `tests/integration/advisor-normal-mode.test.ts` only                                                                                                                                                                                                                       |
+| 7 P1-12 AI bump   | AI SDK pins + keep workaround               | `services/api/package.json`, `apps/web/package.json` (`ai`, `@ai-sdk/*`), `pnpm-lock.yaml`; may add a short comment in `tool-approval.ts` / `advisor-chat.tsx` linking #13670 — **must not delete** those files                                                            |
+| 8 verify+simplify | orchestrator                                | gates + polish commits                                                                                                                                                                                                                                                     |
 
 **Never touch this wave:** `messages/*`, ledger store planners, Art. 50 docs, deploy Bicep/RBAC, `tool-approval.ts` deletion, P1-4 Unavailable\*, Joyride lazy-load (deferred residual).
 
 ## Verification gates
 
-| Gate | When | Command (Windows PATH first) |
-| ---- | ---- | ---------------------------- |
-| Why pins | After Task 1 | `pnpm why next` → single 16.2.12; `pnpm why hono` → single 4.12.34 |
-| Unit suite | After Tasks 1, 5, 7 | `pnpm test:unit` |
-| Typecheck | After Tasks 1, 5, 7 | `pnpm typecheck` ; `pnpm typecheck:tests` |
-| Integration (advisor deny) | After Task 6–7 | `tsx --test tests/integration/advisor-normal-mode.test.ts` (needs `jpx_test_*` when normal-mode cases require DB — demo portions may run without) |
-| `pnpm db:test` | After Task 2 (diagnostics path) and before Wave C done | `pnpm db:test` |
-| Full merge gate | Wave C complete | `pnpm check` (note Wave A CRLF format:check residual if still present) |
-| E2E functional (local) | After Task 3 | `pnpm build:e2e` then `npx playwright test --grep-invert "visual:"` |
-| Visual | After Task 4 | review diffs then `pnpm test:e2e:visual:update` only for intentional mask churn; linux via Docker per `scripts/visual-baselines.md` — if Docker unavailable, land masks + win32 and record linux re-baseline as residual before any `run-e2e` PR |
-| PR E2E | When PR'd | `gh pr edit <N> --add-label run-e2e` — **mandatory** for P0-5 + AI bump |
+| Gate                       | When                                                   | Command (Windows PATH first)                                                                                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Why pins                   | After Task 1                                           | `pnpm why next` → single 16.2.12; `pnpm why hono` → single 4.12.34                                                                                                                                                                               |
+| Unit suite                 | After Tasks 1, 5, 7                                    | `pnpm test:unit`                                                                                                                                                                                                                                 |
+| Typecheck                  | After Tasks 1, 5, 7                                    | `pnpm typecheck` ; `pnpm typecheck:tests`                                                                                                                                                                                                        |
+| Integration (advisor deny) | After Task 6–7                                         | `tsx --test tests/integration/advisor-normal-mode.test.ts` (needs `jpx_test_*` when normal-mode cases require DB — demo portions may run without)                                                                                                |
+| `pnpm db:test`             | After Task 2 (diagnostics path) and before Wave C done | `pnpm db:test`                                                                                                                                                                                                                                   |
+| Full merge gate            | Wave C complete                                        | `pnpm check` (note Wave A CRLF format:check residual if still present)                                                                                                                                                                           |
+| E2E functional (local)     | After Task 3                                           | `pnpm build:e2e` then `npx playwright test --grep-invert "visual:"`                                                                                                                                                                              |
+| Visual                     | After Task 4                                           | review diffs then `pnpm test:e2e:visual:update` only for intentional mask churn; linux via Docker per `scripts/visual-baselines.md` — if Docker unavailable, land masks + win32 and record linux re-baseline as residual before any `run-e2e` PR |
+| PR E2E                     | When PR'd                                              | `gh pr edit <N> --add-label run-e2e` — **mandatory** for P0-5 + AI bump                                                                                                                                                                          |
 
 ---
 
 ### Task 0: Plan doc (this file)
 
 **Files:**
+
 - Create: `docs/superpowers/plans/2026-08-06-repo-health-wave-c-execution-plan.md`
 - Modify: `.superpowers/sdd/progress.md` (reset ledger for Wave C)
 
@@ -110,12 +111,14 @@ git commit -m "docs(plans): add Wave C security-pins + CI execution plan"
 ### Task 1: P0-5 Exact Next + Hono security pins
 
 **Files:**
+
 - Modify: root `package.json` (`devDependencies.next`, `devDependencies.eslint-config-next` → `16.2.12`)
 - Modify: `apps/web/package.json` (`dependencies.next` → `16.2.12`)
 - Modify: `services/api/package.json` (`dependencies.hono` → `4.12.34`, `dependencies.@hono/node-server` → `1.19.17`)
 - Modify: `pnpm-lock.yaml` (via `pnpm install`)
 
 **Interfaces:**
+
 - Consumes: none
 - Produces: single-resolution pins at exact versions above; unlocks Task 5/7 deps work without mixing security revert surface
 
@@ -161,10 +164,12 @@ git commit -m "fix(deps): pin next 16.2.12 and hono 4.12.34 for advisories"
 ### Task 2: P1-19 CI diagnostics against live `jpx_test_*`
 
 **Files:**
+
 - Modify: `scripts/db.mts` — inside `cmdTest` only (emit status/verify on suite failure before `finally` drop)
 - Modify: `.github/workflows/ci.yml` — "Collect lifecycle diagnostics" step only (silent capture + note; do not rewrite the e2e job yet)
 
 **Interfaces:**
+
 - Consumes: existing `runInherit` / `TSX_CLI` / `MIGRATIONS_SCRIPT` in `db.mts`
 - Produces: failing `pnpm db:test` logs show migration status/verify for the throwaway DB before drop; CI artifact no longer polluted by pnpm banner
 
@@ -174,23 +179,9 @@ In `scripts/db.mts` `cmdTest`, after `runInherit(... test:integration ...)` retu
 
 ```ts
 if (exitCode !== 0) {
-  console.log(
-    `Integration suite failed — migration status/capabilities for "${testDatabase}" (before drop):`,
-  );
-  await runInherit(process.execPath, [
-    TSX_CLI,
-    MIGRATIONS_SCRIPT,
-    "status",
-    "--database-url",
-    testUrl,
-  ]).catch(() => 1);
-  await runInherit(process.execPath, [
-    TSX_CLI,
-    MIGRATIONS_SCRIPT,
-    "verify",
-    "--database-url",
-    testUrl,
-  ]).catch(() => 1);
+  console.log(`Integration suite failed — migration status/capabilities for "${testDatabase}" (before drop):`);
+  await runInherit(process.execPath, [TSX_CLI, MIGRATIONS_SCRIPT, "status", "--database-url", testUrl]).catch(() => 1);
+  await runInherit(process.execPath, [TSX_CLI, MIGRATIONS_SCRIPT, "verify", "--database-url", testUrl]).catch(() => 1);
 }
 ```
 
@@ -235,12 +226,14 @@ git commit -m "fix(ci): emit db:test diagnostics before throwaway drop"
 ### Task 3: P1-10 Playwright pin + CI split + `activateControl` migrations
 
 **Files:**
+
 - Modify: root `package.json` — `"@playwright/test": "1.58.2"` (drop caret)
 - Modify: `pnpm-lock.yaml` if needed
 - Modify: `.github/workflows/ci.yml` — e2e job run step → two steps
 - Modify: `tests/e2e/onboarding.spec.ts`, `home.spec.ts`, `books-drilldown.spec.ts`, `reports.spec.ts`, `assistant.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `activateControl` from `tests/e2e/test-helpers.ts`
 - Produces: functional CI step excludes `visual:`; mobile paths keyboard-activate
 
@@ -311,6 +304,7 @@ git commit -m "test(e2e): split visual CI step and route mobile clicks via activ
 ### Task 4: P1-10 / C3 `data-visual-mask` on clock-derived UI
 
 **Files:**
+
 - Modify: `apps/web/components/dashboard/widgets/tax-timeline-widget.tsx`
 - Modify: `apps/web/components/dashboard/widgets/observations-widget.tsx`
 - Modify: `apps/web/components/reports/tax-timeline-row.tsx` (periodLabel — due date already masked)
@@ -318,6 +312,7 @@ git commit -m "test(e2e): split visual CI step and route mobile clicks via activ
 - Modify (only after reviewing diffs): visual baselines under `tests/e2e/` for today/reports × light/dark × win32/linux
 
 **Interfaces:**
+
 - Consumes: existing visual-regression locator `page.locator("[data-visual-mask]")`
 - Produces: calendar-roll pixel churn reduced on masked text
 
@@ -366,12 +361,14 @@ git commit -m "fix(web): mask clock-derived tax/observation/period text for visu
 ### Task 5: P1-12 pin hygiene (`.npmrc` + Renovate + recharts/react-is)
 
 **Files:**
+
 - Create: `.npmrc` with `save-exact=true`
 - Create: `renovate.json` (content from consolidation plan P1-12 sketch — `config:best-practices`, `rangeStrategy: pin`, ai-sdk/hono groups, `run-e2e` label on next/react/recharts/joyride, OSV alerts)
 - Modify: `apps/web/package.json` — `"recharts": "3.10.1"`, add `"react-is": "19.2.8"`
 - Modify: `pnpm-lock.yaml`
 
 **Interfaces:**
+
 - Consumes: Task 1 pins already exact
 - Produces: future `pnpm add` writes exact versions; recharts peer satisfied by react-is 19
 
@@ -397,9 +394,11 @@ git commit -m "chore(deps): save-exact, Renovate, and pin recharts/react-is"
 ### Task 6: P1-12 mandatory deny-flow integration test (BEFORE AI bump)
 
 **Files:**
+
 - Modify: `tests/integration/advisor-normal-mode.test.ts` only
 
 **Interfaces:**
+
 - Consumes: existing helpers `extractStreamedApproval`, `approvalRespondedMessage(approval, input, approved)`
 - Produces: pin that denial yields `tool-output-denied`, zero `applyReviewDecision` calls, review stays `needs-review`, stream terminates
 
@@ -434,12 +433,14 @@ git commit -m "test(advisor): pin deny-flow tool-output-denied before AI SDK bum
 ### Task 7: P1-12 AI SDK bump — workaround RETAINED
 
 **Files:**
+
 - Modify: `services/api/package.json` — `ai` → `7.0.55`; bump `@ai-sdk/azure` to matching latest if required for peer alignment (verify installed types)
 - Modify: `apps/web/package.json` — `ai` → `7.0.55`, `@ai-sdk/react` → `4.0.58`
 - Modify: `pnpm-lock.yaml`
 - Optional comment-only: `apps/web/components/advisor/tool-approval.ts` / `advisor-chat.tsx` — note vercel/ai#13670; **FORBIDDEN to delete**
 
 **Interfaces:**
+
 - Consumes: Task 6 deny-flow pin green
 - Produces: bumped SDK with signature-preserving workaround still wired
 

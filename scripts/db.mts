@@ -202,7 +202,14 @@ async function waitUntilReady(
   while (Date.now() - start < timeoutMs) {
     const status = await getServiceStatus(project);
     if (status?.State === "exited" || status?.State === "dead") {
-      const logs = await runCapture("docker", [...composeBaseArgs(project), "logs", "--no-color", "--tail", "50", "db"]);
+      const logs = await runCapture("docker", [
+        ...composeBaseArgs(project),
+        "logs",
+        "--no-color",
+        "--tail",
+        "50",
+        "db",
+      ]);
       throw new Error(
         `Container for project "${project}" exited unexpectedly (state: ${status.State}).\n--- last logs ---\n${logs.stdout}${logs.stderr}`,
       );
@@ -232,7 +239,12 @@ async function waitUntilReady(
 
     const first = successTimestamps[0];
     const last = successTimestamps[successTimestamps.length - 1];
-    if (successTimestamps.length >= requiredSuccesses && first !== undefined && last !== undefined && last - first >= minStreakMs) {
+    if (
+      successTimestamps.length >= requiredSuccesses &&
+      first !== undefined &&
+      last !== undefined &&
+      last - first >= minStreakMs
+    ) {
       return;
     }
     await sleep(400);
@@ -384,14 +396,7 @@ function assertSiblingScriptExists(scriptPath: string, humanName: string): void 
 }
 
 async function runMigrationSubcommand(subcommand: string, url: string, extraArgs: string[] = []): Promise<number> {
-  return runInherit(process.execPath, [
-    TSX_CLI,
-    MIGRATIONS_SCRIPT,
-    subcommand,
-    "--database-url",
-    url,
-    ...extraArgs,
-  ]);
+  return runInherit(process.execPath, [TSX_CLI, MIGRATIONS_SCRIPT, subcommand, "--database-url", url, ...extraArgs]);
 }
 
 async function runMigrationsAgainst(url: string, extraArgs: string[] = []): Promise<void> {
@@ -468,9 +473,7 @@ async function cmdTest(extraArgs: string[]): Promise<void> {
     });
 
     if (exitCode !== 0) {
-      console.log(
-        `Integration suite failed — migration status/capabilities for "${testDatabase}" (before drop):`,
-      );
+      console.log(`Integration suite failed — migration status/capabilities for "${testDatabase}" (before drop):`);
       for (const subcommand of ["status", "verify"]) {
         await runMigrationSubcommand(subcommand, testUrl).catch(() => 1);
       }
