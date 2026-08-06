@@ -43,6 +43,11 @@ jobs:
         run: pnpm lint
 
       # Architectural seam grep gates (dnd-kit / ai-sdk / recharts ownership).
+      # check-seams.sh requires ripgrep and fails closed when missing — ubuntu-latest
+      # runners do not ship `rg` on PATH (Wave Hygiene F-6).
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
       - name: Check architectural seams
         run: corepack pnpm check:seams
 
