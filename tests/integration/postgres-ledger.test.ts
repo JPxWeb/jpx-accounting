@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ExtractionResult, ReportPack } from "@jpx-accounting/contracts";
+import type { EvidenceCreateInput, ExtractionResult, ReportPack } from "@jpx-accounting/contracts";
 import {
   buildEventHash,
   deriveDeterministicExtraction,
@@ -57,8 +57,6 @@ test("PostgresLedgerStore round-trips evidence creation, review approval, and re
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
     const created = await store.createEvidence({
-      organizationId: orgId,
-      workspaceId: wsId,
       actorId: "user_test",
       title: "Integration test invoice",
       originalFilename: "test-invoice.pdf",
@@ -137,8 +135,6 @@ test("migration 0005: ledger.events.id is text and created_at orders same-transa
     // increasing in insertion order.
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
     await store.createEvidence({
-      organizationId: orgId,
-      workspaceId: wsId,
       actorId: "user_test",
       title: "Events id/order regression",
       originalFilename: "events-id.pdf",
@@ -197,7 +193,7 @@ test("PostgresLedgerStore.createEvidence upload metadata round-trip + Memory fie
       blobPath,
     };
 
-    const created = await store.createEvidence({ ...baseInput, organizationId: orgId, workspaceId: wsId });
+    const created = await store.createEvidence({ ...baseInput });
     assert.equal(created.evidence.hash, sha256, "sha256 must become the evidence hash");
     assert.equal(created.evidence.blobPath, blobPath, "client-echoed blobPath must be stored");
     assert.equal(created.evidence.sizeBytes, 48211, "sizeBytes must round-trip");
@@ -215,8 +211,6 @@ test("PostgresLedgerStore.createEvidence upload metadata round-trip + Memory fie
     const memory = new MemoryLedgerStore();
     const memCreated = await memory.createEvidence({
       ...baseInput,
-      organizationId: "org_jpx",
-      workspaceId: "workspace_main",
     });
     assert.deepEqual(created.voucher.extractedFields, memCreated.voucher.extractedFields);
     assert.deepEqual(created.voucher.voucherFields, memCreated.voucher.voucherFields);
@@ -238,8 +232,6 @@ test(
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const dedupeInput = () => ({
-        organizationId: orgId,
-        workspaceId: wsId,
         actorId: "user_test",
         title: "Dedupe receipt",
         originalFilename: "dedupe-receipt.jpg",
@@ -293,7 +285,7 @@ test(
 
       // Memory parity (CONVENTIONS Rule 11): same duplicate input, same idempotent answer.
       const memory = new MemoryLedgerStore();
-      const memInput = { ...dedupeInput(), organizationId: "org_jpx", workspaceId: "workspace_main" };
+      const memInput = dedupeInput();
       const memFirst = await memory.createEvidence(memInput);
       const memSecond = await memory.createEvidence(memInput);
       assert.equal(memFirst.deduped, undefined);
@@ -322,9 +314,7 @@ test("WS-D R19: createEvidence never dedupes across workspaces and skips dedupe 
   try {
     const storeA = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsA });
     const storeB = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsB });
-    const fileInput = (workspaceId: string) => ({
-      organizationId: orgId,
-      workspaceId,
+    const fileInput = () => ({
       actorId: "user_test",
       title: "Tenant-scoped receipt",
       originalFilename: "tenant-receipt.jpg",
@@ -335,15 +325,15 @@ test("WS-D R19: createEvidence never dedupes across workspaces and skips dedupe 
     });
 
     // Same file, two workspaces: dedupe must NOT cross the tenant boundary.
-    const inA = await storeA.createEvidence(fileInput(wsA));
-    const inB = await storeB.createEvidence(fileInput(wsB));
+    const inA = await storeA.createEvidence(fileInput());
+    const inB = await storeB.createEvidence(fileInput());
     assert.equal(inB.deduped, undefined, "cross-workspace create must be genuine");
     assert.notEqual(inB.evidence.id, inA.evidence.id);
     assert.equal((await storeB.getEvents()).length, 4, "the second workspace gets its own four-event create chain");
 
     // Missing sha256 (legacy callers): identical metadata still creates every time.
     const legacyInput = () => {
-      const { sha256: _sha256, ...rest } = fileInput(wsA);
+      const { sha256: _sha256, ...rest } = fileInput();
       return rest;
     };
     const legacyFirst = await storeA.createEvidence(legacyInput());
@@ -372,7 +362,7 @@ test(
         mimeType: "image/jpeg",
         modalities: ["camera" as const],
       };
-      const created = await store.createEvidence({ ...baseInput, organizationId: orgId, workspaceId: wsId });
+      const created = await store.createEvidence({ ...baseInput });
       assert.equal(created.voucher.voucherFields.grossAmount, 1249, "legacy create precondition");
 
       const refresh: ExtractionResult = {
@@ -422,8 +412,6 @@ test(
       const memory = new MemoryLedgerStore();
       const memCreated = await memory.createEvidence({
         ...baseInput,
-        organizationId: "org_jpx",
-        workspaceId: "workspace_main",
       });
       const memUpdated = await memory.updateEvidenceExtraction(memCreated.evidence.id, refresh);
       assert.ok(memUpdated?.voucher);
@@ -455,7 +443,7 @@ test(
         mimeType: "image/jpeg",
         modalities: ["camera" as const],
       };
-      const created = await store.createEvidence({ ...baseInput, organizationId: orgId, workspaceId: wsId });
+      const created = await store.createEvidence({ ...baseInput });
       assert.equal(created.voucher.voucherFields.grossAmount, 1249, "legacy create precondition");
 
       // Inconsistent amounts → InvalidReviewEditError, transaction rolled back.
@@ -522,8 +510,6 @@ test(
       const memory = new MemoryLedgerStore();
       const memCreated = await memory.createEvidence({
         ...baseInput,
-        organizationId: "org_jpx",
-        workspaceId: "workspace_main",
       });
       const memDecided = await memory.applyReviewDecision(memCreated.review.id, "approve", {
         actorId: "user_test",
@@ -573,7 +559,7 @@ test(
       };
 
       // --- Derived path: prior-month transaction date wins over the approval click.
-      const created = await store.createEvidence({ ...baseInput, organizationId: orgId, workspaceId: wsId });
+      const created = await store.createEvidence({ ...baseInput });
       const refreshed = await store.updateEvidenceExtraction(created.evidence.id, marchExtraction);
       assert.equal(refreshed?.voucher?.voucherFields.transactionDate, "2026-03-15", "refresh precondition");
 
@@ -608,8 +594,6 @@ test(
       // --- Edited override path: bookedAt round-trips through store + events.
       const created2 = await store.createEvidence({
         ...baseInput,
-        organizationId: orgId,
-        workspaceId: wsId,
         title: "R13 edited booking date",
         originalFilename: "r13-edited.jpg",
       });
@@ -634,8 +618,6 @@ test(
       // --- Future bookedAt rejected before any mutation (transaction rolled back).
       const created3 = await store.createEvidence({
         ...baseInput,
-        organizationId: orgId,
-        workspaceId: wsId,
         title: "R13 future booking date",
         originalFilename: "r13-future.jpg",
       });
@@ -664,8 +646,6 @@ test(
       const memory = new MemoryLedgerStore();
       const memCreated = await memory.createEvidence({
         ...baseInput,
-        organizationId: "org_jpx",
-        workspaceId: "workspace_main",
       });
       await memory.updateEvidenceExtraction(memCreated.evidence.id, marchExtraction);
       await memory.applyReviewDecision(memCreated.review.id, "approve", { actorId: "user_test" });
@@ -688,8 +668,6 @@ test("PostgresLedgerStore.runSimulation real diff + ReviewNotFoundError", { skip
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
     const created = await store.createEvidence({
-      organizationId: orgId,
-      workspaceId: wsId,
       actorId: "user_test",
       title: "Sim invoice",
       originalFilename: "sim.pdf",
@@ -869,10 +847,8 @@ test("PostgresLedgerStore.getSnapshot exposes org/workspace-scoped packets + Mem
       mimeType: "image/jpeg",
       modalities: ["camera" as const],
     };
-    const created = await store.createEvidence({ ...baseInput, organizationId: orgId, workspaceId: wsId });
+    const created = await store.createEvidence({ ...baseInput });
     const composed = await store.composeEvidence({
-      organizationId: orgId,
-      workspaceId: wsId,
       actorId: "user_test",
       evidenceIds: [created.evidence.id],
       note: "Bundled for the drill join",
@@ -900,8 +876,6 @@ test("PostgresLedgerStore.getSnapshot exposes org/workspace-scoped packets + Mem
     const memory = new MemoryLedgerStore();
     const memCreated = await memory.createEvidence({
       ...baseInput,
-      organizationId: "org_jpx",
-      workspaceId: "workspace_main",
     });
     const memSnapshot = await memory.getSnapshot();
     const memPacket = memSnapshot.packets.find((packet) => packet.id === memCreated.voucher.evidencePacketId);
@@ -921,8 +895,6 @@ test(
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
       const created = await store.createEvidence({
-        organizationId: orgId,
-        workspaceId: wsId,
         actorId: "user_test",
         title: "Relink target receipt",
         originalFilename: "relink.jpg",
@@ -931,8 +903,6 @@ test(
       });
 
       const composed = await store.composeEvidence({
-        organizationId: orgId,
-        workspaceId: wsId,
         actorId: "user_test",
         evidenceIds: [created.evidence.id],
         note: "Rebundled packet",
@@ -975,8 +945,6 @@ test(
       // Memory parity (Rule 11): same flow appends the same event shape.
       const memory = new MemoryLedgerStore();
       const memCreated = await memory.createEvidence({
-        organizationId: "org_jpx",
-        workspaceId: "workspace_main",
         actorId: "user_test",
         title: "Relink target receipt",
         originalFilename: "relink.jpg",
@@ -984,8 +952,6 @@ test(
         modalities: ["camera"],
       });
       const memComposed = await memory.composeEvidence({
-        organizationId: "org_jpx",
-        workspaceId: "workspace_main",
         actorId: "user_test",
         evidenceIds: [memCreated.evidence.id],
         note: "Rebundled packet",
@@ -1031,8 +997,6 @@ test("PostgresLedgerStore.getReviewFeed orders by created_at DESC, id DESC (§A 
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
     const first = await store.createEvidence({
-      organizationId: orgId,
-      workspaceId: wsId,
       actorId: "user_test",
       title: "First in feed",
       originalFilename: "first.jpg",
@@ -1040,8 +1004,6 @@ test("PostgresLedgerStore.getReviewFeed orders by created_at DESC, id DESC (§A 
       modalities: ["camera"],
     });
     const second = await store.createEvidence({
-      organizationId: orgId,
-      workspaceId: wsId,
       actorId: "user_test",
       title: "Second in feed",
       originalFilename: "second.jpg",
@@ -1101,7 +1063,6 @@ test("PostgresLedgerStore.getCompanySettings/putCompanySettings round-trip", { s
     assert.equal(await store.getCompanySettings(), null);
 
     const settings = {
-      organizationId: orgId,
       organizationName: "Test AB",
       organizationNumber: "556677-8899",
       addressLine1: "Kungsgatan 1",
@@ -1134,7 +1095,6 @@ test("PostgresLedgerStore.getCompanySettings normalizes legacy jsonb rows withou
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
     const legacyJson = {
-      organizationId: orgId,
       organizationName: "Legacy AB",
       organizationNumber: "556677-8899",
       addressLine1: "Kungsgatan 1",
@@ -1200,8 +1160,6 @@ test("R14: appended events carry SHA-256 hashes that recompute from the stored j
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
 
     const created = await store.createEvidence({
-      organizationId: orgId,
-      workspaceId: wsId,
       actorId: "user_test",
       title: "Hash-chain integration invoice",
       originalFilename: "hash-chain.pdf",
@@ -1271,8 +1229,6 @@ test("R14: a legacy djb2 prefix + new SHA-256 appends verify as one mixed chain"
     //    with SHA-256 hashes (cutover: no rewrite, per-link schemes).
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
     await store.createEvidence({
-      organizationId: orgId,
-      workspaceId: wsId,
       actorId: "user_test",
       title: "Post-cutover evidence",
       originalFilename: "post-cutover.pdf",
@@ -1303,8 +1259,6 @@ test("R14: an in-place jsonb payload edit is invisible to linkage but flagged by
   try {
     const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
     await store.createEvidence({
-      organizationId: orgId,
-      workspaceId: wsId,
       actorId: "user_test",
       title: "Tamper target",
       originalFilename: "tamper.pdf",
@@ -1462,8 +1416,6 @@ test("R15: two concurrent connections appending to one workspace produce a singl
     const appendLoop = async (store: PostgresLedgerStore, label: string, count: number) => {
       for (let index = 0; index < count; index += 1) {
         await store.createEvidence({
-          organizationId: orgId,
-          workspaceId: wsId,
           actorId: `user_${label}`,
           title: `Concurrent ${label} #${index}`,
           originalFilename: `concurrent-${label}-${index}.pdf`,
@@ -1631,8 +1583,6 @@ test("R15: a chain fork from an out-of-band writer is absorbed by one internal r
     // First attempt hits 23505 on the fork guard; the internal retry re-reads
     // the fresh tail (now the rogue event) and succeeds — callers never see it.
     const created = await store.createEvidence({
-      organizationId: orgId,
-      workspaceId: wsId,
       actorId: "user_test",
       title: "Absorbed-fork evidence",
       originalFilename: "absorbed.pdf",
@@ -1690,8 +1640,6 @@ test("R15: a persistent forker exhausts the retry and surfaces the typed retryab
     await assert.rejects(
       () =>
         store.createEvidence({
-          organizationId: orgId,
-          workspaceId: wsId,
           actorId: "user_test",
           title: "Exhausted-retry evidence",
           originalFilename: "exhausted.pdf",
@@ -1740,8 +1688,6 @@ test(
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const created = await store.createEvidence({
-        organizationId: orgId,
-        workspaceId: wsId,
         actorId: "user_test",
         title: "B5 validation receipt",
         originalFilename: "b5-validation.jpg",
@@ -1811,8 +1757,6 @@ test(
       // Memory parity (Rule 11): identical decision on Memory resolves the same name.
       const memory = new MemoryLedgerStore();
       const memCreated = await memory.createEvidence({
-        organizationId: "org_jpx",
-        workspaceId: "workspace_main",
         actorId: "user_test",
         title: "B5 validation receipt",
         originalFilename: "b5-validation.jpg",
@@ -1840,8 +1784,6 @@ test(
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const created = await store.createEvidence({
-        organizationId: orgId,
-        workspaceId: wsId,
         actorId: "user_test",
         title: "B6a vocabulary receipt",
         originalFilename: "b6a-vocabulary.jpg",
@@ -1871,8 +1813,6 @@ test(
       // Memory parity (Rule 11): same decision, same vocabulary.
       const memory = new MemoryLedgerStore();
       const memCreated = await memory.createEvidence({
-        organizationId: "org_jpx",
-        workspaceId: "workspace_main",
         actorId: "user_test",
         title: "B6a vocabulary receipt",
         originalFilename: "b6a-vocabulary.jpg",
@@ -1958,8 +1898,6 @@ test(
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const created = await store.createEvidence({
-        organizationId: orgId,
-        workspaceId: wsId,
         actorId: "user_test",
         title: "B7a alert receipt",
         originalFilename: "b7a-alert.jpg",
@@ -2047,8 +1985,6 @@ test(
     try {
       const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
       const created = await store.createEvidence({
-        organizationId: orgId,
-        workspaceId: wsId,
         actorId: "user_test",
         title: "B7b suggest receipt",
         originalFilename: "b7b-suggest.jpg",
@@ -2065,8 +2001,6 @@ test(
       // Memory parity (Rule 11): same flow, same read-model behavior.
       const memory = new MemoryLedgerStore();
       const memCreated = await memory.createEvidence({
-        organizationId: "org_jpx",
-        workspaceId: "workspace_main",
         actorId: "user_test",
         title: "B7b suggest receipt",
         originalFilename: "b7b-suggest.jpg",
@@ -2117,8 +2051,6 @@ test("R15 follow-up: appends survive a wall-clock inversion (seq-primary tail pi
 
     // 1. Normal append establishes a chain tail at wall-clock "now".
     await store.createEvidence({
-      organizationId: orgId,
-      workspaceId: wsId,
       actorId: "user_test",
       title: "Pre-inversion evidence",
       originalFilename: "pre-inversion.pdf",
@@ -2150,8 +2082,6 @@ test("R15 follow-up: appends survive a wall-clock inversion (seq-primary tail pi
     //    23505s, and the single retry re-picks the same wrong tail. With the
     //    seq-primary pick it chains onto the backdated event and succeeds.
     const after = await store.createEvidence({
-      organizationId: orgId,
-      workspaceId: wsId,
       actorId: "user_test",
       title: "Post-inversion evidence",
       originalFilename: "post-inversion.pdf",
@@ -2174,6 +2104,42 @@ test("R15 follow-up: appends survive a wall-clock inversion (seq-primary tail pi
     const summary = summarizeEventIntegrity(events, { verifiedAt: new Date().toISOString(), verifyPayloads: true });
     assert.equal(summary.chainLinked, true, "chain must verify in seq order despite occurred_at inversion");
     assert.equal(summary.payloadMismatchCount, 0);
+  } finally {
+    await requireCtx().cleanupOrganization(orgId);
+  }
+});
+
+test("PostgresLedgerStore.createEvidence ignores a client-posted foreign organizationId", { skip }, async () => {
+  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
+  const client = requireCtx().client;
+  try {
+    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
+    const created = await store.createEvidence({
+      organizationId: "org_evil",
+      workspaceId: "workspace_evil",
+      actorId: "user_test",
+      title: "Spoofed tenant receipt",
+      originalFilename: "spoof.jpg",
+      mimeType: "image/jpeg",
+      modalities: ["camera"],
+    } as EvidenceCreateInput & { organizationId: string; workspaceId: string });
+
+    assert.equal(created.evidence.organizationId, orgId);
+    assert.equal(created.evidence.workspaceId, wsId);
+
+    const events = await store.getEvents();
+    const received = events.find(
+      (event) => event.eventType === "EvidenceReceived" && event.aggregateId === created.evidence.id,
+    );
+    assert.ok(received, "EvidenceReceived event expected");
+    assert.equal(received.organizationId, orgId);
+    assert.equal(received.workspaceId, wsId);
+
+    const evilRows = await client<{ count: string }[]>`
+      SELECT COUNT(*)::text AS count FROM ledger.evidence_objects
+      WHERE organization_id = ${"org_evil"}
+    `;
+    assert.equal(evilRows[0]?.count, "0", "no rows may land under the spoofed organization");
   } finally {
     await requireCtx().cleanupOrganization(orgId);
   }

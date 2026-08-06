@@ -15,6 +15,7 @@
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { DEFAULT_TENANT_SCOPE } from "../packages/domain/src/tenant.ts";
 import {
   closePostgresClient,
   createPostgresClient,
@@ -25,8 +26,8 @@ import {
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 export const SEED_VERSION = "v1";
-export const SEED_ORGANIZATION_ID = "org_jpx";
-export const SEED_WORKSPACE_ID = "workspace_main";
+export const SEED_ORGANIZATION_ID = DEFAULT_TENANT_SCOPE.organizationId;
+export const SEED_WORKSPACE_ID = DEFAULT_TENANT_SCOPE.workspaceId;
 
 /** Semantic fixture values asserted after seed — not generated IDs/hashes/timestamps. */
 export const SEED_V1_FIXTURES = {
@@ -122,7 +123,6 @@ async function applySeedV1(client: PostgresClient): Promise<void> {
   });
 
   await store.putCompanySettings({
-    organizationId: SEED_ORGANIZATION_ID,
     organizationName: SEED_V1_FIXTURES.organizationName,
     organizationNumber: SEED_V1_FIXTURES.organizationNumber,
     addressLine1: SEED_V1_FIXTURES.addressLine1,
@@ -132,8 +132,6 @@ async function applySeedV1(client: PostgresClient): Promise<void> {
   });
 
   const created = await store.createEvidence({
-    organizationId: SEED_ORGANIZATION_ID,
-    workspaceId: SEED_WORKSPACE_ID,
     actorId: SEED_V1_FIXTURES.actorId,
     title: SEED_V1_FIXTURES.evidenceTitle,
     originalFilename: SEED_V1_FIXTURES.evidenceFilename,

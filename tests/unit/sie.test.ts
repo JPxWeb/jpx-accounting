@@ -73,7 +73,6 @@ const goldenJournal: JournalEntryProjection[] = [
 ];
 
 const goldenSettings: CompanySettings = {
-  organizationId: "org_golden",
   organizationName: "Guldexport AB",
   organizationNumber: "556677-8899",
   addressLine1: "Kungsgatan 1",

@@ -46,6 +46,7 @@ import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
 import type { ParsedSieFile } from "./sie/parse";
 import { simulateApprovals } from "./simulation";
+import { DEFAULT_TENANT_SCOPE } from "./tenant";
 import { getVatRegime, type VatRegime } from "./vat/regime";
 
 type LedgerLine = Parameters<typeof buildJournal>[0][number];
@@ -90,18 +91,16 @@ export class InvalidReviewEditError extends Error {
  * Content-dedupe predicate for idempotent `createEvidence` (WS-D R19). A create
  * is a duplicate of an EXISTING evidence row only when the caller supplied BOTH
  * `sha256` and `sizeBytes` (legacy/metadata-only callers never dedupe) and the
- * existing row carries the identical (organizationId, workspaceId, hash,
- * sizeBytes) tuple. Workspace scoping is part of the key on purpose: the same
- * file captured in two different workspaces must create twice — dedupe never
- * crosses tenants. Shared by MemoryLedgerStore and PostgresLedgerStore so both
+ * existing row carries the identical (hash, sizeBytes) tuple. Tenant scoping is
+ * the store's job before candidates reach this predicate (constructor /
+ * DEFAULT_TENANT_SCOPE) — request inputs no longer carry organizationId /
+ * workspaceId. Shared by MemoryLedgerStore and PostgresLedgerStore so both
  * stores answer "is this the same file?" identically (CONVENTIONS Rule 11).
  */
 export function isDuplicateEvidence(existing: EvidenceObject, input: EvidenceCreateInput): boolean {
   return (
     input.sha256 !== undefined &&
     input.sizeBytes !== undefined &&
-    existing.organizationId === input.organizationId &&
-    existing.workspaceId === input.workspaceId &&
     existing.hash === input.sha256 &&
     existing.sizeBytes === input.sizeBytes
   );
@@ -424,8 +423,7 @@ export interface LedgerStore {
 const MEMORY_ALERT_CAP = 500;
 const AUTO_DETECTED_KINDS = new Set(["stale-blocked", "missing-supplier-vat"]);
 
-const defaultOrganizationId = "org_jpx";
-const defaultWorkspaceId = "workspace_main";
+const { organizationId: defaultOrganizationId, workspaceId: defaultWorkspaceId } = DEFAULT_TENANT_SCOPE;
 
 /** Strict calendar-day string (`YYYY-MM-DD`) — the only shape `deriveBookedAt` accepts. */
 const DAY_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -613,8 +611,6 @@ export class MemoryLedgerStore implements LedgerStore {
 
   constructor() {
     const seededEvidence = this.createEvidenceSync({
-      organizationId: defaultOrganizationId,
-      workspaceId: defaultWorkspaceId,
       actorId: "user_founder",
       title: "OpenAI subscription invoice",
       originalFilename: "openai-march-2026.pdf",
@@ -701,8 +697,8 @@ export class MemoryLedgerStore implements LedgerStore {
 
     const evidence: EvidenceObject = {
       id: evidenceId,
-      organizationId: input.organizationId,
-      workspaceId: input.workspaceId,
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
       createdAt,
       createdBy: actorId,
       title: input.title,
@@ -727,8 +723,8 @@ export class MemoryLedgerStore implements LedgerStore {
     const extractedFields = buildExtractedFields(input);
     const voucher: Voucher = {
       id: voucherId,
-      organizationId: input.organizationId,
-      workspaceId: input.workspaceId,
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
       evidencePacketId: packetId,
       voucherNumber: `V-${this.vouchers.size + 1001}`,
       status: "needs-review",
@@ -771,8 +767,8 @@ export class MemoryLedgerStore implements LedgerStore {
     this.voucherIdToReviewId.set(voucherId, review.id);
 
     this.appendEvent({
-      organizationId: input.organizationId,
-      workspaceId: input.workspaceId,
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
       aggregateType: "evidence",
       aggregateId: evidenceId,
       eventType: "EvidenceReceived",
@@ -782,8 +778,8 @@ export class MemoryLedgerStore implements LedgerStore {
     });
 
     this.appendEvent({
-      organizationId: input.organizationId,
-      workspaceId: input.workspaceId,
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
       aggregateType: "voucher",
       aggregateId: voucherId,
       eventType: "FieldsExtracted",
@@ -793,8 +789,8 @@ export class MemoryLedgerStore implements LedgerStore {
     });
 
     this.appendEvent({
-      organizationId: input.organizationId,
-      workspaceId: input.workspaceId,
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
       aggregateType: "voucher",
       aggregateId: voucherId,
       eventType: "VoucherCreated",
@@ -804,8 +800,8 @@ export class MemoryLedgerStore implements LedgerStore {
     });
 
     this.appendEvent({
-      organizationId: input.organizationId,
-      workspaceId: input.workspaceId,
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
       aggregateType: "review",
       aggregateId: review.id,
       eventType: "SuggestionGenerated",
@@ -849,8 +845,8 @@ export class MemoryLedgerStore implements LedgerStore {
       // WS-B B6b: a relink changes which evidence backs a voucher — that must
       // be visible in the audit chain, not a silent read-model repoint.
       this.appendEvent({
-        organizationId: input.organizationId,
-        workspaceId: input.workspaceId,
+        organizationId: defaultOrganizationId,
+        workspaceId: defaultWorkspaceId,
         aggregateType: "voucher",
         aggregateId: voucherIdToRelink,
         eventType: "EvidenceRelinked",

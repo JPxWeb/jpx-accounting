@@ -40,8 +40,6 @@ const marchExtraction = (): ExtractionResult => ({
 });
 
 const legacyCreateInput = (title: string, filename: string) => ({
-  organizationId: "org_jpx",
-  workspaceId: "workspace_main",
   actorId: "user_founder",
   title,
   originalFilename: filename,

@@ -20,6 +20,7 @@ export * from "./sie/pc8";
 export * from "./sie/serialize";
 export * from "./simulation";
 export * from "./store";
+export * from "./tenant";
 export * from "./tax/calendar";
 export * from "./vat/boxes";
 export * from "./vat/regime";

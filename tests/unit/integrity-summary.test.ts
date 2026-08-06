@@ -156,8 +156,6 @@ test("the MemoryLedgerStore seed produces a linked SHA-256 chain that survives p
 test("appending through MemoryLedgerStore keeps the chain linked and recomputable", async () => {
   const store = new MemoryLedgerStore();
   await store.createEvidence({
-    organizationId: "org_jpx",
-    workspaceId: "workspace_main",
     actorId: "user_founder",
     title: "Taxi receipt",
     originalFilename: "taxi.jpg",

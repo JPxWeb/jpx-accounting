@@ -5,6 +5,7 @@ import {
   type KnowledgePassage,
   type KnowledgeQueryResult,
 } from "@jpx-accounting/contracts";
+import { DEFAULT_TENANT_SCOPE } from "@jpx-accounting/domain";
 import { queryKnowledgeByEmbedding, type PostgresClient } from "@jpx-accounting/persistence-postgres";
 
 import { readApiRuntimeConfig } from "./config";
@@ -30,8 +31,8 @@ import { readApiRuntimeConfig } from "./config";
 
 const RETRIEVAL_TOP_K = 4;
 
-/** Fixed normal-mode workspace — mirrors the PostgresLedgerStore scope in `runtime.ts` and `scripts/ingest-knowledge.mjs`. */
-const KNOWLEDGE_SCOPE = { organizationId: "org_jpx", workspaceId: "workspace_main" };
+/** Fixed normal-mode workspace — shared DEFAULT_TENANT_SCOPE (runtime store + ingest). */
+const KNOWLEDGE_SCOPE = DEFAULT_TENANT_SCOPE;
 
 /** Injectable seam for tests; production resolves a default lazily from env. */
 export type VectorKnowledgeRetriever = {

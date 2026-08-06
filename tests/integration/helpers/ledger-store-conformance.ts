@@ -58,8 +58,6 @@ const marchSieFile = () =>
 export async function scenarioEvidenceCreateApproveReports(h: ConformanceHarness): Promise<ConformanceOutcome> {
   const journalBefore = (await h.store.getReports()).journal.length;
   const created = await h.store.createEvidence({
-    organizationId: h.organizationId,
-    workspaceId: h.workspaceId,
     actorId: h.actorId,
     title: "Conformance invoice",
     originalFilename: "conformance-invoice.pdf",
@@ -96,8 +94,6 @@ export async function scenarioEvidenceCreateApproveReports(h: ConformanceHarness
 export async function scenarioEvidenceDedupe(h: ConformanceHarness): Promise<ConformanceOutcome> {
   const sha256 = "ab".repeat(32);
   const input = {
-    organizationId: h.organizationId,
-    workspaceId: h.workspaceId,
     actorId: h.actorId,
     title: "Dedupe receipt",
     originalFilename: "dedupe-receipt.jpg",
@@ -118,8 +114,6 @@ export async function scenarioEvidenceDedupe(h: ConformanceHarness): Promise<Con
 
   const differentSize = await h.store.createEvidence({ ...input, sizeBytes: 4096 });
   const noHash = await h.store.createEvidence({
-    organizationId: h.organizationId,
-    workspaceId: h.workspaceId,
     actorId: h.actorId,
     title: "No hash",
     originalFilename: "no-hash.jpg",
@@ -128,8 +122,6 @@ export async function scenarioEvidenceDedupe(h: ConformanceHarness): Promise<Con
     sizeBytes: 100,
   });
   const noHashAgain = await h.store.createEvidence({
-    organizationId: h.organizationId,
-    workspaceId: h.workspaceId,
     actorId: h.actorId,
     title: "No hash again",
     originalFilename: "no-hash.jpg",
@@ -150,8 +142,6 @@ export async function scenarioEvidenceDedupe(h: ConformanceHarness): Promise<Con
 
 export async function scenarioComposeAndExtraction(h: ConformanceHarness): Promise<ConformanceOutcome> {
   const a = await h.store.createEvidence({
-    organizationId: h.organizationId,
-    workspaceId: h.workspaceId,
     actorId: h.actorId,
     title: "Compose A",
     originalFilename: "compose-a.jpg",
@@ -159,8 +149,6 @@ export async function scenarioComposeAndExtraction(h: ConformanceHarness): Promi
     modalities: ["camera"],
   });
   const b = await h.store.createEvidence({
-    organizationId: h.organizationId,
-    workspaceId: h.workspaceId,
     actorId: h.actorId,
     title: "Compose B",
     originalFilename: "compose-b.jpg",
@@ -169,8 +157,6 @@ export async function scenarioComposeAndExtraction(h: ConformanceHarness): Promi
   });
 
   const composed = await h.store.composeEvidence({
-    organizationId: h.organizationId,
-    workspaceId: h.workspaceId,
     actorId: h.actorId,
     evidenceIds: [a.evidence.id, b.evidence.id],
   });
@@ -197,8 +183,6 @@ export async function scenarioComposeAndExtraction(h: ConformanceHarness): Promi
 
 export async function scenarioReviewOrderingAndSuggestion(h: ConformanceHarness): Promise<ConformanceOutcome> {
   const first = await h.store.createEvidence({
-    organizationId: h.organizationId,
-    workspaceId: h.workspaceId,
     actorId: h.actorId,
     title: "Review order first",
     originalFilename: "order-1.jpg",
@@ -206,8 +190,6 @@ export async function scenarioReviewOrderingAndSuggestion(h: ConformanceHarness)
     modalities: ["camera"],
   });
   const second = await h.store.createEvidence({
-    organizationId: h.organizationId,
-    workspaceId: h.workspaceId,
     actorId: h.actorId,
     title: "Review order second",
     originalFilename: "order-2.jpg",
@@ -264,7 +246,6 @@ export async function scenarioSettingsAlertsSimulation(h: ConformanceHarness): P
   assert.equal(await h.store.getCompanySettings(), null);
 
   const settings = {
-    organizationId: h.organizationId,
     organizationName: "Conformance AB",
     organizationNumber: "556677-8899",
     addressLine1: "Kungsgatan 1",
@@ -284,8 +265,6 @@ export async function scenarioSettingsAlertsSimulation(h: ConformanceHarness): P
   const loaded = await h.store.getCompanySettings();
 
   const created = await h.store.createEvidence({
-    organizationId: h.organizationId,
-    workspaceId: h.workspaceId,
     actorId: h.actorId,
     title: "Simulation receipt",
     originalFilename: "sim.jpg",
@@ -361,8 +340,6 @@ export async function scenarioSettingsAlertsSimulation(h: ConformanceHarness): P
 
 export async function scenarioAppendOnlyEventVocabulary(h: ConformanceHarness): Promise<ConformanceOutcome> {
   const created = await h.store.createEvidence({
-    organizationId: h.organizationId,
-    workspaceId: h.workspaceId,
     actorId: h.actorId,
     title: "Vocabulary receipt",
     originalFilename: "vocab.jpg",

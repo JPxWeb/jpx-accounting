@@ -9,7 +9,6 @@ import type { CaptureDraft, DraftQueueSaveResult } from "./draft-queue-core";
 import { putEvidenceBlob } from "./evidence-blob-cache";
 import { sha256Hex } from "./hash";
 import { invalidateLedgerDerived } from "./query-invalidation";
-import { WORKSPACE_IDENTITY } from "./workspace-identity";
 
 /**
  * THE promotion pipeline. Every intake surface (quick-add tiles, capture sheet, drop-zone,
@@ -88,7 +87,6 @@ async function promoteFileDraft(draft: CaptureDraft, file: Blob): Promise<Eviden
   await apiClient.uploadBlob(upload, file);
 
   return apiClient.createEvidence({
-    ...WORKSPACE_IDENTITY,
     title: draft.title,
     originalFilename: filename,
     mimeType,
@@ -109,7 +107,6 @@ async function promoteFileDraft(draft: CaptureDraft, file: Blob): Promise<Eviden
  */
 async function promoteMetadataDraft(draft: CaptureDraft): Promise<EvidenceCreateResult> {
   return apiClient.createEvidence({
-    ...WORKSPACE_IDENTITY,
     title: draft.title,
     originalFilename: draft.filename ?? `${draft.mode}-note.txt`,
     mimeType: "text/plain",

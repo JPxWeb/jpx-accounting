@@ -561,14 +561,14 @@ export class PostgresLedgerStore implements LedgerStore {
    */
   private async findDuplicateEvidence(tx: Tx, input: EvidenceCreateInput): Promise<EvidenceCreateResult | undefined> {
     if (input.sha256 === undefined || input.sizeBytes === undefined) return undefined;
-    const scope = { organizationId: input.organizationId, workspaceId: input.workspaceId };
+    const scope = { organizationId: this.defaults.organizationId, workspaceId: this.defaults.workspaceId };
 
     const rows = await tx<EvidenceRow[]>`
       SELECT id, organization_id, workspace_id, title, created_by, created_at,
              original_filename, mime_type, blob_path, hash, trust_level, metadata, modalities
       FROM ledger.evidence_objects
-      WHERE organization_id = ${input.organizationId}
-        AND workspace_id = ${input.workspaceId}
+      WHERE organization_id = ${this.defaults.organizationId}
+        AND workspace_id = ${this.defaults.workspaceId}
         AND hash = ${input.sha256}
       ORDER BY created_at ASC, id ASC
     `;
@@ -586,8 +586,8 @@ export class PostgresLedgerStore implements LedgerStore {
                suggested_action, suggestion, provenance_timeline, title, created_at
         FROM ledger.review_tasks
         WHERE voucher_id = ${voucher.id}
-          AND organization_id = ${input.organizationId}
-          AND workspace_id = ${input.workspaceId}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
         LIMIT 1
       `;
       const review = reviewRows[0] ? rowToReview(reviewRows[0]) : undefined;
@@ -618,8 +618,8 @@ export class PostgresLedgerStore implements LedgerStore {
 
         const evidence: EvidenceObject = {
           id: evidenceId,
-          organizationId: input.organizationId,
-          workspaceId: input.workspaceId,
+          organizationId: this.defaults.organizationId,
+          workspaceId: this.defaults.workspaceId,
           createdAt,
           createdBy: actorId,
           title: input.title,
@@ -688,8 +688,8 @@ export class PostgresLedgerStore implements LedgerStore {
           created_at
         ) VALUES (
           ${packet.id},
-          ${input.organizationId},
-          ${input.workspaceId},
+          ${this.defaults.organizationId},
+          ${this.defaults.workspaceId},
           ${packet.note ?? null},
           ${packet.voiceTranscript ?? null},
           ${createdAt}
@@ -706,8 +706,8 @@ export class PostgresLedgerStore implements LedgerStore {
         const voucherCountRows = await tx<{ count: string }[]>`
         SELECT COUNT(*)::text AS count
         FROM ledger.vouchers
-        WHERE organization_id = ${input.organizationId}
-          AND workspace_id = ${input.workspaceId}
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
       `;
         const voucherCount = Number(voucherCountRows[0]?.count ?? "0");
         const voucherNumber = `V-${voucherCount + 1001}`;
@@ -715,8 +715,8 @@ export class PostgresLedgerStore implements LedgerStore {
         const extractedFields = buildExtractedFields(input);
         const voucher: Voucher = {
           id: voucherId,
-          organizationId: input.organizationId,
-          workspaceId: input.workspaceId,
+          organizationId: this.defaults.organizationId,
+          workspaceId: this.defaults.workspaceId,
           evidencePacketId: packetId,
           voucherNumber,
           status: "needs-review",
@@ -796,8 +796,8 @@ export class PostgresLedgerStore implements LedgerStore {
           created_at
         ) VALUES (
           ${review.id},
-          ${input.organizationId},
-          ${input.workspaceId},
+          ${this.defaults.organizationId},
+          ${this.defaults.workspaceId},
           ${review.voucherId},
           ${review.status},
           ${review.blockedReason ?? null},
@@ -815,8 +815,8 @@ export class PostgresLedgerStore implements LedgerStore {
         const evt1 = await this.appendEvent(
           tx,
           {
-            organizationId: input.organizationId,
-            workspaceId: input.workspaceId,
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
             aggregateType: "evidence",
             aggregateId: evidenceId,
             eventType: "EvidenceReceived",
@@ -831,8 +831,8 @@ export class PostgresLedgerStore implements LedgerStore {
         const evt2 = await this.appendEvent(
           tx,
           {
-            organizationId: input.organizationId,
-            workspaceId: input.workspaceId,
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
             aggregateType: "voucher",
             aggregateId: voucherId,
             eventType: "FieldsExtracted",
@@ -847,8 +847,8 @@ export class PostgresLedgerStore implements LedgerStore {
         const evt3 = await this.appendEvent(
           tx,
           {
-            organizationId: input.organizationId,
-            workspaceId: input.workspaceId,
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
             aggregateType: "voucher",
             aggregateId: voucherId,
             eventType: "VoucherCreated",
@@ -863,8 +863,8 @@ export class PostgresLedgerStore implements LedgerStore {
         await this.appendEvent(
           tx,
           {
-            organizationId: input.organizationId,
-            workspaceId: input.workspaceId,
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
             aggregateType: "review",
             aggregateId: review.id,
             eventType: "SuggestionGenerated",
@@ -909,8 +909,8 @@ export class PostgresLedgerStore implements LedgerStore {
           created_at
         ) VALUES (
           ${packet.id},
-          ${input.organizationId},
-          ${input.workspaceId},
+          ${this.defaults.organizationId},
+          ${this.defaults.workspaceId},
           ${packet.note ?? null},
           ${packet.voiceTranscript ?? null},
           ${nowIso()}
@@ -937,8 +937,8 @@ export class PostgresLedgerStore implements LedgerStore {
           JOIN ledger.evidence_packet_items i ON i.evidence_packet_id = v.evidence_packet_id
           WHERE i.evidence_object_id = ${evidenceId}
             AND i.evidence_packet_id != ${packet.id}
-            AND v.organization_id = ${input.organizationId}
-            AND v.workspace_id = ${input.workspaceId}
+            AND v.organization_id = ${this.defaults.organizationId}
+            AND v.workspace_id = ${this.defaults.workspaceId}
           LIMIT 1
         `;
           if (linkedRows[0]?.voucher_id && !voucherIdToRelink) {
@@ -952,8 +952,8 @@ export class PostgresLedgerStore implements LedgerStore {
           UPDATE ledger.vouchers
           SET evidence_packet_id = ${packet.id}
           WHERE id = ${voucherIdToRelink}
-            AND organization_id = ${input.organizationId}
-            AND workspace_id = ${input.workspaceId}
+            AND organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
         `;
 
           // WS-B B6b: a relink changes which evidence backs a voucher — that
@@ -962,8 +962,8 @@ export class PostgresLedgerStore implements LedgerStore {
           await this.appendEvent(
             tx,
             {
-              organizationId: input.organizationId,
-              workspaceId: input.workspaceId,
+              organizationId: this.defaults.organizationId,
+              workspaceId: this.defaults.workspaceId,
               aggregateType: "voucher",
               aggregateId: voucherIdToRelink,
               eventType: "EvidenceRelinked",

@@ -39,9 +39,10 @@ export const KNOWLEDGE_DOCS_DIR = path.join(repoRoot, "docs", "knowledge", "sv")
 export const EMBED_BATCH_SIZE = 64;
 
 /**
- * Fixed normal-mode workspace scope — mirrors the PostgresLedgerStore wiring
- * in services/api/src/runtime.ts and the query scope in
- * services/api/src/knowledge.ts. Multi-workspace ingestion is a later phase.
+ * Fixed normal-mode workspace scope — keep in sync with
+ * `DEFAULT_TENANT_SCOPE` in packages/domain/src/tenant.ts (plain .mjs cannot
+ * import the TS package without the tsx path used elsewhere; values are
+ * duplicated here with a pointer so greps find both).
  */
 export const INGEST_SCOPE = { organizationId: "org_jpx", workspaceId: "workspace_main" };
 

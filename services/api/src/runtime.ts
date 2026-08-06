@@ -2,7 +2,7 @@ import { createAiRuntime } from "@jpx-accounting/ai-core";
 import type { AiProvider } from "@jpx-accounting/contracts";
 import { createDocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import type { LedgerStore } from "@jpx-accounting/domain";
-import { MemoryLedgerStore } from "@jpx-accounting/domain";
+import { DEFAULT_TENANT_SCOPE, MemoryLedgerStore } from "@jpx-accounting/domain";
 import {
   closePostgresClient,
   createPostgresClient,
@@ -219,7 +219,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
   configureKnowledgeDatabaseClient(databaseClient ?? null);
 
   const store: LedgerStore = databaseClient
-    ? new PostgresLedgerStore(databaseClient, { organizationId: "org_jpx", workspaceId: "workspace_main" })
+    ? new PostgresLedgerStore(databaseClient, DEFAULT_TENANT_SCOPE)
     : new UnavailableLedgerStore("Workspace data is unavailable in normal mode until DATABASE_URL is configured.");
 
   const closeDatabase = databaseClient ? () => closePostgresClient(databaseClient) : closeNothing;

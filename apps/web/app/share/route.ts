@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import { sha256Hex } from "../../lib/hash";
 import { getWebServerRuntimeConfig } from "../../lib/server-runtime-config";
-import { WORKSPACE_IDENTITY } from "../../lib/workspace-identity";
 
 // PWA share target intake. The manifest declares method=POST + multipart/form-data, so the
 // browser POSTs shared content (text + url + files) here. Files are forwarded server-side
@@ -126,7 +125,6 @@ async function forwardSharedFiles(
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          ...WORKSPACE_IDENTITY,
           title: filename,
           originalFilename: filename,
           mimeType: file.type,

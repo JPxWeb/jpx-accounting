@@ -11,8 +11,6 @@ import {
 } from "@jpx-accounting/domain";
 
 const legacyInput: EvidenceCreateInput = {
-  organizationId: "org_jpx",
-  workspaceId: "workspace_main",
   title: "OpenAI subscription invoice",
   originalFilename: "openai-march-2026.pdf",
   mimeType: "application/pdf",

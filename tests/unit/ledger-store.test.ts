@@ -37,8 +37,6 @@ test("MemoryLedgerStore satisfies the LedgerStore contract for create, review, a
   const journalBefore = (await store.getReports()).journal.length;
 
   const created = await store.createEvidence({
-    organizationId: "org_jpx",
-    workspaceId: "workspace_main",
     actorId: "user_founder",
     title: "Contract test receipt",
     originalFilename: "contract-test.jpg",
@@ -63,8 +61,6 @@ test("MemoryLedgerStore.createEvidence honors upload metadata and derives file-s
   const blobPath = "evidence-uploads/upload-test-1/uploaded-receipt.jpg";
 
   const created = await store.createEvidence({
-    organizationId: "org_jpx",
-    workspaceId: "workspace_main",
     actorId: "user_founder",
     title: "Uploaded receipt",
     originalFilename: "uploaded-receipt.jpg",
@@ -94,8 +90,6 @@ test("MemoryLedgerStore.createEvidence honors upload metadata and derives file-s
 test("MemoryLedgerStore.createEvidence without upload metadata keeps the legacy synthetic path and 1249 seed", async () => {
   const store = new MemoryLedgerStore();
   const created = await store.createEvidence({
-    organizationId: "org_jpx",
-    workspaceId: "workspace_main",
     actorId: "user_founder",
     title: "Legacy receipt",
     originalFilename: "legacy-receipt.jpg",
@@ -117,8 +111,6 @@ test("MemoryLedgerStore.createEvidence without upload metadata keeps the legacy 
 
 /** WS-D R19: identical (workspace, sha256, sizeBytes) fixture for the dedupe tests. */
 const dedupeCreateInput = (): EvidenceCreateInput => ({
-  organizationId: "org_jpx",
-  workspaceId: "workspace_main",
   title: "Dedupe receipt",
   originalFilename: "dedupe-receipt.jpg",
   mimeType: "image/jpeg",
@@ -154,23 +146,27 @@ test("MemoryLedgerStore.createEvidence dedupes identical (workspace, sha256, siz
   assert.equal((await store.getSnapshot()).vouchers.length, vouchersAfterFirst, "no duplicate voucher");
 });
 
-test("MemoryLedgerStore.createEvidence never dedupes across workspaces or on differing size", async () => {
+test("MemoryLedgerStore.createEvidence ignores client-posted workspace and still dedupes on differing size only", async () => {
   const store = new MemoryLedgerStore();
   const first = await store.createEvidence(dedupeCreateInput());
   const eventsAfterFirst = (await store.getEvents()).length;
 
-  // Same file, different tenant workspace: must create, never leak across tenants.
-  const otherWorkspace = await store.createEvidence({ ...dedupeCreateInput(), workspaceId: "workspace_other" });
-  assert.equal(otherWorkspace.deduped, undefined);
-  assert.notEqual(otherWorkspace.evidence.id, first.evidence.id);
-  const eventsAfterOther = (await store.getEvents()).length;
-  assert.equal(eventsAfterOther, eventsAfterFirst + 4, "cross-workspace create must append its four events");
+  // Client-posted tenant keys are not on the input type; a cast spoof must still
+  // land under DEFAULT_TENANT_SCOPE and therefore dedupe against the first create.
+  const spoofed = await store.createEvidence({
+    ...dedupeCreateInput(),
+    workspaceId: "workspace_other",
+  } as EvidenceCreateInput & { workspaceId: string });
+  assert.equal(spoofed.deduped, true, "store-owned scope ignores a spoofed workspaceId");
+  assert.equal(spoofed.evidence.id, first.evidence.id);
+  assert.equal(spoofed.evidence.workspaceId, "workspace_main");
+  assert.equal((await store.getEvents()).length, eventsAfterFirst, "spoofed-scope create must append nothing");
 
   // Same hash but different byte size: not the same content tuple.
   const differentSize = await store.createEvidence({ ...dedupeCreateInput(), sizeBytes: 4096 });
   assert.equal(differentSize.deduped, undefined);
   assert.notEqual(differentSize.evidence.id, first.evidence.id);
-  assert.equal((await store.getEvents()).length, eventsAfterOther + 4);
+  assert.equal((await store.getEvents()).length, eventsAfterFirst + 4);
 });
 
 test("MemoryLedgerStore.createEvidence without sha256 (legacy callers) skips dedupe entirely", async () => {
@@ -480,7 +476,6 @@ test("MemoryLedgerStore.getCompanySettings/putCompanySettings round-trip", async
   const store = new MemoryLedgerStore();
   assert.equal(await store.getCompanySettings(), null);
   const settings = {
-    organizationId: "org_test",
     organizationName: "Test AB",
     organizationNumber: "556677-8899",
     addressLine1: "Kungsgatan 1",
@@ -507,7 +502,6 @@ test("MemoryLedgerStore.getCompanySettings/putCompanySettings round-trip", async
 test("MemoryLedgerStore.putCompanySettings normalizes legacy payloads without a profile", async () => {
   const store = new MemoryLedgerStore();
   const legacy = {
-    organizationId: "org_test",
     organizationName: "Legacy AB",
     organizationNumber: "556677-8899",
     addressLine1: "Kungsgatan 1",
@@ -588,7 +582,6 @@ test("MemoryLedgerStore.getReportPack composes the period pack and reads fiscalY
   // A broken fiscal year from company settings shifts the quarter windows:
   // Q3 of the fy starting 2025-07-01 is Jan–Mar 2026.
   await store.putCompanySettings({
-    organizationId: "org_test",
     organizationName: "Test AB",
     organizationNumber: "556677-8899",
     addressLine1: "Kungsgatan 1",
@@ -619,8 +612,6 @@ test("MemoryLedgerStore.getReportPack composes the period pack and reads fiscalY
 test("MemoryLedgerStore.getSnapshot carries evidence packets so the voucher→evidence join resolves", async () => {
   const store = new MemoryLedgerStore();
   const created = await store.createEvidence({
-    organizationId: "org_jpx",
-    workspaceId: "workspace_main",
     actorId: "user_founder",
     title: "Packet join receipt",
     originalFilename: "packet-join.jpg",
@@ -701,8 +692,6 @@ test("MemoryLedgerStore.getReviewFeed orders newest review first (parity with Po
   const store = new MemoryLedgerStore();
   // Constructor already seeds one review; two more pushes it to the back.
   const first = await store.createEvidence({
-    organizationId: "org_jpx",
-    workspaceId: "workspace_main",
     actorId: "user_founder",
     title: "First in feed",
     originalFilename: "first.jpg",
@@ -710,8 +699,6 @@ test("MemoryLedgerStore.getReviewFeed orders newest review first (parity with Po
     modalities: ["camera"],
   });
   const second = await store.createEvidence({
-    organizationId: "org_jpx",
-    workspaceId: "workspace_main",
     actorId: "user_founder",
     title: "Second in feed",
     originalFilename: "second.jpg",
@@ -729,8 +716,6 @@ test("MemoryLedgerStore.getReviewFeed orders newest review first (parity with Po
 test("MemoryLedgerStore.composeEvidence relinks the voucher to the newest packet and keeps optional-key packet shape", async () => {
   const store = new MemoryLedgerStore();
   const created = await store.createEvidence({
-    organizationId: "org_jpx",
-    workspaceId: "workspace_main",
     actorId: "user_founder",
     title: "Relink target receipt",
     originalFilename: "relink.jpg",
@@ -739,8 +724,6 @@ test("MemoryLedgerStore.composeEvidence relinks the voucher to the newest packet
   });
 
   const composed = await store.composeEvidence({
-    organizationId: "org_jpx",
-    workspaceId: "workspace_main",
     actorId: "user_founder",
     evidenceIds: [created.evidence.id],
     note: "Rebundled packet",
@@ -781,8 +764,6 @@ test("MemoryLedgerStore.composeEvidence without a linked voucher appends no Evid
 
   // Evidence ids the store has never seen: nothing to relink.
   await store.composeEvidence({
-    organizationId: "org_jpx",
-    workspaceId: "workspace_main",
     actorId: "user_founder",
     evidenceIds: ["evidence_unknown_1"],
   });
@@ -902,8 +883,6 @@ test("B6a: book-without-vat emits ReviewBookedWithoutVat + PostedToLedger — ne
 test("B7a: refreshComplianceAlerts preserves acknowledged/dismissed on re-detection (lifecycle hooks, Rule 24)", async () => {
   const store = new MemoryLedgerStore();
   const created = await store.createEvidence({
-    organizationId: "org_jpx",
-    workspaceId: "workspace_main",
     actorId: "user_founder",
     title: "Ack-preservation receipt",
     originalFilename: "ack-preserve.jpg",
@@ -950,8 +929,6 @@ test("B7a: refreshComplianceAlerts preserves acknowledged/dismissed on re-detect
 test("B7b: suggestVoucher persists onto the pending review read model but never clobbers a decided one", async () => {
   const store = new MemoryLedgerStore();
   const created = await store.createEvidence({
-    organizationId: "org_jpx",
-    workspaceId: "workspace_main",
     actorId: "user_founder",
     title: "Suggest parity receipt",
     originalFilename: "suggest-parity.jpg",
