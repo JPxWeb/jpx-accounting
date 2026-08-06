@@ -340,14 +340,23 @@ export function planExtractionRefresh(
 
   // No linked voucher — return current context without mutation or events.
   if (!voucher) {
-    return { kind: "unchanged", context: snapshotEvidenceContext(evidence, { packet }) };
+    return {
+      kind: "unchanged",
+      context: snapshotEvidenceContext(evidence, {
+        ...(packet !== undefined ? { packet } : {}),
+      }),
+    };
   }
 
   // Decided voucher (append-only): return current context unchanged.
   if (voucher.status !== "needs-review") {
     return {
       kind: "unchanged",
-      context: snapshotEvidenceContext(evidence, { packet, voucher, review }),
+      context: snapshotEvidenceContext(evidence, {
+        ...(packet !== undefined ? { packet } : {}),
+        voucher,
+        ...(review !== undefined ? { review } : {}),
+      }),
     };
   }
 
@@ -412,9 +421,9 @@ export function planExtractionRefresh(
   return {
     kind: "apply",
     context: snapshotEvidenceContext(evidence, {
-      packet,
+      ...(packet !== undefined ? { packet } : {}),
       voucher: updatedVoucher,
-      review: updatedReview,
+      ...(updatedReview !== undefined ? { review: updatedReview } : {}),
     }),
     updatedVoucher,
     updatedReview,
