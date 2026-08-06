@@ -201,6 +201,7 @@ resource apiApp 'Microsoft.Web/sites@2023-12-01' = {
       httpLoggingEnabled: true
       appSettings: [
         { name: 'PORT', value: '8080' }
+        { name: 'WEBSITES_CONTAINER_STOP_TIME_LIMIT', value: '30' }
         { name: 'ACCOUNTING_RUNTIME_MODE', value: runtimeMode }
         { name: 'ALLOW_TEST_RESET', value: 'false' }
         { name: 'AZURE_STORAGE_ACCOUNT', value: storage.name }

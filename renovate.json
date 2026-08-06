@@ -1,0 +1,27 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices", ":timezone(Europe/Stockholm)"],
+  "rangeStrategy": "pin",
+  "postUpdateOptions": ["pnpmDedupe"],
+  "schedule": ["before 7am on monday"],
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    { "groupName": "ai-sdk", "matchPackageNames": ["ai", "@ai-sdk/**"] },
+    { "groupName": "hono", "matchPackageNames": ["hono", "@hono/**", "hono-rate-limiter"] },
+    {
+      "matchPackageNames": [
+        "next",
+        "eslint-config-next",
+        "react",
+        "react-dom",
+        "@base-ui/react",
+        "recharts",
+        "react-joyride"
+      ],
+      "addLabels": ["run-e2e"]
+    },
+    { "matchUpdateTypes": ["major"], "dependencyDashboardApproval": true }
+  ],
+  "vulnerabilityAlerts": { "labels": ["security"] },
+  "osvVulnerabilityAlerts": true
+}

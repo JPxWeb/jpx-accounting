@@ -10,7 +10,7 @@ import {
   simulationRequestSchema,
   suggestionRequestSchema,
 } from "@jpx-accounting/contracts";
-import { DEMO_ACTOR_ID, MemoryLedgerStore, type LedgerStore } from "@jpx-accounting/domain";
+import { DEFAULT_TENANT_SCOPE, DEMO_ACTOR_ID, MemoryLedgerStore, type LedgerStore } from "@jpx-accounting/domain";
 
 import { createAdvisorChatHandler } from "../../services/api/src/advisor/chat";
 import { clientIpKey, createApp } from "../../services/api/src/app";
@@ -41,7 +41,7 @@ function createTestApiApp(runtimeMode: "demo" | "normal", overrides: TestAppOver
     allowTestReset: overrides.allowTestReset ?? false,
     corsPolicy,
     azureOpenAi: {},
-    supabase: { poolerTransactionMode: false },
+    database: { poolMode: "direct", poolMax: 10 },
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: { jwksUrl: overrides.jwksUrl },
@@ -107,7 +107,7 @@ const TINY_SIE_FIXTURE = [
 ].join("\n");
 
 // ---------------------------------------------------------------------------
-// Contract sweep: request schemas carry no actorId and strip a posted one
+// Contract sweep: request schemas carry no actorId/tenant and strip posted ones
 // ---------------------------------------------------------------------------
 
 test("request schemas have no actorId field and strip a client-posted one", () => {
@@ -115,6 +115,8 @@ test("request schemas have no actorId field and strip a client-posted one", () =
     JSON.parse(evidenceBody({ actorId: "user_hacker" })) as Record<string, unknown>,
   );
   assert.ok(!("actorId" in evidence), "evidenceCreateInputSchema must strip actorId");
+  assert.ok(!("organizationId" in evidence), "evidenceCreateInputSchema must strip organizationId");
+  assert.ok(!("workspaceId" in evidence), "evidenceCreateInputSchema must strip workspaceId");
 
   const compose = evidenceComposeInputSchema.parse({
     organizationId: "org_jpx",
@@ -123,6 +125,8 @@ test("request schemas have no actorId field and strip a client-posted one", () =
     actorId: "user_hacker",
   });
   assert.ok(!("actorId" in compose), "evidenceComposeInputSchema must strip actorId");
+  assert.ok(!("organizationId" in compose), "evidenceComposeInputSchema must strip organizationId");
+  assert.ok(!("workspaceId" in compose), "evidenceComposeInputSchema must strip workspaceId");
 
   const decision = reviewDecisionInputSchema.parse({ actorId: "user_hacker", notes: "n" });
   assert.deepEqual(decision, { notes: "n" });
@@ -139,6 +143,31 @@ test("request schemas have no actorId field and strip a client-posted one", () =
   assert.deepEqual(knowledgeQuerySchema.parse({ actorId: "user_hacker", query: "moms" }), { query: "moms" });
   // The suggestion schema's only field WAS the client actorId — now an empty object that still strips it.
   assert.deepEqual(suggestionRequestSchema.parse({ actorId: "user_hacker" }), {});
+});
+
+test("demo createEvidence stamps DEFAULT_TENANT_SCOPE and ignores a posted org_evil", async () => {
+  const store = new MemoryLedgerStore();
+  const app = createTestApiApp("demo", { store });
+
+  const response = await app.request("http://localhost/api/evidence", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: evidenceBody({ organizationId: "org_evil", workspaceId: "workspace_evil" }),
+  });
+  assert.equal(response.status, 201);
+  const created = (await response.json()) as {
+    evidence: { id: string; organizationId: string; workspaceId: string };
+  };
+  assert.equal(created.evidence.organizationId, DEFAULT_TENANT_SCOPE.organizationId);
+  assert.equal(created.evidence.workspaceId, DEFAULT_TENANT_SCOPE.workspaceId);
+
+  const events = await store.getEvents();
+  const received = events.find(
+    (event) => event.eventType === "EvidenceReceived" && event.aggregateId === created.evidence.id,
+  );
+  assert.ok(received, "EvidenceReceived event expected");
+  assert.equal(received.organizationId, DEFAULT_TENANT_SCOPE.organizationId);
+  assert.equal(received.workspaceId, DEFAULT_TENANT_SCOPE.workspaceId);
 });
 
 // ---------------------------------------------------------------------------

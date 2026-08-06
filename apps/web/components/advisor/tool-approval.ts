@@ -1,16 +1,18 @@
 /**
  * Signature-preserving replacement for `AbstractChat.addToolApprovalResponse`.
  *
- * ai@7.0.15 rebuilds the approval object as `{ id, approved, reason }` when
- * responding to a tool-approval request, DROPPING every other field — including
- * the HMAC `signature` the server streamed in the approval request. On replay,
- * `streamText`'s `validateApprovedToolApprovals` then rejects the turn with
- * "missing signature" whenever `experimental_toolApprovalSecret` is set, which
- * is ALWAYS in normal mode (`services/api/src/advisor/chat.ts`). The API-side
+ * ai@7.0.15 (still true through ai@7.0.55) rebuilds the approval object as
+ * `{ id, approved, reason }` when responding to a tool-approval request,
+ * DROPPING every other field — including the HMAC `signature` the server
+ * streamed in the approval request. On replay, `streamText`'s
+ * `validateApprovedToolApprovals` then rejects the turn with "missing
+ * signature" whenever `experimental_toolApprovalSecret` is set, which is
+ * ALWAYS in normal mode (`services/api/src/advisor/chat.ts`). The API-side
  * behavior is pinned by `tests/integration/advisor-normal-mode.test.ts`; this
  * module keeps the web client honest until the upstream drop is fixed —
- * re-test on every `ai` package bump and delete this file when the SDK
- * preserves the approval object.
+ * re-test on every `ai` package bump and delete this file ONLY when the SDK
+ * preserves the approval object AND vercel/ai#13670 (deny-flow stall) has a
+ * released fix.
  *
  * The transition mirrors the SDK exactly (only the LAST message is considered,
  * only `approval-requested` tool parts match) — the sole difference is

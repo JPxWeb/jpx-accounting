@@ -133,7 +133,7 @@ test("print media strips chrome and swaps chart SVGs for their data tables", asy
   await expect(page.getByTestId("vat-preparation")).toBeVisible();
 });
 
-test("the print button calls window.print", async ({ page }) => {
+test("the print button calls window.print", async ({ page, isMobile }) => {
   await page.addInitScript(() => {
     const flagged = window as Window & { __printCalls?: number };
     flagged.__printCalls = 0;
@@ -143,7 +143,7 @@ test("the print button calls window.print", async ({ page }) => {
   });
 
   await page.goto("/reports");
-  await page.getByTestId("print-report").click();
+  await activateControl(page.getByTestId("print-report"), isMobile);
 
   await expect.poll(() => page.evaluate(() => (window as Window & { __printCalls?: number }).__printCalls)).toBe(1);
 });

@@ -285,7 +285,6 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
 }
 
 const EMPTY_COMPANY_SETTINGS: CompanySettings = {
-  organizationId: "org_default",
   organizationName: "",
   organizationNumber: "",
   addressLine1: "",

@@ -428,16 +428,14 @@ export const evidenceContextSchema = z.object({
 export type EvidenceContext = z.infer<typeof evidenceContextSchema>;
 
 /**
- * WS-C R5: request schemas carry NO `actorId` — attribution is derived
- * server-side from the verified JWT subject (`user:<sub>`) or, with auth off,
- * the demo sentinel. A client-posted `actorId` key is stripped by Zod's
- * default unknown-key handling and never reaches a store. Read models
+ * WS-C R5 + tenant-scope sweep: request schemas carry NO actorId AND NO
+ * organizationId/workspaceId — scope is owned by the server-side store
+ * (DEFAULT_TENANT_SCOPE until multi-tenancy). Client-posted keys are
+ * stripped by Zod's unknown-key handling and never reach a store. Read models
  * (`ledgerEventSchema`, provenance timelines, integrity summaries) keep their
- * actor fields — those record what the SERVER attributed.
+ * actor/tenant fields — those record what the SERVER attributed.
  */
 export const evidenceCreateInputSchema = z.object({
-  organizationId: z.string(),
-  workspaceId: z.string(),
   title: z.string(),
   originalFilename: z.string(),
   mimeType: z.string(),
@@ -461,8 +459,6 @@ export const evidenceCreateInputSchema = z.object({
 });
 
 export const evidenceComposeInputSchema = z.object({
-  organizationId: z.string(),
-  workspaceId: z.string(),
   evidenceIds: z.array(z.string()).min(1),
   note: z.string().optional(),
   voiceTranscript: z.string().optional(),
@@ -581,9 +577,14 @@ export const aiPostureSchema = z.object({
 export type AiPosture = z.infer<typeof aiPostureSchema>;
 export const DEFAULT_AI_POSTURE: AiPosture = aiPostureSchema.parse({});
 
+/**
+ * Company settings are org-scoped by the server store (`DEFAULT_TENANT_SCOPE`
+ * / constructor defaults) — clients must not stamp `organizationId`. A posted
+ * key is stripped by Zod unknown-key handling (same pattern as actorId /
+ * evidence tenant fields).
+ */
 export const companySettingsSchema = z
   .object({
-    organizationId: z.string(),
     organizationName: z.string().min(1),
     organizationNumber: z.string().min(1),
     addressLine1: z.string().min(1),

@@ -107,7 +107,7 @@ test("the mobile dock keeps five tabs without an Advisor entry", async ({ page, 
 });
 
 // Runs on both projects: on mobile the palette is the only Advisor entry point.
-test("the command palette 'Ask advisor' action opens the assistant", async ({ page }) => {
+test("the command palette 'Ask advisor' action opens the assistant", async ({ page, isMobile }) => {
   await page.goto("/today?view=queue");
   // The review card is client-rendered, so its presence proves the shell is
   // hydrated and the global Ctrl/Cmd+K listener is attached.
@@ -116,7 +116,7 @@ test("the command palette 'Ask advisor' action opens the assistant", async ({ pa
   await page.keyboard.press("Control+k");
   await expect(page.getByTestId("command-palette")).toBeVisible();
 
-  await page.getByTestId("palette-ask-advisor").click();
+  await activateControl(page.getByTestId("palette-ask-advisor"), isMobile);
 
   await expect(page).toHaveURL(/\/assistant/);
   await expect(page.getByTestId("assistant-panel")).toBeVisible();

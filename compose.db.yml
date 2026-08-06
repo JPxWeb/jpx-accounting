@@ -1,0 +1,35 @@
+# Isolated local PostgreSQL + pgvector service for development and integration tests.
+#
+# Never run this file with a fixed `-p`/`COMPOSE_PROJECT_NAME`: `scripts/db.mts` always
+# supplies a project name derived from a hash of the repository's absolute path plus the
+# optional JPX_DB_INSTANCE env var, so multiple clones/worktrees/agents can each run their
+# own isolated server concurrently without name or port collisions. Do not add
+# `container_name` or a fixed host port for the same reason — see
+# docs/superpowers/plans (Local Postgres Dev DB plan, Task 1) for the full rationale.
+services:
+  db:
+    # Override via JPX_DB_IMAGE for CI PG15 compatibility (default stays PG17).
+    image: ${JPX_DB_IMAGE:-pgvector/pgvector:0.8.5-pg17-bookworm}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: jpx_dev
+    ports:
+      # Empty host port = Docker assigns a free ephemeral port; bound to loopback only so
+      # the server is never reachable from outside the host. scripts/db.mts discovers the
+      # assigned port via `docker compose ... port db 5432`.
+      - "127.0.0.1::5432"
+    shm_size: "128mb"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  # Compose namespaces this per project (`<project>_pgdata`), so it never collides across
+  # isolated instances even though the volume name here is shared source text.
+  pgdata:

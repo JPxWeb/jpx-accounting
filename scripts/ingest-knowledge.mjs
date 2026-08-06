@@ -10,13 +10,19 @@
  *
  *   pnpm ingest:knowledge
  *
- * Requires SUPABASE_DB_URL (migrations 0001–0003 applied) and
- * AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY — see docs/CONTRIBUTING.md
- * ("Knowledge retrieval (RAG)").
+ * Requires DATABASE_URL (legacy SUPABASE_DB_URL aliases; conflicting values throw;
+ * all checked-in migrations applied — 0003 creates knowledge.documents; 0007
+ * tenant-scopes its PK) and AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY — see
+ * docs/CONTRIBUTING.md ("Knowledge retrieval (RAG)").
  */
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import {
+  derivePrepareFromPoolMode,
+  resolveDatabasePoolMode,
+  resolveDatabaseRuntimeUrl,
+} from "../services/api/src/config.ts";
 import { createAiRuntime } from "../packages/ai-core/src/index.ts";
 import { buildCorpusChunks } from "../packages/advisor/src/corpus-source.ts";
 import {
@@ -33,26 +39,39 @@ export const KNOWLEDGE_DOCS_DIR = path.join(repoRoot, "docs", "knowledge", "sv")
 export const EMBED_BATCH_SIZE = 64;
 
 /**
- * Fixed normal-mode workspace scope — mirrors the PostgresLedgerStore wiring
- * in services/api/src/runtime.ts and the query scope in
- * services/api/src/knowledge.ts. Multi-workspace ingestion is a later phase.
+ * Fixed normal-mode workspace scope — keep in sync with
+ * `DEFAULT_TENANT_SCOPE` in packages/domain/src/tenant.ts (plain .mjs cannot
+ * import the TS package without the tsx path used elsewhere; values are
+ * duplicated here with a pointer so greps find both).
  */
 export const INGEST_SCOPE = { organizationId: "org_jpx", workspaceId: "workspace_main" };
 
-/** Validate required env up front with actionable messages instead of failing mid-ingest. */
-function readIngestEnv(env = process.env) {
+/**
+ * Validate required env up front with actionable messages instead of failing mid-ingest.
+ *
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {{
+ *   databaseUrl: string,
+ *   endpoint: string,
+ *   apiKey: string,
+ *   model: string | undefined,
+ *   poolMode: 'direct' | 'session' | 'transaction',
+ * }}
+ */
+export function readIngestEnv(env = process.env) {
   const trim = (value) => {
     const trimmed = value?.trim();
     return trimmed ? trimmed : undefined;
   };
-  const databaseUrl = trim(env.SUPABASE_DB_URL);
+  // Throws on conflicting canonical/legacy values — same semantics as the API boot.
+  const databaseUrl = resolveDatabaseRuntimeUrl(env);
   const endpoint = trim(env.AZURE_OPENAI_ENDPOINT);
   const apiKey = trim(env.AZURE_OPENAI_API_KEY);
 
   const missing = [];
   if (!databaseUrl) {
     missing.push(
-      "SUPABASE_DB_URL — direct Postgres URL (port 5432) or Supavisor session-mode URL, with migrations 0001–0003 applied (0003 creates knowledge.documents)",
+      "DATABASE_URL — Postgres URL (direct, session, or transaction pooler) with the knowledge migrations applied (0003 creates knowledge.documents; legacy SUPABASE_DB_URL still aliases)",
     );
   }
   if (!endpoint) {
@@ -76,7 +95,7 @@ function readIngestEnv(env = process.env) {
     endpoint,
     apiKey,
     model: trim(env.AZURE_OPENAI_MODEL),
-    poolerTransactionMode: env.SUPABASE_POOLER_TRANSACTION_MODE === "true",
+    poolMode: resolveDatabasePoolMode(env),
   };
 }
 
@@ -130,7 +149,7 @@ async function main() {
 
   const client = createPostgresClient({
     connectionString: env.databaseUrl,
-    prepare: !env.poolerTransactionMode,
+    prepare: derivePrepareFromPoolMode(env.poolMode),
     max: 4,
   });
   try {
@@ -147,10 +166,8 @@ async function main() {
 
 const isMain = process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 if (isMain) {
-  try {
-    await main();
-  } catch (error) {
+  main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
-  }
+  });
 }

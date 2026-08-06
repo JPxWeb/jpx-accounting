@@ -17,7 +17,7 @@ function captureButton(page: Page) {
     : page.getByTestId("capture-open-desktop");
 }
 
-test("home screen defaults to the advisory dashboard", async ({ page }) => {
+test("home screen defaults to the advisory dashboard", async ({ page, isMobile }) => {
   await page.goto("/");
 
   // `/` → `/today` → dashboard view (the queue moved to ?view=queue, Task 5.8).
@@ -27,9 +27,9 @@ test("home screen defaults to the advisory dashboard", async ({ page }) => {
   await expect(page.getByTestId("runtime-mode-pill")).toContainText("Demo");
 
   // The header toggle flips to the full review queue and back.
-  await page.getByTestId("today-view-queue").click();
+  await activateControl(page.getByTestId("today-view-queue"), isMobile);
   await expect(page.getByTestId("review-card")).toHaveCount(1);
-  await page.getByTestId("today-view-dashboard").click();
+  await activateControl(page.getByTestId("today-view-dashboard"), isMobile);
   await expect(page.getByTestId("dashboard-canvas")).toBeVisible();
 });
 

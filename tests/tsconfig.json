@@ -4,6 +4,8 @@
     "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "allowJs": true,
+    "allowImportingTsExtensions": true,
     "types": ["node"],
     "baseUrl": "..",
     "paths": {
@@ -18,6 +20,6 @@
       "@jpx-accounting/document-intelligence": ["packages/document-intelligence/src/index.ts"]
     }
   },
-  "include": ["unit/**/*.ts", "integration/**/*.ts", "e2e/**/*.ts"],
+  "include": ["unit/**/*.ts", "integration/**/*.ts", "e2e/**/*.ts", "../scripts/ingest-knowledge.mjs"],
   "exclude": ["**/node_modules/**"]
 }

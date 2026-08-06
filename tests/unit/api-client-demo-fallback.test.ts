@@ -29,8 +29,6 @@ function mockFetch(t: test.TestContext, respond: (url: string) => Response): Cap
 }
 
 const EVIDENCE_INPUT: EvidenceCreateInput = {
-  organizationId: "org_demo",
-  workspaceId: "ws_demo",
   title: "Kvitto ICA",
   originalFilename: "kvitto-ica.jpg",
   mimeType: "image/jpeg",

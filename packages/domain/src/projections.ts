@@ -1,4 +1,9 @@
-import type { AccountBalanceProjection, JournalEntryProjection, VatProjection } from "@jpx-accounting/contracts";
+import type {
+  AccountBalanceProjection,
+  JournalEntryProjection,
+  LedgerEvent,
+  VatProjection,
+} from "@jpx-accounting/contracts";
 
 import type { VatRegime } from "./vat/regime";
 import { swedishVatRegime } from "./vat/regime";
@@ -14,6 +19,28 @@ export type LedgerLine = {
   bookedAt: string;
   deductible: boolean;
 };
+
+/** Event types whose payloads carry journal `lines` for report replay. */
+export const LINE_CARRYING_EVENT_TYPES = ["PostedToLedger", "VoucherImported"] as const;
+
+const LINE_CARRYING_EVENT_TYPE_SET: ReadonlySet<string> = new Set(LINE_CARRYING_EVENT_TYPES);
+
+/**
+ * Rebuild ledger lines from append-only event payloads (PostedToLedger +
+ * VoucherImported). Memory prepends frozen demo seed separately; Postgres
+ * does not.
+ */
+export function collectLedgerLinesFromEvents(events: Array<Pick<LedgerEvent, "eventType" | "payload">>): LedgerLine[] {
+  const lines: LedgerLine[] = [];
+  for (const event of events) {
+    if (!LINE_CARRYING_EVENT_TYPE_SET.has(event.eventType)) continue;
+    const payloadLines = (event.payload as { lines?: unknown }).lines;
+    if (Array.isArray(payloadLines)) {
+      for (const line of payloadLines as LedgerLine[]) lines.push(line);
+    }
+  }
+  return lines;
+}
 
 /**
  * Filter ledger lines to an inclusive day window. Comparisons are string-based

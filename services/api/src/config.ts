@@ -12,14 +12,36 @@ export type ApiRuntimeConfig = {
     apiKey?: string | undefined;
     model?: string | undefined;
   };
-  supabase: {
-    /** Direct Postgres connection string (port 5432) or Supavisor session-mode URL. */
-    databaseUrl?: string | undefined;
+  database: {
     /**
-     * Set to true when the URL points at Supavisor transaction-mode (port 6543);
-     * named prepared statements are not supported there, so postgres-js must run with prepare:false.
+     * Runtime credential — direct, session-pooler, or transaction-pooler endpoint. Resolved from
+     * the canonical DATABASE_URL, or the legacy SUPABASE_DB_URL alias. Provider-neutral: works
+     * against local Docker Postgres, Supabase, Azure Database for PostgreSQL, Neon, or any
+     * compatible PostgreSQL 15-17 + pgvector server.
      */
-    poolerTransactionMode: boolean;
+    runtimeUrl?: string | undefined;
+    /**
+     * Owner/migrator credential (direct or session connectivity) for the migration runner
+     * (scripts/db-migrations.mts). NOT consumed by the running API process itself — resolved and
+     * validated here anyway so config.ts stays the single source of truth for anything that reads
+     * database-shaped env vars.
+     */
+    migrationUrl?: string | undefined;
+    /**
+     * direct|session|transaction. Resolved from the canonical DATABASE_POOL_MODE, or the legacy
+     * SUPABASE_POOLER_TRANSACTION_MODE=true alias (equivalent to "transaction"). Transaction-mode
+     * poolers (e.g. Supavisor port 6543) do not support named prepared statements — see
+     * `derivePrepareFromPoolMode`. Default: "direct".
+     */
+    poolMode: DatabasePoolMode;
+    /** Bounded total runtime pool size. Resolved from DATABASE_POOL_MAX. Default: 10. */
+    poolMax: number;
+    /**
+     * Explicit disposable external test database URL (DATABASE_TEST_URL). Test-only — never
+     * consumed by the running API process; resolved here only so it doesn't break config parsing
+     * when present in the environment.
+     */
+    testUrl?: string | undefined;
   };
   azureStorage: {
     accountName?: string | undefined;
@@ -76,6 +98,20 @@ export type SupabaseJwtAlgorithm = (typeof SUPABASE_JWT_ALGORITHMS)[number];
 
 function isSupabaseJwtAlgorithm(value: string): value is SupabaseJwtAlgorithm {
   return (SUPABASE_JWT_ALGORITHMS as readonly string[]).includes(value);
+}
+
+/** Provider-neutral pool-mode vocabulary (plan Task 3) — direct/session support named prepared statements; transaction-mode poolers do not. */
+export const DATABASE_POOL_MODES = ["direct", "session", "transaction"] as const;
+
+export type DatabasePoolMode = (typeof DATABASE_POOL_MODES)[number];
+
+function isDatabasePoolMode(value: string): value is DatabasePoolMode {
+  return (DATABASE_POOL_MODES as readonly string[]).includes(value);
+}
+
+/** Small pure boundary (unit-testable in isolation): transaction-mode poolers don't support postgres-js named prepared statements. */
+export function derivePrepareFromPoolMode(poolMode: DatabasePoolMode): boolean {
+  return poolMode !== "transaction";
 }
 
 /** RS256 covers Supabase's original asymmetric keys; ES256 covers its newer default. */
@@ -171,6 +207,88 @@ function resolvePort(portEnv?: string): number {
 }
 
 /**
+ * DATABASE_URL is canonical; SUPABASE_DB_URL is a temporary legacy alias (Task 3 compatibility
+ * behavior). Both may be set during the migration window as long as they agree — if they resolve
+ * to different connection strings, fail BEFORE any connection attempt rather than picking one
+ * silently (an operator who thinks they moved off Supabase would otherwise keep writing to it).
+ */
+export function resolveDatabaseRuntimeUrl(env: NodeJS.ProcessEnv): string | undefined {
+  const canonical = normalizeOptionalValue(env.DATABASE_URL);
+  const legacy = normalizeOptionalValue(env.SUPABASE_DB_URL);
+  if (canonical !== undefined && legacy !== undefined && canonical !== legacy) {
+    throw new Error(
+      "Conflicting database connection settings: DATABASE_URL and the legacy SUPABASE_DB_URL " +
+        "alias are both set, to different values. Set only one, or make them identical, before booting.",
+    );
+  }
+  return canonical ?? legacy;
+}
+
+/** SUPABASE_POOLER_TRANSACTION_MODE=true is the only recognized legacy value — mirrors the previous boolean parse (`=== "true"`). */
+function resolveLegacyTransactionModeFlag(env: NodeJS.ProcessEnv): boolean {
+  return env.SUPABASE_POOLER_TRANSACTION_MODE === "true";
+}
+
+/**
+ * DATABASE_POOL_MODE is canonical; SUPABASE_POOLER_TRANSACTION_MODE=true is a temporary legacy
+ * alias for "transaction" (Task 3 compatibility behavior). Conflicting canonical/legacy values
+ * fail before connecting, same rationale as `resolveDatabaseRuntimeUrl`.
+ */
+export function resolveDatabasePoolMode(env: NodeJS.ProcessEnv): DatabasePoolMode {
+  const canonicalRaw = normalizeOptionalValue(env.DATABASE_POOL_MODE);
+  let canonical: DatabasePoolMode | undefined;
+  if (canonicalRaw !== undefined) {
+    if (!isDatabasePoolMode(canonicalRaw)) {
+      throw new Error(
+        `Invalid DATABASE_POOL_MODE ${JSON.stringify(canonicalRaw)} — expected one of: ${DATABASE_POOL_MODES.join(", ")}.`,
+      );
+    }
+    canonical = canonicalRaw;
+  }
+  const legacyIsTransaction = resolveLegacyTransactionModeFlag(env);
+  if (canonical !== undefined && legacyIsTransaction && canonical !== "transaction") {
+    throw new Error(
+      `Conflicting database pool mode settings: DATABASE_POOL_MODE=${canonical} and the legacy ` +
+        "SUPABASE_POOLER_TRANSACTION_MODE=true (equivalent to DATABASE_POOL_MODE=transaction) disagree.",
+    );
+  }
+  if (canonical !== undefined) return canonical;
+  if (legacyIsTransaction) return "transaction";
+  return "direct";
+}
+
+/** DATABASE_POOL_MAX must be a whole positive pool size; garbage input throws instead of booting with an unbounded/invalid pool. */
+function resolveDatabasePoolMax(env: NodeJS.ProcessEnv): number {
+  const raw = normalizeOptionalValue(env.DATABASE_POOL_MAX);
+  if (raw === undefined) {
+    return 10;
+  }
+  const max = Number(raw);
+  if (!Number.isInteger(max) || max < 1) {
+    throw new Error(`Invalid DATABASE_POOL_MAX ${JSON.stringify(raw)} — expected a positive integer.`);
+  }
+  return max;
+}
+
+/**
+ * DATABASE_MIGRATION_URL is not consumed by the running API process (the migration runner reads
+ * it directly) — parsed here anyway so config.ts stays the single source of truth for anything
+ * that reads database-shaped env vars, and so a malformed value fails loudly at config-read time.
+ */
+function resolveDatabaseMigrationUrl(env: NodeJS.ProcessEnv): string | undefined {
+  const raw = normalizeOptionalValue(env.DATABASE_MIGRATION_URL);
+  if (raw === undefined) {
+    return undefined;
+  }
+  try {
+    new URL(raw);
+  } catch {
+    throw new Error("Invalid DATABASE_MIGRATION_URL — expected a valid PostgreSQL connection URL.");
+  }
+  return raw;
+}
+
+/**
  * Resolved boot posture for the single structured boot log line (§A N5e) —
  * emitted once by `createApiRuntimeDependencies` in runtime.ts, NOT here:
  * `readApiRuntimeConfig` is also re-read lazily (knowledge.ts) and must stay
@@ -183,7 +301,7 @@ export function describeBootPosture(config: ApiRuntimeConfig) {
     component: "api.boot",
     message: "resolved runtime posture",
     runtimeMode: config.runtimeMode,
-    ledgerStore: config.runtimeMode === "demo" ? "memory" : config.supabase.databaseUrl ? "postgres" : "unavailable",
+    ledgerStore: config.runtimeMode === "demo" ? "memory" : config.database.runtimeUrl ? "postgres" : "unavailable",
     authEnabled: config.auth.jwksUrl !== undefined,
     corsPolicy: config.corsPolicy.kind,
     corsOriginCount: config.corsPolicy.kind === "allowlist" ? config.corsPolicy.origins.length : 0,
@@ -232,9 +350,12 @@ export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiR
       apiKey: normalizeOptionalValue(env.AZURE_OPENAI_API_KEY),
       model: normalizeOptionalValue(env.AZURE_OPENAI_MODEL),
     },
-    supabase: {
-      databaseUrl: normalizeOptionalValue(env.SUPABASE_DB_URL),
-      poolerTransactionMode: env.SUPABASE_POOLER_TRANSACTION_MODE === "true",
+    database: {
+      runtimeUrl: resolveDatabaseRuntimeUrl(env),
+      migrationUrl: resolveDatabaseMigrationUrl(env),
+      poolMode: resolveDatabasePoolMode(env),
+      poolMax: resolveDatabasePoolMax(env),
+      testUrl: normalizeOptionalValue(env.DATABASE_TEST_URL),
     },
     azureStorage: {
       accountName: normalizeOptionalValue(env.AZURE_STORAGE_ACCOUNT),

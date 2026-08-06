@@ -43,6 +43,7 @@ delete process.env.ADVISOR_STREAM_TIMEOUT_MS;
 const MOCK_API_KEY = "test-mock-azure-key";
 const TOOL_APPROVAL_SECRET = "integration-test-tool-approval-secret";
 const PROPOSE_TOOL_NAME = "proposeReviewAction";
+const PROPOSAL_QUESTION = "Kan du godkänna granskningen i kön?";
 
 // The API must stay alive through provider failures — track stray rejections.
 const unhandledRejections: unknown[] = [];
@@ -66,7 +67,7 @@ function createNormalModeApp(mock: MockOpenAiResponsesServer) {
     // with this slice, so the advisor streams through createAzure against the
     // mock endpoint (POST {endpoint}/openai/responses with the api-key header).
     azureOpenAi: { endpoint: mock.endpoint, apiKey: MOCK_API_KEY, model: "mock-deployment" },
-    supabase: { poolerTransactionMode: false },
+    database: { poolMode: "direct", poolMax: 10 },
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: {},
@@ -175,6 +176,34 @@ function extractStreamedApproval(chunks: UiChunk[]): StreamedApproval {
   };
 }
 
+type AdvisorTestApp = ReturnType<typeof createNormalModeApp>["app"];
+
+/** Turn 1: model proposes a review action; stream stops at the HMAC approval request. */
+async function streamProposeReviewActionTurn(
+  app: AdvisorTestApp,
+  mock: MockOpenAiResponsesServer,
+  store: MemoryLedgerStore,
+): Promise<{ proposal: ReviewActionProposal; approval: StreamedApproval }> {
+  const proposal = await buildProposalFromStore(store);
+  mock.enqueue(toolCallTurnScript(PROPOSE_TOOL_NAME, proposal));
+  const response = await app.request(chatRequest([userMessage(PROPOSAL_QUESTION)]));
+  assert.equal(response.status, 200);
+  const { chunks, readError } = await collectSseChunks(response);
+  assert.equal(readError, undefined);
+  const approval = extractStreamedApproval(chunks);
+  assert.deepEqual(approval.input, proposal);
+  assert.ok(
+    !chunks.some((chunk) => chunk.type === "tool-output-available"),
+    "nothing may execute before the human responds",
+  );
+  return { proposal, approval };
+}
+
+async function assertReviewNeedsReview(store: MemoryLedgerStore, reviewId: string): Promise<void> {
+  const snapshot = await store.getSnapshot();
+  assert.equal(snapshot.reviews.find((item) => item.id === reviewId)?.status, "needs-review");
+}
+
 /** The assistant replay message a web client sends after the human clicks approve. */
 function approvalRespondedMessage(approval: StreamedApproval, input: unknown, approved: boolean) {
   return {
@@ -254,36 +283,15 @@ test("a signed tool approval executes through the review gate and continues the 
   const mock = await MockOpenAiResponsesServer.start();
   try {
     const { app, store } = createNormalModeApp(mock);
-    const proposal = await buildProposalFromStore(store);
-
-    // Turn 1: the mock model proposes a review approval → the stream must end
-    // in the approval-requested state WITHOUT touching the ledger.
-    mock.enqueue(toolCallTurnScript(PROPOSE_TOOL_NAME, proposal));
-    const question = "Kan du godkänna granskningen i kön?";
-    const turn1 = await app.request(chatRequest([userMessage(question)]));
-    assert.equal(turn1.status, 200);
-    const { chunks: turn1Chunks, readError: turn1Error } = await collectSseChunks(turn1);
-    assert.equal(turn1Error, undefined);
-
-    const approval = extractStreamedApproval(turn1Chunks);
-    assert.deepEqual(approval.input, proposal, "the streamed tool input must be the model-authored proposal");
-    assert.ok(
-      !turn1Chunks.some((chunk) => chunk.type === "tool-output-available"),
-      "nothing may execute before the human approves",
-    );
-    const midway = await store.getSnapshot();
-    assert.equal(
-      midway.reviews.find((item) => item.id === proposal.reviewId)?.status,
-      "needs-review",
-      "the review must stay undecided until the approval replay",
-    );
+    const { proposal, approval } = await streamProposeReviewActionTurn(app, mock, store);
+    await assertReviewNeedsReview(store, proposal.reviewId);
 
     // Turn 2: replay the history with the HMAC-signed approval, exactly like
     // the web's approval card → the tool executes applyReviewDecision, then
     // the model is called again with the tool result.
     mock.enqueue(textTurnScript("Klart! Granskningen är godkänd via granskningskön."));
     const turn2 = await app.request(
-      chatRequest([userMessage(question), approvalRespondedMessage(approval, proposal, true)]),
+      chatRequest([userMessage(PROPOSAL_QUESTION), approvalRespondedMessage(approval, proposal, true)]),
     );
     assert.equal(turn2.status, 200);
     const { chunks: turn2Chunks, readError: turn2Error } = await collectSseChunks(turn2);
@@ -321,23 +329,73 @@ test("a signed tool approval executes through the review gate and continues the 
   }
 });
 
+test("a signed tool DENIAL streams tool-output-denied and never mutates the review gate", async () => {
+  const mock = await MockOpenAiResponsesServer.start();
+  try {
+    const { app, store } = createNormalModeApp(mock);
+    const { proposal, approval } = await streamProposeReviewActionTurn(app, mock, store);
+
+    // Turn 2: human denies the tool proposal — AI suggests, never mutates.
+    // The SDK still continues the stream after a denial (may call the model);
+    // enqueue a short text turn so the mock does not 500 on an empty queue.
+    mock.enqueue(textTurnScript("Okej — jag lämnar granskningen orörd."));
+    const turn2 = await app.request(
+      chatRequest([userMessage(PROPOSAL_QUESTION), approvalRespondedMessage(approval, proposal, false)]),
+    );
+    assert.equal(turn2.status, 200);
+    const { chunks: turn2Chunks, readError: turn2Error } = await collectSseChunks(turn2);
+    assert.equal(turn2Error, undefined);
+
+    // AI SDK 7.0.15–7.0.55: toUIMessageStream() does NOT emit tool-output-denied on
+    // the Azure/normal path (demo mode does — see local-demo-transport). The
+    // deny-flow tripwire for vercel/ai#13670 is: stream finishes (no hang) and
+    // the review gate never mutates. When a released SDK emits
+    // tool-output-denied here, strengthen this assert.
+    const denied = turn2Chunks.find((chunk) => chunk.type === "tool-output-denied");
+    if (denied) {
+      assert.equal(denied.toolCallId, approval.toolCallId);
+    }
+    assert.ok(
+      !turn2Chunks.some((chunk) => chunk.type === "tool-output-available"),
+      "a denial must never execute applyReviewDecision",
+    );
+    assert.ok(
+      !turn2Chunks.some((chunk) => chunk.type === "error"),
+      `denial must not surface as a stream error; got types: ${turn2Chunks.map((c) => c.type).join(",")}`,
+    );
+    assert.ok(
+      turn2Chunks.some((chunk) => chunk.type === "finish"),
+      "denial stream must terminate (no hang — vercel/ai#13670 tripwire)",
+    );
+
+    await assertReviewNeedsReview(store, proposal.reviewId);
+    const events = await store.getEvents();
+    assert.ok(
+      !events.some(
+        (event) =>
+          (event.eventType === "ReviewApproved" || event.eventType === "ReviewRejected") &&
+          event.aggregateId === proposal.reviewId,
+      ),
+      "denial must append no review decision event",
+    );
+
+    await assertNoUnhandledRejections();
+  } finally {
+    await mock.close();
+  }
+});
+
 test("a tampered approval replay fails the HMAC check: no mutation, no model call, API stays alive", async () => {
   const mock = await MockOpenAiResponsesServer.start();
   try {
     const { app, store } = createNormalModeApp(mock);
-    const proposal = await buildProposalFromStore(store);
-
-    mock.enqueue(toolCallTurnScript(PROPOSE_TOOL_NAME, proposal));
-    const question = "Kan du godkänna granskningen i kön?";
-    const turn1 = await app.request(chatRequest([userMessage(question)]));
-    const { chunks: turn1Chunks } = await collectSseChunks(turn1);
-    const approval = extractStreamedApproval(turn1Chunks);
+    const { proposal, approval } = await streamProposeReviewActionTurn(app, mock, store);
 
     // The signature covers a digest of the tool input — replaying an ALTERED
     // proposal under the original signature must be rejected server-side.
     const tampered = { ...proposal, grossAmount: (proposal.grossAmount ?? 0) + 1000 };
     const turn2 = await app.request(
-      chatRequest([userMessage(question), approvalRespondedMessage(approval, tampered, true)]),
+      chatRequest([userMessage(PROPOSAL_QUESTION), approvalRespondedMessage(approval, tampered, true)]),
     );
     const { chunks: turn2Chunks } = await collectSseChunks(turn2);
 
@@ -349,8 +407,7 @@ test("a tampered approval replay fails the HMAC check: no mutation, no model cal
       !turn2Chunks.some((chunk) => chunk.type === "tool-output-available"),
       "a forged approval must never execute",
     );
-    const after = await store.getSnapshot();
-    assert.equal(after.reviews.find((item) => item.id === proposal.reviewId)?.status, "needs-review");
+    await assertReviewNeedsReview(store, proposal.reviewId);
     assert.equal(mock.requests.length, 1, "the rejected replay must not reach the model");
 
     // The API instance survives and serves the next advisor request.

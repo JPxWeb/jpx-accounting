@@ -2,11 +2,17 @@ import { createAiRuntime } from "@jpx-accounting/ai-core";
 import type { AiProvider } from "@jpx-accounting/contracts";
 import { createDocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import type { LedgerStore } from "@jpx-accounting/domain";
-import { MemoryLedgerStore } from "@jpx-accounting/domain";
-import { createPostgresClient, PostgresLedgerStore } from "@jpx-accounting/persistence-postgres";
+import { DEFAULT_TENANT_SCOPE, MemoryLedgerStore } from "@jpx-accounting/domain";
+import {
+  closePostgresClient,
+  createPostgresClient,
+  PostgresLedgerStore,
+  type PostgresClient,
+} from "@jpx-accounting/persistence-postgres";
 
 import { createBlobUploader } from "./blob";
-import { describeBootPosture, type ApiRuntimeConfig } from "./config";
+import { describeBootPosture, derivePrepareFromPoolMode, type ApiRuntimeConfig } from "./config";
+import { configureKnowledgeDatabaseClient } from "./knowledge";
 
 /**
  * Transparency metadata for `GET /api/runtime-info` (advisory pivot Phase 5).
@@ -150,6 +156,9 @@ export async function pingLedgerStore(store: LedgerStore): Promise<void> {
   }
 }
 
+/** No-op close for wiring that never opened a shared database client (demo mode, or normal mode without a runtime URL). */
+async function closeNothing(): Promise<void> {}
+
 export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
   // ONE structured boot log line (§A N5e): operators see the resolved posture without diffing env vars.
   console.log(JSON.stringify(describeBootPosture(config)));
@@ -172,6 +181,9 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
   };
 
   if (config.runtimeMode === "demo") {
+    // Reset any client injected by a previous call in the same process (relevant to tests that
+    // construct dependencies repeatedly) — demo mode never talks to Postgres.
+    configureKnowledgeDatabaseClient(null);
     return {
       runtimeMode: config.runtimeMode,
       corsPolicy: config.corsPolicy,
@@ -185,21 +197,32 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
       advisor,
       jwksUrl: config.auth.jwksUrl,
       jwtAlgs: config.auth.jwtAlgs,
+      closeDatabase: closeNothing,
     };
   }
 
-  // Normal mode: prefer real Postgres if SUPABASE_DB_URL is configured. Otherwise stay fail-closed
-  // via UnavailableLedgerStore so /ready surfaces the misconfiguration without crashing the boot.
-  const store: LedgerStore = config.supabase.databaseUrl
-    ? new PostgresLedgerStore(
-        createPostgresClient({
-          connectionString: config.supabase.databaseUrl,
-          // Supavisor transaction-mode pooler (port 6543) does not support named prepared statements.
-          prepare: !config.supabase.poolerTransactionMode,
-        }),
-        { organizationId: "org_jpx", workspaceId: "workspace_main" },
-      )
-    : new UnavailableLedgerStore("Workspace data is unavailable in normal mode until SUPABASE_DB_URL is configured.");
+  // Normal mode: ONE bounded PostgresClient (Task 3 connection ownership) shared by the ledger
+  // store AND knowledge/vector retrieval — instead of each wiring path opening its own pool.
+  // Otherwise stay fail-closed via UnavailableLedgerStore so /ready surfaces the misconfiguration
+  // without crashing the boot.
+  const runtimeUrl = config.database.runtimeUrl;
+  const databaseClient: PostgresClient | undefined = runtimeUrl
+    ? createPostgresClient({
+        connectionString: runtimeUrl,
+        prepare: derivePrepareFromPoolMode(config.database.poolMode),
+        max: config.database.poolMax,
+      })
+    : undefined;
+
+  // Inject the SAME client into knowledge.ts's vector retrieval instead of letting it open its
+  // own second, never-closed pool.
+  configureKnowledgeDatabaseClient(databaseClient ?? null);
+
+  const store: LedgerStore = databaseClient
+    ? new PostgresLedgerStore(databaseClient, DEFAULT_TENANT_SCOPE)
+    : new UnavailableLedgerStore("Workspace data is unavailable in normal mode until DATABASE_URL is configured.");
+
+  const closeDatabase = databaseClient ? () => closePostgresClient(databaseClient) : closeNothing;
 
   return {
     runtimeMode: config.runtimeMode,
@@ -217,5 +240,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
     advisor,
     jwksUrl: config.auth.jwksUrl,
     jwtAlgs: config.auth.jwtAlgs,
+    /** Closes the shared Postgres pool; wired to SIGTERM/SIGINT via `registerGracefulShutdown` in `index.ts`. */
+    closeDatabase,
   };
 }

@@ -67,9 +67,9 @@ export const MAX_ADVISOR_MESSAGE_BYTES = 8 * 1024;
 export const DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS = 2048;
 /** Cost envelope (WS-D): default wall-clock ceiling for one normal-mode stream. */
 export const DEFAULT_ADVISOR_STREAM_TIMEOUT_MS = 90_000;
-/** History truncation: at most this many non-system messages reach the model. */
+/** History truncation: at most this many client messages reach the model. */
 export const MAX_MODEL_HISTORY_MESSAGES = 20;
-/** History truncation: serialized non-system history is capped at 96 KiB. */
+/** History truncation: serialized client history is capped at 96 KiB. */
 export const MAX_MODEL_HISTORY_BYTES = 96 * 1024;
 /**
  * Vector passages below this cosine similarity are dropped from advisor
@@ -114,13 +114,12 @@ export function resolveAdvisorStreamLimits(env: NodeJS.ProcessEnv = process.env)
 }
 
 /**
- * Truncate chat history for the model call: drop the OLDEST non-system
- * messages first until both the message-count and byte bounds hold. System
- * messages are always kept (the advisor's own system prompt travels separately
- * via `streamText({ system })`, but a client-supplied system message must not
- * silently vanish mid-conversation), and the newest message is kept
- * unconditionally so a single oversized turn still reaches the model — the
- * per-message 8 KiB bound in `parseAdvisorBody` keeps that safe.
+ * Truncate chat history for the model call: drop the OLDEST messages first until
+ * both the message-count and byte bounds hold. Client `role: "system"` messages
+ * are rejected in `parseAdvisorBody`; the advisor's system prompt travels only
+ * via `streamText({ system })`. The newest message is kept unconditionally so a
+ * single oversized turn still reaches the model — the per-message 8 KiB bound
+ * in `parseAdvisorBody` keeps that safe.
  */
 export function truncateAdvisorHistory(
   messages: UIMessage[],
@@ -133,10 +132,6 @@ export function truncateAdvisorHistory(
   let bytes = 0;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]!;
-    if (message.role === "system") {
-      kept.add(message);
-      continue;
-    }
     const size = encoder.encode(JSON.stringify(message)).byteLength;
     if (count > 0 && (count >= maxMessages || bytes + size > maxTotalBytes)) continue;
     kept.add(message);
@@ -265,13 +260,29 @@ async function parseAdvisorBody(request: Request): Promise<UIMessage[]> {
     throw new AdvisorValidationError("Advisor chat messages exceed the per-message size bound.", oversized);
   }
 
+  let validated: UIMessage[];
   try {
-    return await validateUIMessages({ messages: parsed.data.messages });
+    validated = await validateUIMessages({ messages: parsed.data.messages });
   } catch (error) {
     throw new AdvisorValidationError("Advisor chat messages are not valid UI messages.", [
       { path: ["messages"], message: error instanceof Error ? error.message : String(error) },
     ]);
   }
+
+  // The system prompt is SERVER-owned (buildSystemPrompt): a client-posted
+  // system role is a prompt-injection channel, not a feature — reject it.
+  const systemIssues: ApiValidationIssue[] = [];
+  for (const [index, message] of validated.entries()) {
+    if (message.role !== "system") continue;
+    systemIssues.push({
+      path: ["messages", String(index), "role"],
+      message: 'role "system" is not accepted — the system prompt is server-owned.',
+    });
+  }
+  if (systemIssues.length > 0) {
+    throw new AdvisorValidationError("Client-supplied system messages are rejected.", systemIssues);
+  }
+  return validated;
 }
 
 function latestUserQuestion(messages: UIMessage[]): string {
@@ -687,7 +698,7 @@ export function createAdvisorChatHandler(
     const result = streamText({
       model,
       system: buildSystemPrompt(promptGrounding, passages),
-      // Oldest-first truncation; the system prompt above always travels whole.
+      // Oldest-first truncation of the client history; system prompt is separate.
       messages: await convertToModelMessages(truncateAdvisorHistory(messages), {
         tools,
         ignoreIncompleteToolCalls: true,

@@ -22,12 +22,20 @@ pnpm typecheck:tests          # Typecheck the tests/ directory (separate tsconfi
 pnpm build                    # Build web + API (`services/api` is typecheck-only; deploy bundles API with esbuild)
 pnpm check                    # lint + format:check + typecheck + typecheck:tests + unit tests + build
 pnpm build:knowledge          # Regenerate packages/advisor/src/corpus.generated.ts from docs/knowledge/sv (generated file is checked in — commit the diff)
-pnpm ingest:knowledge         # Embed + upsert the knowledge corpus into Postgres pgvector (needs SUPABASE_DB_URL + AZURE_OPENAI_*)
+pnpm ingest:knowledge         # Embed + upsert the knowledge corpus into Postgres pgvector (needs DATABASE_URL + AZURE_OPENAI_*)
+
+# Local Postgres lifecycle (Compose + scripts/db.mts — see scripts/integration-db.md)
+pnpm db:doctor                # Docker/Compose + project status
+pnpm db:up                    # isolated PG17+pgvector (dynamic port; JPX_DB_INSTANCE for concurrency)
+pnpm db:migrate               # apply infra/supabase/migrations via scripts/db-migrations.mts
+pnpm db:seed                  # idempotent v1 seed (org_jpx / workspace_main) via scripts/db-seed.mts
+pnpm db:test                  # strict throwaway jpx_test_* + JPX_REQUIRE_DATABASE_TESTS=true
+pnpm db:down / pnpm db:reset  # stop (volume kept) / destroy volume + recreate
 
 # Testing
 pnpm test:unit                # Unit tests: tsx --test 'tests/unit/**/*.test.ts'
 pnpm test:unit:coverage       # Same suite under c8 coverage
-pnpm test:integration          # Postgres integration tests (skip silently when SUPABASE_DB_URL is unset)
+pnpm test:integration         # Postgres cases skip without a jpx_test_* URL; require-flag throws
 pnpm test:e2e                 # Playwright E2E (builds first, starts both servers)
 pnpm test:e2e:headed          # E2E with visible browser
 pnpm test:e2e:install          # Install Chromium for Playwright
@@ -42,13 +50,11 @@ pnpm test:e2e:visual:update   # re-baseline — only after reviewing every diff 
 # Run a single unit test
 tsx --test tests/unit/some-file.test.ts
 
-# Run a single integration test (still gated on SUPABASE_DB_URL)
-tsx --test tests/integration/postgres-ledger.test.ts
+# Prefer the one-command strict gate (creates/migrates/drops jpx_test_*):
+pnpm db:test
 
-# Run integration tests against a real Postgres
-# (throwaway pgvector/pgvector:pg17 container + migrations 0001-0008 — exact
-# commands in scripts/integration-db.md; then export SUPABASE_DB_URL)
-pnpm test:integration
+# Or point an already-provisioned disposable DB (name MUST be jpx_test_*) at the suite:
+# DATABASE_TEST_URL=postgres://…/jpx_test_manual JPX_REQUIRE_DATABASE_TESTS=true pnpm test:integration
 
 # Other checks
 pnpm check:corpus             # Knowledge-corpus freshness tripwire (not yet part of `pnpm check`/CI)
@@ -80,7 +86,7 @@ pnpm monorepo (Node >=24, pnpm 10.29.2) — mobile-first Swedish accounting PWA 
 - **Booking dates come from the business event, not the click** — approved vouchers are dated by `deriveBookedAt` (`packages/domain/src/store.ts`): `transactionDate`, falling back to `receiptDate`, never the approval timestamp.
 - **AI suggests, never mutates** — AI outputs (LLM responses, Document Intelligence extractions) require human review before affecting ledger state. The review queue stays the only path to a posted voucher. The advisor's `proposeReviewAction` tool is no exception: it executes only the existing `applyReviewDecision(...)` and only after an explicit, HMAC-signed human tool-approval (`ADVISOR_TOOL_APPROVAL_SECRET`).
 - **`LedgerStore` is async** — every method returns `Promise<T>`. Postgres + future async stores were the driver; `MemoryLedgerStore` matches the interface by wrapping its sync logic.
-- **Runtime mode is explicit**: `demo` uses scaffold fallbacks (`MemoryLedgerStore`, `LocalAiRuntime`, `StubBlobUploader`, `StubDocumentIntelligenceClient`); `normal` fails closed if `SUPABASE_DB_URL` / Azure config is missing (`UnavailableLedgerStore` + `/ready.checks.ledger=false`).
+- **Runtime mode is explicit**: `demo` uses scaffold fallbacks (`MemoryLedgerStore`, `LocalAiRuntime`, `StubBlobUploader`, `StubDocumentIntelligenceClient`); `normal` fails closed if `DATABASE_URL` / Azure config is missing (`UnavailableLedgerStore` + `/ready.checks.ledger=false`).
 - **Use User-Delegation SAS for blob uploads, not account keys** — the API mints a 10-minute write-only SAS via Managed Identity (`DefaultAzureCredential`). Bicep grants `Storage Blob Delegator` + `Storage Blob Data Contributor` to the API's system-assigned identity; without both, SAS minting returns 403.
 - **Database client policy**: server-side ledger writes go through `postgres-js` direct (or Supavisor session mode). PostgREST cannot run multi-statement transactions — `@supabase/supabase-js` is reserved for auth/admin helpers, not the write path.
 - **Projections are derived** — journal, balances, VAT reports are calculated from events via `packages/domain/src/projections.ts`. The Postgres store currently re-derives reports per request (strategy B in the persistence plan); incremental projection writes are a follow-up if read latency demands.
@@ -156,10 +162,14 @@ Key env vars (see `.env.example` for full list):
 - `ACCOUNTING_API_BASE_URL`: Internal API URL for server-side proxy (e.g., http://localhost:3001)
 - `NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE`: Must match API's runtime mode
 
-**Persistence (Phase A)**
+**Persistence (provider-neutral)**
 
-- `SUPABASE_DB_URL`: Direct Postgres URL (port 5432) or Supavisor session-mode URL — required to enable `PostgresLedgerStore` in normal mode. Without it, normal mode stays fail-closed.
-- `SUPABASE_POOLER_TRANSACTION_MODE`: Set to `true` only when `SUPABASE_DB_URL` points at the Supavisor transaction-mode pooler (port 6543). Disables `postgres-js` named prepared statements, which transaction mode does not support.
+- `DATABASE_URL`: Canonical runtime Postgres URL — required to enable `PostgresLedgerStore` in normal mode. Without it, normal mode stays fail-closed. Works with local Compose (`pnpm db:up`), Supabase, Azure Database for PostgreSQL, Neon, or any PG 15–17 + pgvector provider. TLS via standard URL params (e.g. `?sslmode=verify-full`).
+- `DATABASE_MIGRATION_URL`: Owner/migrator URL (direct or session) for `scripts/db-migrations.mts` only; falls back to `DATABASE_URL` when pool mode is direct|session.
+- `DATABASE_POOL_MODE`: `direct` | `session` | `transaction` (transaction disables postgres-js prepared statements).
+- `DATABASE_POOL_MAX`: Bounded runtime pool size (default 10).
+- `DATABASE_TEST_URL`: Disposable external test DB only — name **must** start with `jpx_test_`.
+- Legacy aliases (deprecated): `SUPABASE_DB_URL` → `DATABASE_URL`; `SUPABASE_POOLER_TRANSACTION_MODE=true` → `DATABASE_POOL_MODE=transaction`. Conflicting canonical+legacy values fail at boot.
 
 **AI / extraction / retrieval (Phases C–D)**
 
@@ -180,6 +190,8 @@ Key env vars (see `.env.example` for full list):
 - `APPLICATIONINSIGHTS_CONNECTION_STRING`: API telemetry (Bicep injects it in deploys); unset = `services/api/src/telemetry.ts` is a strict no-op (no SDK load).
 
 See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for trust boundaries, the env matrix, and build/deploy subtleties.
+
+**Repo navigation map:** see [docs/REPO_MAP.md](docs/REPO_MAP.md) for the WHERE-IS-WHAT index — full API/web route inventories, per-module export maps, ledger event vocabulary (incl. which of the 19 event types are reserved/never emitted), feature→files traces per user-journey stage, client-storage registry, and a "gotchas" list of things that mislead newcomers. Start there when you need to locate code.
 
 **Conventions / anti-patterns:** see [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for 29 rules distilled from past incidents — schema-contract sync, partial-index pitfalls, store parity between `MemoryLedgerStore` and `PostgresLedgerStore`, citation provenance, audit attribution sentinels, bounded accumulation. Consult before changes that touch contracts, migrations, or `LedgerStore` implementations.
 

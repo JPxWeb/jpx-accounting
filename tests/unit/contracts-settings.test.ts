@@ -11,7 +11,6 @@ import {
 } from "@jpx-accounting/contracts";
 
 const validBase = {
-  organizationId: "org_test",
   organizationName: "Test AB",
   organizationNumber: "556677-8899",
   addressLine1: "Kungsgatan 1",
@@ -33,6 +32,11 @@ test("DEFAULT_WORKSPACE_PROFILE carries the Sweden defaults", () => {
 test("legacy company settings without a profile parse to Sweden defaults", () => {
   const parsed = companySettingsSchema.parse(validBase);
   assert.deepEqual(parsed.profile, DEFAULT_WORKSPACE_PROFILE);
+});
+
+test("companySettingsSchema strips a client-posted organizationId", () => {
+  const parsed = companySettingsSchema.parse({ ...validBase, organizationId: "org_evil" });
+  assert.ok(!("organizationId" in parsed));
 });
 
 test("invalid SE organization number reports at the organizationNumber path", () => {

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { expectAccessible } from "./a11y-helpers";
-import { resetApiState } from "./test-helpers";
+import { activateControl, resetApiState } from "./test-helpers";
 
 async function clearOnboardingStorage(page: Page) {
   await page.evaluate(() => localStorage.removeItem("jpx.accounting.onboarding.v1"));
@@ -26,12 +26,12 @@ test("getting started can launch the orientation tour", async ({ page }, testInf
   await scrollGettingStartedIntoView(page);
 
   await expect(page.getByTestId("onboarding-show-me-around")).toBeVisible();
-  await page.getByTestId("onboarding-show-me-around").click({ force: isMobile });
+  await activateControl(page.getByTestId("onboarding-show-me-around"), isMobile);
 
   await expectTourTooltip(page);
   await expect(page.getByTestId("onboarding-tour-tooltip")).toContainText(/getting-started checklist/i);
 
-  await page.getByRole("button", { name: "Skip tour" }).click();
+  await activateControl(page.getByRole("button", { name: "Skip tour" }), isMobile);
   await expect(page.getByTestId("onboarding-tour-tooltip")).toHaveCount(0);
 
   await expect
@@ -51,7 +51,7 @@ test("capture guide navigates and highlights capture targets", async ({ page }, 
   await clearOnboardingStorage(page);
   await scrollGettingStartedIntoView(page);
 
-  await page.getByTestId("getting-started-guide-capture").click({ force: isMobile });
+  await activateControl(page.getByTestId("getting-started-guide-capture"), isMobile);
   await expect(page).toHaveURL(/\/capture$/, { timeout: 15_000 });
   await expectTourTooltip(page);
   await expect(page.locator('[data-tour="capture-dropzone"]')).toBeVisible();
@@ -77,7 +77,7 @@ test("settings about can replay onboarding", async ({ page }, testInfo) => {
   await clearOnboardingStorage(page);
 
   await page.getByTestId("onboarding-replay").scrollIntoViewIfNeeded();
-  await page.getByTestId("onboarding-replay-orientation").click({ force: isMobile });
+  await activateControl(page.getByTestId("onboarding-replay-orientation"), isMobile);
   await expect(page).toHaveURL(/\/today/, { timeout: 15_000 });
   await expectTourTooltip(page);
 });

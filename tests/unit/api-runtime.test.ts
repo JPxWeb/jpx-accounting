@@ -25,7 +25,7 @@ function createTestApiApp(runtimeMode: "demo" | "normal", overrides: TestAppOver
     allowTestReset: overrides.allowTestReset ?? false,
     corsPolicy,
     azureOpenAi: {},
-    supabase: { poolerTransactionMode: false },
+    database: { poolMode: "direct", poolMax: 10 },
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: { jwksUrl: overrides.jwksUrl },
@@ -72,6 +72,27 @@ async function withStubbedFetch<T>(impl: typeof fetch, run: () => Promise<T>): P
 function postgresError(code: string, message: string): Error {
   return Object.assign(new Error(message), { name: "PostgresError", code });
 }
+
+test("createApiRuntimeDependencies exposes closeDatabase in both modes", () => {
+  const corsPolicy = { kind: "wildcard" } as const;
+  const baseConfig = {
+    port: 0,
+    allowTestReset: false,
+    corsPolicy,
+    azureOpenAi: {},
+    database: { poolMode: "direct" as const, poolMax: 10 },
+    azureStorage: {},
+    azureDocumentIntelligence: {},
+    auth: { jwksUrl: undefined },
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret" },
+  };
+
+  const demo = createApiRuntimeDependencies({ ...baseConfig, runtimeMode: "demo" });
+  assert.equal(typeof demo.closeDatabase, "function");
+
+  const normal = createApiRuntimeDependencies({ ...baseConfig, runtimeMode: "normal" });
+  assert.equal(typeof normal.closeDatabase, "function");
+});
 
 test("demo runtime exposes the seeded workspace", async () => {
   const app = createTestApiApp("demo");
@@ -174,7 +195,7 @@ test("createApiRuntimeDependencies forwards jwtAlgs from config to the app wirin
     allowTestReset: false,
     corsPolicy: { kind: "wildcard" },
     azureOpenAi: {},
-    supabase: { poolerTransactionMode: false },
+    database: { poolMode: "direct", poolMax: 10 },
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: { jwtAlgs: ["ES256"] },
@@ -192,7 +213,7 @@ test("createApiRuntimeDependencies logs a single structured boot posture line", 
     allowTestReset: false,
     corsPolicy: { kind: "wildcard" },
     azureOpenAi: {},
-    supabase: { poolerTransactionMode: false },
+    database: { poolMode: "direct", poolMax: 10 },
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: {},

@@ -5,8 +5,6 @@ import type { EvidenceCreateInput, ExtractionResult } from "@jpx-accounting/cont
 import { deriveDeterministicExtraction, MemoryLedgerStore, mergeExtractedFields, today } from "@jpx-accounting/domain";
 
 const legacyCreateInput: EvidenceCreateInput = {
-  organizationId: "org_jpx",
-  workspaceId: "workspace_main",
   title: "Extraction test receipt",
   originalFilename: "extraction-test.jpg",
   mimeType: "image/jpeg",

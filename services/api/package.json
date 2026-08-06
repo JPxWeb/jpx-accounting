@@ -9,11 +9,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@ai-sdk/azure": "4.0.7",
+    "@ai-sdk/azure": "4.0.33",
     "@azure/identity": "4.5.0",
     "@azure/monitor-opentelemetry": "1.18.2",
     "@azure/storage-blob": "12.27.0",
-    "@hono/node-server": "1.19.11",
+    "@hono/node-server": "1.19.17",
     "@hono/zod-validator": "0.8.0",
     "@jpx-accounting/advisor": "workspace:*",
     "@jpx-accounting/ai-core": "workspace:*",
@@ -22,8 +22,8 @@
     "@jpx-accounting/domain": "workspace:*",
     "@jpx-accounting/persistence-postgres": "workspace:*",
     "@jpx-accounting/reporting": "workspace:*",
-    "ai": "7.0.15",
-    "hono": "4.12.8",
+    "ai": "7.0.55",
+    "hono": "4.12.34",
     "hono-rate-limiter": "0.4.2",
     "zod": "4.3.6"
   }

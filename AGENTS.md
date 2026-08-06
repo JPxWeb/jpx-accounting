@@ -44,7 +44,12 @@ contracts, Postgres/Memory ledger stores, AI SDK 7 advisor, pgvector RAG.
 - Visual: run `npx playwright test tests/e2e/visual-regression.spec.ts`; on intentional diffs
   REVIEW every diff image, then `--update-snapshots`, then re-run to verify. Never blind-update.
 - Corpus: `pnpm build:knowledge` (regenerate + commit together with `docs/knowledge/sv` edits).
-- Integration: `pnpm test:integration` (skips without `SUPABASE_DB_URL`).
+- Local Postgres: `pnpm db:up` → `pnpm db:migrate` → `pnpm db:seed` (stable `jpx_dev`);
+  strict gate: `pnpm db:test` (throwaway `jpx_test_*`, never skips). See
+  [`scripts/integration-db.md`](scripts/integration-db.md).
+- Integration: `pnpm test:integration` (skips without a `jpx_test_*` URL via
+  `DATABASE_TEST_URL` / `DATABASE_URL` / legacy `SUPABASE_DB_URL`; with
+  `JPX_REQUIRE_DATABASE_TESTS=true` a missing/unreachable DB throws).
 
 ## Definition of done
 

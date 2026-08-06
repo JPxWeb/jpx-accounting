@@ -5,7 +5,8 @@ import {
   type KnowledgePassage,
   type KnowledgeQueryResult,
 } from "@jpx-accounting/contracts";
-import { createPostgresClient, queryKnowledgeByEmbedding } from "@jpx-accounting/persistence-postgres";
+import { DEFAULT_TENANT_SCOPE } from "@jpx-accounting/domain";
+import { queryKnowledgeByEmbedding, type PostgresClient } from "@jpx-accounting/persistence-postgres";
 
 import { readApiRuntimeConfig } from "./config";
 
@@ -19,16 +20,19 @@ import { readApiRuntimeConfig } from "./config";
  *   provenance (CONVENTIONS Rule 10). Always available; the only mode in demo.
  * - **vector** — pgvector cosine search over `knowledge.documents`
  *   (`pnpm ingest:knowledge` fills it). Active only in normal mode with a
- *   DB-backed store (`SUPABASE_DB_URL`) AND an operational AI runtime
- *   (`AZURE_OPENAI_*`) — the same env surface `runtime.ts` wires. ANY vector
- *   failure (embedding call, DB query, empty index) falls back to keyword
- *   with a structured warn: retrieval must never 500 the advisor.
+ *   DB-backed store (`DATABASE_URL`, or the legacy `SUPABASE_DB_URL` alias)
+ *   AND an operational AI runtime (`AZURE_OPENAI_*`) — the same env surface
+ *   `runtime.ts` wires, which also injects the shared Postgres client via
+ *   `configureKnowledgeDatabaseClient` (Task 3 connection ownership: one
+ *   pool, not a second one opened here). ANY vector failure (embedding call,
+ *   DB query, empty index) falls back to keyword with a structured warn:
+ *   retrieval must never 500 the advisor.
  */
 
 const RETRIEVAL_TOP_K = 4;
 
-/** Fixed normal-mode workspace — mirrors the PostgresLedgerStore scope in `runtime.ts` and `scripts/ingest-knowledge.mjs`. */
-const KNOWLEDGE_SCOPE = { organizationId: "org_jpx", workspaceId: "workspace_main" };
+/** Fixed normal-mode workspace — shared DEFAULT_TENANT_SCOPE (runtime store + ingest). */
+const KNOWLEDGE_SCOPE = DEFAULT_TENANT_SCOPE;
 
 /** Injectable seam for tests; production resolves a default lazily from env. */
 export type VectorKnowledgeRetriever = {
@@ -37,16 +41,34 @@ export type VectorKnowledgeRetriever = {
 };
 
 /**
- * Build the vector retriever from env, or null when vector mode should stay
- * off (demo mode, no DB URL, or unconfigured AI). The postgres-js client
- * connects lazily, so misconfiguration surfaces at query time and lands in
- * the keyword fallback rather than failing the boot.
+ * The ONE shared Postgres client `createApiRuntimeDependencies` (runtime.ts) creates for the
+ * ledger store — injected here so vector retrieval reuses it instead of opening its own second,
+ * never-closed pool (Task 3 connection ownership). `null` means "no client available": demo mode,
+ * normal mode without a runtime DB URL, or not yet wired (e.g. this module used standalone).
  */
-function buildVectorRetrieverFromEnv(): VectorKnowledgeRetriever | null {
+let injectedDatabaseClient: PostgresClient | null = null;
+
+/**
+ * Called once by `createApiRuntimeDependencies` at boot. Resets the memoized default retriever so
+ * the next `queryKnowledge()` call picks up the newly injected (or cleared) client.
+ */
+export function configureKnowledgeDatabaseClient(client: PostgresClient | null): void {
+  injectedDatabaseClient = client;
+  defaultVectorRetriever = undefined;
+}
+
+/**
+ * Build the vector retriever from env + the injected shared client, or null when vector mode
+ * should stay off (demo mode, no injected client, or unconfigured AI). Any downstream failure
+ * (embedding call, DB query, empty index) still lands in the keyword fallback in `queryKnowledge`
+ * rather than failing the boot or the request.
+ */
+function buildVectorRetriever(): VectorKnowledgeRetriever | null {
   const config = readApiRuntimeConfig();
   if (config.runtimeMode !== "normal") return null;
-  const databaseUrl = config.supabase.databaseUrl;
-  if (!databaseUrl) return null;
+  if (!config.database.runtimeUrl) return null;
+  const client = injectedDatabaseClient;
+  if (!client) return null;
 
   const aiRuntime = createAiRuntime({
     runtimeMode: config.runtimeMode,
@@ -55,14 +77,6 @@ function buildVectorRetrieverFromEnv(): VectorKnowledgeRetriever | null {
     model: config.azureOpenAi.model,
   });
   if (!isAiRuntimeOperational(aiRuntime)) return null;
-
-  // Small dedicated pool: the ledger store owns the main one in runtime.ts,
-  // and retrieval is a single read per advisor/knowledge request.
-  const client = createPostgresClient({
-    connectionString: databaseUrl,
-    prepare: !config.supabase.poolerTransactionMode,
-    max: 2,
-  });
 
   return {
     embedQuery: async (query) => {
@@ -80,7 +94,7 @@ let defaultVectorRetriever: VectorKnowledgeRetriever | null | undefined;
 
 function resolveDefaultVectorRetriever(): VectorKnowledgeRetriever | null {
   if (defaultVectorRetriever === undefined) {
-    defaultVectorRetriever = buildVectorRetrieverFromEnv();
+    defaultVectorRetriever = buildVectorRetriever();
   }
   return defaultVectorRetriever;
 }
