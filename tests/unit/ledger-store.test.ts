@@ -675,21 +675,18 @@ test("MemoryLedgerStore.getSnapshot carries evidence packets so the voucher→ev
   assert.deepEqual(workspaceSnapshotSchema.parse(legacyShape).packets, []);
 });
 
-test("MemoryLedgerStore.getSnapshot returns defensive copies of assistantExamples and alerts (Rule 17)", async () => {
+test("MemoryLedgerStore.getSnapshot returns defensive copies of alerts (Rule 17)", async () => {
   const store = new MemoryLedgerStore();
   const before = await store.getSnapshot();
-  const examplesLen = before.assistantExamples.length;
   const alertsLen = before.alerts.length;
+  assert.deepEqual(before.assistantExamples, [], "assistantExamples retired (P2-6) — staged empty");
 
-  await store.answerAssistantQuestion("What is moms?");
   await store.refreshComplianceAlerts();
 
-  assert.equal(before.assistantExamples.length, examplesLen, "prior snapshot assistantExamples must not grow");
   assert.equal(before.alerts.length, alertsLen, "prior snapshot alerts array must not be replaced in place");
 
   const after = await store.getSnapshot();
-  assert.ok(after.assistantExamples.length > examplesLen, "store gained a new assistant example");
-  assert.notEqual(before.assistantExamples, after.assistantExamples, "snapshot arrays must not alias store internals");
+  assert.deepEqual(after.assistantExamples, []);
   assert.notEqual(before.alerts, after.alerts, "snapshot alerts must not alias store internals");
 });
 

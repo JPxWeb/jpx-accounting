@@ -27,7 +27,7 @@ import {
   type ActorAttribution,
   type ApprovalGate,
   type ReviewAction,
-} from "./store";
+} from "./store-shared";
 
 /** Planned append payload — stores derive id / previousHash / eventHash / digestDate. */
 export type PlannedEvent = Omit<LedgerEvent, "id" | "previousHash" | "eventHash" | "digestDate">;

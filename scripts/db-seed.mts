@@ -41,7 +41,6 @@ export const SEED_V1_FIXTURES = {
   postalCode: "11122",
   city: "Stockholm",
   contactEmail: "demo@jpx.example",
-  assistantQuestion: "Can we deduct VAT on this invoice right away?",
 } as const;
 
 export class SeedConfigError extends Error {
@@ -145,11 +144,6 @@ async function applySeedV1(client: PostgresClient): Promise<void> {
     throw new Error(`Seed expected needs-review voucher, got status=${created.review.status}`);
   }
 
-  const assistant = await store.answerAssistantQuestion(SEED_V1_FIXTURES.assistantQuestion);
-  if (assistant.question !== SEED_V1_FIXTURES.assistantQuestion) {
-    throw new Error("Seed assistant question did not round-trip");
-  }
-
   // Semantic assertions (stable fixture values only — never generated ids/hashes).
   const snapshot = await store.getSnapshot();
   const evidence = snapshot.evidence.find((item) => item.title === SEED_V1_FIXTURES.evidenceTitle);
@@ -188,11 +182,7 @@ export async function runSeed(databaseUrl: string): Promise<"applied" | "noop"> 
     }
     console.log(`Applying seed ${SEED_VERSION} to ${redactUrl(databaseUrl)}...`);
     await applySeedV1(client);
-    await markSeedApplied(
-      client,
-      SEED_VERSION,
-      "Deterministic org_jpx/workspace_main demo evidence + settings + assistant turn",
-    );
+    await markSeedApplied(client, SEED_VERSION, "Deterministic org_jpx/workspace_main demo evidence + settings");
     console.log(`Seed ${SEED_VERSION} applied.`);
     return "applied";
   } finally {

@@ -118,10 +118,6 @@ export class UnavailableLedgerStore implements LedgerStore {
     return this.fail();
   }
 
-  async answerAssistantQuestion() {
-    return this.fail();
-  }
-
   async runSimulation() {
     return this.fail();
   }

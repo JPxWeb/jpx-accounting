@@ -119,27 +119,29 @@ never touches the host tree.
 3. Commit the `-linux.png` files together with the UI change that motivated
    them, so reviewers see code + pixels in one diff.
 
-### Known limitation: statutory-calendar drift (2026-07 state)
+### Known limitation: statutory-calendar reflow (post–Wave C)
 
-Masks keep server-derived dates (journal rows, activity, hashes) stable, but
-two dashboard/report surfaces are **client-computed from the browser clock**
-(`localTodayIso()` in `apps/web/components/dashboard/use-dashboard-data.ts`)
-and are NOT fully masked today:
+Wave C stamped `data-visual-mask` on remaining clock-derived text (journal /
+archive / activity dates, event hashes, topbar timestamp) and on two tax-
+timeline fields (`tax-timeline-widget.tsx`). Masks keep **text** date-stable
+under Playwright's locator mask — they do **not** freeze layout when the
+**count** of observation rows or future tax deadlines changes.
 
-- the observations widget ("Statutory deadline on `<date>` — N days left"),
-- the tax-deadlines widget and the reports statutory tax timeline (which rows
-  appear rolls forward as deadlines pass), plus the reports period label.
+Residual failure mode (both platforms):
 
-Small day-to-day text drift stays under the 2% `maxDiffPixelRatio`, but when
-a count changes wrap length or a deadline rolls off, the `today`/`reports`
-screens reflow and those baselines fail **on both platforms** — that is
-calendar movement, not a regression. This is exactly rule 27 debt: the real
-fix is `data-visual-mask` + reflow-stable rendering for those regions in
-`apps/web` (freezing the browser clock in the spec does not work — the report
-pack is fetched by current-month token and the API's demo seed uses real
-"now", so a frozen client would query an empty month). Until that lands,
-expect to re-baseline `today`/`reports` when the statutory calendar rolls,
-reviewing diffs as always.
+- observations / tax-deadlines widgets and the reports statutory timeline can
+  still reflow when a deadline rolls off or an observation count changes
+  (0–3), even though the date strings themselves are masked;
+- the reports period label follows the current-month token from real "now".
+
+Day-to-day text drift usually stays under the 2% `maxDiffPixelRatio`; row-
+count reflow of `today`/`reports` is calendar movement, not a product
+regression. Freezing the browser clock alone does not fix this — the report
+pack is fetched by current-month token and the API demo seed books real
+"now", so a frozen client would query an empty month. A durable fix needs a
+deterministic demo-seed "now" (or reflow-stable empty states) in addition to
+masks. Until then, re-baseline `today`/`reports` on calendar roll after
+reviewing every diff (rule 27).
 
 ### When CI goes red on visuals
 

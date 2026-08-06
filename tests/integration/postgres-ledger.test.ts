@@ -1002,7 +1002,7 @@ test("PostgresLedgerStore.getSnapshot sources alerts from compliance_alerts (§2
       refreshed.map((alert) => alert.id).sort(),
       "getSnapshot alerts must mirror compliance_alerts table",
     );
-    assert.deepEqual(snapshot.assistantExamples, [], "assistantExamples stays empty until a read model lands");
+    assert.deepEqual(snapshot.assistantExamples, [], "assistantExamples retired (P2-6) — staged empty");
   } finally {
     await requireCtx().cleanupOrganization(orgId);
   }
@@ -1033,25 +1033,6 @@ test("PostgresLedgerStore.getReviewFeed orders by created_at DESC, id DESC (§A 
     assert.equal(feed.length, 2);
     assert.equal(feed[0]?.id, second.review.id, "newest review first");
     assert.equal(feed[1]?.id, first.review.id);
-  } finally {
-    await requireCtx().cleanupOrganization(orgId);
-  }
-});
-
-test("PostgresLedgerStore.answerAssistantQuestion delegates + persists", { skip }, async () => {
-  const { organizationId: orgId, workspaceId: wsId } = requireCtx().createNamespace();
-  const client = requireCtx().client;
-  try {
-    const store = new PostgresLedgerStore(client, { organizationId: orgId, workspaceId: wsId });
-    const session = await store.answerAssistantQuestion("Can I deduct this?");
-    assert.equal(session.status, "grounded");
-    assert.equal(session.citations.length, 1);
-    assert.equal(session.question, "Can I deduct this?");
-
-    const rows = await client<Array<{ question: string }>>`
-      SELECT question FROM ledger.assistant_sessions WHERE id = ${session.id}
-    `;
-    assert.equal(rows[0]?.question, "Can I deduct this?");
   } finally {
     await requireCtx().cleanupOrganization(orgId);
   }
