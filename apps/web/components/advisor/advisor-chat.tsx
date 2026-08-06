@@ -126,8 +126,8 @@ export function AdvisorChat({
                     part={part}
                     busy={busy}
                     onApprovalResponse={(approvalId, approved) => {
-                      // NOT addToolApprovalResponse: ai@7.0.15 drops the HMAC
-                      // signature from the approval object — see tool-approval.ts.
+                      // NOT addToolApprovalResponse: ai@7.0.15–7.0.55 drops the HMAC
+                      // signature — see tool-approval.ts / vercel/ai#13670.
                       const updated = respondToApprovalPreservingSignature(messages, approvalId, approved);
                       if (!updated) return;
                       setMessages(updated);
