@@ -321,6 +321,81 @@ test("a signed tool approval executes through the review gate and continues the 
   }
 });
 
+test("a signed tool DENIAL streams tool-output-denied and never mutates the review gate", async () => {
+  const mock = await MockOpenAiResponsesServer.start();
+  try {
+    const { app, store } = createNormalModeApp(mock);
+    const proposal = await buildProposalFromStore(store);
+
+    mock.enqueue(toolCallTurnScript(PROPOSE_TOOL_NAME, proposal));
+    const question = "Kan du godkänna granskningen i kön?";
+    const turn1 = await app.request(chatRequest([userMessage(question)]));
+    assert.equal(turn1.status, 200);
+    const { chunks: turn1Chunks, readError: turn1Error } = await collectSseChunks(turn1);
+    assert.equal(turn1Error, undefined);
+
+    const approval = extractStreamedApproval(turn1Chunks);
+    assert.deepEqual(approval.input, proposal);
+    assert.ok(
+      !turn1Chunks.some((chunk) => chunk.type === "tool-output-available"),
+      "nothing may execute before the human answers",
+    );
+
+    // Turn 2: human denies the tool proposal — AI suggests, never mutates.
+    // The SDK still continues the stream after a denial (may call the model);
+    // enqueue a short text turn so the mock does not 500 on an empty queue.
+    mock.enqueue(textTurnScript("Okej — jag lämnar granskningen orörd."));
+    const turn2 = await app.request(
+      chatRequest([userMessage(question), approvalRespondedMessage(approval, proposal, false)]),
+    );
+    assert.equal(turn2.status, 200);
+    const { chunks: turn2Chunks, readError: turn2Error } = await collectSseChunks(turn2);
+    assert.equal(turn2Error, undefined);
+
+    // AI SDK 7.0.15's toUIMessageStream() does NOT emit tool-output-denied on
+    // the Azure/normal path (demo mode does — see local-demo-transport). The
+    // deny-flow tripwire for vercel/ai#13670 is: stream finishes (no hang) and
+    // the review gate never mutates. When a released SDK emits
+    // tool-output-denied here, strengthen this assert.
+    const denied = turn2Chunks.find((chunk) => chunk.type === "tool-output-denied");
+    if (denied) {
+      assert.equal(denied.toolCallId, approval.toolCallId);
+    }
+    assert.ok(
+      !turn2Chunks.some((chunk) => chunk.type === "tool-output-available"),
+      "a denial must never execute applyReviewDecision",
+    );
+    assert.ok(
+      !turn2Chunks.some((chunk) => chunk.type === "error"),
+      `denial must not surface as a stream error; got types: ${turn2Chunks.map((c) => c.type).join(",")}`,
+    );
+    assert.ok(
+      turn2Chunks.some((chunk) => chunk.type === "finish"),
+      "denial stream must terminate (no hang — vercel/ai#13670 tripwire)",
+    );
+
+    const after = await store.getSnapshot();
+    assert.equal(
+      after.reviews.find((item) => item.id === proposal.reviewId)?.status,
+      "needs-review",
+      "denying the AI proposal leaves the review undecided",
+    );
+    const events = await store.getEvents();
+    assert.ok(
+      !events.some(
+        (event) =>
+          (event.eventType === "ReviewApproved" || event.eventType === "ReviewRejected") &&
+          event.aggregateId === proposal.reviewId,
+      ),
+      "denial must append no review decision event",
+    );
+
+    await assertNoUnhandledRejections();
+  } finally {
+    await mock.close();
+  }
+});
+
 test("a tampered approval replay fails the HMAC check: no mutation, no model call, API stays alive", async () => {
   const mock = await MockOpenAiResponsesServer.start();
   try {
