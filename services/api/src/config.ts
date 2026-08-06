@@ -212,7 +212,7 @@ function resolvePort(portEnv?: string): number {
  * to different connection strings, fail BEFORE any connection attempt rather than picking one
  * silently (an operator who thinks they moved off Supabase would otherwise keep writing to it).
  */
-function resolveDatabaseRuntimeUrl(env: NodeJS.ProcessEnv): string | undefined {
+export function resolveDatabaseRuntimeUrl(env: NodeJS.ProcessEnv): string | undefined {
   const canonical = normalizeOptionalValue(env.DATABASE_URL);
   const legacy = normalizeOptionalValue(env.SUPABASE_DB_URL);
   if (canonical !== undefined && legacy !== undefined && canonical !== legacy) {
@@ -234,7 +234,7 @@ function resolveLegacyTransactionModeFlag(env: NodeJS.ProcessEnv): boolean {
  * alias for "transaction" (Task 3 compatibility behavior). Conflicting canonical/legacy values
  * fail before connecting, same rationale as `resolveDatabaseRuntimeUrl`.
  */
-function resolveDatabasePoolMode(env: NodeJS.ProcessEnv): DatabasePoolMode {
+export function resolveDatabasePoolMode(env: NodeJS.ProcessEnv): DatabasePoolMode {
   const canonicalRaw = normalizeOptionalValue(env.DATABASE_POOL_MODE);
   let canonical: DatabasePoolMode | undefined;
   if (canonicalRaw !== undefined) {
@@ -281,7 +281,6 @@ function resolveDatabaseMigrationUrl(env: NodeJS.ProcessEnv): string | undefined
     return undefined;
   }
   try {
-     
     new URL(raw);
   } catch {
     throw new Error("Invalid DATABASE_MIGRATION_URL — expected a valid PostgreSQL connection URL.");
