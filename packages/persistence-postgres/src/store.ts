@@ -36,6 +36,7 @@ import {
   buildJournal,
   buildReportPack,
   buildVat,
+  collectLedgerLinesFromEvents,
   createId,
   currentMonthToken,
   DEMO_ACTOR_ID,
@@ -1129,10 +1130,8 @@ export class PostgresLedgerStore implements LedgerStore {
    * and `getReportPack` so the two read paths can never diverge.
    */
   private async collectLedgerLines(): Promise<LedgerLine[]> {
-    const lines: LedgerLine[] = [];
-
-    const rows = await this.client<{ payload: Record<string, unknown> }[]>`
-      SELECT payload
+    const rows = await this.client<{ event_type: string; payload: Record<string, unknown> }[]>`
+      SELECT event_type, payload
       FROM ledger.events
       WHERE event_type = ANY(${["PostedToLedger", "VoucherImported"]})
         AND organization_id = ${this.defaults.organizationId}
@@ -1140,16 +1139,12 @@ export class PostgresLedgerStore implements LedgerStore {
       ORDER BY seq ASC
     `;
 
-    for (const row of rows) {
-      const payloadLines = (row.payload as { lines?: unknown }).lines;
-      if (Array.isArray(payloadLines)) {
-        for (const line of payloadLines as LedgerLine[]) {
-          lines.push(line);
-        }
-      }
-    }
-
-    return lines;
+    return collectLedgerLinesFromEvents(
+      rows.map((r) => ({
+        eventType: r.event_type as LedgerEvent["eventType"],
+        payload: r.payload,
+      })),
+    );
   }
 
   async getReports(range?: ReportRange): Promise<ReportBundle> {

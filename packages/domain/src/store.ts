@@ -33,7 +33,14 @@ import type { CoaTemplate } from "./coa/types";
 import { detectComplianceIssues } from "./compliance";
 import { deriveVoucherFields, initialLedgerLines } from "./evidence-defaults";
 import { assertBalancedPosting, postingImbalanceOre } from "./posting-invariants";
-import { buildJournal, buildBalances, buildVat, filterLedgerLines } from "./projections";
+import {
+  buildJournal,
+  buildBalances,
+  buildVat,
+  collectLedgerLinesFromEvents,
+  filterLedgerLines,
+  type LedgerLine,
+} from "./projections";
 import { buildReportPack } from "./reports/pack";
 import { currentMonthToken } from "./reports/period";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
@@ -50,7 +57,6 @@ import {
 import { DEFAULT_TENANT_SCOPE } from "./tenant";
 import { getVatRegime, type VatRegime } from "./vat/regime";
 
-type LedgerLine = Parameters<typeof buildJournal>[0][number];
 export type ReviewAction = "approve" | "reject" | "book-without-vat";
 
 /**
@@ -592,7 +598,8 @@ export class MemoryLedgerStore implements LedgerStore {
   private readonly packetIdToVoucherId = new Map<string, string>();
   private readonly voucherIdToReviewId = new Map<string, string>();
   private readonly events: LedgerEvent[] = [];
-  private readonly ledgerLines: LedgerLine[] = assertBalancedPosting(initialLedgerLines(), "demo seed lines");
+  /** Frozen demo seed — never mutated; reports replay event payloads on top. */
+  private readonly seedLines: LedgerLine[] = assertBalancedPosting(initialLedgerLines(), "demo seed lines");
   private readonly assistantExamples: AssistantSession[] = [];
   private alerts: ComplianceAlert[] = [
     {
@@ -850,7 +857,6 @@ export class MemoryLedgerStore implements LedgerStore {
         continue;
       }
 
-      this.ledgerLines.push(...planned.lines);
       this.appendEvent({
         organizationId: defaultOrganizationId,
         workspaceId: defaultWorkspaceId,
@@ -891,7 +897,7 @@ export class MemoryLedgerStore implements LedgerStore {
   }
 
   async getReports(range?: ReportRange): Promise<ReportBundle> {
-    const lines = filterLedgerLines(this.ledgerLines, range);
+    const lines = filterLedgerLines([...this.seedLines, ...collectLedgerLinesFromEvents(this.events)], range);
     return {
       journal: buildJournal(lines),
       balances: buildBalances(lines),
@@ -901,7 +907,8 @@ export class MemoryLedgerStore implements LedgerStore {
 
   async getReportPack(input: { period: string }): Promise<ReportPack> {
     const settings = await this.getCompanySettings();
-    return buildReportPack(this.ledgerLines, {
+    const lines = [...this.seedLines, ...collectLedgerLinesFromEvents(this.events)];
+    return buildReportPack(lines, {
       periodToken: input.period,
       fiscalYearStart: settings?.profile.fiscalYearStart ?? "01-01",
     });
@@ -971,9 +978,7 @@ export class MemoryLedgerStore implements LedgerStore {
 
     // Honest decision vocabulary (WS-B B6a) + PostedToLedger lines for replay
     // truth — planners emit the same event sequence both stores persist.
-    if (plan.lines) {
-      this.ledgerLines.push(...plan.lines);
-    }
+    // Journal lines come from event-payload replay in getReports/getReportPack.
     for (const event of plan.events) {
       this.appendEvent(event);
     }

@@ -5,6 +5,8 @@ import { workspaceSnapshotSchema } from "@jpx-accounting/contracts";
 import type { ComplianceAlert, EvidenceCreateInput, Voucher } from "@jpx-accounting/contracts";
 import type { LedgerStore } from "@jpx-accounting/domain";
 import {
+  buildJournal,
+  collectLedgerLinesFromEvents,
   deriveDeterministicExtraction,
   InvalidPeriodTokenError,
   InvalidReviewEditError,
@@ -53,6 +55,35 @@ test("MemoryLedgerStore satisfies the LedgerStore contract for create, review, a
 
   assert.equal(approved?.status, "approved");
   assert.equal((await store.getReports()).journal.length, journalBefore + 3);
+});
+
+test("getReports journal equals seed lines plus event-payload replay", async () => {
+  const store = new MemoryLedgerStore();
+  const seedCount = (await store.getReports()).journal.length; // demo seed
+
+  const created = await store.createEvidence({
+    actorId: "user_founder",
+    title: "Replay equivalence receipt",
+    originalFilename: "replay-eq.jpg",
+    mimeType: "image/jpeg",
+    modalities: ["camera"],
+  });
+  await store.applyReviewDecision(created.review.id, "approve", { actorId: "user:test" });
+  await store.importSie({ actorId: "user_founder", file: marchSieFile() });
+
+  const reports = await store.getReports();
+  const events = await store.getEvents();
+  const replayed = collectLedgerLinesFromEvents(events);
+
+  assert.equal(reports.journal.length, seedCount + replayed.length);
+
+  const stripJournalId = (entry: (typeof reports.journal)[number]) => {
+    const { id: _id, ...rest } = entry;
+    return rest;
+  };
+  const expectedTail = buildJournal(replayed).map(stripJournalId);
+  const actualTail = reports.journal.slice(seedCount).map(stripJournalId);
+  assert.deepEqual(actualTail, expectedTail);
 });
 
 test("MemoryLedgerStore.createEvidence honors upload metadata and derives file-seeded voucher fields", async () => {
