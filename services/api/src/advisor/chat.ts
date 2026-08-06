@@ -601,10 +601,9 @@ export function createAdvisorChatHandler(
         // Human answered the proposal: execute through the review gate on
         // approval, or skip entirely on denial. Executed BEFORE streaming so
         // store errors surface as proper HTTP errors, not mid-stream noise.
+        // Demo path: ApprovalGate omitted — blockedReason stays advisory (D′).
         const outcome = approvalResponse.approved
-          ? await executeReviewApproval(store, approvalResponse.proposal, actorId, {
-              enforceBlockedReason: options.runtimeMode === "normal",
-            })
+          ? await executeReviewApproval(store, approvalResponse.proposal, actorId)
           : undefined;
         const parts = buildDemoAdvisorTurn({
           question,
