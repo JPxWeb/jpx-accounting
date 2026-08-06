@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
+  DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
   DEFAULT_SUPABASE_JWT_ALGS,
   DEMO_ADVISOR_TOOL_APPROVAL_SECRET,
   describeBootPosture,
@@ -129,6 +131,45 @@ test("readApiRuntimeConfig accepts a custom tool-approval secret in normal mode"
     SUPABASE_JWKS_URL: "https://project.supabase.co/auth/v1/keys",
   });
   assert.equal(config.advisor.toolApprovalSecret, "production-only-secret");
+});
+
+// ---------------------------------------------------------------------------
+// Wave G′ / P1-16: advisor cost envelope lives on ApiRuntimeConfig
+// ---------------------------------------------------------------------------
+
+test("readApiRuntimeConfig resolves advisor stream-limit defaults and overrides", () => {
+  const defaults = readApiRuntimeConfig({
+    ACCOUNTING_RUNTIME_MODE: "demo",
+  });
+  assert.equal(defaults.advisor.maxOutputTokens, DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS);
+  assert.equal(defaults.advisor.streamTimeoutMs, DEFAULT_ADVISOR_STREAM_TIMEOUT_MS);
+
+  const overridden = readApiRuntimeConfig({
+    ACCOUNTING_RUNTIME_MODE: "demo",
+    ADVISOR_MAX_OUTPUT_TOKENS: "512",
+    ADVISOR_STREAM_TIMEOUT_MS: "30000",
+  });
+  assert.equal(overridden.advisor.maxOutputTokens, 512);
+  assert.equal(overridden.advisor.streamTimeoutMs, 30_000);
+});
+
+test("readApiRuntimeConfig fail-closes on malformed advisor stream limits", () => {
+  assert.throws(
+    () =>
+      readApiRuntimeConfig({
+        ACCOUNTING_RUNTIME_MODE: "demo",
+        ADVISOR_MAX_OUTPUT_TOKENS: "unlimited",
+      }),
+    /positive integer/,
+  );
+  assert.throws(
+    () =>
+      readApiRuntimeConfig({
+        ACCOUNTING_RUNTIME_MODE: "demo",
+        ADVISOR_STREAM_TIMEOUT_MS: "-5",
+      }),
+    /positive integer/,
+  );
 });
 
 // ---------------------------------------------------------------------------

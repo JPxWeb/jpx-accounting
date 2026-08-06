@@ -55,6 +55,7 @@ import {
   simulateApprovals,
   today,
   type ActorAttribution,
+  type ApprovalGate,
   type LedgerLine,
   type LedgerStore,
   type ReportRange,
@@ -1287,7 +1288,7 @@ export class PostgresLedgerStore implements LedgerStore {
   async applyReviewDecision(
     reviewId: string,
     action: ReviewAction,
-    input: ReviewDecisionInput & ActorAttribution,
+    input: ReviewDecisionInput & ActorAttribution & ApprovalGate,
   ): Promise<ReviewTask | undefined> {
     return this.withChainForkRetry(() =>
       this.client.begin(async (tx) => {

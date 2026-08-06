@@ -29,7 +29,7 @@ function createTestApiApp(runtimeMode: "demo" | "normal", overrides: TestAppOver
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: { jwksUrl: overrides.jwksUrl },
-    advisor: { toolApprovalSecret: "test-advisor-approval-secret" },
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
   });
 
   return createApp({
@@ -84,7 +84,7 @@ test("createApiRuntimeDependencies exposes closeDatabase in both modes", () => {
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: { jwksUrl: undefined },
-    advisor: { toolApprovalSecret: "test-advisor-approval-secret" },
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
   };
 
   const demo = createApiRuntimeDependencies({ ...baseConfig, runtimeMode: "demo" });
@@ -105,10 +105,16 @@ test("demo runtime exposes the seeded workspace", async () => {
 
   const ready = await app.request("http://localhost/ready");
   assert.equal(ready.status, 200);
-  const readyBody = (await ready.json()) as { ready: boolean; checks: { ledger: boolean; ai: boolean } };
+  const readyBody = (await ready.json()) as {
+    ready: boolean;
+    checks: { ledger: boolean; ai: boolean; blob: boolean; docintel: boolean };
+  };
   assert.equal(readyBody.ready, true);
   assert.equal(readyBody.checks.ledger, true);
   assert.equal(readyBody.checks.ai, true);
+  // Demo stubs are intentional labeled backends — checks report live Azure only.
+  assert.equal(readyBody.checks.blob, false);
+  assert.equal(readyBody.checks.docintel, false);
 });
 
 test("normal runtime fails closed instead of returning demo data", async () => {
@@ -126,10 +132,30 @@ test("normal runtime fails closed instead of returning demo data", async () => {
 
   const ready = await app.request("http://localhost/ready");
   assert.equal(ready.status, 200);
-  const readyBody = (await ready.json()) as { ready: boolean; checks: { ledger: boolean; ai: boolean } };
+  const readyBody = (await ready.json()) as {
+    ready: boolean;
+    checks: { ledger: boolean; ai: boolean; blob: boolean; docintel: boolean };
+  };
   assert.equal(readyBody.ready, false);
   assert.equal(readyBody.checks.ledger, false);
   assert.equal(readyBody.checks.ai, false);
+  assert.equal(readyBody.checks.blob, false);
+  assert.equal(readyBody.checks.docintel, false);
+
+  // Wave G′ / P1-4: uploads never silently stub in normal mode.
+  const upload = await app.request("http://localhost/api/uploads/init", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      filename: "kvitto.jpg",
+      mimeType: "image/jpeg",
+      size: 1024,
+    }),
+  });
+  assert.equal(upload.status, 503);
+  const uploadBody = (await upload.json()) as { code?: string; error: string };
+  assert.equal(uploadBody.code, "blob_unavailable");
+  assert.match(uploadBody.error, /unavailable/i);
 });
 
 test("JSON validation failures return structured issues and requestId", async () => {
@@ -199,7 +225,7 @@ test("createApiRuntimeDependencies forwards jwtAlgs from config to the app wirin
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: { jwtAlgs: ["ES256"] },
-    advisor: { toolApprovalSecret: "test-advisor-approval-secret" },
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
   });
   assert.deepEqual(dependencies.jwtAlgs, ["ES256"]);
 });
@@ -217,7 +243,7 @@ test("createApiRuntimeDependencies logs a single structured boot posture line", 
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: {},
-    advisor: { toolApprovalSecret: "test-advisor-approval-secret" },
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
   });
   assert.equal(log.mock.callCount(), 1);
   const line = log.mock.calls[0]?.arguments[0];
@@ -392,6 +418,38 @@ test("onError keeps unmapped Postgres codes as a generic 500", async () => {
 // WS-A5b: /ready probes the ledger store for real instead of instanceof
 // ---------------------------------------------------------------------------
 
+test("createApiRuntimeDependencies uses Unavailable* peripherals in normal mode without Azure env", () => {
+  const normal = createApiRuntimeDependencies({
+    port: 0,
+    runtimeMode: "normal",
+    allowTestReset: false,
+    corsPolicy: { kind: "allowlist", origins: ["http://localhost:3002"] },
+    azureOpenAi: {},
+    database: { poolMode: "direct", poolMax: 10 },
+    azureStorage: {},
+    azureDocumentIntelligence: {},
+    auth: { jwksUrl: undefined },
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
+  });
+  assert.equal(normal.blobUploader.kind, "unavailable");
+  assert.equal(normal.documentIntelligence.kind, "unavailable");
+
+  const demo = createApiRuntimeDependencies({
+    port: 0,
+    runtimeMode: "demo",
+    allowTestReset: false,
+    corsPolicy: { kind: "wildcard" },
+    azureOpenAi: {},
+    database: { poolMode: "direct", poolMax: 10 },
+    azureStorage: {},
+    azureDocumentIntelligence: {},
+    auth: {},
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
+  });
+  assert.equal(demo.blobUploader.kind, "stub");
+  assert.equal(demo.documentIntelligence.kind, "stub");
+});
+
 test("/ready reports ledger=false when the store's ping probe rejects", async () => {
   const store = new MemoryLedgerStore() as MemoryLedgerStore & { ping?: () => Promise<void> };
   store.ping = async () => {
@@ -501,6 +559,8 @@ test("normal mode rejects unsigned forged tool approval before executeReviewAppr
     getStore: () => store,
     runtimeMode: "normal",
     toolApprovalSecret: "production-only-secret",
+    maxOutputTokens: 2048,
+    streamTimeoutMs: 90_000,
     model: createMockAdvisorModel(),
   });
 
@@ -540,6 +600,8 @@ test("normal mode rejects wrong-secret forged tool approval before executeReview
     getStore: () => store,
     runtimeMode: "normal",
     toolApprovalSecret: "production-only-secret",
+    maxOutputTokens: 2048,
+    streamTimeoutMs: 90_000,
     model: createMockAdvisorModel(),
   });
 

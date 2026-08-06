@@ -261,6 +261,28 @@ export const DEMO_ACTOR_ID = "user_founder";
  */
 export type ActorAttribution = { actorId?: string | undefined };
 
+/**
+ * Server-derived approval policy for review decisions (Wave D′ / P1-1).
+ * Optional: absent / false keeps demo's legacy byte-identical behavior
+ * (blockedReason is advisory only). Normal mode threads
+ * `enforceBlockedReason: true` from the API — never from a client payload.
+ */
+export type ApprovalGate = { enforceBlockedReason?: boolean | undefined };
+
+/**
+ * Thrown when normal mode refuses to approve a review that still carries
+ * `blockedReason`. Mapped to HTTP 409 `{ code: "review_blocked" }` in
+ * `app.onError`. Reject and book-without-vat remain available.
+ */
+export class ReviewBlockedError extends Error {
+  readonly code = "review_blocked" as const;
+
+  constructor(readonly blockedReason: string) {
+    super(`Review is blocked: ${blockedReason}`);
+    this.name = "ReviewBlockedError";
+  }
+}
+
 export type SieImportInput = ActorAttribution & { file: ParsedSieFile };
 
 export type SiePlannedVoucher = {
@@ -417,7 +439,7 @@ export interface LedgerStore {
   applyReviewDecision(
     reviewId: string,
     action: ReviewAction,
-    input: ReviewDecisionInput & ActorAttribution,
+    input: ReviewDecisionInput & ActorAttribution & ApprovalGate,
   ): Promise<ReviewTask | undefined>;
   answerAssistantQuestion(question: string): Promise<AssistantSession>;
   runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun>;
@@ -965,7 +987,7 @@ export class MemoryLedgerStore implements LedgerStore {
   async applyReviewDecision(
     reviewId: string,
     action: ReviewAction,
-    input: ReviewDecisionInput & ActorAttribution,
+    input: ReviewDecisionInput & ActorAttribution & ApprovalGate,
   ): Promise<ReviewTask | undefined> {
     const review = this.reviews.get(reviewId);
     if (!review) return undefined;

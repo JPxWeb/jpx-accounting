@@ -12,7 +12,7 @@ import {
 
 import { createBlobUploader } from "./blob";
 import { describeBootPosture, derivePrepareFromPoolMode, type ApiRuntimeConfig } from "./config";
-import { configureKnowledgeDatabaseClient } from "./knowledge";
+import { configureKnowledgeRetrieval } from "./knowledge";
 
 /**
  * Transparency metadata for `GET /api/runtime-info` (advisory pivot Phase 5).
@@ -44,7 +44,9 @@ function buildAiMetadata(config: ApiRuntimeConfig): AiRuntimeMetadata {
   return { provider: "unavailable" };
 }
 
-// Wires LedgerStore + AI implementations from `ApiRuntimeConfig`. Demo always uses MemoryLedgerStore; normal mode intentionally uses an unavailable stub until persistence lands.
+// Wires LedgerStore + AI + peripheral implementations from `ApiRuntimeConfig`.
+// Demo uses MemoryLedgerStore + stubs; normal mode fails closed via Unavailable*
+// when DATABASE_URL / Azure peripherals are missing (never silent demo fallbacks).
 export class LedgerStoreUnavailableError extends Error {
   constructor(message: string) {
     super(message);
@@ -163,34 +165,42 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
   // ONE structured boot log line (§A N5e): operators see the resolved posture without diffing env vars.
   console.log(JSON.stringify(describeBootPosture(config)));
 
+  // Fail-closed peripherals (Wave G′ / P1-4): normal mode never silently falls
+  // back to stubs when Azure env is missing — Unavailable* + /ready checks.
+  const failClosed = config.runtimeMode === "normal";
   const blobUploader = createBlobUploader({
     accountName: config.azureStorage.accountName,
     containerName: config.azureStorage.containerName,
+    failClosed,
   });
   const documentIntelligence = createDocumentIntelligenceClient({
     endpoint: config.azureDocumentIntelligence.endpoint,
     apiKey: config.azureDocumentIntelligence.apiKey,
+    failClosed,
   });
 
-  // Advisor chat wiring (Task 5.7): approval-signing secret + the Azure
-  // OpenAI slice the normal-mode model factory reads. Same env surface as
-  // ai-core — createApp decides per runtime mode whether to build the model.
+  // Advisor chat wiring: approval-signing secret + cost envelope + Azure OpenAI
+  // slice. Same env surface as ai-core — createApp decides per runtime mode
+  // whether to build the model.
   const advisor = {
     toolApprovalSecret: config.advisor.toolApprovalSecret,
+    maxOutputTokens: config.advisor.maxOutputTokens,
+    streamTimeoutMs: config.advisor.streamTimeoutMs,
     azureOpenAi: config.azureOpenAi,
   };
 
   if (config.runtimeMode === "demo") {
-    // Reset any client injected by a previous call in the same process (relevant to tests that
-    // construct dependencies repeatedly) — demo mode never talks to Postgres.
-    configureKnowledgeDatabaseClient(null);
+    // Demo = keyword-only retrieval; reset any wiring left by a previous call in
+    // the same process (tests that construct dependencies repeatedly).
+    const aiRuntime = createAiRuntime({
+      runtimeMode: config.runtimeMode,
+    });
+    configureKnowledgeRetrieval({ client: null, aiRuntime: null });
     return {
       runtimeMode: config.runtimeMode,
       corsPolicy: config.corsPolicy,
       store: new MemoryLedgerStore(),
-      aiRuntime: createAiRuntime({
-        runtimeMode: config.runtimeMode,
-      }),
+      aiRuntime,
       blobUploader,
       documentIntelligence,
       aiMetadata: buildAiMetadata(config),
@@ -214,9 +224,15 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
       })
     : undefined;
 
-  // Inject the SAME client into knowledge.ts's vector retrieval instead of letting it open its
-  // own second, never-closed pool.
-  configureKnowledgeDatabaseClient(databaseClient ?? null);
+  const aiRuntime = createAiRuntime({
+    runtimeMode: config.runtimeMode,
+    endpoint: config.azureOpenAi.endpoint,
+    apiKey: config.azureOpenAi.apiKey,
+    model: config.azureOpenAi.model,
+  });
+
+  // Inject the SAME client + boot AiRuntime into knowledge retrieval (Wave G′ / P1-15).
+  configureKnowledgeRetrieval({ client: databaseClient ?? null, aiRuntime });
 
   const store: LedgerStore = databaseClient
     ? new PostgresLedgerStore(databaseClient, DEFAULT_TENANT_SCOPE)
@@ -228,12 +244,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
     runtimeMode: config.runtimeMode,
     corsPolicy: config.corsPolicy,
     store,
-    aiRuntime: createAiRuntime({
-      runtimeMode: config.runtimeMode,
-      endpoint: config.azureOpenAi.endpoint,
-      apiKey: config.azureOpenAi.apiKey,
-      model: config.azureOpenAi.model,
-    }),
+    aiRuntime,
     blobUploader,
     documentIntelligence,
     aiMetadata: buildAiMetadata(config),

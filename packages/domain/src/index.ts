@@ -14,6 +14,7 @@ export * from "./reports/cash";
 export * from "./reports/pack";
 export * from "./reports/period";
 export * from "./reports/statements";
+export * from "./review-proposal";
 export * from "./rules";
 export * from "./sie/parse";
 export * from "./sie/pc8";

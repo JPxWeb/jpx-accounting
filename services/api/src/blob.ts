@@ -15,9 +15,17 @@ import type { UploadInit, UploadInitResult } from "@jpx-accounting/contracts";
 // under `evidence-uploads/{uploadId}/{filename}`. After the client PUTs the blob it must call
 // /api/evidence with the same uploadId so the server can record the blob path.
 
+/**
+ * Discriminator for blob backends (Wave G′ / P1-4).
+ * - `stub` — accept-and-discard demo / missing-env fallback (demo only)
+ * - `azure` — live User-Delegation SAS against Azure Blob
+ * - `unavailable` — fail-closed normal mode when storage env is missing
+ */
+export type BlobUploaderKind = "stub" | "azure" | "unavailable";
+
 export interface BlobUploader {
-  /** Which implementation backs this uploader — the API branches on it for the stub PUT route and file-url minting. */
-  readonly kind: "stub" | "azure";
+  /** Which implementation backs this uploader — the API branches on it for the stub PUT route, file-url minting, and `/ready.checks.blob`. */
+  readonly kind: BlobUploaderKind;
   initUpload(input: UploadInit): Promise<UploadInitResult>;
   /**
    * Mint a short-lived read-only SAS URL for an existing blob path. Used by
@@ -26,6 +34,29 @@ export interface BlobUploader {
    * can be wired before Azure Storage is available.
    */
   mintReadSas(blobPath: string): Promise<{ url: string; expiresInSeconds: number }>;
+}
+
+export class BlobUploaderUnavailableError extends Error {
+  readonly code = "blob_unavailable" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "BlobUploaderUnavailableError";
+  }
+}
+
+/** Fail-closed peripheral for normal mode when Azure Storage env is missing. */
+export class UnavailableBlobUploader implements BlobUploader {
+  readonly kind = "unavailable" as const;
+
+  constructor(private readonly reason: string) {}
+
+  async initUpload(_input: UploadInit): Promise<UploadInitResult> {
+    throw new BlobUploaderUnavailableError(this.reason);
+  }
+
+  async mintReadSas(_blobPath: string): Promise<{ url: string; expiresInSeconds: number }> {
+    throw new BlobUploaderUnavailableError(this.reason);
+  }
 }
 
 const DEFAULT_SAS_EXPIRY_SECONDS = 600;
@@ -197,6 +228,12 @@ export class AzureBlobUploader implements BlobUploader {
 export type BlobUploaderConfig = {
   accountName?: string | undefined;
   containerName?: string | undefined;
+  /**
+   * When true and Azure Storage env is missing, return `UnavailableBlobUploader`
+   * instead of the demo stub. Neutral flag — callers (services/api) map
+   * `runtimeMode === "normal"`; this module stays free of runtimeMode concepts.
+   */
+  failClosed?: boolean | undefined;
 };
 
 export function createBlobUploader(config: BlobUploaderConfig): BlobUploader {
@@ -205,6 +242,11 @@ export function createBlobUploader(config: BlobUploaderConfig): BlobUploader {
       accountName: config.accountName,
       containerName: config.containerName,
     });
+  }
+  if (config.failClosed) {
+    return new UnavailableBlobUploader(
+      "Uploads are unavailable in normal mode until AZURE_STORAGE_ACCOUNT and AZURE_STORAGE_CONTAINER are configured.",
+    );
   }
   return new StubBlobUploader();
 }

@@ -1,26 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { UNTRUSTED_DATA_PROMPT_CLAUSE, retrieveKnowledge } from "@jpx-accounting/advisor";
+import {
+  DEFAULT_RETRIEVAL_TOP_K,
+  UNTRUSTED_DATA_PROMPT_CLAUSE,
+  retrieveKnowledge,
+  type ReviewActionProposal,
+} from "@jpx-accounting/advisor";
 import type { KnowledgePassage } from "@jpx-accounting/contracts";
 import { MemoryLedgerStore } from "@jpx-accounting/domain";
 
 import {
   ADVISOR_VECTOR_MIN_SIMILARITY,
   AdvisorValidationError,
-  DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
-  DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
   MAX_MODEL_HISTORY_MESSAGES,
   buildSystemPrompt,
   createAdvisorChatHandler,
   executeReviewApproval,
-  resolveAdvisorStreamLimits,
   selectChatPassages,
   truncateAdvisorHistory,
   validateProposalAgainstStore,
   type AdvisorChatHandlerOptions,
 } from "../../services/api/src/advisor/chat";
-import type { ReviewActionProposal } from "@jpx-accounting/advisor";
+import { DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS, DEFAULT_ADVISOR_STREAM_TIMEOUT_MS } from "../../services/api/src/config";
 
 /**
  * WS-D regression tests for the advisor chat route: R23 (provenance parts in
@@ -103,6 +105,8 @@ function createNormalHandler(store: MemoryLedgerStore, overrides: HandlerOverrid
     runtimeMode: "normal",
     model: createRecordingModel(recorded),
     toolApprovalSecret: "test-advisor-approval-secret",
+    maxOutputTokens: DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
+    streamTimeoutMs: DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
     ...overrides,
   });
   return { handler, recorded };
@@ -152,6 +156,8 @@ test("normal mode streams the demo-shaped data-provenance part up front", async 
     runtimeMode: "demo",
     model: undefined,
     toolApprovalSecret: "test-advisor-approval-secret",
+    maxOutputTokens: DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
+    streamTimeoutMs: DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
   });
   const demoChunks = parseSseChunks(await (await demoHandler(chatRequest([userMessage(question)]))).text());
   const demoProvenance = demoChunks.find((chunk) => chunk.type === "data-provenance");
@@ -321,6 +327,8 @@ test("demo approval replay of a stale proposal streams a denial and never re-pos
     runtimeMode: "demo",
     model: undefined,
     toolApprovalSecret: "test-advisor-approval-secret",
+    maxOutputTokens: DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
+    streamTimeoutMs: DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
   });
 
   const toolCallId = "demo-tool-call";
@@ -353,33 +361,14 @@ test("demo approval replay of a stale proposal streams a denial and never re-pos
 // Cost/abort envelope
 // ---------------------------------------------------------------------------
 
-test("resolveAdvisorStreamLimits: defaults, env overrides, and fail-closed parsing", () => {
-  assert.deepEqual(resolveAdvisorStreamLimits({}), {
-    maxOutputTokens: DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS,
-    streamTimeoutMs: DEFAULT_ADVISOR_STREAM_TIMEOUT_MS,
-  });
-  assert.deepEqual(
-    resolveAdvisorStreamLimits({ ADVISOR_MAX_OUTPUT_TOKENS: "512", ADVISOR_STREAM_TIMEOUT_MS: "30000" }),
-    { maxOutputTokens: 512, streamTimeoutMs: 30_000 },
-  );
-  assert.throws(() => resolveAdvisorStreamLimits({ ADVISOR_MAX_OUTPUT_TOKENS: "unlimited" }), /positive integer/);
-  assert.throws(() => resolveAdvisorStreamLimits({ ADVISOR_STREAM_TIMEOUT_MS: "-5" }), /positive integer/);
-});
-
 test("maxOutputTokens reaches the model call (default and override)", async () => {
-  const savedEnv = process.env.ADVISOR_MAX_OUTPUT_TOKENS;
-  delete process.env.ADVISOR_MAX_OUTPUT_TOKENS;
-  try {
-    const defaultCase = createNormalHandler(new MemoryLedgerStore());
-    await (await defaultCase.handler(chatRequest([userMessage("Hur ser kassan ut?")]))).text();
-    assert.equal(defaultCase.recorded[0]?.maxOutputTokens, DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS);
+  const defaultCase = createNormalHandler(new MemoryLedgerStore());
+  await (await defaultCase.handler(chatRequest([userMessage("Hur ser kassan ut?")]))).text();
+  assert.equal(defaultCase.recorded[0]?.maxOutputTokens, DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS);
 
-    const overrideCase = createNormalHandler(new MemoryLedgerStore(), { maxOutputTokens: 128 });
-    await (await overrideCase.handler(chatRequest([userMessage("Hur ser kassan ut?")]))).text();
-    assert.equal(overrideCase.recorded[0]?.maxOutputTokens, 128);
-  } finally {
-    if (savedEnv !== undefined) process.env.ADVISOR_MAX_OUTPUT_TOKENS = savedEnv;
-  }
+  const overrideCase = createNormalHandler(new MemoryLedgerStore(), { maxOutputTokens: 128 });
+  await (await overrideCase.handler(chatRequest([userMessage("Hur ser kassan ut?")]))).text();
+  assert.equal(overrideCase.recorded[0]?.maxOutputTokens, 128);
 });
 
 test("client abort propagates into the model abortSignal", async () => {
@@ -540,7 +529,7 @@ test("a failing retriever falls back to keyword passages instead of erroring", a
   const chunks = parseSseChunks(await response.text());
   const provenance = chunks.find((chunk) => chunk.type === "data-provenance");
   assert.ok(provenance, "keyword fallback passages must still stream");
-  const expected = retrieveKnowledge(question, { topK: 4 });
+  const expected = retrieveKnowledge(question, { topK: DEFAULT_RETRIEVAL_TOP_K });
   assert.deepEqual(
     (provenance.data as { passages: KnowledgePassage[] }).passages.map((item) => item.id),
     expected.map((item) => item.id),

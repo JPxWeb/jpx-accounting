@@ -83,7 +83,7 @@ function createPostgresApiApp(store: PostgresLedgerStore, jwksUrl: string) {
     azureStorage: {},
     azureDocumentIntelligence: {},
     auth: { jwksUrl },
-    advisor: { toolApprovalSecret: "test-advisor-approval-secret" },
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
   });
 
   return createApp({

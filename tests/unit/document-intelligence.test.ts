@@ -4,8 +4,10 @@ import { test } from "node:test";
 import { extractedFieldSchema } from "@jpx-accounting/contracts";
 import {
   createDocumentIntelligenceClient,
+  DocumentIntelligenceUnavailableError,
   mapFieldsToContract,
   pickModelForDocument,
+  UnavailableDocumentIntelligenceClient,
 } from "@jpx-accounting/document-intelligence";
 import { deriveDeterministicExtraction, today } from "@jpx-accounting/domain";
 
@@ -140,6 +142,35 @@ test("factory returns the stub client unless BOTH endpoint and apiKey are config
   assert.equal(
     createDocumentIntelligenceClient({ endpoint: "https://di.example.test", apiKey: "secret" }).constructor.name,
     "AzureDocumentIntelligenceClient",
+  );
+});
+
+test("DocumentIntelligenceClient.kind discriminates stub vs azure vs unavailable (Wave D′ / G′)", () => {
+  assert.equal(createDocumentIntelligenceClient({}).kind, "stub");
+  assert.equal(
+    createDocumentIntelligenceClient({ endpoint: "https://di.example.test", apiKey: "secret" }).kind,
+    "azure",
+  );
+  assert.equal(createDocumentIntelligenceClient({ failClosed: true }).kind, "unavailable");
+});
+
+test("failClosed factory returns UnavailableDocumentIntelligenceClient that throws on extract", async () => {
+  const client = createDocumentIntelligenceClient({ failClosed: true });
+  assert.ok(client instanceof UnavailableDocumentIntelligenceClient);
+  await assert.rejects(
+    () => client.extract({ modelId: "prebuilt-receipt", urlSource: "https://example.test/kvitto.jpg" }),
+    (error: unknown) => error instanceof DocumentIntelligenceUnavailableError,
+  );
+});
+
+test("failClosed is ignored when DocIntel endpoint + apiKey are present", () => {
+  assert.equal(
+    createDocumentIntelligenceClient({
+      endpoint: "https://di.example.test",
+      apiKey: "secret",
+      failClosed: true,
+    }).kind,
+    "azure",
   );
 });
 

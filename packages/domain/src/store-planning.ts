@@ -23,7 +23,9 @@ import {
   mergeExtractedFields,
   recomputeVoucherFields,
   resolveReviewDecisionEdit,
+  ReviewBlockedError,
   type ActorAttribution,
+  type ApprovalGate,
   type ReviewAction,
 } from "./store";
 
@@ -243,11 +245,18 @@ export function planReviewDecision(
   review: ReviewTask,
   voucher: Voucher,
   action: ReviewAction,
-  input: ReviewDecisionInput & ActorAttribution,
+  input: ReviewDecisionInput & ActorAttribution & ApprovalGate,
   now?: string,
 ): ReviewDecisionPlan {
   if (review.status !== "needs-review") {
     return { kind: "replay", review: { ...review } };
+  }
+
+  // Wave D′ / P1-1: normal mode honors planner `blockedReason` — approve is
+  // refused until rules clear (re-extract) or the reviewer chooses reject /
+  // book-without-vat. Demo omits enforceBlockedReason so pins stay byte-identical.
+  if (input.enforceBlockedReason && action === "approve" && review.blockedReason) {
+    throw new ReviewBlockedError(review.blockedReason);
   }
 
   const actorId = input.actorId ?? DEMO_ACTOR_ID;

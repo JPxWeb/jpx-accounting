@@ -35,6 +35,7 @@ import {
   MemoryLedgerStore,
   nowIso,
   parseSie,
+  ReviewBlockedError,
   ReviewNotFoundError,
   SieImportError,
   summarizeEventIntegrity,
@@ -44,7 +45,7 @@ import {
 import { AdvisorDisabledError, AdvisorValidationError, createAdvisorChatHandler } from "./advisor/chat";
 import { createAdvisorModel, type AdvisorModelConfig } from "./advisor/model";
 import type { BlobUploader } from "./blob";
-import { MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
+import { BlobUploaderUnavailableError, MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
 import { DEFAULT_SUPABASE_JWT_ALGS, type CorsRuntimePolicy, type SupabaseJwtAlgorithm } from "./config";
 import { queryKnowledge } from "./knowledge";
 import type { AiRuntimeMetadata } from "./runtime";
@@ -61,12 +62,15 @@ type CreateAppOptions = {
   /** Transparency metadata for `GET /api/runtime-info` (provider/model/host — never secrets). */
   aiMetadata: AiRuntimeMetadata;
   /**
-   * Advisor chat wiring (Task 5.7): HMAC secret for AI SDK tool-approval
-   * signing + the Azure OpenAI slice for the normal-mode model. Demo mode
-   * never touches the model; unconfigured normal mode answers 503.
+   * Advisor chat wiring (Task 5.7 + Wave G′ P1-16): HMAC secret for AI SDK
+   * tool-approval signing, cost envelope, + the Azure OpenAI slice for the
+   * normal-mode model. Demo mode never touches the model; unconfigured normal
+   * mode answers 503.
    */
   advisor: {
     toolApprovalSecret: string;
+    maxOutputTokens: number;
+    streamTimeoutMs: number;
     azureOpenAi: AdvisorModelConfig;
   };
   /**
@@ -284,6 +288,8 @@ export function createApp({
     runtimeMode,
     model: runtimeMode === "demo" ? undefined : createAdvisorModel(advisor.azureOpenAi),
     toolApprovalSecret: advisor.toolApprovalSecret,
+    maxOutputTokens: advisor.maxOutputTokens,
+    streamTimeoutMs: advisor.streamTimeoutMs,
   });
 
   /**
@@ -308,7 +314,12 @@ export function createApp({
     reviewId: string,
     outcome: ReviewAction,
   ) {
-    const review = await currentStore.applyReviewDecision(reviewId, outcome, input);
+    // Wave D′: normal mode honors planner blockedReason; demo omits the flag
+    // so approve-on-blocked stays byte-identical for demo pins/E2E.
+    const review = await currentStore.applyReviewDecision(reviewId, outcome, {
+      ...input,
+      enforceBlockedReason: runtimeMode === "normal",
+    });
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return review;
   }
@@ -511,6 +522,11 @@ export function createApp({
       });
     }
 
+    if (error instanceof ReviewBlockedError) {
+      // Normal-mode approve refused while blockedReason is set (Wave D′ / P1-1).
+      return jsonError(c, error.message, runtimeMode, 409, { code: error.code });
+    }
+
     if (error instanceof SieImportError) {
       // Whole-file bound violations → 422; per-voucher problems never throw
       // (they land in the result's `skipped` list instead — Rule 21).
@@ -520,6 +536,10 @@ export function createApp({
     if (error instanceof InvalidPeriodTokenError) {
       // Unknown/malformed ?period= token → 422 (Rule 16).
       return jsonError(c, error.message, runtimeMode, 422, { code: "invalid_period_token" });
+    }
+
+    if (error instanceof BlobUploaderUnavailableError) {
+      return jsonError(c, error.message, runtimeMode, 503, { code: error.code });
     }
 
     if (error instanceof LedgerStoreUnavailableError || error instanceof AiRuntimeUnavailableError) {
@@ -591,11 +611,17 @@ export function createApp({
       ledgerOk = false;
     }
     const aiOk = isAiRuntimeOperational(aiRuntime);
-    const ready = ledgerOk && aiOk;
+    // Wave G′ / P1-4: peripherals report live Azure only (explicit `kind === "azure"`).
+    // Demo stubs keep overall ready true (labeled intentional backends); unavailable
+    // fail-closed peripherals take the process out of ready.
+    const blobOk = blobUploader.kind === "azure";
+    const docintelOk = documentIntelligence.kind === "azure";
+    const peripheralsOk = blobUploader.kind !== "unavailable" && documentIntelligence.kind !== "unavailable";
+    const ready = ledgerOk && aiOk && peripheralsOk;
     return context.json({
       ready,
       runtimeMode,
-      checks: { ledger: ledgerOk, ai: aiOk },
+      checks: { ledger: ledgerOk, ai: aiOk, blob: blobOk, docintel: docintelOk },
     });
   });
 
