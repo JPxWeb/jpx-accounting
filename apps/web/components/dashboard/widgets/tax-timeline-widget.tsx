@@ -41,10 +41,14 @@ export function TaxTimelineWidget({ data }: { data: DashboardData }) {
           >
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-foreground">{t(`kinds.${deadline.kind}`)}</p>
-              <p className="mt-0.5 text-caption text-muted-foreground">{deadline.periodLabel}</p>
+              <p className="mt-0.5 text-caption text-muted-foreground" data-visual-mask>
+                {deadline.periodLabel}
+              </p>
             </div>
             <div className="shrink-0 text-right">
-              <p className="text-sm font-semibold tabular-nums">{formatShortDate(deadline.dueDate, locale)}</p>
+              <p className="text-sm font-semibold tabular-nums" data-visual-mask>
+                {formatShortDate(deadline.dueDate, locale)}
+              </p>
               {amount !== null ? (
                 <p className="mt-0.5 text-caption text-muted-foreground">
                   <Money value={amount} />

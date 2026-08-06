@@ -25,7 +25,7 @@ export function PeriodSelector() {
   return (
     <Select items={items} value={raw} onValueChange={(value) => void setPeriod(value)}>
       <SelectTrigger data-testid="period-selector" className="w-56" aria-label={t("selectorAria")}>
-        <SelectValue />
+        <SelectValue data-visual-mask />
       </SelectTrigger>
       <SelectContent>
         {groups.map((group) => (

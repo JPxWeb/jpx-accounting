@@ -50,7 +50,7 @@ export function ObservationsWidget({ data }: { data: DashboardData }) {
             <span aria-hidden="true" className={`size-2 rounded-full ${SEVERITY_DOT[observation.severity]}`} />
             <span className={SEVERITY_TEXT[observation.severity]}>{t(`severity.${observation.severity}`)}</span>
           </p>
-          <p className="mt-1 text-sm leading-6 text-foreground">
+          <p className="mt-1 text-sm leading-6 text-foreground" data-visual-mask>
             {tObservations(observation.titleKey, observation.params)}
           </p>
           {observation.action ? (
