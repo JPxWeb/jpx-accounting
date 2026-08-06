@@ -8,6 +8,7 @@ import { Joyride, STATUS, type Step } from "react-joyride";
 
 import { useIsMobile } from "../../hooks/use-mobile";
 import { apiClient } from "../../lib/client";
+import { buildJoyrideLocale, type JoyrideLocaleTranslator } from "../../lib/onboarding/joyride-locale";
 import { buildTourStepDefinitions } from "../../lib/onboarding/tour-definitions";
 import { waitForElement } from "../../lib/onboarding/wait-for-element";
 import type { TourId } from "../../lib/onboarding/tour-ids";
@@ -159,15 +160,9 @@ export function OnboardingShell({ children }: { children: ReactNode }) {
         steps={steps}
         run={run}
         continuous
+        options={{ showProgress: true }}
         tooltipComponent={TourTooltip}
-        locale={{
-          back: t("controls.back"),
-          close: t("controls.close"),
-          last: t("controls.last"),
-          next: t("controls.next"),
-          nextWithProgress: t("controls.nextWithProgress"),
-          skip: t("controls.skip"),
-        }}
+        locale={buildJoyrideLocale(t as unknown as JoyrideLocaleTranslator)}
         onEvent={(data) => {
           if (data.status === STATUS.FINISHED) {
             finishTour(true);
