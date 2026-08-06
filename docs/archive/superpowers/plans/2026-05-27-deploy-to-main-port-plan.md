@@ -1,5 +1,7 @@
 # Deploy → Main Port Plan
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 > **Status:** Survey complete; ready for execution. No code changes yet.
 > **Created:** 2026-05-27 (post-survey)
 > **Branch state:** `deploy` is 107 commits ahead of `origin/main`; `origin/main` is 30 commits ahead of `deploy`. PR #14 (deploy → main) is open but `CONFLICTING` because the architectures have materially diverged.

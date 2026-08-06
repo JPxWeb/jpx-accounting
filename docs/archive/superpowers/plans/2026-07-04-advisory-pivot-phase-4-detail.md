@@ -1,5 +1,7 @@
 # Phase 4 — Reports that report: detailed execution plan
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans. Checkbox syntax for tracking. Verification vocabulary: `CHECK` = `pnpm check`; `E2E` = `pnpm test:e2e`; `E2E:file <f>` = `pnpm build:e2e && npx playwright test tests/e2e/<f>`; `INTEG` = `pnpm test:integration` with `SUPABASE_DB_URL` set (or documented manual smoke, Rules 2/14).
 
 **Baseline verified against branch `feat/advisory-pivot` on 2026-07-04** (HEAD `5524545`, Phases 0–3 landed: CoA registry `bas-2026` with `accountClass` on every account + `roles` map, `swedishVatRegime` + `buildVatReturnBoxes` (domain-ready, zero consumers), `VoucherImported` replay in both stores' `getReports`, workspace profile with `fiscalYearStart`, `Money` component, next-intl en+sv with `common/shell/palette/today/evidence/capture` namespaces, nuqs `?period=YYYY-MM` in Books, migrations 0001–0004, 20 visual baselines light/dark).

@@ -1,7 +1,9 @@
 # Repo-Health Plan — Execution Handover (2026-08-06)
 
+> **STATUS (2026-08-06 post-merge):** Waves **0 + A–C are COMPLETE** on `main` (PR #35 `1ef18be`; deploy scope casing PR #37 `3604ba5`). §2 below is **historical** (written pre-execution). Do **not** re-run Wave A–C. For remaining backlog (D–G) and post–Wave C prioritization, prefer [`plans/2026-08-06-repo-health-consolidation-plan.md`](plans/2026-08-06-repo-health-consolidation-plan.md) plus the post–Wave C improvement brainstorm when present. Wave B/C execution plans are archived under [`../archive/superpowers/plans/`](../archive/superpowers/plans/) with COMPLETE banners.
+
 **Audience:** the fresh Claude Code session (or human) that will implement the verified repo-health consolidation plan, and the subagents it dispatches.
-**Mission:** execute [`plans/2026-08-06-repo-health-consolidation-plan.md`](plans/2026-08-06-repo-health-consolidation-plan.md) (the **v2 verified edition** — every claim re-verified 2026-08-06) wave by wave, starting with the recommended first slice (§7).
+**Mission:** execute [`plans/2026-08-06-repo-health-consolidation-plan.md`](plans/2026-08-06-repo-health-consolidation-plan.md) (the **v2 verified edition** — every claim re-verified 2026-08-06) wave by wave — **starting after Wave C** (see consolidation STATUS banner). The §7 first-slice list below is historical.
 
 ---
 
@@ -15,9 +17,11 @@
 
 ## 2. State at handover
 
+> **Superseded by the STATUS banner above.** Historical text retained for provenance:
+
 - **Wave 0 is COMPLETE**: the previously-uncommitted DB-lifecycle working tree (config canonicalization, `scripts/db*.mts`, `compose.db.yml`, strict integration gate, CI job, tests) is committed. Branch from current `feat/db-lifecycle-plan-v2` (or `main` once merged) — the plan's line-number citations were verified against exactly this tree.
 - The plan, `docs/REPO_MAP.md`, `docs/findings.md`, and this handover are committed in the follow-up docs commit.
-- Nothing from the plan's backlog (P0-1 … P2-20) has been implemented yet. Three items are _partially_ pre-fixed by Wave 0 and are marked **"ALREADY FIXED — verify only"** in the plan (P1-11: CONTRIBUTING/.env.example/integration-db.md; P1-15: shared-pool half; P2-16: `database-config.test.ts`) — verify, never redo.
+- ~~Nothing from the plan's backlog (P0-1 … P2-20) has been implemented yet.~~ **False as of PR #35** — Waves A–C landed (tenant strip, planners, pins, SIGTERM, etc.). P0-4 share-under-auth and Waves D–G remain open. Three items were _partially_ pre-fixed by Wave 0 and are marked **"ALREADY FIXED — verify only"** in the plan (P1-11: CONTRIBUTING/.env.example/integration-db.md — docs truth pass continues in Wave F′; P1-15: shared-pool half; P2-16: `database-config.test.ts`) — verify, never redo.
 
 ## 3. Execution protocol
 

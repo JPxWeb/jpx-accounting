@@ -1,5 +1,7 @@
 # Repo-Health Wave B — Ledger Honesty Execution Plan
 
+> **STATUS:** **COMPLETE** — landed on `main` via PR #35 (2026-08-06). Do not re-execute. Archived under `docs/archive/superpowers/plans/` (this file may live there; links from active docs point at the archive). Next work: consolidation Waves D–G / post–Wave C brainstorm.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Finish Wave B ledger honesty — verify P0-2 already landed in Wave A, extract shared store planners (P1-2), then unify projection line collection on event replay (P1-3).

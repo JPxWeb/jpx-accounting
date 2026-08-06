@@ -1,5 +1,7 @@
 # Auth & Database Operations Implementation Plan
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 > **Superseded (2026-05-19):** Use the active checklist in [`2026-05-19-supabase-backend-track.md`](./2026-05-19-supabase-backend-track.md). This file is kept as historical reference for auth/SSR task snippets.
 
 > **Progress:** Partial — `SupabaseLedgerStore` writes, `authMiddleware`, `packages/supabase-client`. See [DEV_STATUS.md](../../DEV_STATUS.md).

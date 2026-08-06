@@ -1,6 +1,6 @@
 # Architecture Overview
 
-_Last verified against code: 2026-07-19._
+_Last verified against code: 2026-08-06 (post Waves A–C / PR #35)._
 
 ## Runtime shape
 
@@ -28,7 +28,7 @@ _Last verified against code: 2026-07-19._
 The current scaffold has two production-ready `LedgerStore` implementations behind the same async interface:
 
 - `MemoryLedgerStore` — used in `demo` mode and as the demo fallback in `packages/api-client`.
-- `PostgresLedgerStore` — used in `normal` mode when `SUPABASE_DB_URL` is set. Wraps `postgres-js` and writes to the schema in [`infra/supabase/migrations/0001_init.sql`](../infra/supabase/migrations/0001_init.sql) plus the alignment patch in [`0002_schema_alignment.sql`](../infra/supabase/migrations/0002_schema_alignment.sql).
+- `PostgresLedgerStore` — used in `normal` mode when `DATABASE_URL` is set (legacy alias `SUPABASE_DB_URL` still accepted; conflicting canonical+legacy values fail at boot). Wraps `postgres-js` and writes to the schema applied by [`scripts/db-migrations.mts`](../scripts/db-migrations.mts) from [`infra/supabase/migrations/`](../infra/supabase/migrations/) (`0001`–`0008` as of 2026-08-06).
 
 The hash-chain helper (`buildEventHash` in `packages/domain/src/hash-chain.ts`) is shared between stores; `PostgresLedgerStore` reuses the helper rather than forking it. Hashes are SHA-256 over `canonicalJson({ payload, previousHash })` — canonicalization is byte-stable across the Postgres jsonb round trip, so `GET /api/integrity` (`packages/domain/src/integrity.ts`) verifies linkage for every event **and recomputes payload hashes** for SHA-256 events; legacy djb2 events (pre-cutover appends, `h_` + 8 hex) stay linkage-only and are reported as `legacyEventCount`. A djb2-format hash appearing after any SHA-256 hash breaks the chain. Future immutable-storage migrations should continue to land behind `LedgerStore`, not by rewriting product logic.
 
@@ -36,7 +36,7 @@ The hash-chain helper (`buildEventHash` in `packages/domain/src/hash-chain.ts`) 
 
 PostgREST cannot run multi-statement transactions outside `rpc()`. Event + projection updates that must commit atomically therefore use `postgres-js` (or `pg`) directly — Supabase explicitly endorses this for server-side code. `@supabase/supabase-js` is reserved for auth/admin helpers if/when needed.
 
-When connecting through Supavisor, prefer **session mode (port 5432)** over **transaction mode (port 6543)**. Transaction mode does not support named prepared statements; if it must be used, set `SUPABASE_POOLER_TRANSACTION_MODE=true` so `postgres-js` runs with `prepare:false`.
+When connecting through Supavisor, prefer **session mode (port 5432)** over **transaction mode (port 6543)**. Transaction mode does not support named prepared statements; if it must be used, set `DATABASE_POOL_MODE=transaction` so `postgres-js` runs with `prepare:false` (legacy alias `SUPABASE_POOLER_TRANSACTION_MODE=true` is deprecated).
 
 ## Evidence upload (Azure Blob)
 

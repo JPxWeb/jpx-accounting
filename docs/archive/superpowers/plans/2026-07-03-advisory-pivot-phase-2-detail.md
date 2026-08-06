@@ -1,5 +1,7 @@
 # Phase 2 — Platform seams: detailed execution plan
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans. Checkbox syntax for tracking. Verification vocabulary: `CHECK` = `pnpm check`; `E2E` = `pnpm test:e2e`; `E2E:file <f>` = `pnpm build:e2e && npx playwright test tests/e2e/<f>`.
 
 **Baseline verified against branch `feat/advisory-pivot` on 2026-07-03** (Phases 0–1 landed: dark mode mounted in `layout.tsx`, `theme-toggle.tsx` exists, visual-regression + dark-mode + palette-deeplink + books-drilldown specs exist, migrations run 0001–0004).

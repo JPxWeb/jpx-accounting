@@ -25,4 +25,4 @@ prioritize flagging these over style:
 9. **AI transparency** — new AI-generated surfaces missing Article 50 labeling, provenance,
    or honest disabled/empty states.
 
-Conventions doc: `docs/CONVENTIONS.md` (28 rules). Cross-tool contract: `AGENTS.md`.
+Conventions doc: `docs/CONVENTIONS.md` (29 rules). Cross-tool contract: `AGENTS.md`.

@@ -4,6 +4,17 @@ Append-only log of research findings, decisions, thresholds, and open questions 
 
 ---
 
+## 2026-08-06 — Wave F′ docs truth pass (P1-11 / F-1–F-3)
+
+- **DEV_STATUS** Last reviewed → 2026-08-06; Waves 0 + A–C COMPLETE banner; integration gate rewritten to `pnpm db:test` / `DATABASE_TEST_URL` (+ legacy `SUPABASE_DB_URL` alias note).
+- **CONVENTIONS / architecture** present-tense `SUPABASE_DB_URL` gates → `DATABASE_URL` + `pnpm db:*`; pooler flag → `DATABASE_POOL_MODE=transaction`.
+- **REPO_MAP** plan index updated (active vs archive); gotcha #4 corrected — `closeDatabase` **is** wired via `registerGracefulShutdown`.
+- **findings** engineering-patterns SIGTERM bullet corrected in place (this file, above section).
+- **28 → 29** CONVENTIONS rule count in `.cursor/rules/jpx-accounting.mdc` + `.github/copilot-instructions.md`.
+- **Archive policy (Q10):** 29 landed plans `git mv`’d to `docs/archive/superpowers/plans/` with STATUS banners; `docs/README.md` authority index added. Active plans remain: consolidation + full-sweep-next-steps + opportunity-backlog.
+
+---
+
 ## 2026-08-06 — repo-health plan verification pass (10-agent fan-out + live registry/GHSA/EUR-Lex research)
 
 ### Dependency security (verified live against registry.npmjs.org + GitHub Advisory Database)
@@ -32,7 +43,7 @@ Append-only log of research findings, decisions, thresholds, and open questions 
 
 ### Engineering patterns (verified against installed packages + vendor docs)
 
-- **postgres-js shutdown**: `sql.end({ timeout: 5 })` — timeout is SECONDS. `closePostgresClient` + runtime `closeDatabase` handle already exist; only `services/api/src/index.ts` signal wiring is missing. Azure App Service **Linux default graceful-stop window is 5 s** (`WEBSITES_CONTAINER_STOP_TIME_LIMIT`, max 120) — smaller than the 5 s drain alone, so **set it to 30 in Bicep** alongside the handler. Windows never delivers SIGTERM (listen anyway — harmless); SIGINT works everywhere; `process.exit()` needed because open SSE sockets keep the loop alive.
+- **postgres-js shutdown**: `sql.end({ timeout: 5 })` — timeout is SECONDS. **P1-13 landed (Wave A / PR #35):** `registerGracefulShutdown` in `services/api/src/shutdown.ts` wires SIGTERM/SIGINT to drain the HTTP server then `closeDatabase()` (`services/api/src/index.ts`). Prior “signal wiring missing” claims are **stale**. **Still open (owner):** verify `WEBSITES_CONTAINER_STOP_TIME_LIMIT` on the deployed Linux App Service — platform default is **5 s** (max 120), so without an explicit setting the 5 s pool drain can be SIGKILL’d. Windows never delivers SIGTERM (listen anyway — harmless); SIGINT works everywhere; `process.exit()` is still needed because open SSE sockets keep the loop alive.
 - **Zod v4 tenant-field removal pattern**: default `z.object` strips unknown keys (safe removal path, mirrors the actorId R5 precedent); for security-relevant keys prefer **`z.never().optional()` tripwires** on the wire schema (present ⇒ 400, absent ⇒ ok) while other unknown keys still strip — do NOT blanket-`strictObject` (breaks additive evolution).
 - **AI SDK 7 already fail-closes on system-in-messages**: `standardizePrompt` defaults `allowSystemInMessages: false` and THROWS `AI_InvalidPromptError` at model-call time. So a client-posted `role:"system"` message today = unhandled mid-stream 500, not injection — the fix is a server-side filter before `convertToModelMessages` (clean drop or 400), never `allowSystemInMessages: true`. Dropping input messages has zero SSE-protocol impact (the stream never echoes input history).
 - **Hono typed tenant middleware**: `createMiddleware<{Variables}>` after the `jwk` gate; `c.set("tenantScope", …)` allowed in exactly one file (grep-gated seam); handlers consume `c.var.tenantScope`. **Open question (blocking multi-tenant later): provisioning `org_id`/`workspace_id` claims into Supabase JWT app_metadata is a decision nobody has made yet** — until then the store-constructor `DEFAULT_TENANT_SCOPE` is the single authority.

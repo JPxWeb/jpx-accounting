@@ -1,5 +1,7 @@
 # Phase 0 — Failure Catalog (2026-07-03)
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 Baseline runs on `feat/advisory-pivot` @ `1734bd7` (master plan Task 0.1).
 
 ## `pnpm check`

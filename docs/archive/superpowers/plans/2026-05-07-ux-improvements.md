@@ -1,5 +1,7 @@
 # UX Improvements Implementation Plan
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 > **Status (2026‑05‑07): Shipped.** Phases 1–4 of this plan landed in a single sweep, plus a follow-on simplification pass. The detailed task lists below are kept as historical reference for the original spec — they do **not** describe outstanding work. See **Implementation summary** immediately below for what's in `main` today, and **Still deferred** for the items that did not ship.
 
 ## Implementation summary

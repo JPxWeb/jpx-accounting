@@ -1,5 +1,7 @@
 # Track A · Phase 5 — Capture (drafts + evidence archive) Implementation Plan
 
+> **STATUS:** **ARCHIVED (landed)** — moved to `docs/archive/superpowers/plans/` on 2026-08-06 (Wave F′ / Q10 archive policy). Historical execution record only — do not treat as an active backlog. Active plans live under `docs/superpowers/plans/`; start from `docs/README.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Complete tasks in order.
 
 **Goal:** Turn `/capture` from a header-only stub into a real page: quick-add tiles, a local drafts table that promotes drafts into ledger evidence, and a searchable evidence archive with hash chain and a per-evidence detail route.
