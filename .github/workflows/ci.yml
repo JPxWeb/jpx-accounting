@@ -261,8 +261,11 @@ jobs:
       # Visual specs compare against the committed *-linux.png baselines, generated in the
       # pinned Playwright Docker image (workflow: scripts/visual-baselines.md). If they all
       # fail with "snapshot doesn't exist", the linux baselines were not regenerated.
-      - name: Run E2E tests
-        run: npx playwright test
+      - name: Run functional E2E tests
+        run: npx playwright test --grep-invert "visual:"
+
+      - name: Run visual regression
+        run: npx playwright test tests/e2e/visual-regression.spec.ts
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
