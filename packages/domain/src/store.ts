@@ -31,12 +31,7 @@ import { buildAssistantScaffold } from "./assistant";
 import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
 import { detectComplianceIssues } from "./compliance";
-import {
-  buildExtractedFields,
-  deriveVoucherFields,
-  guessAccountingMethod,
-  initialLedgerLines,
-} from "./evidence-defaults";
+import { deriveVoucherFields, initialLedgerLines } from "./evidence-defaults";
 import { assertBalancedPosting, postingImbalanceOre } from "./posting-invariants";
 import { buildJournal, buildBalances, buildVat, filterLedgerLines } from "./projections";
 import { buildReportPack } from "./reports/pack";
@@ -46,6 +41,12 @@ import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
 import type { ParsedSieFile } from "./sie/parse";
 import { simulateApprovals } from "./simulation";
+import {
+  AUTO_DETECTED_ALERT_KINDS,
+  planEvidenceCreate,
+  planExtractionRefresh,
+  planReviewDecision,
+} from "./store-planning";
 import { DEFAULT_TENANT_SCOPE } from "./tenant";
 import { getVatRegime, type VatRegime } from "./vat/regime";
 
@@ -421,7 +422,6 @@ export interface LedgerStore {
 }
 
 const MEMORY_ALERT_CAP = 500;
-const AUTO_DETECTED_KINDS = new Set(["stale-blocked", "missing-supplier-vat"]);
 
 const { organizationId: defaultOrganizationId, workspaceId: defaultWorkspaceId } = DEFAULT_TENANT_SCOPE;
 
@@ -688,129 +688,32 @@ export class MemoryLedgerStore implements LedgerStore {
     const duplicate = this.findDuplicateEvidenceResult(input);
     if (duplicate) return duplicate;
 
-    // Server-derived attribution or the demo sentinel — never a client value (R5).
-    const actorId = input.actorId ?? DEMO_ACTOR_ID;
-    const createdAt = nowIso();
-    const evidenceId = createId("evidence");
-    const packetId = createId("packet");
-    const voucherId = createId("voucher");
-
-    const evidence: EvidenceObject = {
-      id: evidenceId,
+    const plan = planEvidenceCreate(input, {
+      voucherIndex: this.vouchers.size,
       organizationId: defaultOrganizationId,
       workspaceId: defaultWorkspaceId,
-      createdAt,
-      createdBy: actorId,
-      title: input.title,
-      modalities: input.modalities,
-      originalFilename: input.originalFilename,
-      mimeType: input.mimeType,
-      // Honest upload metadata when the client went through init→PUT→create;
-      // legacy synthetic path + derived hash preserved when no upload happened.
-      blobPath: input.blobPath ?? `evidence/${evidenceId}/${input.originalFilename}`,
-      hash: input.sha256 ?? buildEventHash("file", `${input.originalFilename}:${input.title}:${createdAt}`),
-      sizeBytes: input.sizeBytes,
-      trustLevel: "user-upload",
-    };
-
-    const packet: EvidencePacket = {
-      id: packetId,
-      evidenceIds: [evidenceId],
-      note: input.note,
-      voiceTranscript: input.extractedText,
-    };
-
-    const extractedFields = buildExtractedFields(input);
-    const voucher: Voucher = {
-      id: voucherId,
-      organizationId: defaultOrganizationId,
-      workspaceId: defaultWorkspaceId,
-      evidencePacketId: packetId,
-      voucherNumber: `V-${this.vouchers.size + 1001}`,
-      status: "needs-review",
-      accountingMethod: guessAccountingMethod(input),
-      extractedFields,
-      voucherFields: deriveVoucherFields(extractedFields, input),
-      createdAt,
-      createdBy: actorId,
-    };
-
-    const ruleHits = evaluateVoucherRules(voucher);
-    const suggestion = buildDeterministicSuggestion(voucher, ruleHits);
-    const review: ReviewTask = {
-      id: createId("review"),
-      voucherId,
-      title: `Review ${voucher.voucherNumber}`,
-      status: "needs-review",
-      blockedReason: ruleHits.some((rule) => rule.severity === "blocking")
-        ? "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved."
-        : undefined,
-      suggestedAction: ruleHits.some((rule) => rule.severity === "blocking")
-        ? "Request more evidence or post without VAT deduction."
-        : "Approve the proposed posting.",
-      suggestion,
-      provenanceTimeline: [
-        { id: createId("step"), label: "Evidence received", timestamp: createdAt, actor: actorId },
-        { id: createId("step"), label: "Fields extracted", timestamp: createdAt, actor: "system-extractor" },
-        { id: createId("step"), label: "Rules applied", timestamp: createdAt, actor: "system-rules" },
-        { id: createId("step"), label: "Suggestion generated", timestamp: createdAt, actor: "system-ai" },
-      ],
-    };
-
-    this.evidence.set(evidenceId, evidence);
-    this.evidencePackets.set(packetId, packet);
-    this.vouchers.set(voucherId, voucher);
-    this.reviews.set(review.id, review);
-    this.suggestions.set(voucherId, suggestion);
-    this.evidenceIdToPacketId.set(evidenceId, packetId);
-    this.packetIdToVoucherId.set(packetId, voucherId);
-    this.voucherIdToReviewId.set(voucherId, review.id);
-
-    this.appendEvent({
-      organizationId: defaultOrganizationId,
-      workspaceId: defaultWorkspaceId,
-      aggregateType: "evidence",
-      aggregateId: evidenceId,
-      eventType: "EvidenceReceived",
-      actorId,
-      occurredAt: createdAt,
-      payload: evidence,
     });
 
-    this.appendEvent({
-      organizationId: defaultOrganizationId,
-      workspaceId: defaultWorkspaceId,
-      aggregateType: "voucher",
-      aggregateId: voucherId,
-      eventType: "FieldsExtracted",
-      actorId: "system-extractor",
-      occurredAt: createdAt,
-      payload: { extractedFields },
-    });
+    this.evidence.set(plan.evidence.id, plan.evidence);
+    this.evidencePackets.set(plan.packet.id, plan.packet);
+    this.vouchers.set(plan.voucher.id, plan.voucher);
+    this.reviews.set(plan.review.id, plan.review);
+    this.suggestions.set(plan.voucher.id, plan.suggestion);
+    this.evidenceIdToPacketId.set(plan.evidence.id, plan.packet.id);
+    this.packetIdToVoucherId.set(plan.packet.id, plan.voucher.id);
+    this.voucherIdToReviewId.set(plan.voucher.id, plan.review.id);
 
-    this.appendEvent({
-      organizationId: defaultOrganizationId,
-      workspaceId: defaultWorkspaceId,
-      aggregateType: "voucher",
-      aggregateId: voucherId,
-      eventType: "VoucherCreated",
-      actorId,
-      occurredAt: createdAt,
-      payload: voucher,
-    });
+    for (const event of plan.events) {
+      this.appendEvent(event);
+    }
 
-    this.appendEvent({
-      organizationId: defaultOrganizationId,
-      workspaceId: defaultWorkspaceId,
-      aggregateType: "review",
-      aggregateId: review.id,
-      eventType: "SuggestionGenerated",
-      actorId: "system-ai",
-      occurredAt: createdAt,
-      payload: suggestion,
-    });
-
-    return { evidence, packet, voucher, review, voucherId };
+    return {
+      evidence: plan.evidence,
+      packet: plan.packet,
+      voucher: plan.voucher,
+      review: plan.review,
+      voucherId: plan.voucher.id,
+    };
   }
 
   async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket> {
@@ -896,100 +799,34 @@ export class MemoryLedgerStore implements LedgerStore {
     if (!context) return undefined;
     const { evidence, packet } = context;
     const voucher = context.voucher;
-    if (!voucher) {
-      return { evidence: { ...evidence }, ...(packet ? { packet: { ...packet } } : {}) };
-    }
-
-    const reviewId = this.voucherIdToReviewId.get(voucher.id);
+    const reviewId = voucher ? this.voucherIdToReviewId.get(voucher.id) : undefined;
     const review = reviewId ? this.reviews.get(reviewId) : undefined;
 
-    // 2. Decided-voucher guard (append-only): a reviewed voucher is history —
-    //    return the current context without any mutation or event.
-    if (voucher.status !== "needs-review") {
-      return {
-        evidence: { ...evidence },
-        ...(packet ? { packet: { ...packet } } : {}),
-        voucher: { ...voucher },
-        ...(review ? { review: { ...review } } : {}),
-      };
-    }
-
-    const occurredAt = nowIso();
-
-    // 3. Merge by key; 4. recompute voucher fields preserving description/currency.
-    const mergedFields = mergeExtractedFields(voucher.extractedFields, extraction.fields);
-    const voucherFields = recomputeVoucherFields(mergedFields, voucher.voucherFields);
-
-    // 5. Immutable replace of the voucher read model (CONVENTIONS Rule 17).
-    const updatedVoucher: Voucher = { ...voucher, extractedFields: mergedFields, voucherFields };
-    this.vouchers.set(updatedVoucher.id, updatedVoucher);
-
-    // 6. Re-run rules, regenerate the suggestion, update the review read model.
-    const ruleHits = evaluateVoucherRules(updatedVoucher);
-    const suggestion = buildDeterministicSuggestion(updatedVoucher, ruleHits);
-    const blocked = ruleHits.some((rule) => rule.severity === "blocking");
-    let updatedReview: ReviewTask | undefined;
-    if (review) {
-      updatedReview = {
-        ...review,
-        suggestion,
-        suggestedAction: blocked
-          ? "Request more evidence or post without VAT deduction."
-          : "Approve the proposed posting.",
-        provenanceTimeline: [
-          ...review.provenanceTimeline,
-          { id: createId("step"), label: "Fields re-extracted", timestamp: occurredAt, actor: "system-extractor" },
-          { id: createId("step"), label: "Suggestion regenerated", timestamp: occurredAt, actor: "system-ai" },
-        ],
-      };
-      if (blocked) {
-        updatedReview.blockedReason =
-          "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
-      } else {
-        delete updatedReview.blockedReason;
-      }
-      this.reviews.set(updatedReview.id, updatedReview);
-      this.suggestions.set(updatedVoucher.id, suggestion);
-    }
-
-    // 7. Append the two hash-chained events (full snapshot payload, Rule 13).
-    this.appendEvent({
-      organizationId: updatedVoucher.organizationId,
-      workspaceId: updatedVoucher.workspaceId,
-      aggregateType: "voucher",
-      aggregateId: updatedVoucher.id,
-      eventType: "ExtractionRefreshed",
-      actorId: "system-extractor",
-      occurredAt,
-      payload: {
-        evidenceId,
-        voucherId: updatedVoucher.id,
-        modelId: extraction.modelId,
-        extractedAt: extraction.extractedAt,
-        fields: mergedFields,
-        voucherFields,
-      },
+    const plan = planExtractionRefresh(evidenceId, extraction, {
+      evidence,
+      ...(packet ? { packet } : {}),
+      ...(voucher ? { voucher } : {}),
+      ...(review ? { review } : {}),
     });
-    if (updatedReview) {
-      this.appendEvent({
-        organizationId: updatedVoucher.organizationId,
-        workspaceId: updatedVoucher.workspaceId,
-        aggregateType: "review",
-        aggregateId: updatedReview.id,
-        eventType: "SuggestionGenerated",
-        actorId: "system-ai",
-        occurredAt,
-        payload: suggestion,
-      });
+
+    if (plan.kind === "unchanged") {
+      return plan.context;
+    }
+
+    // 5–6. Persist planned read-model updates (CONVENTIONS Rule 17).
+    this.vouchers.set(plan.updatedVoucher.id, plan.updatedVoucher);
+    if (plan.updatedReview) {
+      this.reviews.set(plan.updatedReview.id, plan.updatedReview);
+      this.suggestions.set(plan.updatedVoucher.id, plan.suggestion);
+    }
+
+    // 7. Append the planned hash-chained events (full snapshot payload, Rule 13).
+    for (const event of plan.events) {
+      this.appendEvent(event);
     }
 
     // 8. Fresh copies for the caller.
-    return {
-      evidence: { ...evidence },
-      ...(packet ? { packet: { ...packet } } : {}),
-      voucher: { ...updatedVoucher },
-      ...(updatedReview ? { review: { ...updatedReview } } : {}),
-    };
+    return plan.context;
   }
 
   async importSie(input: SieImportInput): Promise<SieImportResult> {
@@ -1115,97 +952,33 @@ export class MemoryLedgerStore implements LedgerStore {
     action: ReviewAction,
     input: ReviewDecisionInput & ActorAttribution,
   ): Promise<ReviewTask | undefined> {
-    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     const review = this.reviews.get(reviewId);
     if (!review) return undefined;
 
     const voucher = this.vouchers.get(review.voucherId);
     if (!voucher) return undefined;
-    // Review decisions are single-use mutations; replayed requests should not post duplicate ledger lines.
-    if (review.status !== "needs-review") return { ...review };
 
-    // Decision-time derivation for edited approvals: validates (throwing
-    // InvalidReviewEditError BEFORE any mutation) and derives the effective
-    // posting inputs. Append-only: the stored voucher row is NOT rewritten.
-    const edited = action !== "reject" ? input.edited : undefined;
-    let postingSuggestion = review.suggestion;
-    let postingVoucher = voucher;
-    if (edited) {
-      const resolved = resolveReviewDecisionEdit(voucher, review.suggestion, edited);
-      postingSuggestion = resolved.effectiveSuggestion;
-      postingVoucher = resolved.effectiveVoucher;
-    }
-
-    const occurredAt = nowIso();
-    const newStatus = action === "approve" ? "approved" : action === "reject" ? "rejected" : "booked-without-vat";
-    const timelineStep = {
-      id: createId("step"),
-      label:
-        action === "approve"
-          ? edited
-            ? "Approved with edits"
-            : "Review approved"
-          : action === "reject"
-            ? "Review rejected"
-            : edited
-              ? "Booked without VAT deduction (edited)"
-              : "Booked without VAT deduction",
-      timestamp: occurredAt,
-      actor: actorId,
-    };
+    const plan = planReviewDecision(review, voucher, action, input);
+    if (plan.kind === "replay") return plan.review;
 
     // Clone-before-mutate (Rule 17): review/voucher may have been returned by
     // getSnapshot() — replace read models instead of mutating shared objects.
-    let updatedReview: ReviewTask = {
-      ...review,
-      status: newStatus,
-      provenanceTimeline: [...review.provenanceTimeline, timelineStep],
-    };
-    const updatedVoucher: Voucher = { ...voucher, status: newStatus };
-    if (edited && postingSuggestion) {
-      // Review read model reflects what was actually posted.
-      updatedReview = { ...updatedReview, suggestion: postingSuggestion };
-      this.suggestions.set(voucher.id, postingSuggestion);
+    if (plan.postingSuggestion && input.edited && action !== "reject") {
+      this.suggestions.set(voucher.id, plan.postingSuggestion);
     }
-    this.reviews.set(reviewId, updatedReview);
-    this.vouchers.set(voucher.id, updatedVoucher);
+    this.reviews.set(reviewId, plan.updatedReview);
+    this.vouchers.set(voucher.id, plan.updatedVoucher);
 
-    this.appendEvent({
-      organizationId: updatedVoucher.organizationId,
-      workspaceId: updatedVoucher.workspaceId,
-      aggregateType: "review",
-      aggregateId: reviewId,
-      // Honest decision vocabulary (WS-B B6a): book-without-vat is its own
-      // decision event, not a "ReviewRejected" that then posts to the ledger.
-      // Legacy streams recorded ReviewRejected + PostedToLedger for this
-      // decision; replay/projections key on PostedToLedger lines only, so
-      // both vocabularies project identically (backward compatible).
-      eventType:
-        action === "approve" ? "ReviewApproved" : action === "reject" ? "ReviewRejected" : "ReviewBookedWithoutVat",
-      actorId,
-      occurredAt,
-      payload: { action, notes: input.notes, ...(edited ? { edited } : {}) },
-    });
-
-    if (action !== "reject" && postingSuggestion) {
-      const lines = buildPostingLines(postingVoucher, postingSuggestion, action, occurredAt);
-      this.ledgerLines.push(...lines);
-
-      this.appendEvent({
-        organizationId: updatedVoucher.organizationId,
-        workspaceId: updatedVoucher.workspaceId,
-        aggregateType: "ledger",
-        aggregateId: updatedVoucher.id,
-        eventType: "PostedToLedger",
-        actorId,
-        occurredAt,
-        // `lines` in the payload keeps event-payload replay the truth in both
-        // stores (fixes the Memory/Postgres parity gap — Phase 3 finding 13).
-        payload: { action, suggestion: postingSuggestion, lines },
-      });
+    // Honest decision vocabulary (WS-B B6a) + PostedToLedger lines for replay
+    // truth — planners emit the same event sequence both stores persist.
+    if (plan.lines) {
+      this.ledgerLines.push(...plan.lines);
+    }
+    for (const event of plan.events) {
+      this.appendEvent(event);
     }
 
-    return { ...updatedReview };
+    return { ...plan.updatedReview };
   }
 
   async answerAssistantQuestion(question: string): Promise<AssistantSession> {
@@ -1270,7 +1043,7 @@ export class MemoryLedgerStore implements LedgerStore {
     // Auto-detected alerts can transition open<->resolved; user states
     // (acknowledged, dismissed) and seeded non-auto kinds pass through unchanged.
     const rebuilt: ComplianceAlert[] = this.alerts.map((alert) => {
-      if (!AUTO_DETECTED_KINDS.has(alert.kind)) return { ...alert };
+      if (!AUTO_DETECTED_ALERT_KINDS.has(alert.kind)) return { ...alert };
       const stillDetected = detectedById.has(alert.id);
       if (alert.status === "open" && !stillDetected) return { ...alert, status: "resolved" };
       if (alert.status === "resolved" && stillDetected) return { ...alert, status: "open" };
@@ -1283,8 +1056,8 @@ export class MemoryLedgerStore implements LedgerStore {
     }
 
     // Bound accumulation (Rule 25): cap auto-detected entries; seeded alerts pinned.
-    const seeded = rebuilt.filter((a) => !AUTO_DETECTED_KINDS.has(a.kind));
-    const auto = rebuilt.filter((a) => AUTO_DETECTED_KINDS.has(a.kind));
+    const seeded = rebuilt.filter((a) => !AUTO_DETECTED_ALERT_KINDS.has(a.kind));
+    const auto = rebuilt.filter((a) => AUTO_DETECTED_ALERT_KINDS.has(a.kind));
     const capRemaining = Math.max(0, MEMORY_ALERT_CAP - seeded.length);
     const trimmedAuto = auto.length > capRemaining ? auto.slice(-capRemaining) : auto;
 
