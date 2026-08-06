@@ -63,7 +63,60 @@ export type ExtractionRefreshPlan =
 
 export const AUTO_DETECTED_ALERT_KINDS: ReadonlySet<string> = new Set(["stale-blocked", "missing-supplier-vat"]);
 
+/** Shared review-copy literals — Memory/Postgres both surface these strings. */
+const BLOCKED_REASON = "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
+const SUGGESTED_ACTION_APPROVE = "Approve the proposed posting.";
+const SUGGESTED_ACTION_BLOCKED = "Request more evidence or post without VAT deduction.";
+
 export type ComplianceMergePlan = { upserts: ComplianceAlert[]; resolveIds: string[] };
+
+function reviewStatusForAction(action: ReviewAction): ReviewTask["status"] {
+  switch (action) {
+    case "approve":
+      return "approved";
+    case "reject":
+      return "rejected";
+    case "book-without-vat":
+      return "booked-without-vat";
+  }
+}
+
+function reviewDecisionLabel(action: ReviewAction, edited: boolean): string {
+  switch (action) {
+    case "approve":
+      return edited ? "Approved with edits" : "Review approved";
+    case "reject":
+      return "Review rejected";
+    case "book-without-vat":
+      return edited ? "Booked without VAT deduction (edited)" : "Booked without VAT deduction";
+  }
+}
+
+function reviewDecisionEventType(action: ReviewAction): PlannedEvent["eventType"] {
+  switch (action) {
+    case "approve":
+      return "ReviewApproved";
+    case "reject":
+      return "ReviewRejected";
+    case "book-without-vat":
+      return "ReviewBookedWithoutVat";
+  }
+}
+
+function snapshotEvidenceContext(
+  evidence: EvidenceObject,
+  extras?: {
+    packet?: EvidencePacket;
+    voucher?: Voucher;
+    review?: ReviewTask;
+  },
+): EvidenceContext {
+  const context: EvidenceContext = { evidence: { ...evidence } };
+  if (extras?.packet) context.packet = { ...extras.packet };
+  if (extras?.voucher) context.voucher = { ...extras.voucher };
+  if (extras?.review) context.review = { ...extras.review };
+  return context;
+}
 
 /**
  * Pure re-entrant planner for `createEvidence` orchestration shared by Memory
@@ -125,10 +178,8 @@ export function planEvidenceCreate(
     voucherId,
     title: `Review ${voucher.voucherNumber}`,
     status: "needs-review",
-    blockedReason: blocked
-      ? "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved."
-      : undefined,
-    suggestedAction: blocked ? "Request more evidence or post without VAT deduction." : "Approve the proposed posting.",
+    blockedReason: blocked ? BLOCKED_REASON : undefined,
+    suggestedAction: blocked ? SUGGESTED_ACTION_BLOCKED : SUGGESTED_ACTION_APPROVE,
     suggestion,
     provenanceTimeline: [
       { id: createId("step"), label: "Evidence received", timestamp: createdAt, actor: actorId },
@@ -210,19 +261,10 @@ export function planReviewDecision(
   }
 
   const occurredAt = now ?? nowIso();
-  const newStatus = action === "approve" ? "approved" : action === "reject" ? "rejected" : "booked-without-vat";
+  const newStatus = reviewStatusForAction(action);
   const timelineStep = {
     id: createId("step"),
-    label:
-      action === "approve"
-        ? edited
-          ? "Approved with edits"
-          : "Review approved"
-        : action === "reject"
-          ? "Review rejected"
-          : edited
-            ? "Booked without VAT deduction (edited)"
-            : "Booked without VAT deduction",
+    label: reviewDecisionLabel(action, Boolean(edited)),
     timestamp: occurredAt,
     actor: actorId,
   };
@@ -247,8 +289,7 @@ export function planReviewDecision(
       workspaceId: updatedVoucher.workspaceId,
       aggregateType: "review",
       aggregateId: review.id,
-      eventType:
-        action === "approve" ? "ReviewApproved" : action === "reject" ? "ReviewRejected" : "ReviewBookedWithoutVat",
+      eventType: reviewDecisionEventType(action),
       actorId,
       occurredAt,
       payload: decisionPayload,
@@ -299,58 +340,43 @@ export function planExtractionRefresh(
 
   // No linked voucher — return current context without mutation or events.
   if (!voucher) {
-    const context: EvidenceContext = { evidence: { ...evidence } };
-    if (packet) context.packet = { ...packet };
-    return { kind: "unchanged", context };
+    return { kind: "unchanged", context: snapshotEvidenceContext(evidence, { packet }) };
   }
 
-  // 2. Decided-voucher guard (append-only): return current context unchanged.
+  // Decided voucher (append-only): return current context unchanged.
   if (voucher.status !== "needs-review") {
-    const context: EvidenceContext = {
-      evidence: { ...evidence },
-      voucher: { ...voucher },
+    return {
+      kind: "unchanged",
+      context: snapshotEvidenceContext(evidence, { packet, voucher, review }),
     };
-    if (packet) context.packet = { ...packet };
-    if (review) context.review = { ...review };
-    return { kind: "unchanged", context };
   }
 
   const occurredAt = ctx.now ?? nowIso();
-
-  // 3. Merge by key; 4. recompute voucher fields preserving description/currency.
   const mergedFields = mergeExtractedFields(voucher.extractedFields, extraction.fields);
   const voucherFields = recomputeVoucherFields(mergedFields, voucher.voucherFields);
-
-  // 5. Immutable replace of the voucher read model.
   const updatedVoucher: Voucher = { ...voucher, extractedFields: mergedFields, voucherFields };
 
-  // 6. Re-run rules, regenerate the suggestion, update the review read model.
   const ruleHits = evaluateVoucherRules(updatedVoucher);
   const suggestion = buildDeterministicSuggestion(updatedVoucher, ruleHits);
   const blocked = ruleHits.some((rule) => rule.severity === "blocking");
+
   let updatedReview: ReviewTask | undefined;
   if (review) {
+    // Drop prior blockedReason so an unblocked refresh does not keep a stale value.
+    const { blockedReason: _priorBlocked, ...reviewBase } = review;
     updatedReview = {
-      ...review,
+      ...reviewBase,
       suggestion,
-      suggestedAction: blocked
-        ? "Request more evidence or post without VAT deduction."
-        : "Approve the proposed posting.",
+      suggestedAction: blocked ? SUGGESTED_ACTION_BLOCKED : SUGGESTED_ACTION_APPROVE,
+      ...(blocked ? { blockedReason: BLOCKED_REASON } : {}),
       provenanceTimeline: [
         ...review.provenanceTimeline,
         { id: createId("step"), label: "Fields re-extracted", timestamp: occurredAt, actor: "system-extractor" },
         { id: createId("step"), label: "Suggestion regenerated", timestamp: occurredAt, actor: "system-ai" },
       ],
     };
-    if (blocked) {
-      updatedReview.blockedReason =
-        "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
-    } else {
-      delete updatedReview.blockedReason;
-    }
   }
 
-  // 7. Planned hash-chained events (full snapshot payload, Rule 13).
   const events: PlannedEvent[] = [
     {
       organizationId: updatedVoucher.organizationId,
@@ -383,17 +409,13 @@ export function planExtractionRefresh(
     });
   }
 
-  // 8. Fresh copies for the caller.
-  const context: EvidenceContext = {
-    evidence: { ...evidence },
-    voucher: { ...updatedVoucher },
-  };
-  if (packet) context.packet = { ...packet };
-  if (updatedReview) context.review = { ...updatedReview };
-
   return {
     kind: "apply",
-    context,
+    context: snapshotEvidenceContext(evidence, {
+      packet,
+      voucher: updatedVoucher,
+      review: updatedReview,
+    }),
     updatedVoucher,
     updatedReview,
     suggestion,

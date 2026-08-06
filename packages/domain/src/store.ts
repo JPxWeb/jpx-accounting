@@ -896,8 +896,16 @@ export class MemoryLedgerStore implements LedgerStore {
     return [...this.reviews.values()].reverse();
   }
 
+  /**
+   * Demo seed + event-payload replay. Postgres has the same private name but
+   * omits seed — keep that asymmetry intentional (no PG demo seed).
+   */
+  private collectLedgerLines(): LedgerLine[] {
+    return [...this.seedLines, ...collectLedgerLinesFromEvents(this.events)];
+  }
+
   async getReports(range?: ReportRange): Promise<ReportBundle> {
-    const lines = filterLedgerLines([...this.seedLines, ...collectLedgerLinesFromEvents(this.events)], range);
+    const lines = filterLedgerLines(this.collectLedgerLines(), range);
     return {
       journal: buildJournal(lines),
       balances: buildBalances(lines),
@@ -907,7 +915,7 @@ export class MemoryLedgerStore implements LedgerStore {
 
   async getReportPack(input: { period: string }): Promise<ReportPack> {
     const settings = await this.getCompanySettings();
-    const lines = [...this.seedLines, ...collectLedgerLinesFromEvents(this.events)];
+    const lines = this.collectLedgerLines();
     return buildReportPack(lines, {
       periodToken: input.period,
       fiscalYearStart: settings?.profile.fiscalYearStart ?? "01-01",

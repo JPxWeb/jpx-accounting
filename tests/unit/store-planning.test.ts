@@ -39,12 +39,10 @@ describe("planEvidenceCreate", () => {
     assert.equal(plan.review.suggestedAction, "Approve the proposed posting.");
     for (const event of plan.events) {
       // Planned events must not carry chain fields — stores derive them on append.
-      assert.equal((event as { id?: string }).id, undefined);
-      assert.equal((event as { previousHash?: string }).previousHash, undefined);
-      assert.equal((event as { eventHash?: string }).eventHash, undefined);
       assert.ok(!("id" in event));
       assert.ok(!("previousHash" in event));
       assert.ok(!("eventHash" in event));
+      assert.ok(!("digestDate" in event));
     }
   });
 

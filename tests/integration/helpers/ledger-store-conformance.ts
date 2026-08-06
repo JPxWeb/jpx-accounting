@@ -362,9 +362,8 @@ export async function scenarioAppendOnlyEventVocabulary(h: ConformanceHarness): 
   const vocabulary = relevant.map((event) => event.eventType);
   // Full-stream linearity: both stores keep a single linear previousHash chain
   // per workspace namespace (Memory seed + scenario appends; Postgres empty ns).
-  const all = events;
-  const chainLinear = all.every((e, i) => i === 0 || e.previousHash === all[i - 1]!.eventHash);
-  const chainFieldsPresent = all.every((e) => Boolean(e.previousHash) && Boolean(e.eventHash));
+  const chainLinear = events.every((e, i) => i === 0 || e.previousHash === events[i - 1]!.eventHash);
+  const chainFieldsPresent = events.every((e) => Boolean(e.previousHash) && Boolean(e.eventHash));
 
   return {
     vocabulary,

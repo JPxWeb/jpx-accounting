@@ -20,7 +20,10 @@ export type LedgerLine = {
   deductible: boolean;
 };
 
-const LINE_CARRYING_EVENT_TYPES = new Set(["PostedToLedger", "VoucherImported"]);
+/** Event types whose payloads carry journal `lines` for report replay. */
+export const LINE_CARRYING_EVENT_TYPES = ["PostedToLedger", "VoucherImported"] as const;
+
+const LINE_CARRYING_EVENT_TYPE_SET: ReadonlySet<string> = new Set(LINE_CARRYING_EVENT_TYPES);
 
 /**
  * Rebuild ledger lines from append-only event payloads (PostedToLedger +
@@ -30,9 +33,11 @@ const LINE_CARRYING_EVENT_TYPES = new Set(["PostedToLedger", "VoucherImported"])
 export function collectLedgerLinesFromEvents(events: Array<Pick<LedgerEvent, "eventType" | "payload">>): LedgerLine[] {
   const lines: LedgerLine[] = [];
   for (const event of events) {
-    if (!LINE_CARRYING_EVENT_TYPES.has(event.eventType)) continue;
+    if (!LINE_CARRYING_EVENT_TYPE_SET.has(event.eventType)) continue;
     const payloadLines = (event.payload as { lines?: unknown }).lines;
-    if (Array.isArray(payloadLines)) lines.push(...(payloadLines as LedgerLine[]));
+    if (Array.isArray(payloadLines)) {
+      for (const line of payloadLines as LedgerLine[]) lines.push(line);
+    }
   }
   return lines;
 }

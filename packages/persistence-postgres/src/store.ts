@@ -44,6 +44,7 @@ import {
   evaluateVoucherRules,
   filterLedgerLines,
   isDuplicateEvidence,
+  LINE_CARRYING_EVENT_TYPES,
   nowIso,
   planComplianceMerge,
   planEvidenceCreate,
@@ -1133,7 +1134,7 @@ export class PostgresLedgerStore implements LedgerStore {
     const rows = await this.client<{ event_type: string; payload: Record<string, unknown> }[]>`
       SELECT event_type, payload
       FROM ledger.events
-      WHERE event_type = ANY(${["PostedToLedger", "VoucherImported"]})
+      WHERE event_type = ANY(${[...LINE_CARRYING_EVENT_TYPES]})
         AND organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
       ORDER BY seq ASC
