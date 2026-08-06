@@ -360,21 +360,11 @@ export async function scenarioAppendOnlyEventVocabulary(h: ConformanceHarness): 
   );
 
   const vocabulary = relevant.map((event) => event.eventType);
-  let chainOk = true;
-  let previous = relevant[0]?.previousHash;
-  for (let i = 1; i < relevant.length; i += 1) {
-    const event = relevant[i];
-    if (!event || event.previousHash !== previous) {
-      // Chain may interleave with other aggregates on Memory (seed) — for Postgres
-      // namespaces it's contiguous. Check only that every event has a previousHash
-      // and a non-empty eventHash.
-      break;
-    }
-    previous = event.eventHash;
-  }
-  for (const event of relevant) {
-    if (!event.previousHash || !event.eventHash) chainOk = false;
-  }
+  // Full-stream linearity: both stores keep a single linear previousHash chain
+  // per workspace namespace (Memory seed + scenario appends; Postgres empty ns).
+  const all = events;
+  const chainLinear = all.every((e, i) => i === 0 || e.previousHash === all[i - 1]!.eventHash);
+  const chainFieldsPresent = all.every((e) => Boolean(e.previousHash) && Boolean(e.eventHash));
 
   return {
     vocabulary,
@@ -384,7 +374,93 @@ export async function scenarioAppendOnlyEventVocabulary(h: ConformanceHarness): 
     hasSuggestionGenerated: vocabulary.includes("SuggestionGenerated"),
     hasReviewApproved: vocabulary.includes("ReviewApproved"),
     hasPostedToLedger: vocabulary.includes("PostedToLedger"),
-    chainFieldsPresent: chainOk,
+    chainLinear,
+    chainFieldsPresent,
+  };
+}
+
+export async function scenarioReviewReject(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Reject conformance receipt",
+    originalFilename: "reject-conformance.jpg",
+    mimeType: "image/jpeg",
+    modalities: ["camera"],
+  });
+
+  const journalBefore = (await h.store.getReports()).journal.length;
+  await h.store.applyReviewDecision(created.review.id, "reject", { actorId: h.actorId });
+  const journalAfter = (await h.store.getReports()).journal.length;
+  const events = await h.store.getEvents();
+
+  const rejectForReview = events.some(
+    (event) => event.eventType === "ReviewRejected" && event.aggregateId === created.review.id,
+  );
+  // PostedToLedger aggregateId is the voucher id (payload carries action/suggestion/lines).
+  const postedForVoucher = events.some(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+
+  return {
+    journalDelta: journalAfter - journalBefore,
+    hasReviewRejected: rejectForReview,
+    hasPostedToLedger: postedForVoucher,
+    reviewStatus: (await h.store.findReviewByVoucher(created.voucher.id))?.status ?? null,
+  };
+}
+
+export async function scenarioReviewApproveEdited(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Edited approve conformance",
+    originalFilename: "edited-approve-conformance.jpg",
+    mimeType: "image/jpeg",
+    modalities: ["camera"],
+  });
+
+  const journalBefore = (await h.store.getReports()).journal.length;
+  const edited = {
+    accountNumber: "6110",
+    accountName: "Kontorsmateriel",
+    vatCode: "VAT25",
+    grossAmount: 500,
+    netAmount: 400,
+    vatAmount: 100,
+  };
+  const decided = await h.store.applyReviewDecision(created.review.id, "approve", {
+    actorId: h.actorId,
+    edited,
+  });
+  const journalAfter = (await h.store.getReports()).journal.length;
+  const events = await h.store.getEvents();
+
+  const approvedEvt = events.find(
+    (event) => event.eventType === "ReviewApproved" && event.aggregateId === created.review.id,
+  );
+  const postedEvt = events.find(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+  const postedLines = postedEvt?.payload.lines as
+    | Array<{ accountNumber: string; debit: number; credit: number }>
+    | undefined;
+  // jsonb round-trip may reorder keys / coerce numerics — compare structural fields.
+  const payloadEdited = (approvedEvt?.payload as { edited?: Record<string, unknown> } | undefined)?.edited;
+
+  return {
+    journalDelta: journalAfter - journalBefore,
+    approvedStatus: decided?.status ?? null,
+    provenanceLabel: decided?.provenanceTimeline.at(-1)?.label ?? null,
+    suggestionAccount: decided?.suggestion?.accountNumber ?? null,
+    hasEditedInPayload: Boolean(payloadEdited),
+    editedAccount: payloadEdited?.accountNumber ?? null,
+    editedVatCode: payloadEdited?.vatCode ?? null,
+    editedGross: normalizeNumber(payloadEdited?.grossAmount),
+    editedNet: normalizeNumber(payloadEdited?.netAmount),
+    editedVat: normalizeNumber(payloadEdited?.vatAmount),
+    hasPostedToLedger: Boolean(postedEvt),
+    postedLineCount: Array.isArray(postedLines) ? postedLines.length : 0,
+    postedExpenseAccount: postedLines?.[0]?.accountNumber ?? null,
+    postedExpenseDebit: normalizeNumber(postedLines?.[0]?.debit),
   };
 }
 
@@ -399,6 +475,8 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "SIE import idempotency + reports window", run: scenarioSieImportIdempotency },
   { name: "settings / alerts / simulation / unknown ids", run: scenarioSettingsAlertsSimulation },
   { name: "append-only event vocabulary", run: scenarioAppendOnlyEventVocabulary },
+  { name: "review reject", run: scenarioReviewReject },
+  { name: "review approve with edits", run: scenarioReviewApproveEdited },
 ];
 
 export function assertConformanceParity(
