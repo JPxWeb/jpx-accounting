@@ -9,7 +9,16 @@ export type JoyrideLocaleTranslator = {
   raw: (key: "controls.nextWithProgress") => string;
 };
 
-export function buildJoyrideLocale(t: JoyrideLocaleTranslator) {
+export type JoyrideLocaleLabels = {
+  back: string;
+  close: string;
+  last: string;
+  next: string;
+  nextWithProgress: string;
+  skip: string;
+};
+
+export function buildJoyrideLocale(t: JoyrideLocaleTranslator): JoyrideLocaleLabels {
   return {
     back: t("controls.back"),
     close: t("controls.close"),

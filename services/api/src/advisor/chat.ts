@@ -67,9 +67,9 @@ export const MAX_ADVISOR_MESSAGE_BYTES = 8 * 1024;
 export const DEFAULT_ADVISOR_MAX_OUTPUT_TOKENS = 2048;
 /** Cost envelope (WS-D): default wall-clock ceiling for one normal-mode stream. */
 export const DEFAULT_ADVISOR_STREAM_TIMEOUT_MS = 90_000;
-/** History truncation: at most this many non-system messages reach the model. */
+/** History truncation: at most this many client messages reach the model. */
 export const MAX_MODEL_HISTORY_MESSAGES = 20;
-/** History truncation: serialized non-system history is capped at 96 KiB. */
+/** History truncation: serialized client history is capped at 96 KiB. */
 export const MAX_MODEL_HISTORY_BYTES = 96 * 1024;
 /**
  * Vector passages below this cosine similarity are dropped from advisor
@@ -271,16 +271,14 @@ async function parseAdvisorBody(request: Request): Promise<UIMessage[]> {
 
   // The system prompt is SERVER-owned (buildSystemPrompt): a client-posted
   // system role is a prompt-injection channel, not a feature — reject it.
-  const systemIssues: ApiValidationIssue[] = validated.flatMap((message, index) =>
-    message.role === "system"
-      ? [
-          {
-            path: ["messages", String(index), "role"],
-            message: 'role "system" is not accepted — the system prompt is server-owned.',
-          },
-        ]
-      : [],
-  );
+  const systemIssues: ApiValidationIssue[] = [];
+  for (const [index, message] of validated.entries()) {
+    if (message.role !== "system") continue;
+    systemIssues.push({
+      path: ["messages", String(index), "role"],
+      message: 'role "system" is not accepted — the system prompt is server-owned.',
+    });
+  }
   if (systemIssues.length > 0) {
     throw new AdvisorValidationError("Client-supplied system messages are rejected.", systemIssues);
   }
@@ -700,7 +698,7 @@ export function createAdvisorChatHandler(
     const result = streamText({
       model,
       system: buildSystemPrompt(promptGrounding, passages),
-      // Oldest-first truncation; the system prompt above always travels whole.
+      // Oldest-first truncation of the client history; system prompt is separate.
       messages: await convertToModelMessages(truncateAdvisorHistory(messages), {
         tools,
         ignoreIncompleteToolCalls: true,

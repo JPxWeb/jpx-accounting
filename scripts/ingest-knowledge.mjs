@@ -46,8 +46,9 @@ export const EMBED_BATCH_SIZE = 64;
  */
 export const INGEST_SCOPE = { organizationId: "org_jpx", workspaceId: "workspace_main" };
 
-/** Validate required env up front with actionable messages instead of failing mid-ingest. */
 /**
+ * Validate required env up front with actionable messages instead of failing mid-ingest.
+ *
  * @param {Record<string, string | undefined>} [env]
  * @returns {{
  *   databaseUrl: string,

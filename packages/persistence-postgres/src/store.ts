@@ -567,8 +567,8 @@ export class PostgresLedgerStore implements LedgerStore {
       SELECT id, organization_id, workspace_id, title, created_by, created_at,
              original_filename, mime_type, blob_path, hash, trust_level, metadata, modalities
       FROM ledger.evidence_objects
-      WHERE organization_id = ${this.defaults.organizationId}
-        AND workspace_id = ${this.defaults.workspaceId}
+      WHERE organization_id = ${scope.organizationId}
+        AND workspace_id = ${scope.workspaceId}
         AND hash = ${input.sha256}
       ORDER BY created_at ASC, id ASC
     `;
@@ -586,8 +586,8 @@ export class PostgresLedgerStore implements LedgerStore {
                suggested_action, suggestion, provenance_timeline, title, created_at
         FROM ledger.review_tasks
         WHERE voucher_id = ${voucher.id}
-          AND organization_id = ${this.defaults.organizationId}
-          AND workspace_id = ${this.defaults.workspaceId}
+          AND organization_id = ${scope.organizationId}
+          AND workspace_id = ${scope.workspaceId}
         LIMIT 1
       `;
       const review = reviewRows[0] ? rowToReview(reviewRows[0]) : undefined;
