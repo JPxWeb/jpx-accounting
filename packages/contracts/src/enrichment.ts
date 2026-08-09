@@ -55,6 +55,26 @@ export const tripsListRowSchema = z.object({
 
 export const tripsListSchema = z.array(tripsListRowSchema);
 
+export const inventoryMovementPayloadSchema = z
+  .object({
+    movementId: z.string().min(1),
+    skuId: z.string().min(1),
+    quantity: z.number().positive(),
+    uom: z.string().min(1),
+    direction: z.enum(["in", "out"]),
+    lineId: z.string().min(1),
+    bookedAt: z.iso.date(),
+  })
+  .strict();
+
+export const skuMovementListRowSchema = inventoryMovementPayloadSchema.extend({
+  id: z.string().min(1),
+  kind: z.literal("sku_movement"),
+  runningQuantity: z.number(),
+});
+
+export const skuMovementListSchema = z.array(skuMovementListRowSchema);
+
 export const invoiceRegisteredPayloadSchema = z.object({
   invoiceId: z.string().min(1),
   direction: z.enum(["ar", "ap"]),
@@ -281,6 +301,8 @@ export type TripLineEnrichmentPayload = z.infer<typeof tripLineEnrichmentPayload
 export type TripRegisteredPayload = z.infer<typeof tripRegisteredPayloadSchema>;
 export type TripClosedPayload = z.infer<typeof tripClosedPayloadSchema>;
 export type TripsListRow = z.infer<typeof tripsListRowSchema>;
+export type InventoryMovementPayload = z.infer<typeof inventoryMovementPayloadSchema>;
+export type SkuMovementListRow = z.infer<typeof skuMovementListRowSchema>;
 export type InvoiceRegisteredPayload = z.infer<typeof invoiceRegisteredPayloadSchema>;
 export type PaymentAllocatedPayload = z.infer<typeof paymentAllocatedPayloadSchema>;
 export type OpenInvoiceListRow = z.infer<typeof openInvoiceListRowSchema>;

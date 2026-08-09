@@ -62,6 +62,8 @@ export const eventTypeSchema = z.enum([
   "PaymentAllocated",
   "TripRegistered",
   "TripClosed",
+  "SkuRegistered",
+  "InventoryMovementRecorded",
 ]);
 export const ruleSeveritySchema = z.enum(["info", "warning", "blocking"]);
 export const assistantAnswerStatusSchema = z.enum(["grounded", "insufficient-basis"]);
