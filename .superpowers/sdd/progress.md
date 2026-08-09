@@ -348,13 +348,25 @@
   - TDD registry RED was observed; focused Memory conformance passed 16/16.
   - Strict `pnpm db:test` applied migrations `0001`–`0011` and passed 95/95
     integration tests, including both new scenarios across both stores.
+- Wave 5C Sol review: APPROVE_WITH_FIXES.
+  - Pre-post conformance now proves an absent approval-batch `lineId` raises
+    the typed fail-closed error with zero event mutation before recovery and
+    exactly one human-approved posting.
+  - Line work-item conformance now proves proposal is non-mutating, confirmation
+    is human-attributed, and replay appends neither another enrichment event nor
+    another `PostedToLedger`.
+  - Focused Memory conformance passed 16/16 with 30 expected Postgres skips;
+    strict `pnpm db:test` applied migrations `0001`–`0011` and passed 95/95.
+  - See `.superpowers/sdd/w5c-sol-review.md`. Task 5.11 is approved after the
+    review-fix commit.
 
 ## In progress
 
-- Sol review of Task 5.11 integration conformance.
+- No Wave 5 task is currently in progress.
 
 ## Pending
 
-- Task 5.12 Wave 5 final gate, deferred until Task 5.11 receives Sol clearance.
+- Task 5.12 Wave 5 final gate is unblocked by the completed Task 5.9 and Task
+  5.11 Sol reviews; it was not run as part of either review.
 - Waves 6–8 (single feature branch; defer mid-wave PR to main until program
   ready).

@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import type { ExtractionResult } from "@jpx-accounting/contracts";
 import {
   deriveDeterministicExtraction,
+  EnrichmentLineNotFoundError,
   ExternalReferenceNotFoundError,
   InvalidPeriodTokenError,
   LineEnrichmentNotActiveError,
@@ -476,6 +477,29 @@ export async function scenarioPrePostEnrichmentSinglePosting(h: ConformanceHarne
   await h.store.attachReviewEnrichmentIntent({
     actorId: h.actorId,
     reviewId: created.review.id,
+    proposals: [
+      {
+        kind: "line_enrichment_record",
+        lineId: "ln_not_in_approval_batch",
+        enrichmentType: "project",
+        payload: { projectId: "project_conformance" },
+      },
+    ],
+  });
+  const eventsBeforeRejectedApproval = await h.store.getEvents();
+  await assert.rejects(
+    () => h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId }),
+    EnrichmentLineNotFoundError,
+  );
+  const eventsAfterRejectedApproval = await h.store.getEvents();
+  assert.equal(eventsAfterRejectedApproval.length, eventsBeforeRejectedApproval.length);
+  assert.ok(await h.store.getReviewEnrichmentIntent(created.review.id));
+
+  // Replacing the invalid intent proves the failed approval left the review open
+  // and permits the ordinary human approval path to post exactly once.
+  await h.store.attachReviewEnrichmentIntent({
+    actorId: h.actorId,
+    reviewId: created.review.id,
     proposals: [{ kind: "noop" }],
   });
 
@@ -493,6 +517,8 @@ export async function scenarioPrePostEnrichmentSinglePosting(h: ConformanceHarne
   return {
     reviewStatus: decided?.status ?? null,
     postedForVoucher: postedForVoucher.length,
+    rejectedApprovalEventDelta: eventsAfterRejectedApproval.length - eventsBeforeRejectedApproval.length,
+    failedClosed: true,
     intentConsumed: (await h.store.getReviewEnrichmentIntent(created.review.id)) === undefined,
   };
 }
@@ -513,6 +539,7 @@ export async function scenarioLineTargetWorkItemNeverPosts(h: ConformanceHarness
   );
   const lineId = (posted?.payload.lines as Array<{ lineId?: string }> | undefined)?.[0]?.lineId;
   assert.ok(lineId);
+  assert.match(lineId, /^ln_/);
 
   const item = await h.store.proposeEnrichmentWorkItem({
     actorId: h.actorId,
@@ -527,25 +554,43 @@ export async function scenarioLineTargetWorkItemNeverPosts(h: ConformanceHarness
     source: "ui",
     idempotencyKey: `ui:line-target-never-posts:${lineId}`,
   });
+  const eventsAfterProposal = await h.store.getEvents();
+  assert.equal(item.status, "pending_confirmation");
+  assert.equal(eventsAfterProposal.length, eventsAfterPosting.length);
+
   const confirmed = await h.store.confirmEnrichmentWorkItem(item.id, { actorId: h.actorId });
   const eventsAfterConfirm = await h.store.getEvents();
+  const replayed = await h.store.confirmEnrichmentWorkItem(item.id, { actorId: h.actorId });
+  const eventsAfterReplay = await h.store.getEvents();
   const resultingEvents = eventsAfterConfirm.filter((event) => confirmed.resultingEventIds?.includes(event.id));
-  const postedForVoucher = eventsAfterConfirm.filter(
+  const postedForVoucher = eventsAfterReplay.filter(
     (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+  const recordedForLine = eventsAfterReplay.filter(
+    (event) => event.eventType === "LineEnrichmentRecorded" && event.aggregateId === lineId,
   );
 
   assert.equal(postedForVoucher.length, 1);
-  assert.deepEqual(
-    resultingEvents.map((event) => event.eventType),
-    ["LineEnrichmentRecorded"],
-  );
+  assert.equal(recordedForLine.length, 1);
+  assert.equal(resultingEvents.length, 1);
+  assert.equal(resultingEvents[0]?.eventType, "LineEnrichmentRecorded");
+  assert.equal(resultingEvents[0]?.aggregateId, lineId);
+  assert.equal(resultingEvents[0]?.payload.lineId, lineId);
+  assert.equal(confirmed.confirmedBy, h.actorId);
+  assert.deepEqual(replayed.resultingEventIds, confirmed.resultingEventIds);
+  assert.equal(eventsAfterReplay.length, eventsAfterConfirm.length);
 
   return {
+    proposedStatus: item.status,
     workItemStatus: confirmed.status,
     resultingEventTypes: resultingEvents.map((event) => event.eventType),
     postedForVoucher: postedForVoucher.length,
+    proposalEventDelta: eventsAfterProposal.length - eventsAfterPosting.length,
+    replayEventDelta: eventsAfterReplay.length - eventsAfterConfirm.length,
+    recordedForLine: recordedForLine.length,
+    confirmedByHuman: confirmed.confirmedBy === h.actorId,
     postingDelta:
-      eventsAfterConfirm.filter((event) => event.eventType === "PostedToLedger").length -
+      eventsAfterReplay.filter((event) => event.eventType === "PostedToLedger").length -
       eventsAfterPosting.filter((event) => event.eventType === "PostedToLedger").length,
   };
 }
