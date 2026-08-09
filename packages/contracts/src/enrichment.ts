@@ -49,10 +49,15 @@ export const openInvoiceListRowSchema = z.object({
   openAmount: z.number(),
 });
 
-export const paymentHistoryListRowSchema = paymentAllocatedPayloadSchema.extend({
-  id: z.string().min(1),
-  kind: z.literal("payment"),
-});
+export const paymentHistoryListRowSchema = paymentAllocatedPayloadSchema
+  .extend({
+    id: z.string().min(1),
+    kind: z.literal("payment"),
+  })
+  .refine((row) => row.id === row.paymentId, {
+    message: "Payment row id must match paymentId",
+    path: ["id"],
+  });
 
 export const openInvoiceListSchema = z.array(openInvoiceListRowSchema);
 export const paymentHistoryListSchema = z.array(paymentHistoryListRowSchema);

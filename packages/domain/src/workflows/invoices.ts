@@ -35,6 +35,7 @@ export function deriveOpenInvoiceAmount(
 
 function replayInvoices(events: readonly LedgerEvent[]): InvoiceReplayState[] {
   const invoices = new Map<string, InvoiceReplayState>();
+  const seenPaymentIds = new Set<string>();
 
   for (const event of events) {
     if (event.eventType === "InvoiceRegistered") {
@@ -54,6 +55,8 @@ function replayInvoices(events: readonly LedgerEvent[]): InvoiceReplayState[] {
 
     if (event.eventType === "PaymentAllocated") {
       const allocation = paymentAllocatedPayloadSchema.parse(event.payload);
+      if (seenPaymentIds.has(allocation.paymentId)) continue;
+      seenPaymentIds.add(allocation.paymentId);
       const invoice = invoices.get(allocation.invoiceId);
       if (invoice) invoice.allocations.push(allocation);
     }
@@ -87,9 +90,12 @@ export function buildOpenInvoicesList(events: LedgerEvent[]): OpenInvoiceListRow
 }
 
 export function buildPaymentHistoryList(events: LedgerEvent[]): PaymentHistoryListRow[] {
+  const seenPaymentIds = new Set<string>();
   return events.flatMap((event) => {
     if (event.eventType !== "PaymentAllocated") return [];
     const payment = paymentAllocatedPayloadSchema.parse(event.payload);
+    if (seenPaymentIds.has(payment.paymentId)) return [];
+    seenPaymentIds.add(payment.paymentId);
     return [{ id: payment.paymentId, kind: "payment" as const, ...payment }];
   });
 }

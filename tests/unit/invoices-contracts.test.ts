@@ -24,10 +24,12 @@ test("invoice registration requires typed AR or AP fields", () => {
     dueDate: "2026-09-01",
     currency: "SEK",
     originalAmount: 100,
+    actorId: "forged-client-actor",
   });
 
   assert.equal(invoice.direction, "ap");
   assert.equal(invoice.originalAmount, 100);
+  assert.equal("actorId" in invoice, false);
   assert.equal(
     invoiceRegisteredPayloadSchema.safeParse({
       ...invoice,
@@ -44,9 +46,11 @@ test("payment allocation requires a positive amount and timestamp", () => {
     amount: 40,
     currency: "SEK",
     allocatedAt: "2026-08-15T10:00:00.000Z",
+    actorId: "forged-client-actor",
   });
 
   assert.equal(payment.amount, 40);
+  assert.equal("actorId" in payment, false);
   assert.equal(paymentAllocatedPayloadSchema.safeParse({ ...payment, amount: 0 }).success, false);
 });
 
@@ -106,5 +110,19 @@ test("invoice and payment list rows are contract validated", () => {
       },
     ])[0]?.amount,
     40,
+  );
+  assert.equal(
+    paymentHistoryListSchema.safeParse([
+      {
+        id: "pay_other",
+        kind: "payment",
+        paymentId: "pay_1",
+        invoiceId: "inv_1",
+        amount: 40,
+        currency: "SEK",
+        allocatedAt: "2026-08-15T10:00:00.000Z",
+      },
+    ]).success,
+    false,
   );
 });

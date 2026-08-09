@@ -97,6 +97,26 @@ test("payment history is derived without mutating invoice history", () => {
   assert.equal(events[1]?.payload.amount, 40);
 });
 
+test("first payment allocation is authoritative for a payment id", () => {
+  const events = [
+    event("evt_invoice", "InvoiceRegistered", invoice),
+    event("evt_payment", "PaymentAllocated", payment),
+    event("evt_duplicate", "PaymentAllocated", {
+      ...payment,
+      amount: 75,
+    }),
+  ];
+
+  assert.equal(buildOpenInvoicesList(events)[0]?.openAmount, 60);
+  assert.deepEqual(buildPaymentHistoryList(events), [
+    {
+      id: "pay_1",
+      kind: "payment",
+      ...payment,
+    },
+  ]);
+});
+
 test("invoice builders are registered on the generic list seam", () => {
   const events = [
     event("evt_invoice", "InvoiceRegistered", invoice),

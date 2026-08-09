@@ -426,6 +426,16 @@
   - No Opus escalation is required. Wave 6a is COMPLETE and Wave 6b may
     proceed, including already-pipelined disjoint work. See
     `.superpowers/sdd/w6a-b-sol-review.md`.
+- Wave 6b Tasks 6b.1–6b.2 Sol review: APPROVE_WITH_FIXES.
+  - Duplicate `PaymentAllocated` replay now keeps the first `paymentId`
+    authoritative, preventing duplicate history ids and double subtraction.
+  - Payment history row `id` must match `paymentId`; forged client `actorId`
+    fields remain stripped by the contracts.
+  - Focused tests passed 13/13; affected typechecks, ESLint, formatting,
+    diagnostics, and diff checks passed.
+  - No Opus escalation is required. Tasks 6b.3+ may proceed; the eventual
+    server-attributed event producer must validate allocation currency before
+    Wave 6b is declared complete. See `.superpowers/sdd/w6b-sol-review.md`.
 
 ## In progress
 
