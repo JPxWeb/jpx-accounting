@@ -17,13 +17,26 @@ export type LedgerVoucherViewModel = {
   >;
 };
 
+type LedgerSnapshot = Pick<WorkspaceSnapshot, "vouchers" | "packets">;
+
+export function buildLedgerVoucherViewModel(group: VoucherJournalGroup, lookup: VoucherLookup): LedgerVoucherViewModel;
 export function buildLedgerVoucherViewModel(
   group: VoucherJournalGroup,
-  snapshot: Pick<WorkspaceSnapshot, "vouchers" | "packets"> | undefined,
+  snapshot: LedgerSnapshot | undefined,
   lookup: VoucherLookup,
+): LedgerVoucherViewModel;
+export function buildLedgerVoucherViewModel(
+  group: VoucherJournalGroup,
+  snapshotOrLookup: LedgerSnapshot | VoucherLookup | undefined,
+  lookup?: VoucherLookup,
 ): LedgerVoucherViewModel {
-  const voucher = lookup.vouchersById.get(group.voucherId);
-  const packet = voucher ? lookup.packetsById.get(voucher.evidencePacketId) : undefined;
+  const resolvedLookup = lookup ?? snapshotOrLookup;
+  if (!resolvedLookup || !("vouchersById" in resolvedLookup)) {
+    throw new TypeError("Voucher lookup is required");
+  }
+
+  const voucher = resolvedLookup.vouchersById.get(group.voucherId);
+  const packet = voucher ? resolvedLookup.packetsById.get(voucher.evidencePacketId) : undefined;
   return {
     voucherId: group.voucherId,
     voucherNumber: voucher?.voucherNumber ?? group.voucherId,

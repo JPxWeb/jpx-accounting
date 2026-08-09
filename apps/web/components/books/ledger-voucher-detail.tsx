@@ -5,10 +5,9 @@ import Link from "next/link";
 
 import type { LedgerVoucherViewModel } from "../../lib/ledger/ledger-voucher-view-model";
 import { Money } from "../ui/money";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
-import { UnavailableState } from "../ui/unavailable-state";
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 
-const DISABLED_SLOTS = [
+const LEDGER_SLOT_KEYS = [
   "workItemConfirm",
   "externalRefs",
   "tags",
@@ -20,11 +19,16 @@ const DISABLED_SLOTS = [
 export function LedgerVoucherDetail({ vm }: { vm: LedgerVoucherViewModel }) {
   const tJournal = useTranslations("books.journal");
   const tSlots = useTranslations("books.ledger.slots");
+  const tUnavailable = useTranslations("common.unavailable");
+  const disabledSlots = LEDGER_SLOT_KEYS.filter((slot) => vm.slots[slot] === "disabled");
 
   return (
     <section data-testid="ledger-voucher-detail">
       <div className="glass-panel rounded-xl p-5">
         <Table>
+          <TableCaption className="sr-only">
+            {tJournal("headerVoucher")} {vm.voucherNumber}
+          </TableCaption>
           <TableHeader>
             <TableRow>
               <TableHead>{tJournal("headerAccount")}</TableHead>
@@ -71,16 +75,22 @@ export function LedgerVoucherDetail({ vm }: { vm: LedgerVoucherViewModel }) {
         </p>
       ) : null}
 
-      {DISABLED_SLOTS.map((slot) =>
-        vm.slots[slot] === "disabled" ? (
-          <UnavailableState
-            key={slot}
-            testId={`ledger-slot-${slot}-disabled`}
-            title={tSlots(slot)}
-            message={tSlots(slot)}
-          />
-        ) : null,
-      )}
+      {disabledSlots.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-border bg-surface-muted/40 p-4">
+          <p className="text-eyebrow">{tUnavailable("eyebrow")}</p>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+            {disabledSlots.map((slot) => (
+              <li
+                key={slot}
+                data-testid={`ledger-slot-${slot}-disabled`}
+                className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-muted-foreground"
+              >
+                {tSlots(slot)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </section>
   );
 }
