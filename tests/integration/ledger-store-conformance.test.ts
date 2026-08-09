@@ -63,6 +63,7 @@ test("conformance registry includes enrichment confirmation safety", () => {
   assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "voucher tag append-only paths"));
   assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "project registration is immutable"));
   assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "invoice and payment identity is immutable"));
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "trip registration and close are immutable"));
 });
 
 async function withPostgresHarness(label: string, run: (h: ConformanceHarness) => Promise<void>): Promise<void> {

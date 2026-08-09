@@ -34,6 +34,8 @@ import type {
   SimulationRun,
   SubmitReviewProposalInput,
   SubmitReviewProposalResult,
+  TripClosedPayload,
+  TripRegisteredPayload,
   TripsListRow,
   UploadInit,
   UploadInitResult,
@@ -66,6 +68,8 @@ import {
   simulationRunSchema,
   submitReviewProposalInputSchema,
   submitReviewProposalResultSchema,
+  tripClosedPayloadSchema,
+  tripRegisteredPayloadSchema,
   tripsListSchema,
   uploadInitResultSchema,
   voucherTagsProjectionSchema,
@@ -302,6 +306,30 @@ export class AccountingApiClient {
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/payment-history", paymentHistoryListSchema);
+  }
+
+  async registerTrip(input: TripRegisteredPayload): Promise<TripRegisteredPayload> {
+    const parsedInput = tripRegisteredPayloadSchema.parse(input);
+    if (this.fallbackStore) {
+      return tripRegisteredPayloadSchema.parse(await this.fallbackStore.registerTrip(parsedInput));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/trips", tripRegisteredPayloadSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
+  }
+
+  async closeTrip(input: TripClosedPayload): Promise<TripClosedPayload> {
+    const parsedInput = tripClosedPayloadSchema.parse(input);
+    if (this.fallbackStore) {
+      return tripClosedPayloadSchema.parse(await this.fallbackStore.closeTrip(parsedInput));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/trips/close", tripClosedPayloadSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
   }
 
   async getTripsList(): Promise<TripsListRow[]> {

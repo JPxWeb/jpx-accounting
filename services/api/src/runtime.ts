@@ -122,6 +122,14 @@ export class UnavailableLedgerStore implements LedgerStore {
     return this.fail();
   }
 
+  async registerTrip() {
+    return this.fail();
+  }
+
+  async closeTrip() {
+    return this.fail();
+  }
+
   async suggestVoucher() {
     return this.fail();
   }

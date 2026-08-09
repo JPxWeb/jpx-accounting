@@ -3,6 +3,7 @@ import {
   tripLineEnrichmentPayloadSchema,
   tripRegisteredPayloadSchema,
   type LedgerEvent,
+  type TripRegisteredPayload,
   type TripsListRow,
 } from "@jpx-accounting/contracts";
 
@@ -11,6 +12,28 @@ import { buildJournal, collectLedgerLinesFromEvents } from "../projections";
 import { round2 } from "../store-shared";
 
 export type { TripsListRow } from "@jpx-accounting/contracts";
+
+export class TripNotFoundError extends Error {
+  constructor(public readonly tripId: string) {
+    super(`Trip ${tripId} was not found.`);
+    this.name = "TripNotFoundError";
+  }
+}
+
+export function findTripRegistration(events: LedgerEvent[], tripId: string): TripRegisteredPayload | undefined {
+  for (const event of events) {
+    if (event.eventType !== "TripRegistered") continue;
+    const trip = tripRegisteredPayloadSchema.parse(event.payload);
+    if (trip.tripId === tripId) return trip;
+  }
+  return undefined;
+}
+
+export function isTripClosed(events: LedgerEvent[], tripId: string): boolean {
+  return events.some(
+    (event) => event.eventType === "TripClosed" && tripClosedPayloadSchema.parse(event.payload).tripId === tripId,
+  );
+}
 
 export function buildTripsList(events: LedgerEvent[]): TripsListRow[] {
   const trips = new Map<string, TripsListRow>();

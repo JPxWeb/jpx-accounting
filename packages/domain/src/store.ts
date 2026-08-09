@@ -27,6 +27,8 @@ import type {
   SieImportResult,
   SimulationRequest,
   SimulationRun,
+  TripClosedPayload,
+  TripRegisteredPayload,
   Voucher,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
@@ -64,6 +66,7 @@ import {
   InvoiceNotFoundError,
 } from "./workflows/invoices";
 import { buildProjectRegistryFromEvents } from "./workflows/projects";
+import { findTripRegistration, isTripClosed, TripNotFoundError } from "./workflows/trips";
 import type { ParsedSieFile } from "./sie/parse";
 import { simulateApprovals } from "./simulation";
 import {
@@ -359,6 +362,8 @@ export interface LedgerStore {
   registerProject(input: RegisterProjectInput & ActorAttribution): Promise<ProjectProjection>;
   registerInvoice(input: InvoiceRegisteredPayload & ActorAttribution): Promise<InvoiceRegisteredPayload>;
   allocatePayment(input: PaymentAllocatedPayload & ActorAttribution): Promise<PaymentAllocatedPayload>;
+  registerTrip(input: TripRegisteredPayload & ActorAttribution): Promise<TripRegisteredPayload>;
+  closeTrip(input: TripClosedPayload & ActorAttribution): Promise<TripClosedPayload>;
   suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined>;
   applyReviewDecision(
     reviewId: string,
@@ -813,6 +818,43 @@ export class MemoryLedgerStore implements LedgerStore {
       payload: payment,
     });
     return { ...payment };
+  }
+
+  async registerTrip(input: TripRegisteredPayload & ActorAttribution): Promise<TripRegisteredPayload> {
+    const existing = findTripRegistration(this.events, input.tripId);
+    if (existing) return { ...existing };
+
+    const { actorId, ...trip } = input;
+    this.appendEvent({
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+      aggregateType: "ledger",
+      aggregateId: trip.tripId,
+      eventType: "TripRegistered",
+      actorId: actorId ?? DEMO_ACTOR_ID,
+      occurredAt: nowIso(),
+      payload: trip,
+    });
+    return { ...trip };
+  }
+
+  async closeTrip(input: TripClosedPayload & ActorAttribution): Promise<TripClosedPayload> {
+    const trip = findTripRegistration(this.events, input.tripId);
+    if (!trip) throw new TripNotFoundError(input.tripId);
+    const closed = { tripId: trip.tripId };
+    if (isTripClosed(this.events, trip.tripId)) return closed;
+
+    this.appendEvent({
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+      aggregateType: "ledger",
+      aggregateId: trip.tripId,
+      eventType: "TripClosed",
+      actorId: input.actorId ?? DEMO_ACTOR_ID,
+      occurredAt: nowIso(),
+      payload: closed,
+    });
+    return closed;
   }
 
   async suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined> {

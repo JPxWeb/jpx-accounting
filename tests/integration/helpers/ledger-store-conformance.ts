@@ -957,6 +957,47 @@ export async function scenarioInvoicePayments(h: ConformanceHarness): Promise<Co
   };
 }
 
+export async function scenarioTripLifecycle(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const first = await h.store.registerTrip({
+    tripId: "trip_conformance",
+    purpose: "Original purpose",
+    traveler: "Ada",
+    startDate: "2026-08-01",
+    endDate: "2026-08-03",
+    actorId: h.actorId,
+  });
+  const duplicate = await h.store.registerTrip({
+    tripId: "trip_conformance",
+    purpose: "Replacement purpose",
+    traveler: "Grace",
+    startDate: "2026-09-01",
+    endDate: "2026-09-02",
+    actorId: "user:other",
+  });
+  const firstClose = await h.store.closeTrip({ tripId: "trip_conformance", actorId: h.actorId });
+  const duplicateClose = await h.store.closeTrip({ tripId: "trip_conformance", actorId: "user:other" });
+  const events = (await h.store.getEvents()).filter(
+    (event) =>
+      (event.eventType === "TripRegistered" || event.eventType === "TripClosed") &&
+      event.aggregateId === "trip_conformance",
+  );
+
+  assert.equal(duplicate.purpose, first.purpose);
+  assert.equal(duplicate.traveler, first.traveler);
+  assert.deepEqual(duplicateClose, firstClose);
+  assert.deepEqual(
+    events.map((event) => event.eventType),
+    ["TripRegistered", "TripClosed"],
+  );
+
+  return {
+    purpose: duplicate.purpose,
+    traveler: duplicate.traveler,
+    eventTypes: events.map((event) => event.eventType),
+    actors: events.map((event) => event.actorId),
+  };
+}
+
 export const CONFORMANCE_SCENARIOS: Array<{
   name: string;
   run: (h: ConformanceHarness) => Promise<ConformanceOutcome>;
@@ -978,6 +1019,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "voucher tag append-only paths", run: scenarioVoucherTags },
   { name: "project registration is immutable", run: scenarioProjectRegistration },
   { name: "invoice and payment identity is immutable", run: scenarioInvoicePayments },
+  { name: "trip registration and close are immutable", run: scenarioTripLifecycle },
 ];
 
 export function assertConformanceParity(

@@ -30,6 +30,8 @@ import type {
   SieImportResult,
   SimulationRequest,
   SimulationRun,
+  TripClosedPayload,
+  TripRegisteredPayload,
   Voucher,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
@@ -59,11 +61,13 @@ import {
   evaluateVoucherRules,
   ExternalReferenceNotFoundError,
   findPaymentAllocation,
+  findTripRegistration,
   filterLedgerLines,
   findActiveExternalReference,
   LINE_CARRYING_EVENT_TYPES,
   InvoiceAllocationCurrencyError,
   InvoiceNotFoundError,
+  isTripClosed,
   nowIso,
   planComplianceMerge,
   planEvidenceCreate,
@@ -77,6 +81,7 @@ import {
   planVoucherTagsAppend,
   simulateApprovals,
   today,
+  TripNotFoundError,
   type ActorAttribution,
   type ApprovalGate,
   type ExternalReferenceEvent,
@@ -1561,6 +1566,80 @@ export class PostgresLedgerStore implements LedgerStore {
           tailHash,
         );
         return payment;
+      }),
+    );
+  }
+
+  async registerTrip(input: TripRegisteredPayload & ActorAttribution): Promise<TripRegisteredPayload> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        const rows = await tx<EventRow[]>`
+          SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+                 actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+          FROM ledger.events
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND event_type = 'TripRegistered'
+          ORDER BY seq ASC
+        `;
+        const existing = findTripRegistration(rows.map(rowToEvent), input.tripId);
+        if (existing) return existing;
+
+        const { actorId, ...trip } = input;
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: trip.tripId,
+            eventType: "TripRegistered",
+            actorId: actorId ?? DEMO_ACTOR_ID,
+            occurredAt: nowIso(),
+            payload: trip,
+          },
+          tailHash,
+        );
+        return trip;
+      }),
+    );
+  }
+
+  async closeTrip(input: TripClosedPayload & ActorAttribution): Promise<TripClosedPayload> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        const rows = await tx<EventRow[]>`
+          SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+                 actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+          FROM ledger.events
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND event_type IN ('TripRegistered', 'TripClosed')
+          ORDER BY seq ASC
+        `;
+        const events = rows.map(rowToEvent);
+        const trip = findTripRegistration(events, input.tripId);
+        if (!trip) throw new TripNotFoundError(input.tripId);
+        const closed = { tripId: trip.tripId };
+        if (isTripClosed(events, trip.tripId)) return closed;
+
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: trip.tripId,
+            eventType: "TripClosed",
+            actorId: input.actorId ?? DEMO_ACTOR_ID,
+            occurredAt: nowIso(),
+            payload: closed,
+          },
+          tailHash,
+        );
+        return closed;
       }),
     );
   }

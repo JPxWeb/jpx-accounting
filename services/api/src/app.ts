@@ -44,6 +44,7 @@ import {
   ReviewBlockedError,
   summarizeEventIntegrity,
   today,
+  TripNotFoundError,
   LineEnrichmentNotActiveError,
   type ReviewAction,
   VoucherTagsValidationError,
@@ -568,6 +569,10 @@ export function createApp({
 
     if (error instanceof InvoiceAllocationCurrencyError) {
       return jsonError(c, error.message, runtimeMode, 422, { code: "invoice_currency_mismatch" });
+    }
+
+    if (error instanceof TripNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 404, { code: "trip_not_found" });
     }
 
     if (error instanceof EnrichmentWorkItemNotFoundError) {
