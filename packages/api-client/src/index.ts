@@ -15,7 +15,10 @@ import type {
   ExternalReferenceProjection,
   IntegritySummary,
   JournalEntryProjection,
+  ProjectProjection,
+  ProjectsListRow,
   ProposeEnrichmentWorkItemInput,
+  RegisterProjectInput,
   ReportPack,
   ReviewDecisionInput,
   ReviewEnrichmentIntent,
@@ -42,7 +45,10 @@ import {
   externalReferenceProjectionSchema,
   integritySummarySchema,
   journalEntryProjectionSchema,
+  projectProjectionSchema,
+  projectsListSchema,
   proposeEnrichmentWorkItemInputSchema,
+  registerProjectInputSchema,
   reportPackSchema,
   reviewEnrichmentIntentSchema,
   reviewTaskSchema,
@@ -57,6 +63,7 @@ import {
 } from "@jpx-accounting/contracts";
 import {
   buildSieExport,
+  buildProjectsList,
   decodeSieBuffer,
   deriveDeterministicExtraction,
   encodePc8,
@@ -222,6 +229,26 @@ export class AccountingApiClient {
     if (this.fallbackStore) return workspaceSnapshotSchema.parse(await this.fallbackStore.getSnapshot());
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/workspace", workspaceSnapshotSchema);
+  }
+
+  async registerProject(input: RegisterProjectInput): Promise<ProjectProjection> {
+    const parsedInput = registerProjectInputSchema.parse(input);
+    if (this.fallbackStore) {
+      return projectProjectionSchema.parse(await this.fallbackStore.registerProject(parsedInput));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/projects", projectProjectionSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
+  }
+
+  async getProjectsList(): Promise<ProjectsListRow[]> {
+    if (this.fallbackStore) {
+      return projectsListSchema.parse(buildProjectsList(await this.fallbackStore.getEvents()));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/projects", projectsListSchema);
   }
 
   /**

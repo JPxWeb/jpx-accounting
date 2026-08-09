@@ -15,6 +15,8 @@ import type {
   ExtractionResult,
   LedgerEvent,
   ProposeEnrichmentWorkItemInput,
+  ProjectProjection,
+  RegisterProjectInput,
   ReportBundle,
   ReportPack,
   ReviewEnrichmentIntent,
@@ -53,6 +55,7 @@ import { currentMonthToken } from "./reports/period";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
+import { buildProjectRegistryFromEvents } from "./workflows/projects";
 import type { ParsedSieFile } from "./sie/parse";
 import { simulateApprovals } from "./simulation";
 import {
@@ -345,6 +348,7 @@ export interface LedgerStore {
   getReportPack(input: { period: string }): Promise<ReportPack>;
   getSnapshot(): Promise<WorkspaceSnapshot>;
   getEvents(): Promise<LedgerEvent[]>;
+  registerProject(input: RegisterProjectInput & ActorAttribution): Promise<ProjectProjection>;
   suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined>;
   applyReviewDecision(
     reviewId: string,
@@ -730,6 +734,30 @@ export class MemoryLedgerStore implements LedgerStore {
 
   async getEvents(): Promise<LedgerEvent[]> {
     return [...this.events];
+  }
+
+  async registerProject(input: RegisterProjectInput & ActorAttribution): Promise<ProjectProjection> {
+    const existing = buildProjectRegistryFromEvents(this.events).find(
+      (project) => project.projectId === input.projectId,
+    );
+    if (existing) return { ...existing };
+
+    const project: ProjectProjection = {
+      projectId: input.projectId,
+      name: input.name,
+      status: "active",
+    };
+    this.appendEvent({
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+      aggregateType: "ledger",
+      aggregateId: project.projectId,
+      eventType: "ProjectRegistered",
+      actorId: input.actorId ?? DEMO_ACTOR_ID,
+      occurredAt: nowIso(),
+      payload: project,
+    });
+    return { ...project };
   }
 
   async suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined> {

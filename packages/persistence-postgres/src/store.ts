@@ -18,6 +18,8 @@ import type {
   ExtractionResult,
   LedgerEvent,
   ProposeEnrichmentWorkItemInput,
+  ProjectProjection,
+  RegisterProjectInput,
   ReportBundle,
   ReportPack,
   ReviewEnrichmentIntent,
@@ -41,6 +43,7 @@ import {
   buildExternalReferencesFromEvents,
   buildVoucherTagsFromEvents,
   buildJournal,
+  buildProjectRegistryFromEvents,
   buildReportPack,
   buildVat,
   collectLedgerLinesFromEvents,
@@ -1430,6 +1433,48 @@ export class PostgresLedgerStore implements LedgerStore {
       ORDER BY seq ASC
     `;
     return rows.map(rowToEvent);
+  }
+
+  async registerProject(input: RegisterProjectInput & ActorAttribution): Promise<ProjectProjection> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        const rows = await tx<EventRow[]>`
+          SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+                 actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+          FROM ledger.events
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND event_type IN ('ProjectRegistered', 'ProjectArchived')
+          ORDER BY seq ASC
+        `;
+        const existing = buildProjectRegistryFromEvents(rows.map(rowToEvent)).find(
+          (project) => project.projectId === input.projectId,
+        );
+        if (existing) return existing;
+
+        const project: ProjectProjection = {
+          projectId: input.projectId,
+          name: input.name,
+          status: "active",
+        };
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: project.projectId,
+            eventType: "ProjectRegistered",
+            actorId: input.actorId ?? DEMO_ACTOR_ID,
+            occurredAt: nowIso(),
+            payload: project,
+          },
+          tailHash,
+        );
+        return project;
+      }),
+    );
   }
 
   async suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined> {
