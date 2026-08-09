@@ -879,9 +879,25 @@
   - The visual suite remains deferred; no baseline was updated. No renewed
     Opus review is required. See
     `.superpowers/sdd/w6b-projects-e2e-intent-sol-rereview.md`.
+- Task 6e.5 Wave 6e final gate: PASS; ready for Sol's COMPLETE decision.
+  - `pnpm check` passed with 683/683 unit tests after normalizing CRLF checkout
+    materialization in two already-committed Wave 6b advisor files; the
+    normalization produced no source diff.
+  - Strict `pnpm db:test` applied migrations `0001`–`0012`, passed every
+    capability assertion, and passed 119/119 integration tests.
+  - `pnpm build:e2e` passed with the valued flag off and on. Focused valued
+    inventory E2E passed 2/2 hidden assertions and 2/2 visible assertions
+    across desktop Chromium and Pixel 7.
+  - Flag-on visual comparisons passed 20/20 across both themes and viewports.
+    Every image matched its baseline; no baseline was updated.
+  - Seams passed, i18n remained 1115/1115, and focused quantity/valued schema
+    distinction tests passed 9/9.
+  - No PR was opened and `main` was not touched. Wave 6d's separately owned
+    final gate remains pending, and Waves 7–8 were not started. See
+    `.superpowers/sdd/wave-6e-gate-report.md`.
 
 ## Pending
 
-- Remaining Wave 6d full/visual gate; then Wave 6e Tasks 6e.4–6e.5, followed
-  by Waves 7–8 in plan order (single feature branch; defer mid-wave PR to main
-  until program ready).
+- Sol review of Task 6e.5 / Wave 6e COMPLETE decision; remaining Wave 6d
+  full/visual gate; then Waves 7–8 in plan order (single feature branch; defer
+  mid-wave PR to main until program ready).
