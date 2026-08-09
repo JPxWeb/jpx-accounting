@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import type { EvidenceCreateInput, ExtractionResult, ReviewTask, Voucher } from "@jpx-accounting/contracts";
-import { MemoryLedgerStore, planReviewDecision, ReviewBlockedError } from "@jpx-accounting/domain";
+import { planReviewDecision, ReviewBlockedError } from "@jpx-accounting/domain";
+import { MemoryLedgerStore } from "@jpx-accounting/domain/store";
 
 const BLOCKED_REASON = "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
 

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { EvidenceCreateInput, ExtractionResult } from "@jpx-accounting/contracts";
-import { deriveDeterministicExtraction, MemoryLedgerStore, mergeExtractedFields, today } from "@jpx-accounting/domain";
+import { deriveDeterministicExtraction, mergeExtractedFields, today } from "@jpx-accounting/domain";
+import { MemoryLedgerStore } from "@jpx-accounting/domain/store";
 
 const legacyCreateInput: EvidenceCreateInput = {
   title: "Extraction test receipt",

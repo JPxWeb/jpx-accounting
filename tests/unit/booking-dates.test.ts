@@ -7,9 +7,9 @@ import {
   InvalidReviewEditError,
   localDayOfTimestamp,
   localTodayIso,
-  MemoryLedgerStore,
   nowIso,
 } from "@jpx-accounting/domain";
+import { MemoryLedgerStore } from "@jpx-accounting/domain/store";
 
 /**
  * WS-B R13 — postings are dated by the voucher's transaction/receipt date,

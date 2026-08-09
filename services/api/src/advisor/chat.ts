@@ -41,8 +41,8 @@ import {
   ReviewBlockedError,
   today,
   type ApprovalGate,
-  type LedgerStore,
 } from "@jpx-accounting/domain";
+import type { LedgerStore } from "@jpx-accounting/domain/store";
 import { buildObservations } from "@jpx-accounting/reporting";
 
 import { queryKnowledge } from "../knowledge";

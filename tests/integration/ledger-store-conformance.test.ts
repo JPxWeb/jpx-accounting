@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { MemoryLedgerStore } from "@jpx-accounting/domain";
+import { MemoryLedgerStore } from "@jpx-accounting/domain/store";
 import { PostgresLedgerStore } from "@jpx-accounting/persistence-postgres";
 
 import {

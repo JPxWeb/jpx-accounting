@@ -1,8 +1,8 @@
 import { createAiRuntime } from "@jpx-accounting/ai-core";
 import type { AiProvider } from "@jpx-accounting/contracts";
 import { createDocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
-import type { LedgerStore } from "@jpx-accounting/domain";
-import { DEFAULT_TENANT_SCOPE, MemoryLedgerStore } from "@jpx-accounting/domain";
+import { DEFAULT_TENANT_SCOPE } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, type LedgerStore } from "@jpx-accounting/domain/store";
 import {
   closePostgresClient,
   createPostgresClient,

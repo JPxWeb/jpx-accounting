@@ -10,7 +10,7 @@ Prefer **official docs**: use Context7 (e.g. `/vercel/next.js` pinned to the rep
 
 ```bash
 pnpm install                  # Install all workspace dependencies (esbuild/sharp builds allowlisted — see pnpm-workspace.yaml)
-pnpm dev                     # Parallel: Next + API (root scripts use corepack pnpm when bare pnpm is not on PATH)
+pnpm dev                     # API first, wait for /health, then Next (hot reload on both; see AGENTS.md Environment)
 pnpm dev:web                  # Start Next.js dev server (http://localhost:3002 — see apps/web/package.json)
 pnpm dev:api                  # Start Hono API with tsx watch (default http://localhost:3001)
 pnpm lint                     # ESLint (root eslint.config.mjs)

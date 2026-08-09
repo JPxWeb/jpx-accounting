@@ -33,11 +33,22 @@ contracts, Postgres/Memory ledger stores, AI SDK 7 advisor, pgvector RAG.
   shell: `$env:PATH = "$env:LOCALAPPDATA\corepack-shims;$env:PATH"` (husky hooks need it too).
 - Python is absent; use Node for scripting. PowerShell 5.1: no `&&` — use `;`.
 - Port 3002 (`pnpm dev:web`) may collide with an unrelated Vite dev server.
+- Service worker stays off under `next dev` (`NODE_ENV === "development"`); do not set
+  `NEXT_PUBLIC_DISABLE_SW` just to unstick Turbopack — production hashed `/_next/static/`
+  cache-first remains intentional.
+- **`pnpm dev` is health-gated** — starts the API first, waits for
+  `GET http://127.0.0.1:3001/health` (~30s timeout, nonzero on failure), then
+  starts the web app (`concurrently --raw` + `wait-on`; `--raw` is required so
+  `tsx watch` is not hung by concurrently's prefixed pipes on Windows). Both
+  keep hot reload. `dev:api` / `dev:web` remain available for single-process
+  runs. (The old hang was Turbopack + `tsx watch` under `pnpm --parallel`
+  never binding `:3001`; resolved 2026-08-08.)
 
 ## Commands
 
-- `pnpm install` · `pnpm dev` (web 3002 + API 3001) · `pnpm check` (lint + format + typecheck
-  ×11 workspaces + unit + build) — the merge gate.
+- `pnpm install` · `pnpm dev` (API 3001 health-gated, then web 3002) ·
+  `pnpm check` (lint + format + typecheck ×11 workspaces + unit + build) —
+  the merge gate.
 - Unit: `pnpm test:unit` (single file: `tsx --test tests/unit/<file>.test.ts`).
 - E2E: `pnpm build:e2e && npx playwright test --grep-invert "visual:"` — NEVER plain
   `pnpm build` for E2E (misses `NEXT_PUBLIC_*` demo/proxy inlining).

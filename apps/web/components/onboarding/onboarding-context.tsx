@@ -3,8 +3,9 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 
 import {
+  getClientOnboardingSnapshot,
+  getServerOnboardingSnapshot,
   isTourCompleted as readTourCompleted,
-  loadOnboardingState,
   markTourCompleted,
   resetOnboardingTours,
   subscribeOnboardingStorage,
@@ -32,13 +33,15 @@ export function OnboardingProvider({
 }) {
   const blockersRef = useRef(new Set<string>());
 
-  const onboardingSnapshot = useSyncExternalStore(subscribeOnboardingStorage, loadOnboardingState, () =>
-    loadOnboardingState(),
+  const onboardingSnapshot = useSyncExternalStore(
+    subscribeOnboardingStorage,
+    getClientOnboardingSnapshot,
+    getServerOnboardingSnapshot,
   );
 
   const isTourCompleted = useCallback(
     (tourId: TourId) => onboardingSnapshot.completedTours.includes(tourId),
-    [onboardingSnapshot.completedTours],
+    [onboardingSnapshot],
   );
 
   const startTour = useCallback(

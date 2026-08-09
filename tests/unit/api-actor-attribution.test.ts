@@ -10,7 +10,8 @@ import {
   simulationRequestSchema,
   suggestionRequestSchema,
 } from "@jpx-accounting/contracts";
-import { DEFAULT_TENANT_SCOPE, DEMO_ACTOR_ID, MemoryLedgerStore, type LedgerStore } from "@jpx-accounting/domain";
+import { DEFAULT_TENANT_SCOPE, DEMO_ACTOR_ID } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, type LedgerStore } from "@jpx-accounting/domain/store";
 
 import { createAdvisorChatHandler } from "../../services/api/src/advisor/chat";
 import { clientIpKey, createApp } from "../../services/api/src/app";

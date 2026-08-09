@@ -2,8 +2,7 @@ import type { AccountingSuggestion, ReviewTask, SimulationRun, Voucher } from "@
 
 import { defaultCoaTemplate } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
-import { buildPostingLines } from "./store";
-import type { ReviewAction } from "./store";
+import { buildPostingLines, type ReviewAction } from "./store-shared";
 import type { VatRegime } from "./vat/regime";
 import { swedishVatRegime } from "./vat/regime";
 

@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 import { expectAccessible } from "./a11y-helpers";
+import { installConsoleGuard } from "./console-guard";
 import { activateControl, apiBaseUrl, resetApiState } from "./test-helpers";
 
 // Widget-chrome buttons/links are activated via `activateControl`: pointer
@@ -38,25 +39,14 @@ function widgetOrder(page: Page): Promise<string[]> {
     .evaluateAll((sections) => sections.map((section) => section.getAttribute("data-testid")!.slice("widget-".length)));
 }
 
-function isHydrationOrIntlNoise(text: string): boolean {
-  return /hydrat/i.test(text) || /FORMATTING_ERROR/.test(text);
-}
-
-test("/today renders with a clean console: no hydration mismatch, no intl formatting errors", async ({ page }) => {
-  const problems: string[] = [];
-  page.on("console", (message) => {
-    if (message.type() !== "error" && message.type() !== "warning") return;
-    const text = message.text();
-    if (isHydrationOrIntlNoise(text)) problems.push(text);
-  });
-  page.on("pageerror", (error) => {
-    const text = String(error);
-    if (isHydrationOrIntlNoise(text)) problems.push(text);
-  });
+test("/today renders with a clean console: no console.error, no pageerror", async ({ page }) => {
+  const guard = await installConsoleGuard(page);
 
   await page.goto("/today");
   await expect(page.getByTestId("dashboard-canvas")).toBeVisible();
-  expect(problems).toEqual([]);
+  // Wait for client widgets to settle so late hydration / query errors surface.
+  await expect(page.getByTestId("widget-integrity")).toBeVisible();
+  guard.assertClean();
 });
 
 test("all ten widgets render on the default dashboard", async ({ page }) => {

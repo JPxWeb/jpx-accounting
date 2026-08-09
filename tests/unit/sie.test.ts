@@ -3,16 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { CompanySettings, JournalEntryProjection } from "@jpx-accounting/contracts";
-import {
-  buildSieExport,
-  decodePc8,
-  decodeSieBuffer,
-  encodePc8,
-  MemoryLedgerStore,
-  parseSie,
-  planSieImport,
-  SieImportError,
-} from "@jpx-accounting/domain";
+import { buildSieExport, decodePc8, decodeSieBuffer, encodePc8, parseSie } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, planSieImport, SieImportError } from "@jpx-accounting/domain/store";
 
 const fixtureBytes = (name: string): Uint8Array =>
   new Uint8Array(readFileSync(new URL(`../fixtures/sie/${name}`, import.meta.url)));

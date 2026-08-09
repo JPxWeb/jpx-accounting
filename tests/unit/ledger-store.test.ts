@@ -3,19 +3,16 @@ import test from "node:test";
 
 import { workspaceSnapshotSchema } from "@jpx-accounting/contracts";
 import type { ComplianceAlert, EvidenceCreateInput, Voucher } from "@jpx-accounting/contracts";
-import type { LedgerStore } from "@jpx-accounting/domain";
 import {
   buildJournal,
   collectLedgerLinesFromEvents,
   deriveDeterministicExtraction,
   InvalidPeriodTokenError,
   InvalidReviewEditError,
-  MemoryLedgerStore,
   parseSie,
-  ReviewNotFoundError,
-  SieImportError,
   today,
 } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, ReviewNotFoundError, SieImportError, type LedgerStore } from "@jpx-accounting/domain/store";
 
 /**
  * March 2026 SIE fixture: seed lines are booked "now", so a voucher pinned to

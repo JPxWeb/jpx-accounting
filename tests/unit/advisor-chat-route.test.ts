@@ -8,7 +8,7 @@ import {
   type ReviewActionProposal,
 } from "@jpx-accounting/advisor";
 import type { KnowledgePassage } from "@jpx-accounting/contracts";
-import { MemoryLedgerStore } from "@jpx-accounting/domain";
+import { MemoryLedgerStore } from "@jpx-accounting/domain/store";
 
 import {
   ADVISOR_VECTOR_MIN_SIMILARITY,

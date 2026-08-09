@@ -3,12 +3,8 @@ import test from "node:test";
 
 import type { LedgerEvent } from "@jpx-accounting/contracts";
 import { integritySummarySchema } from "@jpx-accounting/contracts";
-import {
-  buildEventHash,
-  legacyDjb2EventHash,
-  MemoryLedgerStore,
-  summarizeEventIntegrity,
-} from "@jpx-accounting/domain";
+import { buildEventHash, legacyDjb2EventHash, summarizeEventIntegrity } from "@jpx-accounting/domain";
+import { MemoryLedgerStore } from "@jpx-accounting/domain/store";
 
 const VERIFIED_AT = "2026-07-04T12:00:00.000Z";
 

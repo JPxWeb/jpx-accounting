@@ -1,2 +1,2 @@
-# SIE golden fixtures are byte-compared in unit tests - never convert EOL.
-tests/fixtures/sie/** -text
+﻿# SIE golden fixtures are byte-compared in unit tests - never convert EOL.
+tests/fixtures/sie/** binary

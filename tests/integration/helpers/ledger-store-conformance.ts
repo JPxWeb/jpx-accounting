@@ -8,14 +8,8 @@
 import assert from "node:assert/strict";
 
 import type { ExtractionResult } from "@jpx-accounting/contracts";
-import {
-  deriveDeterministicExtraction,
-  InvalidPeriodTokenError,
-  parseSie,
-  ReviewNotFoundError,
-  today,
-  type LedgerStore,
-} from "@jpx-accounting/domain";
+import { deriveDeterministicExtraction, InvalidPeriodTokenError, parseSie, today } from "@jpx-accounting/domain";
+import { ReviewNotFoundError, type LedgerStore } from "@jpx-accounting/domain/store";
 
 export type ConformanceHarness = {
   label: string;

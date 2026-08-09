@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { expectAccessible } from "./a11y-helpers";
+import { installConsoleGuard } from "./console-guard";
 import { activateControl, resetApiState } from "./test-helpers";
 
 async function clearOnboardingStorage(page: Page) {
@@ -80,4 +81,41 @@ test("settings about can replay onboarding", async ({ page }, testInfo) => {
   await activateControl(page.getByTestId("onboarding-replay-orientation"), isMobile);
   await expect(page).toHaveURL(/\/today/, { timeout: 15_000 });
   await expectTourTooltip(page);
+});
+
+/**
+ * Regression for OnboardingProvider + useSyncExternalStore: a populated
+ * `jpx.accounting.onboarding.v1` key used to allocate a fresh object every
+ * getSnapshot() call and infinite-loop the shell. Seed BEFORE navigation —
+ * empty storage masks the bug (EMPTY_STATE is referentially stable).
+ * Console guard fails the test on update-depth / getServerSnapshot warnings.
+ */
+test("pre-seeded onboarding storage keeps shell hydrating", async ({ page }, testInfo) => {
+  const isMobile = testInfo.project.name === "mobile-chromium";
+  const guard = await installConsoleGuard(page);
+  const seededState = {
+    schemaVersion: 1,
+    completedTours: ["app-orientation", "capture-flow"],
+    lastStartedAt: "2026-07-06T12:00:00.000Z",
+    dismissedAt: "2026-07-06T12:05:00.000Z",
+  };
+
+  await page.addInitScript((state) => {
+    localStorage.setItem("jpx.accounting.onboarding.v1", JSON.stringify(state));
+  }, seededState);
+
+  await page.goto("/today");
+
+  const nav = isMobile ? page.getByTestId("mobile-dock") : page.getByTestId("desktop-navigation-links");
+  await expect(nav).toBeVisible();
+
+  for (const label of ["Today", "Capture", "Books", "Reports", "Settings"] as const) {
+    await expect(nav.getByRole("link", { name: label })).toBeVisible();
+  }
+
+  await expect(page.getByTestId("dashboard-canvas")).toBeVisible();
+  await expect(page.getByText(/This page couldn.?t load/i)).toHaveCount(0);
+  // Settle past hydration + client store swap so late uSES warnings surface.
+  await expect(page.getByTestId("widget-integrity")).toBeVisible();
+  guard.assertClean();
 });

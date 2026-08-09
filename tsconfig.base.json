@@ -18,6 +18,8 @@
     "paths": {
       "@jpx-accounting/contracts": ["packages/contracts/src/index.ts"],
       "@jpx-accounting/domain": ["packages/domain/src/index.ts"],
+      "@jpx-accounting/domain/store": ["packages/domain/src/store.ts"],
+      "@jpx-accounting/domain/store-shared": ["packages/domain/src/store-shared.ts"],
       "@jpx-accounting/api-client": ["packages/api-client/src/index.ts"],
       "@jpx-accounting/ai-core": ["packages/ai-core/src/index.ts"],
       "@jpx-accounting/advisor": ["packages/advisor/src/index.ts"],

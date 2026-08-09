@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { installConsoleGuard } from "./console-guard";
 import { activateControl, resetApiState } from "./test-helpers";
 
 test.beforeEach(async ({ request }) => {
@@ -12,6 +13,9 @@ test.beforeEach(async ({ request }) => {
 // makes pointer clicks on these small controls hang until the test timeout.
 
 test("advisor streams a grounded, Article 50-labeled answer with provenance", async ({ page, isMobile }) => {
+  // P0-5: widen the console guard across the advisor stream path.
+  const guard = await installConsoleGuard(page);
+
   await page.goto("/assistant");
 
   // Persistent Article 50 label + the suggested-prompt trio on the empty state
@@ -33,6 +37,7 @@ test("advisor streams a grounded, Article 50-labeled answer with provenance", as
   // The data-provenance part renders sourced chips citing official sources.
   await expect(answer.getByTestId("provenance-chip").first()).toBeVisible();
   await expect(answer.getByTestId("provenance-chip").first()).toContainText(/Skatteverket|Bokföringslagen|BAS/);
+  guard.assertClean();
 });
 
 test("a drafted review approval executes only after explicit human approval", async ({ page, isMobile }) => {

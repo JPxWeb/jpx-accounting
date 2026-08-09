@@ -22,7 +22,8 @@ async function unregisterServiceWorkers() {
 
 export function ServiceWorkerRegistrar() {
   useEffect(() => {
-    // Debug and e2e builds actively unregister prior workers so cache-policy changes are applied immediately.
+    // Development, debug, and explicit DISABLE_SW builds unregister prior workers and clear
+    // jpx-accounting-static-* caches so a sticky cache-first SW cannot serve stale /_next/static/ chunks.
     if (webRuntimeConfig.disableServiceWorker) {
       if (typeof window !== "undefined" && "serviceWorker" in navigator) {
         void unregisterServiceWorkers();

@@ -8,13 +8,12 @@ import {
   InvalidPeriodTokenError,
   InvalidReviewEditError,
   legacyDjb2EventHash,
-  MemoryLedgerStore,
   parseSie,
-  ReviewNotFoundError,
   SHA256_EVENT_HASH_PATTERN,
   summarizeEventIntegrity,
   today,
 } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, ReviewNotFoundError } from "@jpx-accounting/domain/store";
 import { PostgresLedgerStore } from "@jpx-accounting/persistence-postgres";
 
 import {

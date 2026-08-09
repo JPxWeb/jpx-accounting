@@ -6,7 +6,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "corepack pnpm --filter @jpx-accounting/web --filter @jpx-accounting/api --parallel run dev",
+    "dev": "concurrently --raw -k -n api,web -c blue,green \"corepack pnpm dev:api\" \"wait-on -t 30000 http-get://127.0.0.1:3001/health && corepack pnpm dev:web\"",
     "dev:web": "corepack pnpm --filter @jpx-accounting/web dev",
     "dev:api": "corepack pnpm --filter @jpx-accounting/api dev",
     "lint": "eslint .",
@@ -51,6 +51,7 @@
     "@playwright/test": "1.58.2",
     "@types/node": "25.5.0",
     "c8": "12.0.0",
+    "concurrently": "10.0.4",
     "cross-env": "^10.1.0",
     "esbuild": "0.27.4",
     "eslint": "^9.39.4",
@@ -63,6 +64,7 @@
     "sharp": "^0.35.3",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
-    "typescript-eslint": "^8.59.2"
+    "typescript-eslint": "^8.59.2",
+    "wait-on": "9.1.0"
   }
 }

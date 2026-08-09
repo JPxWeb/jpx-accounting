@@ -3,6 +3,7 @@ import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import { installConsoleGuard } from "./console-guard";
 import { activateControl, resetApiState } from "./test-helpers";
 
 const receiptFixture = path.join(__dirname, "..", "fixtures", "receipt.jpg");
@@ -19,6 +20,15 @@ test("capture page shows quick-add, drop-zone, drafts, and the evidence archive"
   await expect(page.getByTestId("drafts-table")).toBeVisible();
   await expect(page.getByTestId("evidence-archive")).toBeVisible();
   await expect(page.getByText("Full implementation lands in Phase 5")).toHaveCount(0);
+});
+
+test("/capture renders with a clean console: no console.error, no pageerror", async ({ page }) => {
+  const guard = await installConsoleGuard(page);
+
+  await page.goto("/capture");
+  await expect(page.getByTestId("quick-add-grid")).toBeVisible();
+  await expect(page.getByTestId("evidence-archive")).toBeVisible();
+  guard.assertClean();
 });
 
 // Small row controls (draft-promote, evidence-open) are activated via

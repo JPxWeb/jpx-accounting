@@ -5,7 +5,7 @@ import test from "node:test";
 import { createAdvisorChatHandler, type AdvisorChatHandlerOptions } from "../../services/api/src/advisor/chat";
 import { createApp } from "../../services/api/src/app";
 import { createApiRuntimeDependencies } from "../../services/api/src/runtime";
-import { MemoryLedgerStore, type LedgerStore } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, type LedgerStore } from "@jpx-accounting/domain/store";
 
 type TestAppOverrides = {
   jwksUrl?: string;

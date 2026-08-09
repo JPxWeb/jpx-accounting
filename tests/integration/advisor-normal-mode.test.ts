@@ -4,7 +4,8 @@ import test from "node:test";
 
 import { DEFAULT_RETRIEVAL_TOP_K, retrieveKnowledge, type ReviewActionProposal } from "@jpx-accounting/advisor";
 import type { KnowledgePassage } from "@jpx-accounting/contracts";
-import { DEMO_ACTOR_ID, MemoryLedgerStore } from "@jpx-accounting/domain";
+import { DEMO_ACTOR_ID } from "@jpx-accounting/domain";
+import { MemoryLedgerStore } from "@jpx-accounting/domain/store";
 
 import { createApp } from "../../services/api/src/app";
 import { createApiRuntimeDependencies } from "../../services/api/src/runtime";

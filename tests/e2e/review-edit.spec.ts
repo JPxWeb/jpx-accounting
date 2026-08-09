@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { expectAccessible } from "./a11y-helpers";
+import { installConsoleGuard } from "./console-guard";
 import { activateControl, resetApiState } from "./test-helpers";
 
 test.beforeEach(async ({ request }) => {
@@ -10,6 +11,20 @@ test.beforeEach(async ({ request }) => {
 // The edit/submit buttons are activated via `activateControl`: pointer click
 // on desktop, keyboard on mobile — see the helper's doc comment for the
 // Pixel 7 visual-viewport emulation quirk that strands pointer clicks.
+
+test("opening the review edit sheet keeps a clean console", async ({ page, isMobile }) => {
+  const guard = await installConsoleGuard(page);
+
+  await page.goto("/today?view=queue");
+  await expect(page.getByTestId("review-card")).toHaveCount(1);
+
+  await activateControl(page.getByTestId("review-edit"), isMobile);
+  await expect(page.getByTestId("review-edit-sheet")).toBeVisible();
+  // Domain helpers used by the sheet must not pull MemoryLedgerStore into the
+  // client (P0-2) — any residual module-factory / update-depth noise fails here.
+  await expect(page.getByTestId("edit-account")).toBeVisible();
+  guard.assertClean();
+});
 
 test("edit sheet approves a review with a corrected account and VAT code", async ({ page, isMobile }) => {
   await page.goto("/today?view=queue");

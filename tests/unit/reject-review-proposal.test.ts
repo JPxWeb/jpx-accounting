@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { DEFAULT_RETRIEVAL_TOP_K, retrieveKnowledge } from "@jpx-accounting/advisor";
-import { MemoryLedgerStore, rejectReviewProposal, type ReviewActionProposalLike } from "@jpx-accounting/domain";
+import { rejectReviewProposal, type ReviewActionProposalLike } from "@jpx-accounting/domain";
+import { MemoryLedgerStore } from "@jpx-accounting/domain/store";
 
 async function buildValidProposal(store: MemoryLedgerStore): Promise<ReviewActionProposalLike> {
   const created = await store.createEvidence({

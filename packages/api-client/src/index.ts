@@ -38,18 +38,19 @@ import {
   uploadInitResultSchema,
   workspaceSnapshotSchema,
 } from "@jpx-accounting/contracts";
-import type { ReportRange } from "@jpx-accounting/domain";
 import {
   buildSieExport,
   decodeSieBuffer,
   deriveDeterministicExtraction,
   encodePc8,
-  MemoryLedgerStore,
   nowIso,
   parseSie,
   summarizeEventIntegrity,
   today,
 } from "@jpx-accounting/domain";
+// Demo fallback still statically constructs MemoryLedgerStore — keep off
+// `server-only` on domain/store until this path is dynamic-imported (P1).
+import { MemoryLedgerStore, type ReportRange } from "@jpx-accounting/domain/store";
 
 type RequestOptions = RequestInit & { json?: unknown };
 

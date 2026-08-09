@@ -19,7 +19,9 @@ export * from "./sie/parse";
 export * from "./sie/pc8";
 export * from "./sie/serialize";
 export * from "./simulation";
-export * from "./store";
+// Lightweight store helpers only — MemoryLedgerStore / LedgerStore live on the
+// `@jpx-accounting/domain/store` subpath so client barrels never evaluate store.ts.
+export * from "./store-shared";
 export * from "./store-planning";
 export * from "./tenant";
 export * from "./tax/calendar";

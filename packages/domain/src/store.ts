@@ -68,8 +68,11 @@ import {
   type ReviewAction,
 } from "./store-shared";
 
-// Re-export shared helpers for in-package `./store` importers (simulation, etc.)
-// and keep `@jpx-accounting/domain` barrel coverage via `export * from "./store-shared"`.
+// Re-export shared helpers for `@jpx-accounting/domain/store` consumers that
+// prefer one import. The public `"."` barrel exports `./store-shared` only —
+// never this module — so browser clients cannot pull MemoryLedgerStore via the
+// fat path. Do NOT add `import "server-only"` here while api-client still
+// statically constructs MemoryLedgerStore for the demo fallback (P1 stretch).
 export {
   DEMO_ACTOR_ID,
   InvalidReviewEditError,

@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./store-shared": "./src/store-shared.ts",
+    "./store": "./src/store.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"

@@ -9,11 +9,10 @@ import {
   buildVat,
   buildVatReturnBoxes,
   InvalidReviewEditError,
-  MemoryLedgerStore,
-  planSieImport,
   postingImbalanceOre,
   UnbalancedPostingError,
 } from "@jpx-accounting/domain";
+import { MemoryLedgerStore, planSieImport } from "@jpx-accounting/domain/store";
 
 /**
  * N3 (risk R1) regression suite: every posting path must produce journal lines
