@@ -104,6 +104,33 @@ export const skuMovementListRowSchema = inventoryMovementPayloadSchema
 
 export const skuMovementListSchema = z.array(skuMovementListRowSchema);
 
+export const valuedInventoryMovementPayloadSchema = z
+  .object({
+    movementId: z.string().min(1),
+    skuId: z.string().min(1),
+    quantity: z.number().positive(),
+    uom: z.string().min(1),
+    direction: z.enum(["in", "out"]),
+    lineId: z.string().min(1),
+    unitCost: z.number().nonnegative(),
+    currency: z.string().regex(/^[A-Z]{3}$/),
+    bookedAt: z.iso.date(),
+  })
+  .strict();
+
+export const valuedMovementListRowSchema = valuedInventoryMovementPayloadSchema
+  .extend({
+    id: z.string().min(1),
+    kind: z.literal("valued_movement"),
+    extendedAmount: z.number(),
+  })
+  .refine((row) => row.id === row.movementId, {
+    message: "Valued movement row id must match movementId",
+    path: ["id"],
+  });
+
+export const valuedMovementListSchema = z.array(valuedMovementListRowSchema);
+
 export const invoiceRegisteredPayloadSchema = z.object({
   invoiceId: z.string().min(1),
   direction: z.enum(["ar", "ap"]),
@@ -348,6 +375,8 @@ export type TripsListRow = z.infer<typeof tripsListRowSchema>;
 export type InventoryMovementPayload = z.infer<typeof inventoryMovementPayloadSchema>;
 export type QuantityInventoryMovementProposal = z.infer<typeof quantityInventoryMovementProposalSchema>;
 export type SkuMovementListRow = z.infer<typeof skuMovementListRowSchema>;
+export type ValuedInventoryMovementPayload = z.infer<typeof valuedInventoryMovementPayloadSchema>;
+export type ValuedMovementListRow = z.infer<typeof valuedMovementListRowSchema>;
 export type InvoiceRegisteredPayload = z.infer<typeof invoiceRegisteredPayloadSchema>;
 export type InvoiceRegistrationProposal = z.infer<typeof invoiceRegistrationProposalSchema>;
 export type PaymentAllocatedPayload = z.infer<typeof paymentAllocatedPayloadSchema>;
