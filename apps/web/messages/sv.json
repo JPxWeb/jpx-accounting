@@ -128,6 +128,7 @@
       "workflowProject": "Projekt",
       "workflowInvoice": "Faktura",
       "workflowTrip": "Resa",
+      "workflowQuantityInventory": "Kvantitetslager",
       "project": {
         "idLabel": "Projekt-ID",
         "required": "Välj ett projekt.",
@@ -157,6 +158,19 @@
         "evidenceLabel": "Stödjande underlag (valfritt)",
         "evidenceNone": "Inget länkat underlag",
         "evidenceInvalid": "Välj ett underlag från verifikatets underlagspaket."
+      },
+      "inventory": {
+        "skuLabel": "Artikelnummer",
+        "skuRequired": "Ange ett artikelnummer.",
+        "quantityLabel": "Antal",
+        "quantityRequired": "Ange ett positivt antal.",
+        "uomLabel": "Måttenhet",
+        "uomRequired": "Ange en måttenhet.",
+        "directionLabel": "Riktning",
+        "directionPlaceholder": "Välj riktning",
+        "directionIn": "Inleverans",
+        "directionOut": "Uttag",
+        "directionRequired": "Välj inleverans eller uttag."
       },
       "vatCodeLabel": "Momskod",
       "grossLabel": "Bruttobelopp",
@@ -448,6 +462,22 @@
         "status": {
           "open": "Öppen",
           "closed": "Stängd"
+        }
+      },
+      "skuMovements": {
+        "title": "Lagerrörelser",
+        "description": "Append-only kvantitetsrörelser. Lagervärde härleds eller visas inte.",
+        "loading": "Läser in lagerrörelser…",
+        "error": "Lagerrörelserna kunde inte läsas in.",
+        "empty": "Inga lagerrörelser.",
+        "sku": "Artikelnummer",
+        "directionLabel": "Riktning",
+        "quantity": "Antal",
+        "runningQuantity": "Löpande antal",
+        "bookedAt": "Bokföringsdatum",
+        "direction": {
+          "in": "Inleverans",
+          "out": "Uttag"
         }
       }
     },

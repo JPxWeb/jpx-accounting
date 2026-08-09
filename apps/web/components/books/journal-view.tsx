@@ -20,6 +20,7 @@ import { LedgerVoucherOverview } from "./ledger-voucher-overview";
 import { OpenInvoicesPanel } from "./open-invoices-panel";
 import { PaymentHistoryPanel } from "./payment-history-panel";
 import { ProjectsListPanel } from "./projects-list-panel";
+import { SkuMovementsPanel } from "./sku-movements-panel";
 import { TripsListPanel } from "./trips-list-panel";
 
 const ledgerModes = ["inline", "drawer"] as const;
@@ -59,7 +60,7 @@ export function JournalView() {
   const [voucher, setVoucher] = useQueryState("voucher", parseAsString);
   const [q, setQ] = useQueryState("q", parseAsString);
   const [tag, setTag] = useQueryState("tag", parseAsStringEnum(registryTagIds));
-  const [workflow] = useQueryState("workflow", parseAsStringEnum(["project", "invoice", "trip"]));
+  const [workflow] = useQueryState("workflow", parseAsStringEnum(["project", "invoice", "trip", "quantity_inventory"]));
 
   const storedLedgerMode = useSyncExternalStore(subscribeToLedgerMode, loadLedgerMode, getServerLedgerMode);
   const ledgerMode = ledgerModeParam ?? storedLedgerMode;
@@ -91,6 +92,11 @@ export function JournalView() {
     queryKey: ["lists", "trips"],
     queryFn: () => apiClient.getTripsList(),
     enabled: workflow === "trip",
+  });
+  const skuMovementsQuery = useQuery({
+    queryKey: ["lists", "sku-movements"],
+    queryFn: () => apiClient.getSkuMovementsList(),
+    enabled: workflow === "quantity_inventory",
   });
   const projectVoucherIds = new Set((projectsQuery.data ?? []).flatMap((project) => project.voucherIds));
 
@@ -185,6 +191,13 @@ export function JournalView() {
       ) : null}
       {workflow === "trip" ? (
         <TripsListPanel rows={tripsQuery.data ?? []} loading={tripsQuery.isLoading} hasError={tripsQuery.isError} />
+      ) : null}
+      {workflow === "quantity_inventory" ? (
+        <SkuMovementsPanel
+          rows={skuMovementsQuery.data ?? []}
+          loading={skuMovementsQuery.isLoading}
+          hasError={skuMovementsQuery.isError}
+        />
       ) : null}
       {supplier ? (
         <div className="flex items-center gap-2">

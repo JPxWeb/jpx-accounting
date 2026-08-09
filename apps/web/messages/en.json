@@ -128,6 +128,7 @@
       "workflowProject": "Project",
       "workflowInvoice": "Invoice",
       "workflowTrip": "Trip",
+      "workflowQuantityInventory": "Quantity inventory",
       "project": {
         "idLabel": "Project ID",
         "required": "Choose a project.",
@@ -157,6 +158,19 @@
         "evidenceLabel": "Supporting evidence (optional)",
         "evidenceNone": "No linked evidence",
         "evidenceInvalid": "Choose evidence from this voucher's packet."
+      },
+      "inventory": {
+        "skuLabel": "SKU",
+        "skuRequired": "Enter a SKU.",
+        "quantityLabel": "Quantity",
+        "quantityRequired": "Enter a positive quantity.",
+        "uomLabel": "Unit of measure",
+        "uomRequired": "Enter a unit of measure.",
+        "directionLabel": "Direction",
+        "directionPlaceholder": "Choose direction",
+        "directionIn": "Stock in",
+        "directionOut": "Stock out",
+        "directionRequired": "Choose stock in or stock out."
       },
       "vatCodeLabel": "VAT code",
       "grossLabel": "Gross amount",
@@ -448,6 +462,22 @@
         "status": {
           "open": "Open",
           "closed": "Closed"
+        }
+      },
+      "skuMovements": {
+        "title": "Inventory movements",
+        "description": "Append-only quantity movements. Inventory value is not inferred or displayed.",
+        "loading": "Loading inventory movements…",
+        "error": "Inventory movements could not be loaded.",
+        "empty": "No inventory movements.",
+        "sku": "SKU",
+        "directionLabel": "Direction",
+        "quantity": "Quantity",
+        "runningQuantity": "Running quantity",
+        "bookedAt": "Booking date",
+        "direction": {
+          "in": "Stock in",
+          "out": "Stock out"
         }
       }
     },
