@@ -8,7 +8,6 @@ import { Money } from "../ui/money";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 
 const LEDGER_SLOT_KEYS = [
-  "workItemConfirm",
   "externalRefs",
   "tags",
   "lineId",
@@ -74,6 +73,11 @@ export function LedgerVoucherDetail({ vm }: { vm: LedgerVoucherViewModel }) {
           {vm.provenanceSummary}
         </p>
       ) : null}
+
+      <div className="mt-4 border-t border-border pt-4" data-testid="ledger-slot-workItemConfirm-active">
+        <p className="text-sm font-semibold text-foreground">{tSlots("workItemConfirm")}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{tSlots("workItemHint")}</p>
+      </div>
 
       {disabledSlots.length > 0 ? (
         <div className="mt-4 rounded-xl border border-border bg-surface-muted/40 p-4">

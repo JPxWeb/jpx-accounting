@@ -379,12 +379,40 @@
       "modeSwitchAria": "Journal overview layout",
       "emptySearch": "No vouchers match your search.",
       "slots": {
-        "workItemConfirm": "Work-item confirmation is not available yet.",
+        "workItemConfirm": "Enrichment confirmation requests",
+        "workItemHint": "Open a secure work-item link to review and decide a proposed change.",
         "externalRefs": "External references are not available yet.",
         "tags": "Soft tags are not available yet.",
         "lineId": "Stable line IDs are not available yet.",
         "vatDeductibility": "VAT code and deductibility columns are not available yet.",
         "workflows": "Workflow badges are not available yet."
+      },
+      "enrichmentConfirm": {
+        "eyebrow": "Human confirmation",
+        "title": "Review proposed enrichment",
+        "description": "This proposal changes post-post metadata only after your explicit decision. It cannot post or rewrite a voucher.",
+        "close": "Close",
+        "closeAria": "Close enrichment confirmation",
+        "loading": "Loading proposal…",
+        "loadError": "The proposal could not be loaded. Check the API connection and try again.",
+        "notFound": "This enrichment proposal was not found.",
+        "advisorMarker": "AI-generated proposal · Article 50",
+        "externalMarker": "Externally proposed · human review required",
+        "target": "Target",
+        "proposal": "Proposed change",
+        "noopProposal": "No ledger event (foundation placeholder)",
+        "statusLabel": "Status",
+        "status": {
+          "pending": "Pending confirmation",
+          "confirmed": "Confirmed",
+          "rejected": "Rejected",
+          "superseded": "Superseded"
+        },
+        "appendOnlyNote": "Confirming uses the append-only enrichment gate. It never creates a second posting; this Wave 2 placeholder records the human decision without adding a ledger event.",
+        "confirm": "Confirm proposal",
+        "reject": "Reject proposal",
+        "working": "Saving…",
+        "decisionError": "The decision could not be saved. Try again."
       }
     }
   },

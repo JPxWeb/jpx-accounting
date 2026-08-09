@@ -379,12 +379,40 @@
       "modeSwitchAria": "Layout för journalöversikt",
       "emptySearch": "Inga verifikat matchar sökningen.",
       "slots": {
-        "workItemConfirm": "Arbetsbekräftelse är inte tillgänglig ännu.",
+        "workItemConfirm": "Bekräftelse av berikningsförslag",
+        "workItemHint": "Öppna en säker arbetsobjektslänk för att granska och besluta om en föreslagen ändring.",
         "externalRefs": "Externa referenser är inte tillgängliga ännu.",
         "tags": "Mjuka taggar är inte tillgängliga ännu.",
         "lineId": "Stabila rad-ID visas ännu inte.",
         "vatDeductibility": "Momskod och avdragsrätt visas ännu inte.",
         "workflows": "Arbetsflödesmärken är inte tillgängliga ännu."
+      },
+      "enrichmentConfirm": {
+        "eyebrow": "Mänsklig bekräftelse",
+        "title": "Granska föreslagen berikning",
+        "description": "Förslaget ändrar metadata efter bokföring först efter ditt uttryckliga beslut. Det kan varken bokföra eller skriva om ett verifikat.",
+        "close": "Stäng",
+        "closeAria": "Stäng bekräftelse av berikning",
+        "loading": "Läser in förslaget…",
+        "loadError": "Förslaget kunde inte läsas in. Kontrollera API-anslutningen och försök igen.",
+        "notFound": "Det här berikningsförslaget hittades inte.",
+        "advisorMarker": "AI-genererat förslag · artikel 50",
+        "externalMarker": "Externt föreslaget · mänsklig granskning krävs",
+        "target": "Mål",
+        "proposal": "Föreslagen ändring",
+        "noopProposal": "Ingen huvudbokshändelse (grundplatshållare)",
+        "statusLabel": "Status",
+        "status": {
+          "pending": "Väntar på bekräftelse",
+          "confirmed": "Bekräftad",
+          "rejected": "Avvisad",
+          "superseded": "Ersatt"
+        },
+        "appendOnlyNote": "Bekräftelse använder den append-only-förda berikningsgrinden. Den skapar aldrig en andra bokföring; den här platshållaren i våg 2 registrerar människans beslut utan att lägga till en huvudbokshändelse.",
+        "confirm": "Bekräfta förslag",
+        "reject": "Avvisa förslag",
+        "working": "Sparar…",
+        "decisionError": "Beslutet kunde inte sparas. Försök igen."
       }
     }
   },

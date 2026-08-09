@@ -12,6 +12,7 @@ import { groupJournalByVoucher } from "../../lib/ledger/group-vouchers";
 import { loadLedgerMode, saveLedgerMode, type LedgerMode } from "../../lib/ledger/ledger-mode-storage";
 import { buildLedgerVoucherViewModel, type LedgerVoucherViewModel } from "../../lib/ledger/ledger-voucher-view-model";
 import { buildVoucherLookup } from "../reports/voucher-link";
+import { EnrichmentConfirmShell } from "./enrichment-confirm-shell";
 import { LedgerVoucherDrawer } from "./ledger-voucher-drawer";
 import { LedgerVoucherOverview } from "./ledger-voucher-overview";
 
@@ -195,6 +196,7 @@ export function JournalView() {
           onToggle={handleToggle}
         />
       )}
+      <EnrichmentConfirmShell />
       <LedgerVoucherDrawer open={drawerOpen} viewModel={selectedViewModel} onClose={handleDrawerClose} />
     </div>
   );
