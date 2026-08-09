@@ -1106,6 +1106,16 @@
   - Task 8.1 remains unapproved pending repair. Task 8.2 sibling work may
     continue in disjoint files. See
     `.superpowers/sdd/w8-http-adapter-sol-review.md`.
+- Wave 8 Task 8.1 bounded-session blocker repaired; ready for Sol re-review.
+  - Session creation proactively sweeps expired entries and enforces a
+    configurable hard maximum of 1,000 sessions by default.
+  - At capacity, the next-expiring live session is evicted deterministically;
+    the existing 100-event per-session ring remains unchanged.
+  - TDD RED observed the missing capacity eviction. Focused HTTP adapter tests
+    passed 9/9; MCP/API/tests typechecks, focused Prettier, diagnostics, and
+    diff checks passed.
+  - Concurrent Task 8.2 security work was preserved and not staged by this
+    repair. Wave 8 remains NOT COMPLETE pending Sol re-review and Tasks 8.2+.
 
 ## Pending
 

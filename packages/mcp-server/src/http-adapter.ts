@@ -57,32 +57,57 @@ export type McpHttpAdapter = {
 
 export function createMcpHttpSessionStore({
   ttlMs,
+  maxSessions,
   now = Date.now,
 }: {
   ttlMs: number;
+  maxSessions: number;
   now?: () => number;
 }): McpHttpSessionStore {
   if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) {
     throw new RangeError("MCP session TTL must be a positive safe integer.");
+  }
+  if (!Number.isSafeInteger(maxSessions) || maxSessions <= 0) {
+    throw new RangeError("MCP maximum sessions must be a positive safe integer.");
   }
   const sessions = new Map<string, Session>();
 
   function get(id: string) {
     const session = sessions.get(id);
     if (session === undefined) return undefined;
-    if (now() >= session.expiresAt) {
+    const currentTime = now();
+    if (currentTime >= session.expiresAt) {
       sessions.delete(id);
       return undefined;
     }
-    session.expiresAt = now() + ttlMs;
+    session.expiresAt = currentTime + ttlMs;
     return session;
+  }
+
+  function sweepExpired(currentTime: number) {
+    for (const [id, session] of sessions) {
+      if (currentTime >= session.expiresAt) sessions.delete(id);
+    }
+  }
+
+  function evictNextExpiring() {
+    let candidate: Session | undefined;
+    for (const session of sessions.values()) {
+      if (candidate === undefined || session.expiresAt < candidate.expiresAt) {
+        candidate = session;
+      }
+    }
+    if (candidate !== undefined) sessions.delete(candidate.id);
   }
 
   return {
     create() {
+      const currentTime = now();
+      sweepExpired(currentTime);
+      if (sessions.size >= maxSessions) evictNextExpiring();
       const session: Session = {
         id: randomUUID(),
-        expiresAt: now() + ttlMs,
+        expiresAt: currentTime + ttlMs,
         nextEventId: 1,
         events: [],
         pending: Promise.resolve(),

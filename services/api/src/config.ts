@@ -84,6 +84,7 @@ export type ApiRuntimeConfig = {
     resourceUrl: string;
     authorizationServers: string[];
     sessionTtlMs: number;
+    maxSessions?: number;
   };
 };
 

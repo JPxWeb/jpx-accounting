@@ -226,7 +226,10 @@ function createMcpHttpRuntime(config: ApiRuntimeConfig) {
     (config.auth.jwksUrl === undefined ? [] : [config.auth.jwksUrl.replace(/\/keys\/?$/, "")]);
 
   return createMcpHttpAdapter({
-    sessions: createMcpHttpSessionStore({ ttlMs: config.mcp?.sessionTtlMs ?? 5 * 60_000 }),
+    sessions: createMcpHttpSessionStore({
+      ttlMs: config.mcp?.sessionTtlMs ?? 5 * 60_000,
+      maxSessions: config.mcp?.maxSessions ?? 1_000,
+    }),
     allowedOrigins,
     allowedHosts,
     resourceUrl,

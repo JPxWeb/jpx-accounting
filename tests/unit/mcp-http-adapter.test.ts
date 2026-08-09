@@ -30,10 +30,11 @@ function request(body: unknown, sessionId?: string) {
   });
 }
 
-function adapter(options: { ttlMs?: number; now?: () => number } = {}) {
+function adapter(options: { ttlMs?: number; maxSessions?: number; now?: () => number } = {}) {
   return createMcpHttpAdapter({
     sessions: createMcpHttpSessionStore({
       ttlMs: options.ttlMs ?? 60_000,
+      maxSessions: options.maxSessions ?? 1_000,
       ...(options.now === undefined ? {} : { now: options.now }),
     }),
     allowedOrigins: ["http://localhost:3002"],
@@ -133,6 +134,21 @@ test("expired sessions fail closed", async () => {
   });
 });
 
+test("session capacity deterministically evicts the oldest live session", () => {
+  let now = 1_000;
+  const sessions = createMcpHttpSessionStore({ ttlMs: 60_000, maxSessions: 2, now: () => now });
+  const oldest = sessions.create();
+  now += 1;
+  const retained = sessions.create();
+  now += 1;
+
+  const newest = sessions.create();
+
+  assert.equal(sessions.get(oldest.id), undefined);
+  assert.equal(sessions.get(retained.id)?.id, retained.id);
+  assert.equal(sessions.get(newest.id)?.id, newest.id);
+});
+
 test("invalid JSON-RPC and unsupported methods return protocol errors", async () => {
   const http = adapter();
   const invalid = await http.handlePost(request({ jsonrpc: "1.0", id: 1, method: "initialize" }));
@@ -174,7 +190,7 @@ test("concurrent session requests are buffered in arrival order", async () => {
     releaseFirst = resolve;
   });
   const http = createMcpHttpAdapter({
-    sessions: createMcpHttpSessionStore({ ttlMs: 60_000 }),
+    sessions: createMcpHttpSessionStore({ ttlMs: 60_000, maxSessions: 1_000 }),
     allowedOrigins: ["http://localhost:3002"],
     allowedHosts: ["localhost:3001"],
     resourceUrl: "http://localhost:3001/api/mcp",
