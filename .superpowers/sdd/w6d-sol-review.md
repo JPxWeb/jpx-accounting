@@ -37,8 +37,11 @@ quantity movement payloads reject a client-supplied `actorId`.
 ## Verification
 
 - Focused quantity contract/projection tests: PASS, 8/8.
-- Contracts, domain, and tests typechecks: PASS. The tests typecheck was retried
-  after concurrent Wave 6c route/client edits settled.
+- Contracts and domain package typechecks: PASS.
+- The aggregate tests typecheck is currently blocked by concurrent Wave 6c work:
+  `lists-trips-route.test.ts` references `AccountingApiClient.registerTrip()` and
+  `closeTrip()` before those sibling methods exist. No Wave 6d file causes the
+  failure.
 - Focused ESLint, Prettier, IDE diagnostics, and `git diff --check`: PASS.
 
 ## Clearance
