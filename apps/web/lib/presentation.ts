@@ -24,6 +24,29 @@ function getMoneyFormatter(locale: string, currency: string) {
   return formatter;
 }
 
+function getUnitCostFormatter(locale: string, currency: string, fractionDigits: number) {
+  const key = `unit-cost|${locale}|${currency}|${fractionDigits}`;
+  let formatter = numberFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency,
+      currencyDisplay: "code",
+      minimumFractionDigits: getMoneyFormatter(locale, currency).resolvedOptions().minimumFractionDigits,
+      maximumFractionDigits: fractionDigits,
+    });
+    numberFormatters.set(key, formatter);
+  }
+  return formatter;
+}
+
+function decimalPlaces(value: number) {
+  const [coefficient = "", exponentText] = value.toString().toLowerCase().split("e");
+  const coefficientPlaces = coefficient.split(".")[1]?.length ?? 0;
+  const exponent = exponentText ? Number(exponentText) : 0;
+  return Math.max(0, coefficientPlaces - exponent);
+}
+
 function getPercentFormatter(locale: string, fractionDigits: number) {
   const key = `percent|${locale}|${fractionDigits}`;
   let formatter = numberFormatters.get(key);
@@ -52,6 +75,13 @@ function getShortDateFormatter(locale: string) {
 
 export function formatMoney(value: number | undefined, profile: MoneyFormatProfile): string {
   return getMoneyFormatter(profile.locale, profile.currency).format(value ?? 0);
+}
+
+export function formatUnitCost(value: number, profile: MoneyFormatProfile): string {
+  const currencyDigits =
+    getMoneyFormatter(profile.locale, profile.currency).resolvedOptions().maximumFractionDigits ?? 0;
+  const fractionDigits = Math.min(20, Math.max(currencyDigits, decimalPlaces(value)));
+  return getUnitCostFormatter(profile.locale, profile.currency, fractionDigits).format(value);
 }
 
 export function formatShortDate(value: string | undefined, locale: string, fallback = "Today"): string {

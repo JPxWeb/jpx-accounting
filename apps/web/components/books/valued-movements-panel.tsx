@@ -3,7 +3,7 @@
 import type { ValuedMovementListRow } from "@jpx-accounting/contracts";
 import { useTranslations } from "next-intl";
 
-import { formatMoney } from "../../lib/presentation";
+import { formatMoney, formatUnitCost } from "../../lib/presentation";
 import { useWorkspaceProfile } from "../providers/workspace-profile-provider";
 
 export function ValuedMovementsPanel({
@@ -72,7 +72,7 @@ export function ValuedMovementsPanel({
                       {row.quantity} {row.uom}
                     </td>
                     <td className="py-3 text-right font-mono tabular-nums">
-                      {formatMoney(row.unitCost, { locale: profile.locale, currency: row.currency })}
+                      {formatUnitCost(row.unitCost, { locale: profile.locale, currency: row.currency })}
                     </td>
                     <td className="py-3 text-right font-mono tabular-nums">
                       {formatMoney(row.extendedAmount, { locale: profile.locale, currency: row.currency })}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatMoney, formatPercent, formatShortDate } from "../../apps/web/lib/presentation";
+import { formatMoney, formatPercent, formatShortDate, formatUnitCost } from "../../apps/web/lib/presentation";
 
 // Intl emits NBSP / narrow NBSP group and literal separators; normalize to
 // plain spaces so assertions stay readable (same approach as before the
@@ -15,6 +15,11 @@ test("formatMoney renders per workspace profile locale + currency", () => {
   assert.equal(normalize(formatMoney(0, { locale: "sv-SE", currency: "SEK" })), "0,00 SEK");
   assert.equal(normalize(formatMoney(undefined, { locale: "sv-SE", currency: "SEK" })), "0,00 SEK");
   assert.equal(normalize(formatMoney(1249.8, { locale: "en-GB", currency: "EUR" })), "EUR 1,249.80");
+});
+
+test("formatUnitCost preserves precision needed to reconcile a rounded total", () => {
+  assert.equal(normalize(formatUnitCost(15.555, { locale: "sv-SE", currency: "SEK" })), "15,555 SEK");
+  assert.equal(normalize(formatMoney(15.555 * 2, { locale: "sv-SE", currency: "SEK" })), "31,11 SEK");
 });
 
 test("formatShortDate renders a short date per locale", () => {
