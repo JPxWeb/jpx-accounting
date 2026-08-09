@@ -1,11 +1,13 @@
 import {
   tripClosedPayloadSchema,
+  tripLineEnrichmentPayloadSchema,
   tripRegisteredPayloadSchema,
   type LedgerEvent,
   type TripsListRow,
 } from "@jpx-accounting/contracts";
 
 import { buildLineEnrichmentsFromEvents } from "../enrichment-projections";
+import { buildJournal, collectLedgerLinesFromEvents } from "../projections";
 import { round2 } from "../store-shared";
 
 export type { TripsListRow } from "@jpx-accounting/contracts";
@@ -37,14 +39,23 @@ export function buildTripsList(events: LedgerEvent[]): TripsListRow[] {
     }
   }
 
+  const expenseByLineId = new Map(
+    buildJournal(collectLedgerLinesFromEvents(events)).flatMap((line) =>
+      line.lineId === undefined ? [] : [[line.lineId, round2(line.debit - line.credit)] as const],
+    ),
+  );
+
   for (const enrichment of buildLineEnrichmentsFromEvents(events)) {
     if (enrichment.superseded || enrichment.enrichmentType !== "trip") continue;
 
-    const { tripId, expenseAmount } = enrichment.payload;
-    if (typeof tripId !== "string" || typeof expenseAmount !== "number" || !Number.isFinite(expenseAmount)) continue;
+    const payload = tripLineEnrichmentPayloadSchema.safeParse(enrichment.payload);
+    if (!payload.success) continue;
 
-    const trip = trips.get(tripId);
-    if (trip) trip.expenseTotal = round2(trip.expenseTotal + expenseAmount);
+    const trip = trips.get(payload.data.tripId);
+    const expense = expenseByLineId.get(enrichment.lineId);
+    if (trip && expense !== undefined) {
+      trips.set(trip.id, { ...trip, expenseTotal: round2(trip.expenseTotal + expense) });
+    }
   }
 
   return [...trips.values()];

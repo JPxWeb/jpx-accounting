@@ -29,14 +29,34 @@ const trip = {
   endDate: "2026-08-03",
 } as const;
 
+function postedLine(lineId: string, debit: number): LedgerEvent {
+  return event(`evt_posted_${lineId}`, "PostedToLedger", {
+    lines: [
+      {
+        lineId,
+        voucherId: `voucher_${lineId}`,
+        accountNumber: "5800",
+        accountName: "Travel costs",
+        description: "Trip expense",
+        debit,
+        credit: 0,
+        vatCode: "NA",
+        bookedAt: "2026-08-03T10:00:00.000Z",
+        deductible: true,
+      },
+    ],
+  });
+}
+
 test("trip list totals expenses and retains closed trips", () => {
   const rows = buildTripsList([
     event("evt_trip", "TripRegistered", trip),
+    postedLine("ln_1", 250),
     event("evt_expense", "LineEnrichmentRecorded", {
       lineId: "ln_1",
       enrichmentId: "le_1",
       enrichmentType: "trip",
-      payload: { tripId: "trip_1", expenseAmount: 250 },
+      payload: trip,
     }),
     event("evt_closed", "TripClosed", { tripId: "trip_1" }),
   ]);
@@ -71,14 +91,21 @@ test("first trip registration remains authoritative during replay", () => {
   assert.equal(rows[0]?.status, "closed");
 });
 
-test("superseded trip expenses are replaced rather than double counted", () => {
+test("superseded trip assignments move their bound line amount", () => {
+  const replacementTrip = {
+    ...trip,
+    tripId: "trip_2",
+    purpose: "Supplier visit",
+  };
   const rows = buildTripsList([
     event("evt_trip", "TripRegistered", trip),
+    event("evt_trip_2", "TripRegistered", replacementTrip),
+    postedLine("ln_1", 300),
     event("evt_expense", "LineEnrichmentRecorded", {
       lineId: "ln_1",
       enrichmentId: "le_1",
       enrichmentType: "trip",
-      payload: { tripId: "trip_1", expenseAmount: 250 },
+      payload: trip,
     }),
     event("evt_superseded", "LineEnrichmentSuperseded", {
       lineId: "ln_1",
@@ -89,11 +116,12 @@ test("superseded trip expenses are replaced rather than double counted", () => {
       lineId: "ln_1",
       enrichmentId: "le_2",
       enrichmentType: "trip",
-      payload: { tripId: "trip_1", expenseAmount: 300 },
+      payload: replacementTrip,
     }),
   ]);
 
-  assert.equal(rows[0]?.expenseTotal, 300);
+  assert.equal(rows.find((row) => row.id === "trip_1")?.expenseTotal, 0);
+  assert.equal(rows.find((row) => row.id === "trip_2")?.expenseTotal, 300);
 });
 
 test("trip list builder is registered on the generic projection seam", () => {

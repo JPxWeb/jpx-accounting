@@ -467,15 +467,39 @@
   - Contracts, domain, and tests typechecks passed; focused lint, formatting,
     and diagnostics are clean.
   - Store/API/UI work remains unstarted pending the Wave 6c foundation review.
+- Wave 6c Tasks 6c.1–6c.2 Sol review: APPROVE_WITH_FIXES.
+  - Trip totals now resolve the amount from the canonical posted ledger line
+    bound by the enrichment wrapper's stable `lineId`; the locked trip payload
+    no longer depends on an out-of-contract `expenseAmount`.
+  - Active supersession moves one line amount between trip projections, and
+    projection row updates are immutable.
+  - Focused trip tests passed 9/9; contracts, domain, and tests typechecks,
+    ESLint, Prettier, diagnostics, and diff checks passed.
+  - No Opus escalation is required. Tasks 6c.3+ may proceed after the
+    review-fix commit. See `.superpowers/sdd/w6c-sol-review.md`.
+- Wave 6d quantity-inventory foundation was pipelined during the Wave 6c Sol
+  review and is ready for its own Sol checkpoint.
+  - Task 6d.1 strict quantity movement contracts: `60351b0`.
+  - Task 6d.2 pure per-SKU running-quantity projection: `505ca24`.
+  - Quantity payloads require stable movement/line identity and booking date;
+    strict parsing rejects valued `unitCost` and `currency` fields.
+  - First movement identity is authoritative, and running quantities remain
+    isolated per SKU.
+  - TDD RED was observed for both tasks; focused quantity tests passed 8/8.
+  - Contracts, domain, and tests typechecks passed; focused lint, formatting,
+    diagnostics, and diff checks are clean.
+  - Store/API/UI and optional Wave 6e valued inventory remain unstarted.
 
 ## In progress
 
 - Wave 6b Tasks 6b.4–6b.6 are cleared to proceed after the Task 6b.3 review-fix
   commit.
-- Wave 6c Tasks 6c.1–6c.2 are stopped at the Sol foundation checkpoint.
+- Wave 6c Tasks 6c.3+ are cleared to proceed after the foundation review-fix
+  commit.
+- Wave 6d Tasks 6d.1–6d.2 are stopped at the Sol foundation checkpoint.
 
 ## Pending
 
-- Wave 6b Tasks 6b.4–6b.6; Wave 6c Tasks 6c.3+ after foundation review; then
-  Waves 6d–8 in plan order (single feature branch; defer mid-wave PR to main
-  until program ready).
+- Wave 6b Tasks 6b.4–6b.6; Wave 6c Tasks 6c.3+; Wave 6d Tasks 6d.3+ after
+  foundation review; then Waves 6e–8 in plan order (single feature branch;
+  defer mid-wave PR to main until program ready).
