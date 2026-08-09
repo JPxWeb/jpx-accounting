@@ -683,14 +683,25 @@
     and visual comparison passed 20/20 without updating baselines.
   - Intent-author metadata and true 1510/2440 AR/AP posting remain explicitly
     deferred in the batch report/plan.
+- Wave 6c Opus gate repair is implemented in `6796c1b` and verified for Sol
+  re-review; Wave 6c remains NOT COMPLETE pending that verdict.
+  - Both trip planner refusals map to typed 422 responses; packet evidence ids
+    are required by the planner type.
+  - Approval consumes intent only through explicit
+    `enrichmentIntent: "consume"`; every other approval path clears unseen
+    intent inside the decision transaction.
+  - Post-post trip enrichment rejects unregistered trips and refuses a second
+    active trip on the same posted line; same-trip replay is idempotent.
+  - Centralized verification passed: focused seam tests 63/63, `pnpm check`,
+    strict `pnpm db:test` 110/110, `pnpm build:e2e`, and combined invoice/trip
+    E2E 12/12 across desktop and Pixel 7.
 
 ## In progress
 
 - Wave 6b awaits Sol re-review; do not mark complete until Sol clears the
   repaired atomic seam.
-- Wave 6c Task 6c.4 atomic seam repair must absorb the Wave 6c Opus findings
-  (error mapping first) before Sol re-review; Task 6c.5 remains deferred to the
-  centralized full/visual gate.
+- Wave 6c awaits Sol re-review of the repaired atomic seam; do not mark complete
+  until Sol clears it.
 - Wave 6d Task 6d.4, remaining writers, and the final gate are cleared to
   proceed after the Task 6d.3 review.
 

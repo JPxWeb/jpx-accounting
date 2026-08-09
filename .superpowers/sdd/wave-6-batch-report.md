@@ -574,6 +574,7 @@ Branch: `feat/ledger-overview-enrichments-mcp`
 Base review: `97be5a3`
 Scope: Sol-requested Task 6c.4 repair
 Checkpoint: **READY FOR SOL RE-REVIEW; WAVE 6C NOT COMPLETE**
+Implementation: `6796c1b`
 
 ## Repair
 
@@ -595,6 +596,11 @@ Checkpoint: **READY FOR SOL RE-REVIEW; WAVE 6C NOT COMPLETE**
   deselected workflow before approval.
 - The existing post-post advisor confirmation flow remains covered against a
   real posted `ln_` target and still never posts a second voucher.
+- Opus medium findings are closed: packet evidence ids are required by the
+  planner type; approval intent consumption is explicit and fails closed unless
+  the presenting surface sends `enrichmentIntent: "consume"`; post-post trip
+  enrichment rejects unregistered trips; and a line already assigned to a
+  different active trip is rejected until that enrichment is superseded.
 
 ## TDD and verification
 
@@ -613,6 +619,9 @@ Checkpoint: **READY FOR SOL RE-REVIEW; WAVE 6C NOT COMPLETE**
 - `pnpm build:e2e` passed. Focused trip E2E passed 4/4 on desktop and Pixel 7,
   proving the pre-post fields survive approval and the post-post real-line
   confirmation path remains intact.
+- Centralized rerun after `6796c1b`: focused invoice/trip unit tests passed
+  63/63, `pnpm check` passed, strict `pnpm db:test` passed 110/110, and the
+  combined invoice + trip E2E passed 12/12 across desktop and Pixel 7.
 
 No PR was opened, `main` was not touched, and Wave 6e was not started. Stop for
 Sol re-review; do not mark Wave 6c complete before the centralized full/visual
@@ -625,6 +634,7 @@ Branch: `feat/ledger-overview-enrichments-mcp`
 Base review: `b9372df`
 Scope: Sol/Opus-requested Wave 6b repair
 Checkpoint: **READY FOR SOL RE-REVIEW; WAVE 6B NOT COMPLETE**
+Implementation: `6796c1b`
 
 ## Repair
 
