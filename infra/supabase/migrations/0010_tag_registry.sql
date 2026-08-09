@@ -9,3 +9,7 @@ create table if not exists ledger.tag_definitions (
   check (length(trim(id)) > 0),
   check (length(trim(name)) > 0)
 );
+
+insert into ledger.tag_definitions (id, organization_id, workspace_id, name)
+values ('tag_travel', 'org_jpx', 'workspace_main', 'Travel')
+on conflict do nothing;

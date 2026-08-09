@@ -22,17 +22,20 @@ test("default tag registry is bounded and includes the planned travel tag", () =
 });
 
 test("planVoucherTagsAppend rejects more than 10 tagIds", () => {
-  const tooMany = Array.from({ length: 11 }, () => "tag_travel");
+  const definitions = Array.from({ length: 11 }, (_, index) => ({
+    id: `tag_${index}`,
+    name: `Tag ${index}`,
+  }));
 
   assert.throws(
     () =>
       planVoucherTagsAppend(
         {
           voucherId: "voucher_1",
-          tagIds: tooMany,
+          tagIds: definitions.map((tag) => tag.id),
           mode: "add",
-          existingActiveTagCount: 0,
-          tagDefinitions: DEFAULT_TAG_DEFINITIONS,
+          existingActiveTagIds: [],
+          tagDefinitions: definitions,
           actorId: "user:test",
         },
         scope,
@@ -49,7 +52,7 @@ test("planVoucherTagsAppend rejects unknown tag ids and voucher overflow", () =>
           voucherId: "voucher_1",
           tagIds: ["tag_unbounded"],
           mode: "add",
-          existingActiveTagCount: 0,
+          existingActiveTagIds: [],
           tagDefinitions: DEFAULT_TAG_DEFINITIONS,
           actorId: "user:test",
         },
@@ -64,8 +67,11 @@ test("planVoucherTagsAppend rejects unknown tag ids and voucher overflow", () =>
           voucherId: "voucher_1",
           tagIds: ["tag_travel"],
           mode: "add",
-          existingActiveTagCount: 50,
-          tagDefinitions: DEFAULT_TAG_DEFINITIONS,
+          existingActiveTagIds: Array.from({ length: 50 }, (_, index) => `tag_${index}`),
+          tagDefinitions: [
+            ...DEFAULT_TAG_DEFINITIONS,
+            ...Array.from({ length: 50 }, (_, index) => ({ id: `tag_${index}`, name: `Tag ${index}` })),
+          ],
           actorId: "user:test",
         },
         scope,
@@ -80,7 +86,7 @@ test("planVoucherTagsAppend emits only an append-only tag event", () => {
       voucherId: "voucher_1",
       tagIds: ["tag_travel", "tag_travel"],
       mode: "add",
-      existingActiveTagCount: 0,
+      existingActiveTagIds: [],
       tagDefinitions: DEFAULT_TAG_DEFINITIONS,
       actorId: "user:test",
     },
@@ -94,6 +100,34 @@ test("planVoucherTagsAppend emits only an append-only tag event", () => {
     plan.events.some((event) => event.eventType === "PostedToLedger"),
     false,
   );
+});
+
+test("planVoucherTagsAppend emits only effective tag changes", () => {
+  const repeatedAdd = planVoucherTagsAppend(
+    {
+      voucherId: "voucher_1",
+      tagIds: ["tag_travel"],
+      mode: "add",
+      existingActiveTagIds: ["tag_travel"],
+      tagDefinitions: DEFAULT_TAG_DEFINITIONS,
+      actorId: "user:test",
+    },
+    scope,
+  );
+  const inactiveRemove = planVoucherTagsAppend(
+    {
+      voucherId: "voucher_1",
+      tagIds: ["tag_travel"],
+      mode: "remove",
+      existingActiveTagIds: [],
+      tagDefinitions: DEFAULT_TAG_DEFINITIONS,
+      actorId: "user:test",
+    },
+    scope,
+  );
+
+  assert.deepEqual(repeatedAdd.events, []);
+  assert.deepEqual(inactiveRemove.events, []);
 });
 
 test("buildVoucherTagsFromEvents derives active tags without rewriting history", () => {

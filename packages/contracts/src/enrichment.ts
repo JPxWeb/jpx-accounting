@@ -32,7 +32,7 @@ export const externalReferenceRemovedPayloadSchema = z.object({
 
 const voucherTagsPayloadSchema = z.object({
   voucherId: z.string().min(1),
-  tagIds: z.array(z.string().min(1)),
+  tagIds: z.array(z.string().min(1)).min(1).max(10),
   actorId: z.string().min(1),
 });
 

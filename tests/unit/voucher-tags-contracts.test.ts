@@ -28,7 +28,7 @@ test("voucher tag payloads require voucher, tags, and actor attribution", () => 
   assert.equal(removed.actorId, "user:def");
 });
 
-test("voucher tag payloads reject missing and empty identifiers", () => {
+test("voucher tag payloads reject missing, empty, and unbounded identifiers", () => {
   assert.throws(() =>
     voucherTagsAddedPayloadSchema.parse({
       voucherId: "",
@@ -40,6 +40,20 @@ test("voucher tag payloads reject missing and empty identifiers", () => {
     voucherTagsRemovedPayloadSchema.parse({
       voucherId: "voucher_1",
       tagIds: [""],
+      actorId: "user:abc",
+    }),
+  );
+  assert.throws(() =>
+    voucherTagsAddedPayloadSchema.parse({
+      voucherId: "voucher_1",
+      tagIds: [],
+      actorId: "user:abc",
+    }),
+  );
+  assert.throws(() =>
+    voucherTagsAddedPayloadSchema.parse({
+      voucherId: "voucher_1",
+      tagIds: Array.from({ length: 11 }, (_, index) => `tag_${index}`),
       actorId: "user:abc",
     }),
   );

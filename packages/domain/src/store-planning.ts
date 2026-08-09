@@ -174,7 +174,7 @@ export function planVoucherTagsAppend(
     voucherId: string;
     tagIds: string[];
     mode: "add" | "remove";
-    existingActiveTagCount: number;
+    existingActiveTagIds: readonly string[];
     tagDefinitions: readonly TagDefinition[];
     actorId: string;
   },
@@ -189,14 +189,20 @@ export function planVoucherTagsAppend(
   const unknownTagId = uniqueTagIds.find((tagId) => !registeredTagIds.has(tagId));
   if (unknownTagId) throw new Error(`Tag id is not in the registry: ${unknownTagId}`);
 
-  if (input.mode === "add" && input.existingActiveTagCount + uniqueTagIds.length > MAX_TAGS_PER_VOUCHER) {
+  const activeTagIds = new Set(input.existingActiveTagIds);
+  const effectiveTagIds = uniqueTagIds.filter((tagId) =>
+    input.mode === "add" ? !activeTagIds.has(tagId) : activeTagIds.has(tagId),
+  );
+  if (effectiveTagIds.length === 0) return { events: [] };
+
+  if (input.mode === "add" && activeTagIds.size + effectiveTagIds.length > MAX_TAGS_PER_VOUCHER) {
     throw new Error(`Bounded voucher tag limit is ${MAX_TAGS_PER_VOUCHER}`);
   }
 
   const payloadSchema = input.mode === "add" ? voucherTagsAddedPayloadSchema : voucherTagsRemovedPayloadSchema;
   const payload = payloadSchema.parse({
     voucherId: input.voucherId,
-    tagIds: uniqueTagIds,
+    tagIds: effectiveTagIds,
     actorId: input.actorId,
   });
 
