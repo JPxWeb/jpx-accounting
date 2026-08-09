@@ -339,13 +339,20 @@
     422 response is not surfaced or obscured by Task 5.9.
   - View-model unit tests passed 5/5; web/tests typechecks, targeted lint and
     formatting, `pnpm build:e2e`, and focused E2E passed 2/2.
+- Task 5.11 pre-post and line-target integration conformance `d02b503`.
+  - Memory/Postgres parity proves pre-post approval consumes its intent with
+    exactly one posting and post-post line work-item confirmation never reposts.
+  - TDD registry RED was observed; focused Memory conformance passed 16/16.
+  - Strict `pnpm db:test` applied migrations `0001`–`0011` and passed 95/95
+    integration tests, including both new scenarios across both stores.
 
 ## In progress
 
 - Sol review of Task 5.9 line identity and VAT affordances.
+- Sol review of Task 5.11 integration conformance.
 
 ## Pending
 
-- Wave 5 Tasks 5.11–5.12 after their dependencies.
+- Task 5.12 Wave 5 final gate, deferred until Task 5.9 receives Sol clearance.
 - Waves 6–8 (single feature branch; defer mid-wave PR to main until program
   ready).
