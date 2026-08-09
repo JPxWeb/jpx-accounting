@@ -1002,9 +1002,21 @@
     shared branch, so `36dfa7d` is already the current descendant containing
     both; no history rewrite or duplicate cherry-pick was needed.
   - Task 7.5, Wave 8 HTTP transport, PR creation, and `main` remain untouched.
+- Wave 7 Task 7.4 MCP documentation Sol review: **REQUEST_CHANGES**.
+  - The documented 13 names exactly match `MCP_TOOL_NAMES`, exclude direct
+    mutation tools, preserve the human approval/confirmation gates, correctly
+    describe the opaque review-intent version, and defer HTTP to Wave 8.
+  - The setup behavior does not match the implementation: `src/index.ts`
+    connects an empty `McpServer`, constructs no authenticated API client, and
+    registers none of the 13 tools. It therefore starts without the documented
+    required environment and exposes zero callable tools.
+  - Focused MCP tests passed 9/9 and targeted documentation Prettier passed,
+    but those tests cover the inventory and three standalone handlers rather
+    than stdio registration. See `.superpowers/sdd/w7-docs-sol-review.md`.
 
 ## Pending
 
-- Sol review of Wave 7 Task 7.4. Do not start Task 7.5 until that gate is
-  approved (single feature branch; defer mid-wave PR to main until program
-  ready).
+- Resolve the Task 7.4 stdio setup/runtime mismatch, then request Sol
+  re-review. Task 7.5 may proceed as a sibling gate, but cannot approve the
+  Wave 7 deliverable while this finding remains open. Keep Wave 8, PR creation,
+  and `main` deferred.
