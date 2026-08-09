@@ -1,6 +1,7 @@
 import type { LedgerEvent } from "@jpx-accounting/contracts";
 
 import { buildSkuMovementList } from "./workflows/inventory-quantity";
+import { buildValuedMovementList } from "./workflows/inventory-valued";
 import { buildOpenInvoicesList, buildPaymentHistoryList } from "./workflows/invoices";
 import { buildProjectsList } from "./workflows/projects";
 import { buildTripsList } from "./workflows/trips";
@@ -21,5 +22,6 @@ export function buildListProjection(kind: string, events: LedgerEvent[]): ListPr
   if (kind === "payment") return buildPaymentHistoryList(events);
   if (kind === "trip") return buildTripsList(events);
   if (kind === "sku_movement") return buildSkuMovementList(events);
+  if (kind === "valued_movement") return buildValuedMovementList(events);
   return [];
 }

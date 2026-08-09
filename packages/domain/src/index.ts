@@ -30,6 +30,7 @@ export * from "./tax/calendar";
 export * from "./vat/boxes";
 export * from "./vat/regime";
 export * from "./workflows/inventory-quantity";
+export * from "./workflows/inventory-valued";
 export * from "./workflows/invoices";
 export * from "./workflows/projects";
 export * from "./workflows/trips";
