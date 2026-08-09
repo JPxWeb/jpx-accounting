@@ -2,7 +2,7 @@
 
 **Purpose:** the WHERE-IS-WHAT index for this monorepo — route inventories, module export maps, event-append sites, journey→files traces, and the gotchas that mislead newcomers (human or AI). Complements [CLAUDE.md](../CLAUDE.md) / [AGENTS.md](../AGENTS.md) (conventions + commands) and [architecture.md](architecture.md) (runtime shape); supersedes the short "Repo map" table in [CONTRIBUTING.md](CONTRIBUTING.md) for navigation purposes.
 
-**Verified against code:** 2026-08-09 (commit `0caaec8` + working tree). Line numbers drift — treat them as anchors, not gospel. Update this file when adding routes, events, packages, or storage keys.
+**Verified against code:** 2026-08-09 (commit `40ebca5` + working tree). Line numbers drift — treat them as anchors, not gospel. Update this file when adding routes, events, packages, or storage keys.
 
 ---
 
@@ -10,20 +10,20 @@
 
 `pnpm-workspace.yaml` globs: `apps/*`, `services/*`, `packages/*`. Root: `jpx-accounting` (private, pnpm 10.29.2, Node ≥24).
 
-| Path                             | Package                 | Responsibility                                                                         | Internal deps (`@jpx-accounting/*`)                                                         |
-| -------------------------------- | ----------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `apps/web`                       | `web`                   | Next 16 App Router PWA — all screens, client persistence, api-proxy                    | advisor, api-client, contracts, domain, reporting, ui-tokens                                |
-| `services/api`                   | `api`                   | Hono 4 HTTP API — routing, auth, rate limits, blob/DocIntel/advisor wiring             | advisor, ai-core, contracts, document-intelligence, domain, persistence-postgres, reporting |
-| `packages/contracts`             | `contracts`             | Zod v4 schema + type source of truth (the only leaf)                                   | —                                                                                           |
-| `packages/domain`                | `domain`                | Event-sourced ledger core: store, projections, hash chain, SIE, VAT, CoA, tax calendar | contracts                                                                                   |
-| `packages/reporting`             | `reporting`             | KPIs, narrative facts, six observation detectors over a `ReportPack`                   | contracts                                                                                   |
-| `packages/advisor`               | `advisor`               | Retrieval (BM25-lite), corpus, grounding, injection sanitizing, demo turn              | contracts, reporting                                                                        |
-| `packages/ai-core`               | `ai-core`               | `AiRuntime` factory + embeddings (OpenAI SDK against Azure)                            | contracts, domain                                                                           |
-| `packages/api-client`            | `api-client`            | Typed fetch client with Zod response validation + demo fallback store                  | contracts, domain                                                                           |
-| `packages/mcp-server`            | `mcp-server`            | MCP SDK stdio adapter — authenticated reads, capture, and proposal-only tools          | api-client                                                                                  |
-| `packages/document-intelligence` | `document-intelligence` | Azure Document Intelligence OCR client + field→contract mapping                        | contracts, domain                                                                           |
-| `packages/persistence-postgres`  | `persistence-postgres`  | `PostgresLedgerStore` + pgvector knowledge tables + pool client                        | advisor, contracts, domain                                                                  |
-| `packages/ui-tokens`             | `ui-tokens`             | Brand/theme token constants + `styles.css`                                             | —                                                                                           |
+| Path                             | Package                 | Responsibility                                                                               | Internal deps (`@jpx-accounting/*`)                                                         |
+| -------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `apps/web`                       | `web`                   | Next 16 App Router PWA — all screens, client persistence, api-proxy                          | advisor, api-client, contracts, domain, reporting, ui-tokens                                |
+| `services/api`                   | `api`                   | Hono 4 HTTP API — routing, auth, rate limits, blob/DocIntel/advisor wiring                   | advisor, ai-core, contracts, document-intelligence, domain, persistence-postgres, reporting |
+| `packages/contracts`             | `contracts`             | Zod v4 schema + type source of truth (the only leaf)                                         | —                                                                                           |
+| `packages/domain`                | `domain`                | Event-sourced ledger core: store, projections, hash chain, SIE, VAT, CoA, tax calendar       | contracts                                                                                   |
+| `packages/reporting`             | `reporting`             | KPIs, narrative facts, six observation detectors over a `ReportPack`                         | contracts                                                                                   |
+| `packages/advisor`               | `advisor`               | Retrieval (BM25-lite), corpus, grounding, injection sanitizing, demo turn                    | contracts, reporting                                                                        |
+| `packages/ai-core`               | `ai-core`               | `AiRuntime` factory + embeddings (OpenAI SDK against Azure)                                  | contracts, domain                                                                           |
+| `packages/api-client`            | `api-client`            | Typed fetch client with Zod response validation + demo fallback store                        | contracts, domain                                                                           |
+| `packages/mcp-server`            | `mcp-server`            | MCP SDK stdio + Streamable HTTP adapters — authenticated reads, capture, proposal-only tools | api-client                                                                                  |
+| `packages/document-intelligence` | `document-intelligence` | Azure Document Intelligence OCR client + field→contract mapping                              | contracts, domain                                                                           |
+| `packages/persistence-postgres`  | `persistence-postgres`  | `PostgresLedgerStore` + pgvector knowledge tables + pool client                              | advisor, contracts, domain                                                                  |
+| `packages/ui-tokens`             | `ui-tokens`             | Brand/theme token constants + `styles.css`                                                   | —                                                                                           |
 
 **Dependency direction** (strict, no cycles):
 
@@ -59,52 +59,56 @@ Entry: [services/api/src/index.ts](../services/api/src/index.ts) (telemetry → 
 
 ### Routes
 
-| Method | Path                                                  | Purpose                                                                     | Backing dep                                                 |
-| ------ | ----------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| GET    | `/health`                                             | Liveness `{ok, runtimeMode}` (public, outside `/api`)                       | none                                                        |
-| GET    | `/ready`                                              | Readiness — `pingLedgerStore` + `isAiRuntimeOperational` (public)           | store + aiRuntime                                           |
-| GET    | `/api/runtime-info`                                   | AI Act Art. 50 transparency — **public even with auth on**                  | `aiMetadata`                                                |
-| GET    | `/api/workspace`                                      | Full `WorkspaceSnapshot`                                                    | `store.getSnapshot()`                                       |
-| GET    | `/api/reviews/feed`                                   | Review queue                                                                | `store.getReviewFeed()`                                     |
-| GET    | `/api/reports/journal`                                | Journal lines, optional `?from=&to=`                                        | `store.getReports()`                                        |
-| GET    | `/api/reports/general-ledger`                         | Balances                                                                    | `store.getReports()`                                        |
-| GET    | `/api/reports/trial-balance`                          | ⚠ **identical handler** to general-ledger (`reportBalances`)                | `store.getReports()`                                        |
-| GET    | `/api/reports/vat-prep`                               | VAT projection rows                                                         | `store.getReports()`                                        |
-| GET    | `/api/reports/pack`                                   | ONE `ReportPack` per `?period=` token                                       | `store.getReportPack()`                                     |
-| GET    | `/api/integrity`                                      | Hash-chain summary (`verifyPayloads: true`)                                 | `summarizeEventIntegrity(store.getEvents())`                |
-| POST   | `/api/evidence`                                       | Create evidence (201); actor server-derived                                 | `store.createEvidence()`                                    |
-| POST   | `/api/evidence/compose`                               | Compose multi-part evidence packet (201)                                    | `store.composeEvidence()`                                   |
-| POST   | `/api/uploads/init`                                   | Mint upload URL (Azure SAS or stub)                                         | `blobUploader.initUpload()`                                 |
-| PUT    | `/api/uploads/:uploadId`                              | **Stub uploader only** — accept-and-discard bytes                           | `blobUploader.kind === "stub"`                              |
-| POST   | `/api/evidence/:id/extract`                           | DocIntel on real blobs, persist refreshed extraction, fail-soft             | DocIntel + `mintReadSas` + `store.updateEvidenceExtraction` |
-| GET    | `/api/evidence/:id`                                   | Evidence context + review join                                              | `store.getEvidenceContext`                                  |
-| GET    | `/api/evidence/:id/file-url`                          | Short-lived read SAS; 404 `preview_unavailable` unless azure uploader       | `blobUploader.mintReadSas`                                  |
-| POST   | `/api/vouchers/:id/suggest`                           | Deterministic accounting suggestion                                         | `store.suggestVoucher()`                                    |
-| POST   | `/api/vouchers/:id/external-references`               | Link an HTTPS external reference (201); actor server-derived                | `store.appendVoucherExternalReference()`                    |
-| POST   | `/api/vouchers/:id/external-references/:refId/unlink` | Append an unlink event; never delete reference history                      | `store.removeVoucherExternalReference()`                    |
-| POST   | `/api/vouchers/:id/tags`                              | Append bounded registry-backed tag additions/removals; actor server-derived | `store.appendVoucherTags()`                                 |
-| POST   | `/api/reviews/:id/approve`                            | Approve → posts to ledger                                                   | `postReviewDecision(..., "approve")`                        |
-| POST   | `/api/reviews/:id/reject`                             | Reject                                                                      | `postReviewDecision(..., "reject")`                         |
-| POST   | `/api/reviews/:id/book-without-vat`                   | Book without VAT deduction                                                  | `postReviewDecision(..., "book-without-vat")`               |
-| POST   | `/api/reviews/:id/enrichment-intents`                 | Attach a server-attributed pre-post enrichment intent to an open review     | `store.attachReviewEnrichmentIntent()`                      |
-| GET    | `/api/reviews/:id/enrichment-intents`                 | Fetch the pending pre-post enrichment intent                                | `store.getReviewEnrichmentIntent()`                         |
-| POST   | `/api/review-proposals`                               | Validate an open review/voucher pair and attach a pending proposal intent   | `store.attachReviewEnrichmentIntent()`                      |
-| POST   | `/api/enrichment-work-items`                          | Propose a server-attributed post-post metadata change (201)                 | `store.proposeEnrichmentWorkItem()`                         |
-| GET    | `/api/enrichment-work-items/:id`                      | Fetch one enrichment work item                                              | `store.getEnrichmentWorkItem()`                             |
-| POST   | `/api/enrichment-work-items/:id/confirm`              | Explicitly confirm through the append-only enrichment planner               | `store.confirmEnrichmentWorkItem()`                         |
-| POST   | `/api/enrichment-work-items/:id/reject`               | Explicitly reject without changing ledger history                           | `store.rejectEnrichmentWorkItem()`                          |
-| POST   | `/api/imports/sie`                                    | Raw SIE 4 bytes → parse → import                                            | `decodeSieBuffer` + `parseSie` + `store.importSie`          |
-| GET    | `/api/exports/sie`                                    | PC8/CP437 `.se` download (`charset=ibm437`)                                 | `buildSieExport` + `encodePc8`                              |
-| POST   | `/api/advisor/chat`                                   | AI SDK 7 UI-message SSE stream                                              | `advisorChat` handler                                       |
-| POST   | `/api/knowledge/query`                                | BM25-lite (or pgvector) retrieval                                           | `queryKnowledge()`                                          |
-| POST   | `/api/simulations/run`                                | What-if approval simulation (201)                                           | `store.runSimulation()`                                     |
-| POST   | `/api/close-runs`                                     | Returns current close run (201)                                             | `store.getCloseRun()`                                       |
-| GET    | `/api/close-runs/:id`                                 | Only current close-run id valid; else 404                                   | `store.getCloseRun()`                                       |
-| POST   | `/api/compliance-watch/refresh`                       | Re-run detectors; `?includeResolved=true`                                   | `store.refreshComplianceAlerts()`                           |
-| GET    | `/api/settings/company`                               | Company settings or `null`                                                  | `store.getCompanySettings()`                                |
-| PUT    | `/api/settings/company`                               | Save company settings                                                       | `store.putCompanySettings()`                                |
-| POST   | `/api/testing/reset`                                  | Swap in fresh `MemoryLedgerStore` — 404 unless `allowTestReset && demo`     | in-proc                                                     |
-| POST   | `/mcp`                                                | **Demo mode only** — echo stub listing tool names (no real MCP server)      | none                                                        |
+| Method | Path                                                  | Purpose                                                                         | Backing dep                                                 |
+| ------ | ----------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| GET    | `/health`                                             | Liveness `{ok, runtimeMode}` (public, outside `/api`)                           | none                                                        |
+| GET    | `/ready`                                              | Readiness — `pingLedgerStore` + `isAiRuntimeOperational` (public)               | store + aiRuntime                                           |
+| GET    | `/api/runtime-info`                                   | AI Act Art. 50 transparency — **public even with auth on**                      | `aiMetadata`                                                |
+| GET    | `/api/workspace`                                      | Full `WorkspaceSnapshot`                                                        | `store.getSnapshot()`                                       |
+| GET    | `/api/reviews/feed`                                   | Review queue                                                                    | `store.getReviewFeed()`                                     |
+| GET    | `/api/reports/journal`                                | Journal lines, optional `?from=&to=`                                            | `store.getReports()`                                        |
+| GET    | `/api/reports/general-ledger`                         | Balances                                                                        | `store.getReports()`                                        |
+| GET    | `/api/reports/trial-balance`                          | ⚠ **identical handler** to general-ledger (`reportBalances`)                    | `store.getReports()`                                        |
+| GET    | `/api/reports/vat-prep`                               | VAT projection rows                                                             | `store.getReports()`                                        |
+| GET    | `/api/reports/pack`                                   | ONE `ReportPack` per `?period=` token                                           | `store.getReportPack()`                                     |
+| GET    | `/api/integrity`                                      | Hash-chain summary (`verifyPayloads: true`)                                     | `summarizeEventIntegrity(store.getEvents())`                |
+| POST   | `/api/evidence`                                       | Create evidence (201); actor server-derived                                     | `store.createEvidence()`                                    |
+| POST   | `/api/evidence/compose`                               | Compose multi-part evidence packet (201)                                        | `store.composeEvidence()`                                   |
+| POST   | `/api/uploads/init`                                   | Mint upload URL (Azure SAS or stub)                                             | `blobUploader.initUpload()`                                 |
+| PUT    | `/api/uploads/:uploadId`                              | **Stub uploader only** — accept-and-discard bytes                               | `blobUploader.kind === "stub"`                              |
+| POST   | `/api/evidence/:id/extract`                           | DocIntel on real blobs, persist refreshed extraction, fail-soft                 | DocIntel + `mintReadSas` + `store.updateEvidenceExtraction` |
+| GET    | `/api/evidence/:id`                                   | Evidence context + review join                                                  | `store.getEvidenceContext`                                  |
+| GET    | `/api/evidence/:id/file-url`                          | Short-lived read SAS; 404 `preview_unavailable` unless azure uploader           | `blobUploader.mintReadSas`                                  |
+| POST   | `/api/vouchers/:id/suggest`                           | Deterministic accounting suggestion                                             | `store.suggestVoucher()`                                    |
+| POST   | `/api/vouchers/:id/external-references`               | Link an HTTPS external reference (201); actor server-derived                    | `store.appendVoucherExternalReference()`                    |
+| POST   | `/api/vouchers/:id/external-references/:refId/unlink` | Append an unlink event; never delete reference history                          | `store.removeVoucherExternalReference()`                    |
+| POST   | `/api/vouchers/:id/tags`                              | Append bounded registry-backed tag additions/removals; actor server-derived     | `store.appendVoucherTags()`                                 |
+| POST   | `/api/reviews/:id/approve`                            | Approve → posts to ledger                                                       | `postReviewDecision(..., "approve")`                        |
+| POST   | `/api/reviews/:id/reject`                             | Reject                                                                          | `postReviewDecision(..., "reject")`                         |
+| POST   | `/api/reviews/:id/book-without-vat`                   | Book without VAT deduction                                                      | `postReviewDecision(..., "book-without-vat")`               |
+| POST   | `/api/reviews/:id/enrichment-intents`                 | Attach a server-attributed pre-post enrichment intent to an open review         | `store.attachReviewEnrichmentIntent()`                      |
+| GET    | `/api/reviews/:id/enrichment-intents`                 | Fetch the pending pre-post enrichment intent                                    | `store.getReviewEnrichmentIntent()`                         |
+| POST   | `/api/review-proposals`                               | Validate an open review/voucher pair and attach a pending proposal intent       | `store.attachReviewEnrichmentIntent()`                      |
+| POST   | `/api/enrichment-work-items`                          | Propose a server-attributed post-post metadata change (201)                     | `store.proposeEnrichmentWorkItem()`                         |
+| GET    | `/api/enrichment-work-items/:id`                      | Fetch one enrichment work item                                                  | `store.getEnrichmentWorkItem()`                             |
+| POST   | `/api/enrichment-work-items/:id/confirm`              | Explicitly confirm through the append-only enrichment planner                   | `store.confirmEnrichmentWorkItem()`                         |
+| POST   | `/api/enrichment-work-items/:id/reject`               | Explicitly reject without changing ledger history                               | `store.rejectEnrichmentWorkItem()`                          |
+| POST   | `/api/imports/sie`                                    | Raw SIE 4 bytes → parse → import                                                | `decodeSieBuffer` + `parseSie` + `store.importSie`          |
+| GET    | `/api/exports/sie`                                    | PC8/CP437 `.se` download (`charset=ibm437`)                                     | `buildSieExport` + `encodePc8`                              |
+| POST   | `/api/advisor/chat`                                   | AI SDK 7 UI-message SSE stream                                                  | `advisorChat` handler                                       |
+| POST   | `/api/knowledge/query`                                | BM25-lite (or pgvector) retrieval                                               | `queryKnowledge()`                                          |
+| POST   | `/api/simulations/run`                                | What-if approval simulation (201)                                               | `store.runSimulation()`                                     |
+| POST   | `/api/close-runs`                                     | Returns current close run (201)                                                 | `store.getCloseRun()`                                       |
+| GET    | `/api/close-runs/:id`                                 | Only current close-run id valid; else 404                                       | `store.getCloseRun()`                                       |
+| POST   | `/api/compliance-watch/refresh`                       | Re-run detectors; `?includeResolved=true`                                       | `store.refreshComplianceAlerts()`                           |
+| GET    | `/api/settings/company`                               | Company settings or `null`                                                      | `store.getCompanySettings()`                                |
+| PUT    | `/api/settings/company`                               | Save company settings                                                           | `store.putCompanySettings()`                                |
+| POST   | `/api/testing/reset`                                  | Swap in fresh `MemoryLedgerStore` — 404 unless `allowTestReset && demo`         | in-proc                                                     |
+| POST   | `/api/mcp`                                            | Streamable HTTP JSON-RPC (`initialize`, `tools/list`, `tools/call`, …)          | `McpHttpAdapter.handlePost()`                               |
+| GET    | `/api/mcp`                                            | Session SSE replay + live delivery (`Mcp-Session-Id`, optional `Last-Event-ID`) | `McpHttpAdapter.handleGet()`                                |
+| GET    | `/.well-known/oauth-protected-resource`               | RFC 9728 MCP resource metadata (header bearer only)                             | `registerMcpHttpRoutes`                                     |
+
+⚠ Retired: `POST /mcp` demo echo stub (Wave 8) — route removed; callers receive 404.
 
 ⚠ Retired: `POST /api/assistant/sessions` (removed Phase 6, superseded by `/api/advisor/chat`) — but `store.answerAssistantQuestion()` + `packages/domain/src/assistant.ts` still exist with no live route (see §12).
 
@@ -115,7 +119,7 @@ Entry: [services/api/src/index.ts](../services/api/src/index.ts) (telemetry → 
 - **`routes/review-enrichment-intents.ts`** — `registerReviewEnrichmentIntentRoutes`; attach/get pre-post intents with route/body identity validation and server-derived attribution.
 - **`routes/review-proposals.ts`** — `registerReviewProposalRoutes`; open-review/voucher guard, intent attachment, and review-queue deep link.
 - **`routes/voucher-external-references.ts`** — `registerVoucherExternalReferenceRoutes`; direct human HTTPS link/unlink with server-derived actor attribution.
-- **`routes/voucher-tags.ts`** — `registerVoucherTagRoutes`; direct human registry-backed tag add/remove with server-derived actor attribution and typed 404/422 mappings.
+- **`routes/mcp-http.ts`** — `registerMcpHttpRoutes`; Origin/Host guards, RFC 9728 metadata, POST+GET `/api/mcp` (no DELETE in v1).
 - **`advisor/chat.ts`** — `createAdvisorChatHandler`, `validateProposalAgainstStore`, `executeReviewApproval`, `buildSystemPrompt`, `selectChatPassages`, `truncateAdvisorHistory`, `resolveAdvisorStreamLimits`; bounds: `MAX_ADVISOR_MESSAGES` 40, `MAX_ADVISOR_MESSAGE_BYTES` 8 KiB, model history 20 msgs / 96 KiB, `ADVISOR_VECTOR_MIN_SIMILARITY` 0.25.
 - **`advisor/model.ts`** — `createAdvisorModel(config)` (Azure via `@ai-sdk/azure`).
 - **`knowledge.ts`** — `queryKnowledge()`, `configureKnowledgeDatabaseClient()`, `VectorKnowledgeRetriever`; vector failures fail-soft to keyword.
@@ -211,7 +215,7 @@ Siblings: `api-errors.ts` (JSON error envelope), `countries.ts`, `enrichment.ts`
 - **`advisor`** — `retrieval.ts` (BM25-lite + `hasRetrievableContent` gate), `corpus.generated.ts` (⚠ generated — `pnpm build:knowledge`), `corpus-source.ts` (chunker; not in barrel), `excerpt.ts` (`buildExcerpt`), `sanitize.ts` (`delimitUntrustedText` with `«»`), `context.ts` (`buildAdvisorGrounding` — copies numbers, never recomputes), `demo-turn.ts` (`buildDemoAdvisorTurn`), `prompts.ts`.
 - **`ai-core`** — `createAiRuntime`, `isAiRuntimeOperational`, `AiRuntimeUnavailableError`, `embed()`.
 - **`api-client`** — `createAccountingApiClient` (25 methods, Zod-validated responses, bearer via `getAuthToken`, demo fallback store).
-- **`mcp-server`** — `src/index.ts` is the MCP SDK stdio entrypoint; `src/tools/index.ts` pins the 13-name tool inventory; `src/tools/handlers.ts` forwards authenticated calls through `api-client`, requires `ACCOUNTING_API_BASE_URL` + `JPX_MCP_BEARER_TOKEN`, returns HTTPS SAS credentials without file bodies, echoes review-intent versions, and forces post-post proposal source to `mcp`. Setup: [`MCP_SETUP.md`](MCP_SETUP.md).
+- **`mcp-server`** — `src/index.ts` stdio entrypoint; `src/http-adapter.ts` Streamable HTTP session store; `src/tools/index.ts` pins the 13-name inventory; `src/tools/handlers.ts` forwards authenticated calls through `api-client`, requires `ACCOUNTING_API_BASE_URL` + `JPX_MCP_BEARER_TOKEN` for stdio, returns HTTPS SAS credentials without file bodies, echoes review-intent versions, and forces post-post proposal source to `mcp`. Setup: [`MCP_SETUP.md`](MCP_SETUP.md).
 - **`document-intelligence`** — `createDocumentIntelligenceClient`, `pickModelForDocument`, `mapFieldsToContract`.
 - **`persistence-postgres`** — `client.ts` (`createPostgresClient`/`closePostgresClient`), `store.ts` (largest file in the repo: `PostgresLedgerStore`, `HashChainForkError`, advisory-lock chain serialization), `knowledge.ts` (`upsertKnowledgeDocuments`, `queryKnowledgeByEmbedding`, halfvec 1536).
 - **`ui-tokens`** — `brand`, `theme`, `styles.css` (imported by `apps/web/app/globals.css`).
@@ -221,9 +225,10 @@ MCP tool inventory: capture/evidence
 `extract_evidence`, `get_evidence`; proposal-only
 `submit_enrichment_proposal`, `submit_review_proposal`,
 `get_review_deep_link`; reads `list_reviews`, `get_journal`,
-`get_trial_balance`, `get_integrity`, `query_knowledge`. The stdio adapter has
-no approval, confirmation, posting, direct-tag, or direct-reference tool.
-Streamable HTTP `/api/mcp` is deferred to Wave 8.
+`get_trial_balance`, `get_integrity`, `query_knowledge`. Both stdio and
+Streamable HTTP expose exactly these 13 names — no approval, confirmation,
+posting, direct-tag, or direct-reference tool. HTTP v1: POST+GET `/api/mcp`
+only; sessions expire by TTL/capacity (no DELETE route).
 
 ---
 
@@ -434,7 +439,8 @@ Read outside `config.ts`: `ADVISOR_MAX_OUTPUT_TOKENS` / `ADVISOR_STREAM_TIMEOUT_
 | `docs/compliance-playbook.md`    | Accounting/compliance controls                                                                                                                                                                                                                                                                                          | —                   |
 | `docs/DEPLOY_UNBLOCK.md`         | The `assignStorageRoles` CD gate                                                                                                                                                                                                                                                                                        | 2026-07-05          |
 | `docs/AGENT_HARNESS_ADOPTION.md` | Agent-harness mapping + open decisions                                                                                                                                                                                                                                                                                  | —                   |
-| `docs/REPO_MAP.md`               | This file                                                                                                                                                                                                                                                                                                               | 2026-08-06          |
+| `docs/MCP_SETUP.md`              | MCP stdio + Streamable HTTP setup, 13-tool inventory, safety boundary                                                                                                                                                                                                                                                   | 2026-08-09          |
+| `docs/REPO_MAP.md`               | This file                                                                                                                                                                                                                                                                                                               | 2026-08-09          |
 | `docs/findings.md`               | Dated research log (do not re-research settled facts)                                                                                                                                                                                                                                                                   | living              |
 | `docs/archive/`                  | Superseded reports + **landed** superpowers plans (STATUS banners; no deletes)                                                                                                                                                                                                                                          | archived            |
 | `docs/knowledge/sv/`             | Advisor corpus — 10 sourced Swedish docs (front matter `title/source/url/effective`); ⚠ `bokforingslagen-verifikationer.md` is oldest (`effective: 2024-07-01`, pending re-verification — why `check:corpus` isn't in CI). Edits require `pnpm build:knowledge`                                                         | per-file            |

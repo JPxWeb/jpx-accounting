@@ -1189,5 +1189,16 @@
 
 ## Pending
 
-- Task 8.5 Wave 8 final gate.
-- Keep PR creation and `main` deferred.
+- Task 8.5 Wave 8 final gate: **PASS; ready for COMPLETE review**.
+  - `pnpm check` passed with 711/711 unit tests; strict `pnpm db:test` applied
+    migrations `0001`–`0012`, passed every capability assertion, and passed
+    121/121 integration tests including MCP HTTP SSE.
+  - Focused MCP adapter/security/integration plus Wave 7 stdio regression passed
+    29/29; `api-runtime.test.ts` passed 23/23 (legacy `/mcp` 404).
+  - Seams passed, i18n remained 1115/1115, and `git diff --check` passed.
+  - `docs/MCP_SETUP.md` and `docs/REPO_MAP.md` now document Streamable HTTP
+    POST+GET `/api/mcp`, session headers, Origin/Host guards, RFC 9728 metadata,
+    and explicit no DELETE in v1.
+  - E2E/visual gates were not required by Task 8.5; Task 8.3 E2E remains at
+    `9597caa`. No visual baseline was updated. No PR was opened and `main` was
+    not touched. See `.superpowers/sdd/wave-8-gate-report.md`.

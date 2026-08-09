@@ -1,8 +1,11 @@
-# MCP stdio setup
+# MCP setup (stdio and Streamable HTTP)
 
-JPx Accounting provides a local stdio MCP server in
-`packages/mcp-server`. Wave 7 supports stdio only. Streamable HTTP at
-`/api/mcp` is planned for Wave 8 and is not available yet.
+JPx Accounting ships MCP adapters in `packages/mcp-server`:
+
+- **stdio** — local MCP hosts spawn `packages/mcp-server/src/index.ts`.
+- **Streamable HTTP** — authenticated `POST` and `GET` on `/api/mcp` on the
+  running API (Wave 8). v1 has **no `DELETE` session route**; sessions expire
+  by TTL and bounded store capacity only.
 
 ## Prerequisites
 
@@ -106,3 +109,62 @@ projections only after explicit human confirmation and can never append
 See
 [`packages/mcp-server/src/tools/threat-model.md`](../packages/mcp-server/src/tools/threat-model.md)
 for the complete allowed and excluded effects.
+
+## Streamable HTTP (Wave 8)
+
+Use this when the MCP host connects to a deployed or local API over HTTP instead
+of spawning the stdio process.
+
+### Endpoints
+
+| Method | Path                                    | Purpose                                                                                   |
+| ------ | --------------------------------------- | ----------------------------------------------------------------------------------------- |
+| POST   | `/api/mcp`                              | JSON-RPC requests (`initialize`, `notifications/initialized`, `tools/list`, `tools/call`) |
+| GET    | `/api/mcp`                              | Session SSE stream — replay buffered events, then live delivery                           |
+| GET    | `/.well-known/oauth-protected-resource` | RFC 9728 metadata for the MCP resource (header bearer only)                               |
+
+There is **no `DELETE /api/mcp` in v1**. Clients must rely on session TTL expiry
+and reconnect with a fresh `initialize` when a session is gone.
+
+### Authentication and guards
+
+- **JWT** — when `SUPABASE_JWKS_URL` is configured, `/api/mcp` inherits the same
+  `/api/*` bearer verification as every other authenticated route. Send
+  `Authorization: Bearer <token>`.
+- **Origin and Host** — both `POST` and `GET` reject requests whose `Origin`
+  header is absent or not on the API CORS allowlist, and whose `Host` header is
+  not on the configured MCP host allowlist (DNS-rebinding guard).
+- **Rate limit** — `POST /api/mcp` uses the existing mutation limiter keyed by
+  verified JWT subject (or client IP when unauthenticated in demo).
+
+Fetch RFC 9728 metadata before configuring the host:
+
+```http
+GET /.well-known/oauth-protected-resource
+```
+
+The response advertises the MCP resource URL, authorization servers, and
+`bearer_methods_supported: ["header"]` only.
+
+### Session contract
+
+1. **Initialize** — `POST /api/mcp` with JSON-RPC `initialize`. Required
+   headers include `Accept: application/json, text/event-stream`,
+   `Content-Type: application/json`, a permitted `Origin`, and a permitted
+   `Host`. The response includes `Mcp-Session-Id`.
+2. **Acknowledge** — send `notifications/initialized` on the same session
+   (`Mcp-Session-Id` header on subsequent POSTs).
+3. **Tools** — call `tools/list` and `tools/call` on POST; the adapter exposes
+   the same fixed 13 names as stdio.
+4. **SSE resume** — open `GET /api/mcp` with `Mcp-Session-Id`. Optionally send
+   `Last-Event-ID` to replay buffered events with a higher id, then remain
+   subscribed for live session events until the client cancels the stream.
+
+Each session keeps at most 100 buffered SSE events. The server store caps total
+live sessions (default 1,000) and sweeps expired entries on creation.
+
+### Upload posture (unchanged)
+
+`initialize_upload` still returns a short-lived HTTPS SAS URL. The HTTP adapter
+does not accept base64 bodies and does not send the JPx bearer token to blob
+storage.
