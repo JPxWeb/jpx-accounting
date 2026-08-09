@@ -1,5 +1,7 @@
 import {
   externalReferenceLinkedPayloadSchema,
+  voucherTagsAddedPayloadSchema,
+  voucherTagsRemovedPayloadSchema,
   type AccountingSuggestion,
   type ComplianceAlert,
   type EvidenceContext,
@@ -15,7 +17,13 @@ import {
   type Voucher,
 } from "@jpx-accounting/contracts";
 
-import { findActiveExternalReference, type ExternalReferenceEvent } from "./enrichment-projections";
+import {
+  findActiveExternalReference,
+  MAX_TAGS_PER_REQUEST,
+  MAX_TAGS_PER_VOUCHER,
+  type ExternalReferenceEvent,
+  type TagDefinition,
+} from "./enrichment-projections";
 import { buildExtractedFields, deriveVoucherFields, guessAccountingMethod } from "./evidence-defaults";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso } from "./ids";
@@ -75,6 +83,10 @@ export type PostPostEnrichmentConfirmPlan = {
 export type ExternalReferencePlan = {
   reference: ExternalReferenceProjection;
   event: PlannedEvent;
+};
+
+export type VoucherTagsPlan = {
+  events: PlannedEvent[];
 };
 
 export class EnrichmentTargetNotPostedError extends Error {
@@ -154,6 +166,53 @@ export function planExternalReferenceRemoval(
       occurredAt,
       payload: { refId: reference.refId, voucherId: reference.voucherId },
     },
+  };
+}
+
+export function planVoucherTagsAppend(
+  input: {
+    voucherId: string;
+    tagIds: string[];
+    mode: "add" | "remove";
+    existingActiveTagCount: number;
+    tagDefinitions: readonly TagDefinition[];
+    actorId: string;
+  },
+  scope: { organizationId: string; workspaceId: string; now?: string },
+): VoucherTagsPlan {
+  if (input.tagIds.length === 0 || input.tagIds.length > MAX_TAGS_PER_REQUEST) {
+    throw new Error(`Bounded tag request requires 1-${MAX_TAGS_PER_REQUEST} tag ids`);
+  }
+
+  const uniqueTagIds = [...new Set(input.tagIds)];
+  const registeredTagIds = new Set(input.tagDefinitions.map((tag) => tag.id));
+  const unknownTagId = uniqueTagIds.find((tagId) => !registeredTagIds.has(tagId));
+  if (unknownTagId) throw new Error(`Tag id is not in the registry: ${unknownTagId}`);
+
+  if (input.mode === "add" && input.existingActiveTagCount + uniqueTagIds.length > MAX_TAGS_PER_VOUCHER) {
+    throw new Error(`Bounded voucher tag limit is ${MAX_TAGS_PER_VOUCHER}`);
+  }
+
+  const payloadSchema = input.mode === "add" ? voucherTagsAddedPayloadSchema : voucherTagsRemovedPayloadSchema;
+  const payload = payloadSchema.parse({
+    voucherId: input.voucherId,
+    tagIds: uniqueTagIds,
+    actorId: input.actorId,
+  });
+
+  return {
+    events: [
+      {
+        organizationId: scope.organizationId,
+        workspaceId: scope.workspaceId,
+        aggregateType: "voucher",
+        aggregateId: input.voucherId,
+        eventType: input.mode === "add" ? "VoucherTagsAdded" : "VoucherTagsRemoved",
+        actorId: input.actorId,
+        occurredAt: scope.now ?? nowIso(),
+        payload,
+      },
+    ],
   };
 }
 
