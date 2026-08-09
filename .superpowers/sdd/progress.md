@@ -742,8 +742,35 @@
 
 ## In progress
 
-- Wave 6b awaits the intent-identity repair and renewed Opus/Sol clearance; do
-  not mark complete.
+- Wave 6b intent-identity repair is implemented, reviewed by Opus, and awaits
+  Sol re-review; do not mark complete.
+  - Opus confirmed Sol's `[95]` race against the pre-fix code: approval read
+    the intent by review id only, so an MCP/advisor/second-tab/second-reviewer
+    upsert between attach and approve was appended under a human approval that
+    never saw it.
+  - Fix on the existing Wave 5 pre-post seam, no second seam: every attach
+    mints a fresh opaque `version`; `enrichmentIntent` becomes
+    `{ mode: "consume", version }` | `{ mode: "clear" }`, so a consume
+    assertion cannot be expressed without naming the intent; one shared
+    resolver refuses a stale/forged token with a typed 409
+    `enrichment_intent_stale` inside the decision transaction (Memory before
+    any read-model write, Postgres under the advisory lock before any append).
+    Omission stays fail-closed as `noop`.
+  - Fixed during review: migration `0012` backfilled the guessable token
+    `'rei_legacy_' || review_id`, which any client could forge from the review
+    id in the URL; it now uses `gen_random_uuid()`.
+  - Verified: `pnpm typecheck` 11/11, `pnpm typecheck:tests` (also clearing the
+    aggregate-typecheck blocker the Wave 6d/6e checkpoints reported), focused
+    intent tests 30/30, and strict `pnpm db:test` with migrations `0001`–`0012`
+    at 119/119 including the new consume-race scenario on Memory, Postgres, and
+    as a parity assertion.
+  - Commits: `5ec5169` plus the `app.ts` / api-client hunks that a concurrent
+    Wave 6e commit collision carried into `11e69d9`; the tree is correct and no
+    history was rewritten while other agents were committing.
+  - Still open: invoice E2E and visuals after `pnpm build:e2e`, deferred until
+    the concurrent Wave 6d/6e churn settles. `pnpm check` currently stops at
+    `format:check` on two committed Wave 6e files outside Wave 6b ownership.
+    See `.superpowers/sdd/w6b-opus-intent-consume-race-review.md`.
 - Wave 6d quantity inventory UOM/conformance Sol re-review: APPROVE.
   - Reviewed repairs: `232cdd2` + ownership-separation commit `9fadc18`.
   - Running quantities are now keyed by `(skuId, uom)`, so incompatible units
