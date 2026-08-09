@@ -709,6 +709,7 @@ export class MemoryLedgerStore implements LedgerStore {
       alerts: [...this.alerts],
       packets: [...this.evidencePackets.values()],
       externalReferences: buildExternalReferencesFromEvents(this.events),
+      voucherTags: buildVoucherTagsFromEvents(this.events),
     };
   }
 

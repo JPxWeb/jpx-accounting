@@ -7,6 +7,7 @@ import {
   voucherTagsAddedPayloadSchema,
   voucherTagsProjectionSchema,
   voucherTagsRemovedPayloadSchema,
+  workspaceSnapshotSchema,
 } from "@jpx-accounting/contracts";
 
 test("eventTypeSchema includes voucher tag events", () => {
@@ -79,5 +80,28 @@ test("voucher tag API contracts strip attribution and allow an empty active proj
       voucherId: "voucher_1",
       tagIds: Array.from({ length: 51 }, (_, index) => `tag_${index}`),
     }),
+  );
+});
+
+test("workspace snapshots carry a defaulted bounded voucher tag projection", () => {
+  const field = workspaceSnapshotSchema.shape.voucherTags;
+
+  assert.deepEqual(field.parse(undefined), []);
+  assert.deepEqual(
+    field.parse([
+      {
+        voucherId: "voucher_1",
+        tagIds: ["tag_travel"],
+      },
+    ]),
+    [{ voucherId: "voucher_1", tagIds: ["tag_travel"] }],
+  );
+  assert.throws(() =>
+    field.parse([
+      {
+        voucherId: "voucher_1",
+        tagIds: Array.from({ length: 51 }, (_, index) => `tag_${index}`),
+      },
+    ]),
   );
 });

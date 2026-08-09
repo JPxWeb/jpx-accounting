@@ -1,6 +1,6 @@
 "use client";
 
-import type { EnrichmentWorkItem, VoucherTagsProjection, WorkspaceSnapshot } from "@jpx-accounting/contracts";
+import type { EnrichmentWorkItem, WorkspaceSnapshot } from "@jpx-accounting/contracts";
 import { DEFAULT_TAG_DEFINITIONS } from "@jpx-accounting/domain";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -23,12 +23,10 @@ function tagNames(tagIds: string[]): string {
     .join(", ");
 }
 
-type TagSnapshot = WorkspaceSnapshot & { voucherTags?: VoucherTagsProjection[] };
-
 function applyConfirmedTagProposal(
-  snapshot: TagSnapshot | undefined,
+  snapshot: WorkspaceSnapshot | undefined,
   workItem: EnrichmentWorkItem,
-): TagSnapshot | undefined {
+): WorkspaceSnapshot | undefined {
   if (
     !snapshot ||
     (workItem.proposedChange.kind !== "voucher_tags_add" && workItem.proposedChange.kind !== "voucher_tags_remove")
@@ -101,7 +99,7 @@ export function EnrichmentConfirmShell() {
       queryClient.setQueryData<EnrichmentWorkItem>(queryKey, workItem);
       await queryClient.invalidateQueries({ queryKey: ["workspace"] });
       if (workItem.status === "confirmed") {
-        queryClient.setQueryData<TagSnapshot>(["workspace"], (snapshot) =>
+        queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (snapshot) =>
           applyConfirmedTagProposal(snapshot, workItem),
         );
       }

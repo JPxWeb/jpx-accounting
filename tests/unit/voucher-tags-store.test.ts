@@ -57,15 +57,19 @@ test("direct voucher tags append effective changes without another posting", asy
     mode: "add",
     actorId: "user:human",
   });
+  const activeSnapshot = await store.getSnapshot();
   const removed = await store.appendVoucherTags(created.voucher.id, {
     tagIds: ["tag_travel"],
     mode: "remove",
     actorId: "user:human",
   });
+  const emptySnapshot = await store.getSnapshot();
 
   assert.deepEqual(added.tagIds, ["tag_travel"]);
   assert.deepEqual(replayed.tagIds, ["tag_travel"]);
+  assert.deepEqual(activeSnapshot.voucherTags, [{ voucherId: created.voucher.id, tagIds: ["tag_travel"] }]);
   assert.deepEqual(removed.tagIds, []);
+  assert.deepEqual(emptySnapshot.voucherTags, [{ voucherId: created.voucher.id, tagIds: [] }]);
   const events = await store.getEvents();
   assert.equal(events.filter((event) => event.eventType === "VoucherTagsAdded").length, 1);
   assert.equal(events.filter((event) => event.eventType === "VoucherTagsRemoved").length, 1);
@@ -160,12 +164,14 @@ test("API client appends voucher tags through the offline demo transport", async
   };
 
   const result = await client.appendVoucherTags(voucher.id, untrustedInput);
+  const reloadedSnapshot = await client.getSnapshot();
   const removed = await client.appendVoucherTags(voucher.id, {
     tagIds: ["tag_travel"],
     mode: "remove",
   });
 
   assert.deepEqual(result, { voucherId: voucher.id, tagIds: ["tag_travel"] });
+  assert.deepEqual(reloadedSnapshot.voucherTags, [{ voucherId: voucher.id, tagIds: ["tag_travel"] }]);
   assert.deepEqual(removed, { voucherId: voucher.id, tagIds: [] });
 });
 

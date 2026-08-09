@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { countryCodeSchema, countryValidationRegistry } from "./countries";
-import { externalReferenceProjectionSchema } from "./enrichment";
+import { externalReferenceProjectionSchema, voucherTagsProjectionSchema } from "./enrichment";
 
 export * from "./countries";
 export * from "./enrichment";
@@ -666,6 +666,11 @@ export const workspaceSnapshotSchema = z.object({
    * projection while consumers render only active references by default.
    */
   externalReferences: z.array(externalReferenceProjectionSchema).default([]),
+  /**
+   * Active voucher tags derived by replaying append-only add/remove events.
+   * Empty per-voucher rows remain valid after the final active tag is removed.
+   */
+  voucherTags: z.array(voucherTagsProjectionSchema).default([]),
 });
 
 /**

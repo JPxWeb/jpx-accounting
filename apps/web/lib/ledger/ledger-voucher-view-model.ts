@@ -19,10 +19,8 @@ export type LedgerVoucherViewModel = {
   >;
 };
 
-type LedgerSnapshot = Pick<WorkspaceSnapshot, "vouchers" | "packets"> &
-  Partial<Pick<WorkspaceSnapshot, "externalReferences">> & {
-    voucherTags?: Array<{ voucherId: string; tagIds: string[] }>;
-  };
+type LedgerSnapshot = Pick<WorkspaceSnapshot, "vouchers" | "packets" | "voucherTags"> &
+  Partial<Pick<WorkspaceSnapshot, "externalReferences">>;
 type LedgerVoucherViewModelOptions = {
   activateExternalRefs?: boolean;
   activateTags?: boolean;

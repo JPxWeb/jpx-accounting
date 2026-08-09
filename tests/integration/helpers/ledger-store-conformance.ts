@@ -619,6 +619,9 @@ export async function scenarioVoucherTags(h: ConformanceHarness): Promise<Confor
     mode: "add",
     actorId: h.actorId,
   });
+  const activeSnapshotTagIds =
+    (await h.store.getSnapshot()).voucherTags.find((projection) => projection.voucherId === created.voucher.id)
+      ?.tagIds ?? [];
   const removeProposal = await h.store.proposeEnrichmentWorkItem({
     actorId: "system:mcp",
     targetKind: "voucher",
@@ -629,6 +632,9 @@ export async function scenarioVoucherTags(h: ConformanceHarness): Promise<Confor
   });
   const removed = await h.store.confirmEnrichmentWorkItem(removeProposal.id, { actorId: h.actorId });
   const replayedRemoval = await h.store.confirmEnrichmentWorkItem(removeProposal.id, { actorId: h.actorId });
+  const emptySnapshotTagIds =
+    (await h.store.getSnapshot()).voucherTags.find((projection) => projection.voucherId === created.voucher.id)
+      ?.tagIds ?? [];
 
   const events = await h.store.getEvents();
   const tagEvents = events.filter(
@@ -638,6 +644,8 @@ export async function scenarioVoucherTags(h: ConformanceHarness): Promise<Confor
   return {
     directTags: direct.tagIds,
     directReplayTags: directReplay.tagIds,
+    activeSnapshotTagIds,
+    emptySnapshotTagIds,
     tagEventTypes: tagEvents.map((event) => event.eventType),
     removeResultCount: removed.resultingEventIds?.length ?? 0,
     idempotentRemoval: replayedRemoval.resultingEventIds?.length === removed.resultingEventIds?.length,

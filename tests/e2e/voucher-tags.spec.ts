@@ -32,6 +32,9 @@ test("add a registry tag with confirmation then filter the journal by tag", asyn
   await activateControl(page.getByTestId("tag-confirm"), isMobile);
   await expect(page.getByTestId("tag-chip-tag_travel")).toBeVisible();
 
+  await page.reload();
+  await expect(page.getByTestId("tag-chip-tag_travel")).toBeVisible();
+
   await activateControl(page.getByTestId("tag-filter-link-tag_travel"), isMobile);
   await expect(page).toHaveURL(/(?:\?|&)tag=tag_travel(?:&|$)/);
   await expect(page.getByTestId("tag-filter-chip")).toBeVisible();

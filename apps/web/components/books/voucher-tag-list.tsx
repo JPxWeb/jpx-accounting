@@ -1,7 +1,7 @@
 "use client";
 
-import type { WorkspaceSnapshot } from "@jpx-accounting/contracts";
-import { DEFAULT_TAG_DEFINITIONS, type TagDefinition, type VoucherTagsProjection } from "@jpx-accounting/domain";
+import type { VoucherTagsProjection, WorkspaceSnapshot } from "@jpx-accounting/contracts";
+import { DEFAULT_TAG_DEFINITIONS, type TagDefinition } from "@jpx-accounting/domain";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
@@ -11,12 +11,11 @@ import { apiClient } from "../../lib/client";
 import { useDialogFocusTrap } from "../../lib/focus-trap";
 
 type TagDialog = { mode: "add" | "remove"; tagId?: string };
-type TagSnapshot = WorkspaceSnapshot & { voucherTags?: VoucherTagsProjection[] };
 
 function replaceVoucherTags(
-  snapshot: TagSnapshot | undefined,
+  snapshot: WorkspaceSnapshot | undefined,
   projection: VoucherTagsProjection,
-): TagSnapshot | undefined {
+): WorkspaceSnapshot | undefined {
   if (!snapshot) return snapshot;
   const voucherTags = (snapshot.voucherTags ?? []).filter((row) => row.voucherId !== projection.voucherId);
   return { ...snapshot, voucherTags: [...voucherTags, projection] };
@@ -58,7 +57,9 @@ export function VoucherTagList({
       apiClient.appendVoucherTags(voucherId, { tagIds: [tagId], mode }),
     onSuccess: async (projection) => {
       await queryClient.invalidateQueries({ queryKey: ["workspace"] });
-      queryClient.setQueryData<TagSnapshot>(["workspace"], (snapshot) => replaceVoucherTags(snapshot, projection));
+      queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (snapshot) =>
+        replaceVoucherTags(snapshot, projection),
+      );
       closeDialog();
     },
   });

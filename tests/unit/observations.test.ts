@@ -67,6 +67,7 @@ function makeSnapshot(partial: Partial<WorkspaceSnapshot> = {}): WorkspaceSnapsh
     alerts: [],
     packets: [],
     externalReferences: [],
+    voucherTags: [],
     ...partial,
   };
 }

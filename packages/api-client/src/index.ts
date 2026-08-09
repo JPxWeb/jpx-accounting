@@ -211,7 +211,7 @@ export class AccountingApiClient {
   };
 
   async getSnapshot() {
-    if (this.fallbackStore) return this.fallbackStore.getSnapshot();
+    if (this.fallbackStore) return workspaceSnapshotSchema.parse(await this.fallbackStore.getSnapshot());
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/workspace", workspaceSnapshotSchema);
   }

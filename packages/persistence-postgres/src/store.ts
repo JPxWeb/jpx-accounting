@@ -1365,6 +1365,7 @@ export class PostgresLedgerStore implements LedgerStore {
       alerts: alertRows.map(rowToComplianceAlert),
       packets: packetRows.map((row) => rowToPacket(row, row.evidence_object_ids)),
       externalReferences: buildExternalReferencesFromEvents(events),
+      voucherTags: buildVoucherTagsFromEvents(events),
     };
   }
 

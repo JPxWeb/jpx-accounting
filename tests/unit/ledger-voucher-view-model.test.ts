@@ -24,9 +24,10 @@ const packet: EvidencePacket = {
   evidenceIds: ["evidence_a", "evidence_b"],
 };
 
-const snapshot: Pick<WorkspaceSnapshot, "vouchers" | "packets"> = {
+const snapshot: Pick<WorkspaceSnapshot, "vouchers" | "packets" | "voucherTags"> = {
   vouchers: [voucher],
   packets: [packet],
+  voucherTags: [],
 };
 
 test("view-model lists every evidenceIds entry on the packet", () => {
@@ -50,6 +51,7 @@ test("view-model lists every evidenceIds entry on the packet", () => {
     lines: [],
     evidenceIds: ["evidence_a", "evidence_b"],
     externalReferences: [],
+    tagIds: [],
     provenanceSummary: "",
     slots: {
       workItemConfirm: "disabled",
