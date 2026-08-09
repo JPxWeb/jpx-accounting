@@ -5,6 +5,7 @@ import type {
   EvidenceCreateInput,
   EvidenceObject,
   EvidencePacket,
+  EnrichmentWorkItem,
   ExtractionResult,
   LedgerEvent,
   ReviewDecisionInput,
@@ -62,6 +63,25 @@ export type ExtractionRefreshPlan =
       suggestion: AccountingSuggestion;
       events: PlannedEvent[];
     };
+
+export type PostPostEnrichmentConfirmPlan = {
+  workItem: EnrichmentWorkItem;
+  events: PlannedEvent[];
+};
+
+export class EnrichmentTargetNotPostedError extends Error {
+  constructor(targetId: string) {
+    super(`Enrichment target is not posted: ${targetId}`);
+    this.name = "EnrichmentTargetNotPostedError";
+  }
+}
+
+export class EnrichmentNotSupportedError extends Error {
+  constructor(kind: string) {
+    super(`Enrichment proposal kind is not supported: ${kind}`);
+    this.name = "EnrichmentNotSupportedError";
+  }
+}
 
 export const AUTO_DETECTED_ALERT_KINDS: ReadonlySet<string> = new Set(["stale-blocked", "missing-supplier-vat"]);
 
@@ -328,6 +348,34 @@ export function planReviewDecision(
     lines,
     events,
   };
+}
+
+/**
+ * Plans a human-confirmed enrichment against an already-posted target.
+ * Wave 2 supports only the inert noop proposal; later waves add append-only
+ * enrichment event arms here. This path must never emit PostedToLedger.
+ */
+export function planPostPostEnrichmentConfirm(input: {
+  workItem: EnrichmentWorkItem;
+  actorId: string;
+  postedVoucherIds: ReadonlySet<string>;
+  postedLineIds: ReadonlySet<string>;
+}): PostPostEnrichmentConfirmPlan {
+  const { workItem } = input;
+  const targetIsPosted =
+    workItem.targetKind === "voucher"
+      ? input.postedVoucherIds.has(workItem.targetId)
+      : input.postedLineIds.has(workItem.targetId);
+
+  if (!targetIsPosted) {
+    throw new EnrichmentTargetNotPostedError(workItem.targetId);
+  }
+
+  if (workItem.proposedChange.kind !== "noop") {
+    throw new EnrichmentNotSupportedError(workItem.proposedChange.kind);
+  }
+
+  return { workItem, events: [] };
 }
 
 /**
