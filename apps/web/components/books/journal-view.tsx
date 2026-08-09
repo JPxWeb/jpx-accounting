@@ -18,6 +18,7 @@ import { LedgerVoucherDrawer } from "./ledger-voucher-drawer";
 import { LedgerVoucherOverview } from "./ledger-voucher-overview";
 
 const ledgerModes = ["inline", "drawer"] as const;
+const registryTagIds = DEFAULT_TAG_DEFINITIONS.map((definition) => definition.id);
 
 function subscribeToLedgerMode() {
   return () => undefined;
@@ -52,7 +53,7 @@ export function JournalView() {
   const [ledgerModeParam, setLedgerModeParam] = useQueryState("ledgerMode", parseAsStringEnum([...ledgerModes]));
   const [voucher, setVoucher] = useQueryState("voucher", parseAsString);
   const [q, setQ] = useQueryState("q", parseAsString);
-  const [tag, setTag] = useQueryState("tag", parseAsString);
+  const [tag, setTag] = useQueryState("tag", parseAsStringEnum(registryTagIds));
 
   const storedLedgerMode = useSyncExternalStore(subscribeToLedgerMode, loadLedgerMode, getServerLedgerMode);
   const ledgerMode = ledgerModeParam ?? storedLedgerMode;

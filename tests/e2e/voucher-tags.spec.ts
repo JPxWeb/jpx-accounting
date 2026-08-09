@@ -36,6 +36,19 @@ test("add a registry tag with confirmation then filter the journal by tag", asyn
   await expect(page).toHaveURL(/(?:\?|&)tag=tag_travel(?:&|$)/);
   await expect(page.getByTestId("tag-filter-chip")).toBeVisible();
   await expect(page.getByTestId("ledger-voucher-toggle")).toHaveCount(1);
+
+  await activateControl(page.getByRole("button", { name: /Clear tag filter|Rensa taggfiltret/ }), isMobile);
+  await activateControl(page.getByTestId("ledger-voucher-toggle").first(), isMobile);
+  const removeTag = page.getByTestId("tag-remove-tag_travel");
+  await activateControl(removeTag, isMobile);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("tag-dialog")).toHaveCount(0);
+  await expect(removeTag).toBeFocused();
+
+  await activateControl(removeTag, isMobile);
+  await activateControl(page.getByTestId("tag-confirm"), isMobile);
+  await expect(page.getByTestId("tag-chip-tag_travel")).toHaveCount(0);
+  await expect(page.getByTestId("tag-empty")).toBeVisible();
   guard.assertClean();
 });
 

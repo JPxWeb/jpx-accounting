@@ -107,6 +107,7 @@ export function VoucherTagList({
               </Link>
               <button
                 type="button"
+                data-testid={`tag-remove-${definition.id}`}
                 aria-label={t("removeAria", { tag: definition.name })}
                 onClick={() => {
                   mutation.reset();
@@ -120,7 +121,9 @@ export function VoucherTagList({
           ))}
         </ul>
       ) : (
-        <p className="mt-3 text-sm text-muted-foreground">{t("empty")}</p>
+        <p className="mt-3 text-sm text-muted-foreground" data-testid="tag-empty">
+          {t("empty")}
+        </p>
       )}
 
       {dialog ? (
