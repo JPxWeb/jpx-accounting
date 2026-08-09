@@ -128,9 +128,45 @@ export class EnrichmentLineNotFoundError extends Error {
   }
 }
 
+export class ProjectAssignmentLineNotFoundError extends Error {
+  constructor() {
+    super("Project assignment requires an eligible cost line.");
+    this.name = "ProjectAssignmentLineNotFoundError";
+  }
+}
+
+export function bindProjectAssignmentToPrimaryCostLine(
+  proposal: Extract<EnrichmentProposal, { kind: "project_assignment" }>,
+  postingLines: readonly LedgerLine[],
+): Extract<EnrichmentProposal, { kind: "line_enrichment_record" }> {
+  const line = postingLines.find(
+    ({ accountNumber, lineId }) =>
+      lineId !== undefined &&
+      !accountNumber.startsWith("26") &&
+      !accountNumber.startsWith("19") &&
+      !accountNumber.startsWith("24"),
+  );
+  if (!line?.lineId) throw new ProjectAssignmentLineNotFoundError();
+
+  return {
+    kind: "line_enrichment_record",
+    lineId: line.lineId,
+    enrichmentType: "project",
+    payload: {
+      projectId: proposal.projectId,
+      ...(proposal.activityCode !== undefined ? { activityCode: proposal.activityCode } : {}),
+      ...(proposal.objectCode !== undefined ? { objectCode: proposal.objectCode } : {}),
+    },
+  };
+}
+
 export function assertPrePostEnrichmentIntentSupported(proposals: readonly EnrichmentProposal[]): void {
   for (const proposal of proposals) {
-    if (proposal.kind !== "noop" && proposal.kind !== "line_enrichment_record") {
+    if (
+      proposal.kind !== "noop" &&
+      proposal.kind !== "project_assignment" &&
+      proposal.kind !== "line_enrichment_record"
+    ) {
       throw new EnrichmentNotSupportedError(proposal.kind);
     }
   }
@@ -598,24 +634,28 @@ export function planPrePostEnrichment(input: {
   const companionEvents: PlannedEvent[] = [];
   for (const proposal of input.proposals) {
     if (proposal.kind === "noop") continue;
-    if (proposal.kind !== "line_enrichment_record") {
-      throw new EnrichmentNotSupportedError(proposal.kind);
+    const lineProposal =
+      proposal.kind === "project_assignment"
+        ? bindProjectAssignmentToPrimaryCostLine(proposal, input.postingLines)
+        : proposal;
+    if (lineProposal.kind !== "line_enrichment_record") {
+      throw new EnrichmentNotSupportedError(lineProposal.kind);
     }
-    if (!input.postingLines.some((line) => line.lineId === proposal.lineId)) {
-      throw new EnrichmentLineNotFoundError(proposal.lineId);
+    if (!input.postingLines.some((line) => line.lineId === lineProposal.lineId)) {
+      throw new EnrichmentLineNotFoundError(lineProposal.lineId);
     }
 
     const payload = lineEnrichmentRecordedPayloadSchema.parse({
-      lineId: proposal.lineId,
+      lineId: lineProposal.lineId,
       enrichmentId: createId("le"),
-      enrichmentType: proposal.enrichmentType,
-      payload: proposal.payload,
+      enrichmentType: lineProposal.enrichmentType,
+      payload: lineProposal.payload,
     });
     companionEvents.push({
       organizationId: input.organizationId,
       workspaceId: input.workspaceId,
       aggregateType: "ledger",
-      aggregateId: proposal.lineId,
+      aggregateId: lineProposal.lineId,
       eventType: "LineEnrichmentRecorded",
       actorId: input.actorId,
       occurredAt: nowIso(),

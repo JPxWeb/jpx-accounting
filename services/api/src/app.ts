@@ -38,6 +38,7 @@ import {
   InvalidReviewEditError,
   nowIso,
   parseSie,
+  ProjectAssignmentLineNotFoundError,
   ReviewBlockedError,
   summarizeEventIntegrity,
   today,
@@ -539,6 +540,10 @@ export function createApp({
 
     if (error instanceof EnrichmentLineNotFoundError) {
       return jsonError(c, error.message, runtimeMode, 422, { code: "enrichment_line_not_found" });
+    }
+
+    if (error instanceof ProjectAssignmentLineNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "project_assignment_line_not_found" });
     }
 
     if (error instanceof ExternalReferenceNotFoundError) {

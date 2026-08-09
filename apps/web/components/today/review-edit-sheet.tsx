@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReviewDecisionEdit, ReviewTask, Voucher } from "@jpx-accounting/contracts";
+import type { EnrichmentProposal, ReviewDecisionEdit, ReviewTask, Voucher } from "@jpx-accounting/contracts";
 import { defaultCoaTemplate, findCoaAccount, localTodayIso } from "@jpx-accounting/domain";
 import { deriveBookedAt, isValidCalendarDay } from "@jpx-accounting/domain/store-shared";
 import { useMutation } from "@tanstack/react-query";
@@ -73,12 +73,27 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
   const localToday = localTodayIso();
   const derivedBookedAt = deriveBookedAt(voucher?.voucherFields, new Date().toISOString());
   const [bookedAtInput, setBookedAtInput] = useState(derivedBookedAt);
+  const [workflow, setWorkflow] = useState<"none" | "project">("none");
+  const [projectId, setProjectId] = useState("");
+  const [activityCode, setActivityCode] = useState("");
+  const [objectCode, setObjectCode] = useState("");
 
   useDialogFocusTrap(dialogRef, true, onClose, accountSelectRef);
 
   // No actorId (WS-C R5): the server derives attribution.
   const approveWithEdits = useMutation({
-    mutationFn: (edited: ReviewDecisionEdit) => apiClient.approveReview(review.id, { edited }),
+    mutationFn: async ({
+      edited,
+      proposal,
+    }: {
+      edited: ReviewDecisionEdit;
+      proposal?: Extract<EnrichmentProposal, { kind: "project_assignment" }>;
+    }) => {
+      if (proposal) {
+        await apiClient.attachReviewEnrichmentIntent({ reviewId: review.id, proposals: [proposal] });
+      }
+      return apiClient.approveReview(review.id, { edited });
+    },
     onSuccess,
   });
 
@@ -110,9 +125,10 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
   // day, not in the future. Empty = "use the derived default" (field omitted).
   const bookedAtChanged = bookedAtInput !== "" && bookedAtInput !== derivedBookedAt;
   const bookedAtValid = bookedAtInput === "" || (isValidCalendarDay(bookedAtInput) && bookedAtInput <= localToday);
+  const projectRequired = workflow === "project" && projectId.trim() === "";
 
   const accountName = findCoaAccount(defaultCoaTemplate, accountNumber)?.name ?? accountNumber;
-  const submitDisabled = !amountsValid || !bookedAtValid || approveWithEdits.isPending;
+  const submitDisabled = !amountsValid || !bookedAtValid || projectRequired || approveWithEdits.isPending;
   const submitError = approveWithEdits.error ? getErrorMessage(approveWithEdits.error, t("submitError")) : null;
 
   useEffect(() => {
@@ -136,7 +152,17 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
       // derivation default — the stores derive the same day when omitted.
       ...(bookedAtChanged ? { bookedAt: bookedAtInput } : {}),
     };
-    approveWithEdits.mutate(edited);
+    const trimmedProjectId = projectId.trim();
+    const proposal =
+      workflow === "project" && trimmedProjectId !== ""
+        ? {
+            kind: "project_assignment" as const,
+            projectId: trimmedProjectId,
+            ...(activityCode.trim() !== "" ? { activityCode: activityCode.trim() } : {}),
+            ...(objectCode.trim() !== "" ? { objectCode: objectCode.trim() } : {}),
+          }
+        : undefined;
+    approveWithEdits.mutate({ edited, ...(proposal ? { proposal } : {}) });
   }
 
   return (
@@ -201,6 +227,70 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
                 ))}
               </select>
             </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="review-edit-workflow" className="text-eyebrow block">
+                {t("workflowLabel")}
+              </label>
+              <select
+                id="review-edit-workflow"
+                data-testid="edit-workflow"
+                value={workflow}
+                onChange={(event) => setWorkflow(event.target.value as "none" | "project")}
+                className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+              >
+                <option value="none">{t("workflowNone")}</option>
+                <option value="project">{t("workflowProject")}</option>
+              </select>
+            </div>
+            {workflow === "project" ? (
+              <>
+                <div className="sm:col-span-2">
+                  <label htmlFor="review-edit-project-id" className="text-eyebrow block">
+                    {t("project.idLabel")}
+                  </label>
+                  <input
+                    id="review-edit-project-id"
+                    data-testid="edit-project-id"
+                    value={projectId}
+                    onChange={(event) => setProjectId(event.target.value)}
+                    aria-invalid={projectRequired}
+                    aria-describedby={projectRequired ? "project-required-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  />
+                  {projectRequired ? (
+                    <p
+                      id="project-required-error"
+                      data-testid="project-required-error"
+                      className="mt-1 text-sm text-danger"
+                    >
+                      {t("project.required")}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <label htmlFor="review-edit-activity-code" className="text-eyebrow block">
+                    {t("project.activityCodeLabel")}
+                  </label>
+                  <input
+                    id="review-edit-activity-code"
+                    value={activityCode}
+                    onChange={(event) => setActivityCode(event.target.value)}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="review-edit-object-code" className="text-eyebrow block">
+                    {t("project.objectCodeLabel")}
+                  </label>
+                  <input
+                    id="review-edit-object-code"
+                    value={objectCode}
+                    onChange={(event) => setObjectCode(event.target.value)}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  />
+                </div>
+              </>
+            ) : null}
             <div>
               <label htmlFor="review-edit-booked-at" className="text-eyebrow block">
                 {t("bookedAtLabel")}

@@ -123,6 +123,15 @@
       "description": "Correct the account, VAT code, or amounts — approving posts the corrected lines.",
       "closeAria": "Close the edit sheet",
       "accountLabel": "Account",
+      "workflowLabel": "Workflow",
+      "workflowNone": "No workflow assignment",
+      "workflowProject": "Project",
+      "project": {
+        "idLabel": "Project ID",
+        "required": "Choose a project.",
+        "activityCodeLabel": "Activity code (optional)",
+        "objectCodeLabel": "Object code (optional)"
+      },
       "vatCodeLabel": "VAT code",
       "grossLabel": "Gross amount",
       "netLabel": "Net amount",

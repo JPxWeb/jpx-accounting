@@ -123,6 +123,15 @@
       "description": "Justera konto, momskod eller belopp — godkännandet bokför de korrigerade raderna.",
       "closeAria": "Stäng redigeringsarket",
       "accountLabel": "Konto",
+      "workflowLabel": "Arbetsflöde",
+      "workflowNone": "Ingen arbetsflödestilldelning",
+      "workflowProject": "Projekt",
+      "project": {
+        "idLabel": "Projekt-ID",
+        "required": "Välj ett projekt.",
+        "activityCodeLabel": "Aktivitetskod (valfritt)",
+        "objectCodeLabel": "Objektkod (valfritt)"
+      },
       "vatCodeLabel": "Momskod",
       "grossLabel": "Bruttobelopp",
       "netLabel": "Nettobelopp",
