@@ -49,6 +49,8 @@ export const eventTypeSchema = z.enum([
   "SimulationExecuted",
   "CloseRunGenerated", // Reserved: never emitted yet (getCloseRun is an honest empty shell).
   "ExportGenerated", // Reserved: never emitted yet (exports don't append events).
+  "ExternalReferenceLinked",
+  "ExternalReferenceRemoved",
 ]);
 export const ruleSeveritySchema = z.enum(["info", "warning", "blocking"]);
 export const assistantAnswerStatusSchema = z.enum(["grounded", "insufficient-basis"]);

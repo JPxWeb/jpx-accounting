@@ -1,6 +1,42 @@
 import { z } from "zod";
 
-export const enrichmentProposalSchema = z.discriminatedUnion("kind", [z.object({ kind: z.literal("noop") })]);
+const httpsUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => new URL(value).protocol === "https:", { message: "URL must use https" });
+
+export const enrichmentProposalSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("noop") }),
+  z.object({
+    kind: z.literal("external_reference_link"),
+    url: httpsUrlSchema,
+    label: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal("external_reference_unlink"),
+    refId: z.string().min(1),
+  }),
+]);
+
+export const externalReferenceLinkedPayloadSchema = z.object({
+  refId: z.string().min(1),
+  voucherId: z.string().min(1),
+  url: httpsUrlSchema,
+  label: z.string().optional(),
+});
+
+export const externalReferenceRemovedPayloadSchema = z.object({
+  refId: z.string().min(1),
+  voucherId: z.string().min(1),
+});
+
+export const externalReferenceProjectionSchema = externalReferenceLinkedPayloadSchema.extend({
+  linkedAt: z.string().min(1),
+  linkedBy: z.string().min(1),
+  removed: z.boolean(),
+  removedAt: z.string().min(1).optional(),
+  removedBy: z.string().min(1).optional(),
+});
 
 export const enrichmentTargetKindSchema = z.enum(["voucher", "line"]);
 export const enrichmentWorkItemStatusSchema = z.enum(["pending_confirmation", "confirmed", "rejected", "superseded"]);
@@ -37,6 +73,9 @@ export const proposeEnrichmentWorkItemInputSchema = z.object({
 });
 
 export type EnrichmentProposal = z.infer<typeof enrichmentProposalSchema>;
+export type ExternalReferenceLinkedPayload = z.infer<typeof externalReferenceLinkedPayloadSchema>;
+export type ExternalReferenceRemovedPayload = z.infer<typeof externalReferenceRemovedPayloadSchema>;
+export type ExternalReferenceProjection = z.infer<typeof externalReferenceProjectionSchema>;
 export type EnrichmentTargetKind = z.infer<typeof enrichmentTargetKindSchema>;
 export type EnrichmentWorkItemStatus = z.infer<typeof enrichmentWorkItemStatusSchema>;
 export type EnrichmentWorkItemSource = z.infer<typeof enrichmentWorkItemSourceSchema>;
