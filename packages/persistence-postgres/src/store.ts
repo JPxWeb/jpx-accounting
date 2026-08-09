@@ -30,6 +30,7 @@ import { companySettingsSchema } from "@jpx-accounting/contracts";
 
 import {
   AUTO_DETECTED_ALERT_KINDS,
+  assertEnrichmentTargetPosted,
   buildBalances,
   buildDeterministicSuggestion,
   buildEventHash,
@@ -37,6 +38,7 @@ import {
   buildReportPack,
   buildVat,
   collectLedgerLinesFromEvents,
+  collectPostedEnrichmentTargets,
   createId,
   currentMonthToken,
   DEMO_ACTOR_ID,
@@ -350,6 +352,33 @@ function rowToEnrichmentWorkItem(row: EnrichmentWorkItemRow): EnrichmentWorkItem
     workItem.supersededByWorkItemId = row.superseded_by_work_item_id;
   }
   return workItem;
+}
+
+type PostedEnrichmentTargetRow = {
+  aggregate_id: string;
+  event_type: LedgerEvent["eventType"];
+  payload: Record<string, unknown>;
+};
+
+async function loadPostedEnrichmentTargets(
+  runner: PostgresClient,
+  scope: { organizationId: string; workspaceId: string },
+) {
+  const rows = await runner<PostedEnrichmentTargetRow[]>`
+    SELECT aggregate_id, event_type, payload
+    FROM ledger.events
+    WHERE organization_id = ${scope.organizationId}
+      AND workspace_id = ${scope.workspaceId}
+      AND event_type IN ('PostedToLedger', 'VoucherImported')
+    ORDER BY seq ASC
+  `;
+  return collectPostedEnrichmentTargets(
+    rows.map((row) => ({
+      aggregateId: row.aggregate_id,
+      eventType: row.event_type,
+      payload: row.payload,
+    })),
+  );
 }
 
 type ComplianceAlertRow = {
@@ -1411,6 +1440,23 @@ export class PostgresLedgerStore implements LedgerStore {
   ): Promise<EnrichmentWorkItem> {
     return this.client.begin(async (tx) => {
       await this.lockWorkspaceTail(tx);
+      const existingRows = await tx<EnrichmentWorkItemRow[]>`
+        SELECT id, organization_id, workspace_id, target_kind, target_id,
+               proposed_change, status, source, idempotency_key, created_at,
+               created_by, confirmed_at, confirmed_by, resulting_event_ids,
+               superseded_by_work_item_id
+        FROM ledger.enrichment_work_items
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+          AND idempotency_key = ${input.idempotencyKey}
+        LIMIT 1
+      `;
+      const existing = existingRows[0];
+      if (existing) return rowToEnrichmentWorkItem(existing);
+
+      const postedTargets = await loadPostedEnrichmentTargets(tx, this.defaults);
+      assertEnrichmentTargetPosted(input, postedTargets);
+
       const id = createId("ewi");
       const createdAt = nowIso();
       const createdBy = input.actorId ?? DEMO_ACTOR_ID;
@@ -1483,25 +1529,7 @@ export class PostgresLedgerStore implements LedgerStore {
           throw new EnrichmentWorkItemConflictError(id, workItem.status);
         }
 
-        const postedRows = await tx<Array<{ aggregate_id: string; payload: Record<string, unknown> }>>`
-          SELECT aggregate_id, payload
-          FROM ledger.events
-          WHERE organization_id = ${this.defaults.organizationId}
-            AND workspace_id = ${this.defaults.workspaceId}
-            AND event_type IN ('PostedToLedger', 'VoucherImported')
-          ORDER BY seq ASC
-        `;
-        const postedVoucherIds = new Set(postedRows.map((posted) => posted.aggregate_id));
-        const postedLineIds = new Set(
-          postedRows.flatMap((posted) => {
-            const lines = Array.isArray(posted.payload.lines) ? posted.payload.lines : [];
-            return lines.flatMap((line) =>
-              typeof line === "object" && line !== null && typeof (line as { lineId?: unknown }).lineId === "string"
-                ? [(line as { lineId: string }).lineId]
-                : [],
-            );
-          }),
-        );
+        const { postedVoucherIds, postedLineIds } = await loadPostedEnrichmentTargets(tx, this.defaults);
         const actorId = input.actorId ?? DEMO_ACTOR_ID;
         const plan = planPostPostEnrichmentConfirm({ workItem, actorId, postedVoucherIds, postedLineIds });
 

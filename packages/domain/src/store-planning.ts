@@ -83,6 +83,48 @@ export class EnrichmentNotSupportedError extends Error {
   }
 }
 
+export type PostedEnrichmentTargets = {
+  postedVoucherIds: ReadonlySet<string>;
+  postedLineIds: ReadonlySet<string>;
+};
+
+/**
+ * Derives valid enrichment targets from posting events only. Keeping this in
+ * the domain prevents Memory and Postgres from disagreeing about whether a
+ * line id seen in some unrelated event counts as posted.
+ */
+export function collectPostedEnrichmentTargets(
+  events: Array<Pick<LedgerEvent, "aggregateId" | "eventType" | "payload">>,
+): PostedEnrichmentTargets {
+  const postedVoucherIds = new Set<string>();
+  const postedLineIds = new Set<string>();
+
+  for (const event of events) {
+    if (event.eventType !== "PostedToLedger" && event.eventType !== "VoucherImported") continue;
+    postedVoucherIds.add(event.aggregateId);
+    const lines = Array.isArray(event.payload.lines) ? event.payload.lines : [];
+    for (const line of lines) {
+      if (typeof line !== "object" || line === null) continue;
+      const lineId = (line as { lineId?: unknown }).lineId;
+      if (typeof lineId === "string") postedLineIds.add(lineId);
+    }
+  }
+
+  return { postedVoucherIds, postedLineIds };
+}
+
+export function assertEnrichmentTargetPosted(
+  target: Pick<EnrichmentWorkItem, "targetKind" | "targetId">,
+  postedTargets: PostedEnrichmentTargets,
+): void {
+  const targetIsPosted =
+    target.targetKind === "voucher"
+      ? postedTargets.postedVoucherIds.has(target.targetId)
+      : postedTargets.postedLineIds.has(target.targetId);
+
+  if (!targetIsPosted) throw new EnrichmentTargetNotPostedError(target.targetId);
+}
+
 export const AUTO_DETECTED_ALERT_KINDS: ReadonlySet<string> = new Set(["stale-blocked", "missing-supplier-vat"]);
 
 /** Shared review-copy literals — Memory/Postgres both surface these strings. */
@@ -362,14 +404,7 @@ export function planPostPostEnrichmentConfirm(input: {
   postedLineIds: ReadonlySet<string>;
 }): PostPostEnrichmentConfirmPlan {
   const { workItem } = input;
-  const targetIsPosted =
-    workItem.targetKind === "voucher"
-      ? input.postedVoucherIds.has(workItem.targetId)
-      : input.postedLineIds.has(workItem.targetId);
-
-  if (!targetIsPosted) {
-    throw new EnrichmentTargetNotPostedError(workItem.targetId);
-  }
+  assertEnrichmentTargetPosted(workItem, input);
 
   if (workItem.proposedChange.kind !== "noop") {
     throw new EnrichmentNotSupportedError(workItem.proposedChange.kind);

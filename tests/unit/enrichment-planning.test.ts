@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import type { EnrichmentWorkItem } from "@jpx-accounting/contracts";
 import {
+  collectPostedEnrichmentTargets,
   EnrichmentNotSupportedError,
   EnrichmentTargetNotPostedError,
   planPostPostEnrichmentConfirm,
@@ -46,6 +47,26 @@ test("planPostPostEnrichmentConfirm rejects unposted line targets", () => {
       }),
     EnrichmentTargetNotPostedError,
   );
+});
+
+test("collectPostedEnrichmentTargets ignores line ids outside posting events", () => {
+  const targets = collectPostedEnrichmentTargets([
+    {
+      aggregateId: "simulation_1",
+      eventType: "SimulationExecuted",
+      payload: { lines: [{ lineId: "line_not_posted" }] },
+    },
+    {
+      aggregateId: "voucher_posted",
+      eventType: "PostedToLedger",
+      payload: { lines: [{ lineId: "line_posted" }] },
+    },
+  ]);
+
+  assert.equal(targets.postedVoucherIds.has("simulation_1"), false);
+  assert.equal(targets.postedLineIds.has("line_not_posted"), false);
+  assert.equal(targets.postedVoucherIds.has("voucher_posted"), true);
+  assert.equal(targets.postedLineIds.has("line_posted"), true);
 });
 
 test("planPostPostEnrichmentConfirm never emits PostedToLedger for noop", () => {
