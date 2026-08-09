@@ -55,6 +55,10 @@ function memoryHarness(): ConformanceHarness {
   };
 }
 
+test("conformance registry includes enrichment confirmation safety", () => {
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "enrichment confirm never posts twice"));
+});
+
 async function withPostgresHarness(label: string, run: (h: ConformanceHarness) => Promise<void>): Promise<void> {
   const ns = requireCtx().createNamespace(label);
   const store = new PostgresLedgerStore(requireCtx().client, {

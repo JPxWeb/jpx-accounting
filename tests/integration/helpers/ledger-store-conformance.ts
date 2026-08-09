@@ -457,6 +457,44 @@ export async function scenarioReviewApproveEdited(h: ConformanceHarness): Promis
   };
 }
 
+export async function scenarioEnrichmentWorkItemConfirmNeverPosts(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Enrichment conformance",
+    originalFilename: "enrichment-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+
+  const item = await h.store.proposeEnrichmentWorkItem({
+    actorId: h.actorId,
+    targetKind: "voucher",
+    targetId: created.voucher.id,
+    proposedChange: { kind: "noop" },
+    source: "ui",
+    idempotencyKey: `ui:noop:${created.voucher.id}`,
+  });
+  const confirmed = await h.store.confirmEnrichmentWorkItem(item.id, { actorId: h.actorId });
+  const replayed = await h.store.confirmEnrichmentWorkItem(item.id, { actorId: h.actorId });
+  const stored = await h.store.getEnrichmentWorkItem(item.id);
+  const postedForVoucher = (await h.store.getEvents()).filter(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+
+  assert.equal(postedForVoucher.length, 1);
+  assert.deepEqual(replayed.resultingEventIds, confirmed.resultingEventIds);
+
+  return {
+    initialStatus: item.status,
+    confirmedStatus: confirmed.status,
+    storedStatus: stored?.status ?? null,
+    resultingEventCount: confirmed.resultingEventIds?.length ?? 0,
+    idempotentReplay: replayed.status === "confirmed",
+    postedForVoucher: postedForVoucher.length,
+  };
+}
+
 export const CONFORMANCE_SCENARIOS: Array<{
   name: string;
   run: (h: ConformanceHarness) => Promise<ConformanceOutcome>;
@@ -470,6 +508,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "append-only event vocabulary", run: scenarioAppendOnlyEventVocabulary },
   { name: "review reject", run: scenarioReviewReject },
   { name: "review approve with edits", run: scenarioReviewApproveEdited },
+  { name: "enrichment confirm never posts twice", run: scenarioEnrichmentWorkItemConfirmNeverPosts },
 ];
 
 export function assertConformanceParity(
