@@ -128,6 +128,14 @@ export class EnrichmentLineNotFoundError extends Error {
   }
 }
 
+export function assertPrePostEnrichmentIntentSupported(proposals: readonly EnrichmentProposal[]): void {
+  for (const proposal of proposals) {
+    if (proposal.kind !== "noop" && proposal.kind !== "line_enrichment_record") {
+      throw new EnrichmentNotSupportedError(proposal.kind);
+    }
+  }
+}
+
 export class LineEnrichmentNotActiveError extends Error {
   constructor(public readonly enrichmentId: string) {
     super(`Active line enrichment not found: ${enrichmentId}`);
@@ -585,6 +593,7 @@ export function planPrePostEnrichment(input: {
   if (input.review.status !== "needs-review") {
     throw new EnrichmentIntentClosedError(input.review.id);
   }
+  assertPrePostEnrichmentIntentSupported(input.proposals);
 
   const companionEvents: PlannedEvent[] = [];
   for (const proposal of input.proposals) {

@@ -58,6 +58,7 @@ import { simulateApprovals } from "./simulation";
 import {
   AUTO_DETECTED_ALERT_KINDS,
   assertEnrichmentTargetPosted,
+  assertPrePostEnrichmentIntentSupported,
   collectPostedEnrichmentTargets,
   EnrichmentIntentClosedError,
   ExternalReferenceNotFoundError,
@@ -810,6 +811,7 @@ export class MemoryLedgerStore implements LedgerStore {
     if (!voucher || voucher.status !== "needs-review") {
       throw new EnrichmentIntentClosedError(input.reviewId);
     }
+    assertPrePostEnrichmentIntentSupported(input.proposals);
     const intent: ReviewEnrichmentIntent = {
       reviewId: review.id,
       voucherId: voucher.id,

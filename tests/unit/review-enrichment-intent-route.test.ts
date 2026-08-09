@@ -85,3 +85,63 @@ test("review enrichment intent route rejects a mismatched body review id", async
   );
   assert.equal(response.status, 400);
 });
+
+test("review enrichment intent route rejects unsupported pre-post proposals before persistence", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await store.createEvidence({
+    actorId: "user:test",
+    title: "Unsupported intent route",
+    originalFilename: "unsupported-intent-route.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  const app = createTestApp(store);
+  const response = await app.request(`http://localhost/api/reviews/${created.review.id}/enrichment-intents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      reviewId: created.review.id,
+      proposals: [{ kind: "voucher_tags_add", tagIds: ["tag_travel"] }],
+    }),
+  });
+
+  assert.equal(response.status, 422);
+  assert.equal(((await response.json()) as { code: string }).code, "enrichment_not_supported");
+  assert.equal(await store.getReviewEnrichmentIntent(created.review.id), undefined);
+});
+
+test("review approval reports a typed error when an intent targets no planned line", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await store.createEvidence({
+    actorId: "user:test",
+    title: "Missing line target",
+    originalFilename: "missing-line-target.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  const app = createTestApp(store);
+  const attached = await app.request(`http://localhost/api/reviews/${created.review.id}/enrichment-intents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      reviewId: created.review.id,
+      proposals: [
+        {
+          kind: "line_enrichment_record",
+          lineId: "ln_missing",
+          enrichmentType: "project",
+          payload: { projectId: "proj_1" },
+        },
+      ],
+    }),
+  });
+  assert.equal(attached.status, 200);
+
+  const response = await app.request(`http://localhost/api/reviews/${created.review.id}/approve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(response.status, 422);
+  assert.equal(((await response.json()) as { code: string }).code, "enrichment_line_not_found");
+});

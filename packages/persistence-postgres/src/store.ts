@@ -34,6 +34,7 @@ import { companySettingsSchema } from "@jpx-accounting/contracts";
 import {
   AUTO_DETECTED_ALERT_KINDS,
   assertEnrichmentTargetPosted,
+  assertPrePostEnrichmentIntentSupported,
   buildBalances,
   buildDeterministicSuggestion,
   buildEventHash,
@@ -1604,6 +1605,7 @@ export class PostgresLedgerStore implements LedgerStore {
       if (!voucherRow || voucherRow.status !== "needs-review") {
         throw new EnrichmentIntentClosedError(input.reviewId);
       }
+      assertPrePostEnrichmentIntentSupported(input.proposals);
 
       const updatedAt = nowIso();
       const updatedBy = input.actorId ?? DEMO_ACTOR_ID;

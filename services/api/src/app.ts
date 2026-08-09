@@ -24,8 +24,10 @@ import { AiRuntimeUnavailableError, type AiRuntime, isAiRuntimeOperational } fro
 import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import {
-  EnrichmentTargetNotPostedError,
   EnrichmentIntentClosedError,
+  EnrichmentLineNotFoundError,
+  EnrichmentNotSupportedError,
+  EnrichmentTargetNotPostedError,
   ExternalReferenceNotFoundError,
   buildSieExport,
   currentMonthToken,
@@ -528,6 +530,14 @@ export function createApp({
 
     if (error instanceof EnrichmentIntentClosedError) {
       return jsonError(c, error.message, runtimeMode, 409, { code: "review_not_open" });
+    }
+
+    if (error instanceof EnrichmentNotSupportedError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "enrichment_not_supported" });
+    }
+
+    if (error instanceof EnrichmentLineNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "enrichment_line_not_found" });
     }
 
     if (error instanceof ExternalReferenceNotFoundError) {

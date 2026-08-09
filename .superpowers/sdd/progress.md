@@ -317,16 +317,33 @@
     relationship, rejects closed reviews, attaches server-attributed intent,
     and returns a queue deep link.
   - Focused route/client tests and affected typechecks passed.
+- Wave 5B Sol review: APPROVE_WITH_FIXES.
+  - Unsupported proposal kinds now fail before intent persistence in both
+    stores instead of poisoning a later approval with an opaque 500.
+  - Unsupported pre-post kinds and missing approval-batch line targets map to
+    typed 422 responses; Opus identity, single-posting, tenant, and actor
+    invariants remain intact.
+  - Focused suites passed 40/40; affected typechecks, formatting, diagnostics,
+    and diff checks passed. Strict `pnpm db:test` applied migrations
+    `0001`–`0011` and passed 89/89 integration tests.
+  - See `.superpowers/sdd/w5b-sol-review.md`. Tasks 5.2, 5.3, and 5.10 are
+    approved after the review-fix commit; Wave 6 remains blocked on the full
+    Wave 5 gate.
+- Task 5.9 Books line-target and VAT/deductibility UI completed; awaiting Sol
+  UI review.
+  - Voucher detail activates stable target columns only when projection
+    `lineId` exists; demo seed rows remain explicitly disabled.
+  - Positional `journal_n` ids are never exposed as enrichment targets.
+  - English/Swedish copy and desktop/Pixel 7 E2E cover the gated behavior.
+  - View-model unit tests passed 5/5; web/tests typechecks, targeted lint and
+    formatting, `pnpm build:e2e`, and focused E2E passed 2/2.
 
 ## In progress
 
-- Sol review of the completed Tasks 5.2, 5.3, and 5.10 continuation batch.
+- Sol review of Task 5.9 line identity and VAT affordances.
 
 ## Pending
 
-- Wave 5 Task 5.9 is unblocked; the UI must gate enrichment affordances on
-  `lineId` presence (demo seed lines have none) and never use the positional
-  `journal_n` `id` as an enrichment target.
 - Wave 5 Tasks 5.11–5.12 after their dependencies.
 - Waves 6–8 (single feature branch; defer mid-wave PR to main until program
   ready).

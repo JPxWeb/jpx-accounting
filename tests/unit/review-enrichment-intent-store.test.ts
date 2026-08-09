@@ -40,3 +40,25 @@ test("review enrichment intent is stored only while its review is open", async (
   );
   assert.equal(posted.length, 1);
 });
+
+test("review enrichment intent rejects proposals the pre-post planner cannot consume", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await store.createEvidence({
+    actorId: "user:test",
+    title: "Unsupported intent",
+    originalFilename: "unsupported-intent.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+
+  await assert.rejects(
+    () =>
+      store.attachReviewEnrichmentIntent({
+        actorId: "user:test",
+        reviewId: created.review.id,
+        proposals: [{ kind: "voucher_tags_add", tagIds: ["tag_travel"] }],
+      }),
+    /not supported/i,
+  );
+  assert.equal(await store.getReviewEnrichmentIntent(created.review.id), undefined);
+});
