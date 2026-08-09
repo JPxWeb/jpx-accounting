@@ -12,10 +12,12 @@ import type {
   EnrichmentWorkItem,
   EvidenceContext,
   EvidenceCreateInput,
+  EvidencePacket,
   ExternalReferenceProjection,
   IntegritySummary,
   InvoiceRegisteredPayload,
   JournalEntryProjection,
+  KnowledgeQueryResult,
   OpenInvoiceListRow,
   PaymentAllocatedPayload,
   PaymentHistoryListRow,
@@ -50,11 +52,13 @@ import {
   enrichmentWorkItemSchema,
   evidenceContextSchema,
   evidenceCreateResultSchema,
+  evidencePacketSchema,
   externalReferenceLinkedPayloadSchema,
   externalReferenceProjectionSchema,
   integritySummarySchema,
   invoiceRegisteredPayloadSchema,
   journalEntryProjectionSchema,
+  knowledgeQueryResultSchema,
   openInvoiceListSchema,
   paymentAllocatedPayloadSchema,
   paymentHistoryListSchema,
@@ -428,6 +432,19 @@ export class AccountingApiClient {
     });
   }
 
+  async composeEvidence(input: {
+    evidenceIds: string[];
+    note?: string;
+    voiceTranscript?: string;
+  }): Promise<EvidencePacket> {
+    if (this.fallbackStore) return this.fallbackStore.composeEvidence(input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/evidence/compose", evidencePacketSchema, {
+      method: "POST",
+      json: input,
+    });
+  }
+
   async proposeEnrichmentWorkItem(input: ProposeEnrichmentWorkItemInput): Promise<EnrichmentWorkItem> {
     // Parse at the client boundary so unknown fields such as a runtime
     // `actorId` are stripped in both HTTP and offline-demo modes.
@@ -503,6 +520,12 @@ export class AccountingApiClient {
       method: "POST",
       json: parsedInput,
     });
+  }
+
+  async getReviewFeed(): Promise<ReviewTask[]> {
+    if (this.fallbackStore) return this.fallbackStore.getReviewFeed();
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/reviews/feed", z.array(reviewTaskSchema));
   }
 
   async confirmEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem> {
@@ -807,6 +830,14 @@ export class AccountingApiClient {
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/integrity", integritySummarySchema);
+  }
+
+  async queryKnowledge(query: string): Promise<KnowledgeQueryResult> {
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/knowledge/query", knowledgeQueryResultSchema, {
+      method: "POST",
+      json: { query },
+    });
   }
 
   /**

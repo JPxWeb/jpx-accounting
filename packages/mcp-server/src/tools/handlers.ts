@@ -6,7 +6,7 @@ type EnrichmentProposalClient = Pick<AccountingApiClient, "proposeEnrichmentWork
 
 type InitializeUploadInput = Parameters<AccountingApiClient["initUpload"]>[0];
 type ReviewProposalInput = Parameters<AccountingApiClient["submitReviewProposal"]>[0];
-type EnrichmentProposalInput = Parameters<AccountingApiClient["proposeEnrichmentWorkItem"]>[0];
+type EnrichmentProposalInput = Omit<Parameters<AccountingApiClient["proposeEnrichmentWorkItem"]>[0], "source">;
 
 export type McpUploadCredential = {
   uploadId: string;

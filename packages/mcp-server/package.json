@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@jpx-accounting/api-client": "workspace:*",
-    "@modelcontextprotocol/sdk": "1.30.0"
+    "@jpx-accounting/contracts": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.3.6"
   }
 }
