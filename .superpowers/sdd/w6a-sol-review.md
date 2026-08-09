@@ -1,8 +1,8 @@
 # Wave 6a Tasks 6a.1–6a.2 Sol review
 
-**Date:** 2026-08-09  
-**Scope:** project contracts and pure registry/list projections (`c89852f`–`cd0e661`)  
-**Verdict:** APPROVE_WITH_FIXES  
+**Date:** 2026-08-09
+**Scope:** project contracts and pure registry/list projections (`c89852f`–`cd0e661`)
+**Verdict:** APPROVE_WITH_FIXES
 **NEEDS_OPUS_REVIEW:** no — no ledger-line identity derivation, posting logic, or accounting amount behavior changed.
 
 ## Findings and fixes
