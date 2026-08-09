@@ -1,0 +1,16 @@
+{
+  "name": "@jpx-accounting/mcp-server",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "bin": {
+    "jpx-accounting-mcp": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@jpx-accounting/api-client": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.30.0"
+  }
+}
