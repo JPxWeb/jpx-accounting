@@ -794,6 +794,19 @@
     diagnostics/diff checks are clean.
   - No writer/store behavior changed; Memory/Postgres parity is therefore not
     implicated. UI, full gate, and Wave 6e completion remain pending.
+- Wave 6e Task 6e.3 API + client Sol review: **APPROVE**.
+  - The always-on route and authenticated HTTP/offline-demo client validate the
+    same shared valued-movement list contract and replay only append-only
+    events.
+  - No writer, store mutation, UI, feature flag, or Wave 6d quantity payload
+    changed; the foundation's valuation, identity, UOM, and rounding rules
+    remain intact.
+  - Fresh focused tests passed 6/6; API client, API, and aggregate tests
+    typechecks passed; the implementation diff check passed.
+  - Concurrent Wave 6b approval wiring in shared `app.ts` / API-client history
+    is outside this verdict and does not block the unchanged valued-list hunks.
+  - No Opus escalation is required. Task 6e.4 UI and the full/visual gate remain
+    pending. See `.superpowers/sdd/w6e-api-sol-review.md`.
 
 ## Pending
 
