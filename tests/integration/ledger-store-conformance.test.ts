@@ -57,6 +57,8 @@ function memoryHarness(): ConformanceHarness {
 
 test("conformance registry includes enrichment confirmation safety", () => {
   assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "enrichment confirm never posts twice"));
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "pre-post enrichment single posting"));
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "line-target work item never posts"));
   assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "external reference append-only paths"));
   assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "voucher tag append-only paths"));
 });

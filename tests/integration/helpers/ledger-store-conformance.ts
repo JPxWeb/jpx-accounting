@@ -465,6 +465,91 @@ export async function scenarioReviewApproveEdited(h: ConformanceHarness): Promis
   };
 }
 
+export async function scenarioPrePostEnrichmentSinglePosting(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Pre-post enrichment conformance",
+    originalFilename: "pre-post-enrichment-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await h.store.attachReviewEnrichmentIntent({
+    actorId: h.actorId,
+    reviewId: created.review.id,
+    proposals: [{ kind: "noop" }],
+  });
+
+  const decided = await h.store.applyReviewDecision(created.review.id, "approve", {
+    actorId: h.actorId,
+  });
+  const events = await h.store.getEvents();
+  const postedForVoucher = events.filter(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+
+  assert.equal(postedForVoucher.length, 1);
+  assert.equal(await h.store.getReviewEnrichmentIntent(created.review.id), undefined);
+
+  return {
+    reviewStatus: decided?.status ?? null,
+    postedForVoucher: postedForVoucher.length,
+    intentConsumed: (await h.store.getReviewEnrichmentIntent(created.review.id)) === undefined,
+  };
+}
+
+export async function scenarioLineTargetWorkItemNeverPosts(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Line-target work item conformance",
+    originalFilename: "line-target-work-item-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+
+  const eventsAfterPosting = await h.store.getEvents();
+  const posted = eventsAfterPosting.find(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+  const lineId = (posted?.payload.lines as Array<{ lineId?: string }> | undefined)?.[0]?.lineId;
+  assert.ok(lineId);
+
+  const item = await h.store.proposeEnrichmentWorkItem({
+    actorId: h.actorId,
+    targetKind: "line",
+    targetId: lineId,
+    proposedChange: {
+      kind: "line_enrichment_record",
+      lineId,
+      enrichmentType: "project",
+      payload: { projectId: "project_conformance" },
+    },
+    source: "ui",
+    idempotencyKey: `ui:line-target-never-posts:${lineId}`,
+  });
+  const confirmed = await h.store.confirmEnrichmentWorkItem(item.id, { actorId: h.actorId });
+  const eventsAfterConfirm = await h.store.getEvents();
+  const resultingEvents = eventsAfterConfirm.filter((event) => confirmed.resultingEventIds?.includes(event.id));
+  const postedForVoucher = eventsAfterConfirm.filter(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+
+  assert.equal(postedForVoucher.length, 1);
+  assert.deepEqual(
+    resultingEvents.map((event) => event.eventType),
+    ["LineEnrichmentRecorded"],
+  );
+
+  return {
+    workItemStatus: confirmed.status,
+    resultingEventTypes: resultingEvents.map((event) => event.eventType),
+    postedForVoucher: postedForVoucher.length,
+    postingDelta:
+      eventsAfterConfirm.filter((event) => event.eventType === "PostedToLedger").length -
+      eventsAfterPosting.filter((event) => event.eventType === "PostedToLedger").length,
+  };
+}
+
 export async function scenarioEnrichmentWorkItemConfirmNeverPosts(h: ConformanceHarness): Promise<ConformanceOutcome> {
   const created = await h.store.createEvidence({
     actorId: h.actorId,
@@ -737,6 +822,8 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "append-only event vocabulary", run: scenarioAppendOnlyEventVocabulary },
   { name: "review reject", run: scenarioReviewReject },
   { name: "review approve with edits", run: scenarioReviewApproveEdited },
+  { name: "pre-post enrichment single posting", run: scenarioPrePostEnrichmentSinglePosting },
+  { name: "line-target work item never posts", run: scenarioLineTargetWorkItemNeverPosts },
   { name: "enrichment confirm never posts twice", run: scenarioEnrichmentWorkItemConfirmNeverPosts },
   { name: "line enrichment supersession", run: scenarioLineEnrichmentSupersession },
   { name: "external reference append-only paths", run: scenarioExternalReferences },
