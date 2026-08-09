@@ -762,10 +762,26 @@
     added. No Opus escalation is required. Wave 6d remains NOT COMPLETE; full
     and visual gates remain deferred. See
     `.superpowers/sdd/w6d-inventory-uom-sol-rereview.md`.
+- Wave 6e valued-inventory foundation is ready for its first Sol checkpoint.
+  - Task 6e.1 distinct valued movement contracts: `ad7e6ff`.
+  - Task 6e.2 pure active valued-movement projection: `d109e76`.
+  - Explicit unit cost and uppercase currency are required; quantity-only
+    payloads remain strict and continue rejecting valued fields.
+  - Projection replay excludes quantity-only events and superseded values,
+    preserves first movement identity, validates wrapper/payload line identity,
+    and keeps each row's authoritative UOM without changing Wave 6d
+    `(skuId, uom)` quantity balances.
+  - TDD RED was observed for both tasks; focused valued tests passed 8/8.
+    Contracts/domain typechecks, focused ESLint, Prettier, diagnostics, and
+    diff checks passed.
+  - Aggregate tests typecheck is currently blocked only by concurrent Wave 6b
+    WIP referencing an unimported `EnrichmentIntentVersionMismatchError` in
+    shared conformance. Store/API/UI and the full Wave 6e gate remain
+    unstarted pending Sol review.
 
 ## Pending
 
 - Wave 6b intent-identity repair, Opus re-review, and renewed gate; remaining
-  Wave 6d work; then Waves 6e–8 in plan order, with Wave 6e blocked until Wave
-  6d completion (single feature branch; defer mid-wave PR to main until program
-  ready).
+  Wave 6d full/visual gate; then Wave 6e Tasks 6e.3–6e.5 after the foundation
+  checkpoint, followed by Waves 7–8 in plan order (single feature branch;
+  defer mid-wave PR to main until program ready).

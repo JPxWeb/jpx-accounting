@@ -726,3 +726,49 @@ Implementation: `232cdd2`, ownership separation: `9fadc18`
 No PR was opened, `main` was not touched, and Wave 6e was not started. Stop for
 Sol re-review; Wave 6d remains incomplete and its full/visual gate remains
 deferred.
+
+# Wave 6e valued inventory foundation
+
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Base: `8b501fd`
+Scope: Tasks 6e.1–6e.2
+Checkpoint: **READY FOR SOL REVIEW; WAVE 6E NOT COMPLETE**
+
+## Completed tasks
+
+- Task 6e.1 — distinct valued movement contracts: `ad7e6ff`
+  - Added the locked `valued_inventory_movement` payload shape with explicit
+    nonnegative `unitCost`, uppercase three-letter `currency`, stable movement
+    and line identity, UOM, direction, quantity, and booking date.
+  - Added identity-locked valued movement list rows and kept the strict Wave 6d
+    quantity payload unchanged; quantity parsing still rejects valued fields.
+- Task 6e.2 — active valued movement projection: `d109e76`
+  - Added `buildValuedMovementList` and registered `kind: "valued_movement"` on
+    the generic list seam.
+  - Extended amounts use shared two-decimal rounding and are derived only from
+    explicit valued line enrichments, never soft tags or quantity-only events.
+  - Replay excludes superseded enrichments, requires the inner payload
+    `lineId` to match the enrichment target, and keeps the first movement id
+    authoritative.
+  - Mixed UOM rows retain their own authoritative UOM; no code changed the
+    Wave 6d `(skuId, uom)` running-quantity buckets.
+
+## TDD and verification
+
+- RED: all 8 focused tests failed because the valued schemas and builder were
+  absent.
+- GREEN: focused valued contract/projection tests passed 8/8.
+- Contracts and domain package typechecks passed.
+- Focused ESLint, Prettier, IDE diagnostics, and diff checks passed.
+- Aggregate tests typecheck currently stops in concurrent Wave 6b WIP because
+  shared conformance references an unimported
+  `EnrichmentIntentVersionMismatchError`; neither Wave 6e commit changes that
+  file or shared store behavior.
+
+## Stop and next batch
+
+Stop for Sol review. Task 6e.3 (always-on read API + HTTP/offline api-client)
+is next after approval. Task 6e.4 feature-flagged Books UI and Task 6e.5 full,
+strict-Postgres, E2E, i18n, seam, and visual gates remain unstarted. No PR was
+opened, `main` was not touched, and Waves 7–8 were not started.
