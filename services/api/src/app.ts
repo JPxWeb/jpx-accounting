@@ -62,6 +62,7 @@ import { queryKnowledge } from "./knowledge";
 import type { ApiRouteEnv } from "./route-types";
 import { registerEnrichmentWorkItemRoutes } from "./routes/enrichment-work-items";
 import { registerReviewEnrichmentIntentRoutes } from "./routes/review-enrichment-intents";
+import { registerReviewProposalRoutes } from "./routes/review-proposals";
 import { registerVoucherExternalReferenceRoutes } from "./routes/voucher-external-references";
 import { registerVoucherTagRoutes } from "./routes/voucher-tags";
 import type { AiRuntimeMetadata } from "./runtime";
@@ -646,6 +647,10 @@ export function createApp({
     deriveActorId,
   });
   registerReviewEnrichmentIntentRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerReviewProposalRoutes(app, {
     getStore: () => currentStore,
     deriveActorId,
   });

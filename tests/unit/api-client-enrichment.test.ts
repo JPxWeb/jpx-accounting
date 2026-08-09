@@ -149,6 +149,39 @@ test("attach and get review enrichment intent use review-scoped routes", async (
   );
 });
 
+test("submitReviewProposal posts the contract body and returns its deep link", async (t) => {
+  const captured: CapturedRequest[] = [];
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    captured.push({ url: String(input), init });
+    return Response.json({
+      reviewId: "review_1",
+      deepLink: "/today?view=queue&review=review_1",
+      status: "pending_review",
+    });
+  });
+  const client = createAccountingApiClient({ baseUrl: BASE_URL, runtimeMode: "normal" });
+
+  const proposalInput = {
+    reviewId: "review_1",
+    voucherId: "voucher_1",
+    proposals: [{ kind: "noop" as const }],
+    actorId: "spoofed-client",
+  };
+  const result = await client.submitReviewProposal(proposalInput);
+
+  assert.equal(result.status, "pending_review");
+  assert.deepEqual(
+    captured.map(({ url, init }) => [url, init?.method, init?.body ? JSON.parse(String(init.body)) : undefined]),
+    [
+      [
+        `${BASE_URL}/api/review-proposals`,
+        "POST",
+        { reviewId: "review_1", voucherId: "voucher_1", proposals: [{ kind: "noop" }] },
+      ],
+    ],
+  );
+});
+
 test("direct external-reference methods use voucher-scoped routes", async (t) => {
   const reference: ExternalReferenceProjection = {
     refId: "ref_1",

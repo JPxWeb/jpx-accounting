@@ -139,6 +139,22 @@ export const attachReviewEnrichmentIntentInputSchema = z.object({
   proposals: z.array(enrichmentProposalSchema).min(1),
 });
 
+/**
+ * Review proposals remain pre-post intents. Actor attribution is server-owned;
+ * unknown client keys are stripped before the request reaches the store.
+ */
+export const submitReviewProposalInputSchema = z.object({
+  reviewId: z.string().min(1),
+  voucherId: z.string().min(1),
+  proposals: z.array(enrichmentProposalSchema).min(1),
+});
+
+export const submitReviewProposalResultSchema = z.object({
+  reviewId: z.string().min(1),
+  deepLink: z.string().min(1),
+  status: z.literal("pending_review"),
+});
+
 export type EnrichmentProposal = z.infer<typeof enrichmentProposalSchema>;
 export type LineEnrichmentRecordedPayload = z.infer<typeof lineEnrichmentRecordedPayloadSchema>;
 export type LineEnrichmentSupersededPayload = z.infer<typeof lineEnrichmentSupersededPayloadSchema>;
@@ -156,3 +172,5 @@ export type EnrichmentWorkItem = z.infer<typeof enrichmentWorkItemSchema>;
 export type ProposeEnrichmentWorkItemInput = z.infer<typeof proposeEnrichmentWorkItemInputSchema>;
 export type ReviewEnrichmentIntent = z.infer<typeof reviewEnrichmentIntentSchema>;
 export type AttachReviewEnrichmentIntentInput = z.infer<typeof attachReviewEnrichmentIntentInputSchema>;
+export type SubmitReviewProposalInput = z.infer<typeof submitReviewProposalInputSchema>;
+export type SubmitReviewProposalResult = z.infer<typeof submitReviewProposalResultSchema>;

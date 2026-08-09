@@ -25,6 +25,8 @@ import type {
   SieImportResult,
   SimulationRequest,
   SimulationRun,
+  SubmitReviewProposalInput,
+  SubmitReviewProposalResult,
   UploadInit,
   UploadInitResult,
 } from "@jpx-accounting/contracts";
@@ -47,6 +49,8 @@ import {
   runtimeInfoSchema,
   sieImportResultSchema,
   simulationRunSchema,
+  submitReviewProposalInputSchema,
+  submitReviewProposalResultSchema,
   uploadInitResultSchema,
   voucherTagsProjectionSchema,
   workspaceSnapshotSchema,
@@ -323,6 +327,30 @@ export class AccountingApiClient {
       throw new AccountingApiError(response.status, `getReviewEnrichmentIntent failed: ${response.status}`);
     }
     return parseJsonBody(response, reviewEnrichmentIntentSchema);
+  }
+
+  async submitReviewProposal(input: SubmitReviewProposalInput): Promise<SubmitReviewProposalResult> {
+    const parsedInput = submitReviewProposalInputSchema.parse(input);
+    if (this.fallbackStore) {
+      const review = await this.fallbackStore.findReviewByVoucher(parsedInput.voucherId);
+      if (!review || review.id !== parsedInput.reviewId || review.status !== "needs-review") {
+        throw new AccountingApiError(review ? 409 : 404, review ? "Review must remain open." : "Review not found.");
+      }
+      await this.fallbackStore.attachReviewEnrichmentIntent({
+        reviewId: parsedInput.reviewId,
+        proposals: parsedInput.proposals,
+      });
+      return submitReviewProposalResultSchema.parse({
+        reviewId: parsedInput.reviewId,
+        deepLink: `/today?view=queue&review=${encodeURIComponent(parsedInput.reviewId)}`,
+        status: "pending_review",
+      });
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/review-proposals", submitReviewProposalResultSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
   }
 
   async confirmEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem> {
