@@ -604,11 +604,39 @@
   - No implementation fix was made while Wave 6b/6d owners hold shared files.
     Wave 6c remains NOT COMPLETE and the full/visual gate remains deferred.
     See `.superpowers/sdd/w6c-trips-ui-sol-review.md`.
+- Wave 6b Opus review of the atomic approval-to-invoice seam: REQUEST_CHANGES,
+  with the seam **design APPROVED** and the fix agent cleared to proceed.
+  - The seam Sol asked for already exists: the Wave 5 pre-post intent path
+    (`attachReviewEnrichmentIntent` → `planPrePostEnrichment` →
+    `mergePrePostEnrichmentsIntoReviewDecisionPlan`) appends companion events
+    inside the one serialized approval transaction, and already refuses both a
+    companion `PostedToLedger` and a base plan without exactly one. No new seam
+    should be built and `registerInvoice()` must stay off the approval path.
+    Wave 6c trips should reuse it rather than invent a parallel path.
+  - `invoiceId`, `currency`, and `originalAmount` are all server-derivable in
+    the planner, so attach-then-approve is safe: a failure between the two calls
+    leaves an intent on a still-open review, never a posted voucher without its
+    registration.
+  - Two blocking defects in the in-flight implementation: a stale intent is
+    never cleared, so an approval can register an invoice the approver never
+    saw; and `originalAmount` sums the debit legs without `round2`, writing a
+    non-öre-exact amount into an immutable event for 25.7% of gross amounts.
+  - Also required before the gate: a typed 422 for the amount-less voucher that
+    currently yields an opaque 500 and a permanently unapprovable review,
+    invoice/inventory-specific line-not-found errors instead of the
+    project-assignment one, and a bound on the unbounded `proposals` array plus
+    an at-most-one rule per singleton proposal kind.
+  - Known limitation to document: postings credit bank, not AP/AR, so an open
+    invoice and the balance sheet will disagree until payment allocation.
+  - No code was changed — the fix agent holds uncommitted work in every file the
+    fixes touch. Wave 6b is NOT COMPLETE; the seven gate conditions are in
+    `.superpowers/sdd/w6b-opus-invoice-seam-review.md`.
 
 ## In progress
 
-- Wave 6b atomic approval-to-invoice registration design requires Opus review
-  before implementation and a renewed final gate.
+- Wave 6b invoice seam implementation is in flight against the Opus-approved
+  design; the seven gate conditions in the Opus review must land before the
+  renewed final gate.
 - Wave 6c Task 6c.4 requires an Opus-reviewed atomic pre-post trip seam;
   Task 6c.5 awaits that fix and the centralized gate after concurrent
   shared-file owners land.
@@ -617,8 +645,8 @@
 
 ## Pending
 
-- Wave 6b atomic seam rework and renewed gate; Wave 6c atomic seam rework plus
-  renewed Tasks 6c.4–6c.5 gate;
+- Wave 6b Opus gate conditions and renewed gate; Wave 6c atomic seam rework
+  reusing the Wave 6b seam, plus renewed Tasks 6c.4–6c.5 gate;
   remaining Wave 6d work; then Waves 6e–8 in plan order, with Wave 6e blocked
   until Wave 6d completion (single feature branch; defer mid-wave PR to main
   until program ready).
