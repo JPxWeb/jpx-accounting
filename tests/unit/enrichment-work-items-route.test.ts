@@ -55,6 +55,19 @@ test("POST /api/enrichment-work-items rejects unposted voucher with 409", async 
   assert.equal(body.requestId, "ewi-unposted");
 });
 
+test("GET /api/enrichment-work-items/:id returns the work-item 404 shape", async () => {
+  const response = await createTestApp(new MemoryLedgerStore()).request(
+    "http://localhost/api/enrichment-work-items/ewi_missing",
+    { headers: { "x-request-id": "ewi-missing" } },
+  );
+
+  assert.equal(response.status, 404);
+  assert.equal(response.headers.get("x-request-id"), "ewi-missing");
+  const body = (await response.json()) as { code: string; requestId: string };
+  assert.equal(body.code, "enrichment_work_item_not_found");
+  assert.equal(body.requestId, "ewi-missing");
+});
+
 test("propose, GET, confirm, and idempotent confirm use the demo actor", async () => {
   const store = new MemoryLedgerStore();
   const created = await store.createEvidence({

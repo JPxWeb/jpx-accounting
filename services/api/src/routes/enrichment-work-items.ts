@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
 
 import { proposeEnrichmentWorkItemInputSchema } from "@jpx-accounting/contracts";
+import { EnrichmentWorkItemNotFoundError } from "@jpx-accounting/domain/store";
 
 import type { ApiRouteDeps, ApiRouteEnv } from "../route-types";
 import { jsonValidated } from "../validation";
@@ -17,8 +17,9 @@ export function registerEnrichmentWorkItemRoutes(app: Hono<ApiRouteEnv>, deps: A
   });
 
   app.get("/api/enrichment-work-items/:id", async (context) => {
-    const item = await deps.getStore().getEnrichmentWorkItem(context.req.param("id"));
-    if (!item) throw new HTTPException(404, { message: "Enrichment work item not found" });
+    const id = context.req.param("id");
+    const item = await deps.getStore().getEnrichmentWorkItem(id);
+    if (!item) throw new EnrichmentWorkItemNotFoundError(id);
     return context.json(item);
   });
 
