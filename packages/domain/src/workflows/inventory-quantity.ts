@@ -14,9 +14,10 @@ export function buildSkuMovementList(events: LedgerEvent[]): SkuMovementListRow[
     if (seenMovementIds.has(payload.movementId)) continue;
     seenMovementIds.add(payload.movementId);
 
+    const balanceKey = `${payload.skuId}\u0000${payload.uom}`;
     const delta = payload.direction === "in" ? payload.quantity : -payload.quantity;
-    const runningQuantity = (balances.get(payload.skuId) ?? 0) + delta;
-    balances.set(payload.skuId, runningQuantity);
+    const runningQuantity = (balances.get(balanceKey) ?? 0) + delta;
+    balances.set(balanceKey, runningQuantity);
     rows.push({
       id: payload.movementId,
       kind: "sku_movement",

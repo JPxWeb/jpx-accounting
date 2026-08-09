@@ -76,6 +76,35 @@ test("running quantities are isolated per SKU", () => {
   );
 });
 
+test("running quantities are isolated per unit of measure for the same SKU", () => {
+  const rows = buildSkuMovementList([
+    event("evt_in", movement),
+    event("evt_kg_in", {
+      ...movement,
+      movementId: "mov_2",
+      quantity: 2,
+      uom: "kg",
+      lineId: "ln_2",
+    }),
+    event("evt_st_out", {
+      ...movement,
+      movementId: "mov_3",
+      quantity: 1,
+      direction: "out",
+      lineId: "ln_3",
+    }),
+  ]);
+
+  assert.deepEqual(
+    rows.map((row) => [row.uom, row.runningQuantity]),
+    [
+      ["st", 5],
+      ["kg", 2],
+      ["st", 4],
+    ],
+  );
+});
+
 test("first movement identity remains authoritative during replay", () => {
   const rows = buildSkuMovementList([
     event("evt_in", movement),

@@ -13,6 +13,7 @@ import {
   EnrichmentLineNotFoundError,
   ExternalReferenceNotFoundError,
   InvalidPeriodTokenError,
+  InventoryMovementLineNotFoundError,
   LineEnrichmentNotActiveError,
   parseSie,
   today,
@@ -1149,6 +1150,227 @@ export async function scenarioTripReviewApproval(h: ConformanceHarness): Promise
   };
 }
 
+export async function scenarioTripSupersessionGuards(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Trip supersession conformance",
+    originalFilename: "trip-supersession-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+  const posted = (await h.store.getEvents()).find(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+  const lineId = (posted?.payload.lines as Array<{ lineId?: string }> | undefined)?.[0]?.lineId;
+  assert.ok(lineId);
+
+  const tripA = {
+    tripId: "trip_supersession_a",
+    purpose: "Customer visit",
+    traveler: "Ada",
+    startDate: "2026-08-01",
+    endDate: "2026-08-03",
+  };
+  const tripB = {
+    tripId: "trip_supersession_b",
+    purpose: "Conference",
+    traveler: "Ada",
+    startDate: "2026-08-04",
+    endDate: "2026-08-05",
+  };
+  await h.store.registerTrip({ ...tripA, actorId: h.actorId });
+  await h.store.registerTrip({ ...tripB, actorId: h.actorId });
+
+  const proposeRecord = async (enrichmentType: string, payload: Record<string, unknown>, idempotencyKey: string) => {
+    const item = await h.store.proposeEnrichmentWorkItem({
+      actorId: h.actorId,
+      targetKind: "line",
+      targetId: lineId,
+      proposedChange: { kind: "line_enrichment_record", lineId, enrichmentType, payload },
+      source: "ui",
+      idempotencyKey,
+    });
+    return h.store.confirmEnrichmentWorkItem(item.id, { actorId: h.actorId });
+  };
+  const projectConfirmation = await proposeRecord(
+    "project",
+    { projectId: "project_trip_supersession" },
+    `trip-supersession:project:${lineId}`,
+  );
+  const projectEvent = (await h.store.getEvents()).find((event) =>
+    projectConfirmation.resultingEventIds?.includes(event.id),
+  );
+  const projectEnrichmentId = String(projectEvent?.payload.enrichmentId ?? "");
+  assert.match(projectEnrichmentId, /^le_/);
+
+  const proposeSupersession = (priorEnrichmentId: string, trip: typeof tripA, idempotencyKey: string) =>
+    h.store.proposeEnrichmentWorkItem({
+      actorId: h.actorId,
+      targetKind: "line",
+      targetId: lineId,
+      proposedChange: {
+        kind: "line_enrichment_supersede",
+        lineId,
+        priorEnrichmentId,
+        replacement: { enrichmentType: "trip", payload: trip },
+      },
+      source: "ui",
+      idempotencyKey,
+    });
+
+  const unregistered = await proposeSupersession(
+    projectEnrichmentId,
+    { ...tripB, tripId: "trip_supersession_missing" },
+    `trip-supersession:missing:${lineId}`,
+  );
+  const beforeUnregistered = (await h.store.getEvents()).length;
+  await assert.rejects(
+    () => h.store.confirmEnrichmentWorkItem(unregistered.id, { actorId: h.actorId }),
+    /registered trip/i,
+  );
+  const afterUnregistered = (await h.store.getEvents()).length;
+
+  const tripAConfirmation = await proposeRecord("trip", tripA, `trip-supersession:trip-a:${lineId}`);
+  const tripAEvent = (await h.store.getEvents()).find((event) =>
+    tripAConfirmation.resultingEventIds?.includes(event.id),
+  );
+  const tripAEnrichmentId = String(tripAEvent?.payload.enrichmentId ?? "");
+  assert.match(tripAEnrichmentId, /^le_/);
+
+  const crossTrip = await proposeSupersession(projectEnrichmentId, tripB, `trip-supersession:cross-trip:${lineId}`);
+  const beforeCrossTrip = (await h.store.getEvents()).length;
+  await assert.rejects(
+    () => h.store.confirmEnrichmentWorkItem(crossTrip.id, { actorId: h.actorId }),
+    /already assigned to trip trip_supersession_a/i,
+  );
+  const afterCrossTrip = (await h.store.getEvents()).length;
+
+  const move = await proposeSupersession(tripAEnrichmentId, tripB, `trip-supersession:move:${lineId}`);
+  const confirmedMove = await h.store.confirmEnrichmentWorkItem(move.id, { actorId: h.actorId });
+  const resultingEvents = (await h.store.getEvents()).filter((event) =>
+    confirmedMove.resultingEventIds?.includes(event.id),
+  );
+
+  return {
+    unregisteredEventDelta: afterUnregistered - beforeUnregistered,
+    unregisteredStatus: (await h.store.getEnrichmentWorkItem(unregistered.id))?.status ?? null,
+    crossTripEventDelta: afterCrossTrip - beforeCrossTrip,
+    crossTripStatus: (await h.store.getEnrichmentWorkItem(crossTrip.id))?.status ?? null,
+    moveEventTypes: resultingEvents.map((event) => event.eventType),
+    moveTripId: (resultingEvents[1]?.payload.payload as { tripId?: string } | undefined)?.tripId ?? null,
+  };
+}
+
+export async function scenarioQuantityInventoryReviewApproval(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const invalid = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Invalid quantity inventory approval conformance",
+    originalFilename: "invalid-quantity-inventory-approval-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await h.store.attachReviewEnrichmentIntent({
+    actorId: h.actorId,
+    reviewId: invalid.review.id,
+    proposals: [
+      {
+        kind: "quantity_inventory_movement",
+        skuId: "sku_inventory_invalid",
+        quantity: 1,
+        uom: "st",
+        direction: "in",
+      },
+    ],
+  });
+  const eventsBeforeInvalid = await h.store.getEvents();
+  await assert.rejects(
+    () =>
+      h.store.applyReviewDecision(invalid.review.id, "approve", {
+        actorId: h.actorId,
+        edited: {
+          accountNumber: "1930",
+          accountName: "Bank",
+          vatCode: "VAT25",
+          grossAmount: 125,
+          netAmount: 100,
+          vatAmount: 25,
+        },
+      }),
+    InventoryMovementLineNotFoundError,
+  );
+  const eventsAfterInvalid = await h.store.getEvents();
+  const invalidReview = (await h.store.getSnapshot()).reviews.find((review) => review.id === invalid.review.id);
+  assert.equal(eventsAfterInvalid.length, eventsBeforeInvalid.length);
+  assert.equal(invalidReview?.status, "needs-review");
+  assert.ok(await h.store.getReviewEnrichmentIntent(invalid.review.id));
+
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Quantity inventory approval conformance",
+    originalFilename: "quantity-inventory-approval-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await h.store.attachReviewEnrichmentIntent({
+    actorId: h.actorId,
+    reviewId: created.review.id,
+    proposals: [
+      {
+        kind: "quantity_inventory_movement",
+        skuId: "sku_inventory_conformance",
+        quantity: 3,
+        uom: "st",
+        direction: "out",
+      },
+    ],
+  });
+
+  const approved = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+  const eventsAfterApproval = await h.store.getEvents();
+  const replayed = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: "user:other" });
+  const eventsAfterReplay = await h.store.getEvents();
+  const postedEvents = eventsAfterReplay.filter(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+  const movementEvents = eventsAfterReplay.filter(
+    (event) => event.eventType === "InventoryMovementRecorded" && event.payload.skuId === "sku_inventory_conformance",
+  );
+  const movement = movementEvents[0];
+  const postedLines =
+    (postedEvents[0]?.payload.lines as Array<{ lineId?: string; bookedAt?: string }> | undefined) ?? [];
+  const postedLine = postedLines.find((line) => line.lineId === movement?.payload.lineId);
+
+  assert.equal(approved?.status, "approved");
+  assert.equal(replayed?.status, "approved");
+  assert.equal(postedEvents.length, 1);
+  assert.equal(movementEvents.length, 1);
+  assert.match(String(movement?.payload.movementId), /^mov_/);
+  assert.match(String(movement?.payload.lineId), /^ln_/);
+  assert.ok(postedLine);
+  assert.equal(movement?.payload.bookedAt, postedLine.bookedAt);
+  assert.equal(movement?.actorId, h.actorId);
+  assert.equal(await h.store.getReviewEnrichmentIntent(created.review.id), undefined);
+  assert.equal(eventsAfterReplay.length, eventsAfterApproval.length);
+
+  return {
+    invalidApprovalEventDelta: eventsAfterInvalid.length - eventsBeforeInvalid.length,
+    invalidReviewStatus: invalidReview?.status ?? null,
+    invalidIntentPreserved: Boolean(await h.store.getReviewEnrichmentIntent(invalid.review.id)),
+    approvedStatus: approved?.status ?? null,
+    replayedStatus: replayed?.status ?? null,
+    postedCount: postedEvents.length,
+    movementCount: movementEvents.length,
+    serverDerivedMovementId: /^mov_/.test(String(movement?.payload.movementId)),
+    serverDerivedLineId: /^ln_/.test(String(movement?.payload.lineId)),
+    movementBoundToPostedLine: Boolean(postedLine),
+    bookingDateMatchesPostedLine: movement?.payload.bookedAt === postedLine?.bookedAt,
+    movementActor: movement?.actorId ?? null,
+    intentConsumed: (await h.store.getReviewEnrichmentIntent(created.review.id)) === undefined,
+    replayEventDelta: eventsAfterReplay.length - eventsAfterApproval.length,
+  };
+}
+
 export async function scenarioTripLifecycle(h: ConformanceHarness): Promise<ConformanceOutcome> {
   const first = await h.store.registerTrip({
     tripId: "trip_conformance",
@@ -1213,6 +1435,11 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "invoice and payment identity is immutable", run: scenarioInvoicePayments },
   { name: "invoice review approval registers once atomically", run: scenarioInvoiceReviewApproval },
   { name: "trip review approval registers once atomically", run: scenarioTripReviewApproval },
+  { name: "trip supersession guards", run: scenarioTripSupersessionGuards },
+  {
+    name: "quantity inventory review approval records once atomically",
+    run: scenarioQuantityInventoryReviewApproval,
+  },
   { name: "trip registration and close are immutable", run: scenarioTripLifecycle },
 ];
 
