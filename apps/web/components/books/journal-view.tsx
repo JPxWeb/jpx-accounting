@@ -66,7 +66,9 @@ export function JournalView() {
     return supplierName.toLowerCase() === supplier.toLowerCase();
   });
 
-  const voucherViewModels = groupJournalByVoucher(entries).map((group) => buildLedgerVoucherViewModel(group, lookup));
+  const voucherViewModels = groupJournalByVoucher(entries).map((group) =>
+    buildLedgerVoucherViewModel(group, workspace, lookup, { activateExternalRefs: true }),
+  );
   const filteredVoucherViewModels = q
     ? voucherViewModels.filter((viewModel) => matchesQuery(viewModel, q))
     : voucherViewModels;

@@ -1,4 +1,4 @@
-import type { WorkspaceSnapshot } from "@jpx-accounting/contracts";
+import type { ExternalReferenceProjection, WorkspaceSnapshot } from "@jpx-accounting/contracts";
 import type { VoucherLookup } from "../../components/reports/voucher-link";
 import type { VoucherJournalGroup } from "./group-vouchers";
 
@@ -10,6 +10,7 @@ export type LedgerVoucherViewModel = {
   bookedAt: string;
   lines: VoucherJournalGroup["lines"];
   evidenceIds: string[];
+  externalReferences: ExternalReferenceProjection[];
   provenanceSummary: string;
   slots: Record<
     "workItemConfirm" | "externalRefs" | "tags" | "lineId" | "vatDeductibility" | "workflows",
@@ -17,18 +18,24 @@ export type LedgerVoucherViewModel = {
   >;
 };
 
-type LedgerSnapshot = Pick<WorkspaceSnapshot, "vouchers" | "packets">;
+type LedgerSnapshot = Pick<WorkspaceSnapshot, "vouchers" | "packets"> &
+  Partial<Pick<WorkspaceSnapshot, "externalReferences">>;
+type LedgerVoucherViewModelOptions = {
+  activateExternalRefs?: boolean;
+};
 
 export function buildLedgerVoucherViewModel(group: VoucherJournalGroup, lookup: VoucherLookup): LedgerVoucherViewModel;
 export function buildLedgerVoucherViewModel(
   group: VoucherJournalGroup,
   snapshot: LedgerSnapshot | undefined,
   lookup: VoucherLookup,
+  options?: LedgerVoucherViewModelOptions,
 ): LedgerVoucherViewModel;
 export function buildLedgerVoucherViewModel(
   group: VoucherJournalGroup,
   snapshotOrLookup: LedgerSnapshot | VoucherLookup | undefined,
   lookup?: VoucherLookup,
+  options: LedgerVoucherViewModelOptions = {},
 ): LedgerVoucherViewModel {
   const resolvedLookup = lookup ?? snapshotOrLookup;
   if (!resolvedLookup || !("vouchersById" in resolvedLookup)) {
@@ -44,10 +51,14 @@ export function buildLedgerVoucherViewModel(
     bookedAt: group.bookedAt,
     lines: group.lines,
     evidenceIds: packet?.evidenceIds ?? [],
+    externalReferences: (snapshotOrLookup && "vouchers" in snapshotOrLookup
+      ? (snapshotOrLookup.externalReferences ?? [])
+      : []
+    ).filter((reference) => reference.voucherId === group.voucherId && !reference.removed),
     provenanceSummary: "",
     slots: {
       workItemConfirm: "disabled",
-      externalRefs: "disabled",
+      externalRefs: options.activateExternalRefs ? "active" : "disabled",
       tags: "disabled",
       lineId: "disabled",
       vatDeductibility: "disabled",

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { countryCodeSchema, countryValidationRegistry } from "./countries";
+import { externalReferenceProjectionSchema } from "./enrichment";
 
 export * from "./countries";
 export * from "./enrichment";
@@ -658,6 +659,11 @@ export const workspaceSnapshotSchema = z.object({
    * from the snapshot alone. Defaulted so pre-Phase-4 payloads keep parsing.
    */
   packets: z.array(evidencePacketSchema).default([]),
+  /**
+   * Event-replayed external references. Removed entries remain in this audit
+   * projection while consumers render only active references by default.
+   */
+  externalReferences: z.array(externalReferenceProjectionSchema).default([]),
 });
 
 /**

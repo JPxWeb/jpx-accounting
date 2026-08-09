@@ -49,6 +49,7 @@ test("view-model lists every evidenceIds entry on the packet", () => {
     bookedAt: "2026-03-01T10:00:00.000Z",
     lines: [],
     evidenceIds: ["evidence_a", "evidence_b"],
+    externalReferences: [],
     provenanceSummary: "",
     slots: {
       workItemConfirm: "disabled",
@@ -59,6 +60,24 @@ test("view-model lists every evidenceIds entry on the packet", () => {
       workflows: "disabled",
     },
   });
+});
+
+test("view-model activates externalRefs slot when Wave 3 data path is enabled", () => {
+  const lookup = buildVoucherLookup(snapshot);
+  const vm = buildLedgerVoucherViewModel(
+    {
+      voucherId: "voucher_1",
+      bookedAt: "2026-03-01T10:00:00.000Z",
+      lines: [],
+      totalDebit: 0,
+      totalCredit: 0,
+    },
+    snapshot,
+    lookup,
+    { activateExternalRefs: true },
+  );
+
+  assert.equal(vm.slots.externalRefs, "active");
 });
 
 test("view-model falls back honestly when voucher joins are unavailable", () => {
@@ -76,4 +95,5 @@ test("view-model falls back honestly when voucher joins are unavailable", () => 
   assert.equal(vm.voucherNumber, "sie_1");
   assert.equal(vm.supplierName, "");
   assert.deepEqual(vm.evidenceIds, []);
+  assert.deepEqual(vm.externalReferences, []);
 });

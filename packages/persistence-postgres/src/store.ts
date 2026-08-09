@@ -35,6 +35,7 @@ import {
   buildBalances,
   buildDeterministicSuggestion,
   buildEventHash,
+  buildExternalReferencesFromEvents,
   buildJournal,
   buildReportPack,
   buildVat,
@@ -1301,7 +1302,7 @@ export class PostgresLedgerStore implements LedgerStore {
       ORDER BY p.created_at ASC
     `;
 
-    const [reviews, reports, closeRun, alertRows] = await Promise.all([
+    const [reviews, reports, closeRun, alertRows, events] = await Promise.all([
       this.getReviewFeed(),
       this.getReports(),
       this.getCloseRun(),
@@ -1313,6 +1314,7 @@ export class PostgresLedgerStore implements LedgerStore {
           AND workspace_id = ${this.defaults.workspaceId}
         ORDER BY detected_at DESC
       `,
+      this.getEvents(),
     ]);
 
     return {
@@ -1326,6 +1328,7 @@ export class PostgresLedgerStore implements LedgerStore {
       closeRun,
       alerts: alertRows.map(rowToComplianceAlert),
       packets: packetRows.map((row) => rowToPacket(row, row.evidence_object_ids)),
+      externalReferences: buildExternalReferencesFromEvents(events),
     };
   }
 

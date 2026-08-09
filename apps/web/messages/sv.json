@@ -381,11 +381,32 @@
       "slots": {
         "workItemConfirm": "Bekräftelse av berikningsförslag",
         "workItemHint": "Öppna en säker arbetsobjektslänk för att granska och besluta om en föreslagen ändring.",
-        "externalRefs": "Externa referenser är inte tillgängliga ännu.",
+        "externalRefs": "Externa referenser",
         "tags": "Mjuka taggar är inte tillgängliga ännu.",
         "lineId": "Stabila rad-ID visas ännu inte.",
         "vatDeductibility": "Momskod och avdragsrätt visas ännu inte.",
         "workflows": "Arbetsflödesmärken är inte tillgängliga ännu."
+      },
+      "externalReferences": {
+        "title": "Externa referenser",
+        "description": "Länkar hålls åtskilda från uppladdade underlag och skriver aldrig om det bokförda verifikatet.",
+        "blobBadge": "Uppladdad fil",
+        "externalBadge": "Extern länk",
+        "add": "Lägg till länk",
+        "empty": "Inga externa länkar.",
+        "unlink": "Ta bort",
+        "linkTitle": "Lägg till extern referens",
+        "unlinkTitle": "Ta bort extern referens",
+        "linkConfirmDescription": "Bekräfta detta direkta mänskliga metadatatillägg. Endast HTTPS-länkar godtas.",
+        "unlinkConfirmDescription": "Bekräfta borttagning. Ursprungslänken finns kvar i den append-only-förda revisionshistoriken.",
+        "urlLabel": "HTTPS-URL",
+        "labelLabel": "Etikett (valfri)",
+        "httpsOnly": "Ange en giltig HTTPS-URL.",
+        "confirmLink": "Bekräfta länk",
+        "confirmUnlink": "Bekräfta borttagning",
+        "cancel": "Avbryt",
+        "working": "Sparar…",
+        "error": "Den externa referensen kunde inte sparas. Försök igen."
       },
       "enrichmentConfirm": {
         "eyebrow": "Mänsklig bekräftelse",

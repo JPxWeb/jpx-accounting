@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createAccountingApiClient } from "@jpx-accounting/api-client";
-import type { EnrichmentWorkItem } from "@jpx-accounting/contracts";
+import type { EnrichmentWorkItem, ExternalReferenceProjection } from "@jpx-accounting/contracts";
 
 const BASE_URL = "http://api.test";
 
@@ -101,6 +101,42 @@ test("get, confirm, and reject enrichment work items use their dedicated routes"
       [`${BASE_URL}/api/enrichment-work-items/ewi_1`, "GET"],
       [`${BASE_URL}/api/enrichment-work-items/ewi_1/confirm`, "POST"],
       [`${BASE_URL}/api/enrichment-work-items/ewi_1/reject`, "POST"],
+    ],
+  );
+});
+
+test("direct external-reference methods use voucher-scoped routes", async (t) => {
+  const reference: ExternalReferenceProjection = {
+    refId: "ref_1",
+    voucherId: "voucher_1",
+    url: "https://example.com/document",
+    label: "Supplier portal",
+    linkedAt: "2026-08-09T10:00:00.000Z",
+    linkedBy: "user:abc",
+    removed: false,
+  };
+  const captured: CapturedRequest[] = [];
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    captured.push({ url: String(input), init });
+    return Response.json(reference, { status: String(input).endsWith("/unlink") ? 200 : 201 });
+  });
+  const client = createAccountingApiClient({ baseUrl: BASE_URL, runtimeMode: "normal" });
+
+  await client.linkVoucherExternalReference("voucher_1", {
+    url: reference.url,
+    label: "Supplier portal",
+  });
+  await client.unlinkVoucherExternalReference("voucher_1", reference.refId);
+
+  assert.deepEqual(
+    captured.map(({ url, init }) => [url, init?.method, init?.body ? JSON.parse(String(init.body)) : undefined]),
+    [
+      [
+        `${BASE_URL}/api/vouchers/voucher_1/external-references`,
+        "POST",
+        { url: "https://example.com/document", label: "Supplier portal" },
+      ],
+      [`${BASE_URL}/api/vouchers/voucher_1/external-references/ref_1/unlink`, "POST", undefined],
     ],
   );
 });

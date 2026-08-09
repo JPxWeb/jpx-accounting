@@ -11,6 +11,7 @@ import type {
   EnrichmentWorkItem,
   EvidenceContext,
   EvidenceCreateInput,
+  ExternalReferenceProjection,
   IntegritySummary,
   JournalEntryProjection,
   ProposeEnrichmentWorkItemInput,
@@ -31,6 +32,8 @@ import {
   enrichmentWorkItemSchema,
   evidenceContextSchema,
   evidenceCreateResultSchema,
+  externalReferenceLinkedPayloadSchema,
+  externalReferenceProjectionSchema,
   integritySummarySchema,
   journalEntryProjectionSchema,
   proposeEnrichmentWorkItemInputSchema,
@@ -109,6 +112,10 @@ async function parseJsonBody<T>(response: Response, schema: ZodType<T>): Promise
 const journalProjectionListSchema = z.array(journalEntryProjectionSchema);
 const accountBalanceListSchema = z.array(accountBalanceProjectionSchema);
 const complianceAlertListSchema = z.array(complianceAlertSchema);
+const linkExternalReferenceInputSchema = externalReferenceLinkedPayloadSchema.pick({
+  url: true,
+  label: true,
+});
 
 /** Serialize an optional report window into `?from=&to=` (empty when unscoped). */
 function reportRangeQuery(range?: ReportRange): string {
@@ -305,6 +312,38 @@ export class AccountingApiClient {
       this.baseUrl,
       `/api/enrichment-work-items/${encodeURIComponent(id)}/reject`,
       enrichmentWorkItemSchema,
+      { method: "POST" },
+    );
+  }
+
+  async linkVoucherExternalReference(
+    voucherId: string,
+    input: { url: string; label?: string },
+  ): Promise<ExternalReferenceProjection> {
+    const parsedInput = linkExternalReferenceInputSchema.parse(input);
+    const storeInput = {
+      url: parsedInput.url,
+      ...(parsedInput.label !== undefined ? { label: parsedInput.label } : {}),
+    };
+    if (this.fallbackStore) return this.fallbackStore.appendVoucherExternalReference(voucherId, storeInput);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/vouchers/${encodeURIComponent(voucherId)}/external-references`,
+      externalReferenceProjectionSchema,
+      { method: "POST", json: parsedInput },
+    );
+  }
+
+  async unlinkVoucherExternalReference(voucherId: string, refId: string): Promise<ExternalReferenceProjection> {
+    if (this.fallbackStore) return this.fallbackStore.removeVoucherExternalReference(voucherId, refId, {});
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/vouchers/${encodeURIComponent(voucherId)}/external-references/${encodeURIComponent(refId)}/unlink`,
+      externalReferenceProjectionSchema,
       { method: "POST" },
     );
   }

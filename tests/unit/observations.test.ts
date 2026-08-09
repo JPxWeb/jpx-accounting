@@ -66,6 +66,7 @@ function makeSnapshot(partial: Partial<WorkspaceSnapshot> = {}): WorkspaceSnapsh
     closeRun: { id: "close_test", period: "2026-07", generatedAt: "2026-07-04T00:00:00.000Z", checklist: [] },
     alerts: [],
     packets: [],
+    externalReferences: [],
     ...partial,
   };
 }

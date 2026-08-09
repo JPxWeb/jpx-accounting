@@ -86,6 +86,20 @@ test("direct link and unlink append audit events without another posting", async
   );
 });
 
+test("workspace snapshot exposes replayed external references for the web data path", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await createPostedVoucher(store);
+  const linked = await store.appendVoucherExternalReference(created.voucher.id, {
+    url: "https://example.com/snapshot-document",
+    label: "Snapshot document",
+    actorId: "user:human",
+  });
+
+  const snapshot = await store.getSnapshot();
+
+  assert.deepEqual(snapshot.externalReferences, [linked]);
+});
+
 test("work-item confirmation emits external reference events idempotently", async () => {
   const store = new MemoryLedgerStore();
   const created = await createPostedVoucher(store);

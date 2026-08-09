@@ -30,7 +30,7 @@ import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
 import { detectComplianceIssues } from "./compliance";
 import { initialLedgerLines } from "./evidence-defaults";
-import { findActiveExternalReference } from "./enrichment-projections";
+import { buildExternalReferencesFromEvents, findActiveExternalReference } from "./enrichment-projections";
 import { assertBalancedPosting, postingImbalanceOre } from "./posting-invariants";
 import {
   buildJournal,
@@ -697,6 +697,7 @@ export class MemoryLedgerStore implements LedgerStore {
       closeRun: await this.getCloseRun(),
       alerts: [...this.alerts],
       packets: [...this.evidencePackets.values()],
+      externalReferences: buildExternalReferencesFromEvents(this.events),
     };
   }
 

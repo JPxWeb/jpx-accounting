@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { LedgerVoucherViewModel } from "../../lib/ledger/ledger-voucher-view-model";
 import { Money } from "../ui/money";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
+import { ExternalReferenceList } from "./external-reference-list";
 
 const LEDGER_SLOT_KEYS = [
   "externalRefs",
@@ -18,6 +19,7 @@ const LEDGER_SLOT_KEYS = [
 export function LedgerVoucherDetail({ vm }: { vm: LedgerVoucherViewModel }) {
   const tJournal = useTranslations("books.journal");
   const tSlots = useTranslations("books.ledger.slots");
+  const tExternalRefs = useTranslations("books.ledger.externalReferences");
   const tUnavailable = useTranslations("common.unavailable");
   const disabledSlots = LEDGER_SLOT_KEYS.filter((slot) => vm.slots[slot] === "disabled");
 
@@ -56,7 +58,10 @@ export function LedgerVoucherDetail({ vm }: { vm: LedgerVoucherViewModel }) {
       {vm.evidenceIds.length > 0 ? (
         <ul className="mt-4 space-y-1" data-testid="ledger-voucher-evidence">
           {vm.evidenceIds.map((id) => (
-            <li key={id}>
+            <li key={id} className="flex items-center gap-2">
+              <span className="inline-flex rounded-full bg-surface-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+                {tExternalRefs("blobBadge")}
+              </span>
               <Link
                 href={`/capture/evidence/${encodeURIComponent(id)}`}
                 className="text-mono text-sm text-primary underline underline-offset-2"
@@ -66,6 +71,10 @@ export function LedgerVoucherDetail({ vm }: { vm: LedgerVoucherViewModel }) {
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {vm.slots.externalRefs === "active" ? (
+        <ExternalReferenceList voucherId={vm.voucherId} references={vm.externalReferences} />
       ) : null}
 
       {vm.provenanceSummary ? (

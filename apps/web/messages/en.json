@@ -381,11 +381,32 @@
       "slots": {
         "workItemConfirm": "Enrichment confirmation requests",
         "workItemHint": "Open a secure work-item link to review and decide a proposed change.",
-        "externalRefs": "External references are not available yet.",
+        "externalRefs": "External references",
         "tags": "Soft tags are not available yet.",
         "lineId": "Stable line IDs are not available yet.",
         "vatDeductibility": "VAT code and deductibility columns are not available yet.",
         "workflows": "Workflow badges are not available yet."
+      },
+      "externalReferences": {
+        "title": "External references",
+        "description": "Links stay separate from uploaded evidence and never rewrite the posted voucher.",
+        "blobBadge": "Uploaded file",
+        "externalBadge": "External link",
+        "add": "Add link",
+        "empty": "No external links.",
+        "unlink": "Remove",
+        "linkTitle": "Add external reference",
+        "unlinkTitle": "Remove external reference",
+        "linkConfirmDescription": "Confirm this direct human metadata append. Only HTTPS links are accepted.",
+        "unlinkConfirmDescription": "Confirm removal. The original link remains in the append-only audit history.",
+        "urlLabel": "HTTPS URL",
+        "labelLabel": "Label (optional)",
+        "httpsOnly": "Enter a valid HTTPS URL.",
+        "confirmLink": "Confirm link",
+        "confirmUnlink": "Confirm removal",
+        "cancel": "Cancel",
+        "working": "Saving…",
+        "error": "The external reference could not be saved. Try again."
       },
       "enrichmentConfirm": {
         "eyebrow": "Human confirmation",
