@@ -1186,10 +1186,7 @@
   - Task 8.3 E2E repair remains a separate sibling gate at `9597caa`. Task
     8.5, PR creation, and `main` remain deferred; Wave 8 is NOT COMPLETE.
   - See `.superpowers/sdd/w8-sse-resume-sol-review.md`.
-
-## Pending
-
-- Task 8.5 Wave 8 final gate: **PASS; ready for COMPLETE review**.
+- Task 8.5 Wave 8 final gate: **PASS; ready for COMPLETE review** at `cda9ca4`.
   - `pnpm check` passed with 711/711 unit tests; strict `pnpm db:test` applied
     migrations `0001`–`0012`, passed every capability assertion, and passed
     121/121 integration tests including MCP HTTP SSE.
@@ -1202,3 +1199,21 @@
   - E2E/visual gates were not required by Task 8.5; Task 8.3 E2E remains at
     `9597caa`. No visual baseline was updated. No PR was opened and `main` was
     not touched. See `.superpowers/sdd/wave-8-gate-report.md`.
+- Wave 8 final Sol-style gate: **APPROVE — WAVE 8 COMPLETE** (Composer
+  substitute; Sol API rate limit).
+  - Fresh independent `pnpm check` and strict `pnpm db:test` (121/121) passed.
+  - Fresh focused MCP tests passed 29/29; `api-runtime.test.ts` passed 23/23;
+    seams passed; `git diff --check` clean.
+  - Task 8.5 documentation and security checklist verified against plan Steps
+    1–4. Prior Tasks 8.1–8.4 approvals remain closed.
+  - Plan Step 5 PR (`wave-8/mcp-streamable-http` → `main`) deferred per program
+    instruction — the expected next action when merge is authorized. All 80
+    numbered plan tasks (Waves 0–8) are technically complete on this branch.
+  - No PR was opened and `main` was not touched. See
+    `.superpowers/sdd/w8-final-gate-sol-review.md`.
+
+## Pending
+
+- Program wrap-up: open PR from `feat/ledger-overview-enrichments-mcp` → `main`
+  when authorized (plan Task 8.5 Step 5 / execution handoff). Not started in
+  this review task.
