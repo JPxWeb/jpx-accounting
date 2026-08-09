@@ -912,8 +912,19 @@
     and 2/2 visible, visuals 20/20, i18n 1115/1115, seams, and schema
     distinction 9/9 all passed. No baseline changed. See
     `.superpowers/sdd/w6e-final-gate-sol-review.md`.
+- Wave 7 Tasks 7.1–7.2 first MCP checkpoint is ready for Sol review.
+  - Task 7.1 scaffolded the 12th typechecked workspace and an SDK 1.30.0 stdio
+    entrypoint in `130a761`.
+  - Task 7.2 pinned the 13 proposal/read tool names and documented the
+    proposal-only threat boundary in `19dfe4f`.
+  - TDD RED failed on missing `initialize_upload`; focused GREEN passed 2/2.
+    The MCP package and aggregate tests typechecks, focused ESLint/Prettier,
+    diagnostics, and diff checks passed.
+  - Tasks 7.3–7.5 remain unstarted. No handler, direct mutation tool, HTTP
+    transport, PR, or change to `main` is included in this checkpoint.
 
 ## Pending
 
-- Sol review of Task 6d.5 / Wave 6d COMPLETE decision; then Waves 7–8 in plan
-  order (single feature branch; defer mid-wave PR to main until program ready).
+- Sol review of Task 6d.5 / Wave 6d COMPLETE decision and Wave 7 Tasks 7.1–7.2.
+  After approval, continue Tasks 7.3–7.5 in plan order (single feature branch;
+  defer mid-wave PR to main until program ready).
