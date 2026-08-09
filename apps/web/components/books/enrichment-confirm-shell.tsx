@@ -64,8 +64,9 @@ export function EnrichmentConfirmShell() {
         ? apiClient.confirmEnrichmentWorkItem(workItemId)
         : apiClient.rejectEnrichmentWorkItem(workItemId);
     },
-    onSuccess: (workItem) => {
+    onSuccess: async (workItem) => {
       queryClient.setQueryData<EnrichmentWorkItem>(queryKey, workItem);
+      await queryClient.invalidateQueries({ queryKey: ["workspace"] });
     },
   });
 
@@ -77,6 +78,17 @@ export function EnrichmentConfirmShell() {
   const isPending = workItem?.status === "pending_confirmation";
   const sourceMarker =
     workItem?.source === "advisor" ? t("advisorMarker") : workItem?.source === "mcp" ? t("externalMarker") : undefined;
+  const proposalDescription =
+    workItem?.proposedChange.kind === "external_reference_link"
+      ? workItem.proposedChange.label
+        ? t("externalReferenceLinkWithLabel", {
+            url: workItem.proposedChange.url,
+            label: workItem.proposedChange.label,
+          })
+        : t("externalReferenceLink", { url: workItem.proposedChange.url })
+      : workItem?.proposedChange.kind === "external_reference_unlink"
+        ? t("externalReferenceUnlink", { refId: workItem.proposedChange.refId })
+        : t("noopProposal");
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/35 backdrop-blur-sm sm:items-center print:hidden">
@@ -145,7 +157,9 @@ export function EnrichmentConfirmShell() {
               <dt className="text-muted-foreground">{t("target")}</dt>
               <dd className="break-all font-medium text-foreground">{workItem.targetId}</dd>
               <dt className="text-muted-foreground">{t("proposal")}</dt>
-              <dd className="font-medium text-foreground">{t("noopProposal")}</dd>
+              <dd data-testid="enrichment-proposal" className="break-all font-medium text-foreground">
+                {proposalDescription}
+              </dd>
               <dt className="text-muted-foreground">{t("statusLabel")}</dt>
               <dd data-testid="enrichment-status" className="font-medium text-foreground">
                 {t(`status.${STATUS_KEYS[workItem.status]}`)}

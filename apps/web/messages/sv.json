@@ -422,6 +422,9 @@
         "target": "Mål",
         "proposal": "Föreslagen ändring",
         "noopProposal": "Ingen huvudbokshändelse (grundplatshållare)",
+        "externalReferenceLink": "Lägg till extern länk: {url}",
+        "externalReferenceLinkWithLabel": "Lägg till den externa länken ”{label}”: {url}",
+        "externalReferenceUnlink": "Ta bort extern referens: {refId}",
         "statusLabel": "Status",
         "status": {
           "pending": "Väntar på bekräftelse",
@@ -429,7 +432,7 @@
           "rejected": "Avvisad",
           "superseded": "Ersatt"
         },
-        "appendOnlyNote": "Bekräftelse använder den append-only-förda berikningsgrinden. Den skapar aldrig en andra bokföring; den här platshållaren i våg 2 registrerar människans beslut utan att lägga till en huvudbokshändelse.",
+        "appendOnlyNote": "Bekräftelse använder den append-only-förda berikningsgrinden. Den skapar aldrig en andra bokföring eller skriver om originalverifikatet; det mänskliga beslutet finns kvar i revisionshistoriken.",
         "confirm": "Bekräfta förslag",
         "reject": "Avvisa förslag",
         "working": "Sparar…",

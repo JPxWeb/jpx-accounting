@@ -87,7 +87,11 @@ export function ExternalReferenceList({
         <button
           type="button"
           data-testid="external-ref-add"
-          onClick={() => setDialog({ kind: "link" })}
+          onClick={() => {
+            linkMutation.reset();
+            unlinkMutation.reset();
+            setDialog({ kind: "link" });
+          }}
           className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-surface-muted"
         >
           {t("add")}
@@ -118,7 +122,11 @@ export function ExternalReferenceList({
               <button
                 type="button"
                 data-testid="external-ref-unlink"
-                onClick={() => setDialog({ kind: "unlink", reference })}
+                onClick={() => {
+                  linkMutation.reset();
+                  unlinkMutation.reset();
+                  setDialog({ kind: "unlink", reference });
+                }}
                 className="shrink-0 rounded-md px-2 py-1 text-sm font-medium text-muted-foreground hover:bg-surface-muted"
               >
                 {t("unlink")}
@@ -138,12 +146,14 @@ export function ExternalReferenceList({
             role="dialog"
             aria-modal="true"
             aria-labelledby="external-ref-dialog-title"
+            aria-describedby="external-ref-dialog-description"
+            data-testid="external-ref-dialog"
             className="glass-chrome relative w-full max-w-md rounded-t-2xl p-5 pb-[calc(env(safe-area-inset-bottom)+144px)] shadow-xl sm:rounded-2xl sm:p-6 lg:pb-6"
           >
             <h2 id="external-ref-dialog-title" className="text-lg font-semibold text-foreground">
               {dialog.kind === "link" ? t("linkTitle") : t("unlinkTitle")}
             </h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            <p id="external-ref-dialog-description" className="mt-2 text-sm leading-6 text-muted-foreground">
               {dialog.kind === "link" ? t("linkConfirmDescription") : t("unlinkConfirmDescription")}
             </p>
 
@@ -160,6 +170,8 @@ export function ExternalReferenceList({
                     data-testid="external-ref-url"
                     value={url}
                     onChange={(event) => setUrl(event.target.value)}
+                    aria-invalid={url.length > 0 && !validHttpsUrl}
+                    aria-describedby={url.length > 0 && !validHttpsUrl ? "external-ref-url-error" : undefined}
                     className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
                   />
                 </label>
@@ -172,7 +184,11 @@ export function ExternalReferenceList({
                     className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
                   />
                 </label>
-                {!validHttpsUrl && url ? <p className="text-sm text-danger">{t("httpsOnly")}</p> : null}
+                {!validHttpsUrl && url ? (
+                  <p id="external-ref-url-error" className="text-sm text-danger">
+                    {t("httpsOnly")}
+                  </p>
+                ) : null}
               </div>
             ) : null}
 

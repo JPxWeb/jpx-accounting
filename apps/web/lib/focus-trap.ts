@@ -18,6 +18,15 @@ export function getFocusableElements(container: HTMLElement | null): HTMLElement
   );
 }
 
+function isTopmostModal(container: HTMLElement | null): boolean {
+  if (!container?.matches('[role="dialog"][aria-modal="true"]')) {
+    return true;
+  }
+
+  const openModals = document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]');
+  return openModals[openModals.length - 1] === container;
+}
+
 export function useDialogFocusTrap(
   containerRef: RefObject<HTMLElement | null>,
   open: boolean,
@@ -35,6 +44,10 @@ export function useDialogFocusTrap(
     initialTarget?.focus();
 
     function handleKeyDown(event: KeyboardEvent) {
+      if (!isTopmostModal(containerRef.current)) {
+        return;
+      }
+
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();

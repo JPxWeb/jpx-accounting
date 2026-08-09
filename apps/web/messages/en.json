@@ -422,6 +422,9 @@
         "target": "Target",
         "proposal": "Proposed change",
         "noopProposal": "No ledger event (foundation placeholder)",
+        "externalReferenceLink": "Add external link: {url}",
+        "externalReferenceLinkWithLabel": "Add external link “{label}”: {url}",
+        "externalReferenceUnlink": "Remove external reference: {refId}",
         "statusLabel": "Status",
         "status": {
           "pending": "Pending confirmation",
@@ -429,7 +432,7 @@
           "rejected": "Rejected",
           "superseded": "Superseded"
         },
-        "appendOnlyNote": "Confirming uses the append-only enrichment gate. It never creates a second posting; this Wave 2 placeholder records the human decision without adding a ledger event.",
+        "appendOnlyNote": "Confirming uses the append-only enrichment gate. It never creates a second posting or rewrites the original voucher; the human decision remains in the audit history.",
         "confirm": "Confirm proposal",
         "reject": "Reject proposal",
         "working": "Saving…",
