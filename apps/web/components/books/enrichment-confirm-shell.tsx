@@ -1,6 +1,7 @@
 "use client";
 
-import type { EnrichmentWorkItem } from "@jpx-accounting/contracts";
+import type { EnrichmentWorkItem, VoucherTagsProjection, WorkspaceSnapshot } from "@jpx-accounting/contracts";
+import { DEFAULT_TAG_DEFINITIONS } from "@jpx-accounting/domain";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { parseAsString, useQueryState } from "nuqs";
@@ -15,6 +16,38 @@ const STATUS_KEYS = {
   rejected: "rejected",
   superseded: "superseded",
 } as const;
+
+function tagNames(tagIds: string[]): string {
+  return tagIds
+    .map((tagId) => DEFAULT_TAG_DEFINITIONS.find((definition) => definition.id === tagId)?.name ?? tagId)
+    .join(", ");
+}
+
+type TagSnapshot = WorkspaceSnapshot & { voucherTags?: VoucherTagsProjection[] };
+
+function applyConfirmedTagProposal(
+  snapshot: TagSnapshot | undefined,
+  workItem: EnrichmentWorkItem,
+): TagSnapshot | undefined {
+  if (
+    !snapshot ||
+    (workItem.proposedChange.kind !== "voucher_tags_add" && workItem.proposedChange.kind !== "voucher_tags_remove")
+  ) {
+    return snapshot;
+  }
+
+  const proposedChange = workItem.proposedChange;
+  const existing = snapshot.voucherTags?.find((projection) => projection.voucherId === workItem.targetId)?.tagIds ?? [];
+  const next =
+    proposedChange.kind === "voucher_tags_add"
+      ? [...new Set([...existing, ...proposedChange.tagIds])]
+      : existing.filter((tagId) => !proposedChange.tagIds.includes(tagId));
+  const otherVouchers = (snapshot.voucherTags ?? []).filter((projection) => projection.voucherId !== workItem.targetId);
+  return {
+    ...snapshot,
+    voucherTags: [...otherVouchers, { voucherId: workItem.targetId, tagIds: next }],
+  };
+}
 
 export function EnrichmentConfirmShell() {
   const t = useTranslations("books.ledger.enrichmentConfirm");
@@ -67,6 +100,11 @@ export function EnrichmentConfirmShell() {
     onSuccess: async (workItem) => {
       queryClient.setQueryData<EnrichmentWorkItem>(queryKey, workItem);
       await queryClient.invalidateQueries({ queryKey: ["workspace"] });
+      if (workItem.status === "confirmed") {
+        queryClient.setQueryData<TagSnapshot>(["workspace"], (snapshot) =>
+          applyConfirmedTagProposal(snapshot, workItem),
+        );
+      }
     },
   });
 
@@ -88,7 +126,11 @@ export function EnrichmentConfirmShell() {
         : t("externalReferenceLink", { url: workItem.proposedChange.url })
       : workItem?.proposedChange.kind === "external_reference_unlink"
         ? t("externalReferenceUnlink", { refId: workItem.proposedChange.refId })
-        : t("noopProposal");
+        : workItem?.proposedChange.kind === "voucher_tags_add"
+          ? t("voucherTagsAdd", { tags: tagNames(workItem.proposedChange.tagIds) })
+          : workItem?.proposedChange.kind === "voucher_tags_remove"
+            ? t("voucherTagsRemove", { tags: tagNames(workItem.proposedChange.tagIds) })
+            : t("noopProposal");
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/35 backdrop-blur-sm sm:items-center print:hidden">

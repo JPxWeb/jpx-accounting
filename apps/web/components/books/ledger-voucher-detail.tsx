@@ -7,6 +7,7 @@ import type { LedgerVoucherViewModel } from "../../lib/ledger/ledger-voucher-vie
 import { Money } from "../ui/money";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { ExternalReferenceList } from "./external-reference-list";
+import { VoucherTagList } from "./voucher-tag-list";
 
 const LEDGER_SLOT_KEYS = [
   "externalRefs",
@@ -76,6 +77,8 @@ export function LedgerVoucherDetail({ vm }: { vm: LedgerVoucherViewModel }) {
       {vm.slots.externalRefs === "active" ? (
         <ExternalReferenceList voucherId={vm.voucherId} references={vm.externalReferences} />
       ) : null}
+
+      {vm.slots.tags === "active" ? <VoucherTagList voucherId={vm.voucherId} tagIds={vm.tagIds} /> : null}
 
       {vm.provenanceSummary ? (
         <p className="mt-4 text-sm text-muted-foreground" data-testid="ledger-voucher-provenance">

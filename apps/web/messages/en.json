@@ -408,6 +408,25 @@
         "working": "Saving…",
         "error": "The external reference could not be saved. Try again."
       },
+      "tags": {
+        "title": "Soft tags",
+        "description": "Choose from the workspace registry. Tag changes append metadata and never rewrite the posted voucher.",
+        "add": "Add tag",
+        "empty": "No tags.",
+        "addTitle": "Add soft tag",
+        "removeTitle": "Remove soft tag",
+        "addConfirmDescription": "Choose a registered tag, then confirm this direct human metadata append.",
+        "removeConfirmDescription": "Confirm removal of “{tag}”. The original tag event remains in the append-only audit history.",
+        "registryAria": "Available registered tags",
+        "removeAria": "Remove tag {tag}",
+        "confirmAdd": "Confirm tag",
+        "confirmRemove": "Confirm removal",
+        "cancel": "Cancel",
+        "working": "Saving…",
+        "error": "The tag change could not be saved. Try again.",
+        "filterChip": "Tag {tag}",
+        "clearFilterAria": "Clear tag filter"
+      },
       "enrichmentConfirm": {
         "eyebrow": "Human confirmation",
         "title": "Review proposed enrichment",
@@ -425,6 +444,8 @@
         "externalReferenceLink": "Add external link: {url}",
         "externalReferenceLinkWithLabel": "Add external link “{label}”: {url}",
         "externalReferenceUnlink": "Remove external reference: {refId}",
+        "voucherTagsAdd": "Add tags: {tags}",
+        "voucherTagsRemove": "Remove tags: {tags}",
         "statusLabel": "Status",
         "status": {
           "pending": "Pending confirmation",

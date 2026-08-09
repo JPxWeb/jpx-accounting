@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { DEFAULT_TAG_DEFINITIONS } from "@jpx-accounting/domain";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
@@ -31,6 +32,14 @@ function matchesQuery(vm: LedgerVoucherViewModel, query: string): boolean {
   if (!needle) return true;
   if (vm.voucherNumber.toLowerCase().includes(needle)) return true;
   if (vm.supplierName.toLowerCase().includes(needle)) return true;
+  if (
+    vm.tagIds.some((tagId) => {
+      const definition = DEFAULT_TAG_DEFINITIONS.find((tag) => tag.id === tagId);
+      return tagId.toLowerCase().includes(needle) || definition?.name.toLowerCase().includes(needle);
+    })
+  ) {
+    return true;
+  }
   return vm.lines.some((line) => line.description.toLowerCase().includes(needle));
 }
 
@@ -43,6 +52,7 @@ export function JournalView() {
   const [ledgerModeParam, setLedgerModeParam] = useQueryState("ledgerMode", parseAsStringEnum([...ledgerModes]));
   const [voucher, setVoucher] = useQueryState("voucher", parseAsString);
   const [q, setQ] = useQueryState("q", parseAsString);
+  const [tag, setTag] = useQueryState("tag", parseAsString);
 
   const storedLedgerMode = useSyncExternalStore(subscribeToLedgerMode, loadLedgerMode, getServerLedgerMode);
   const ledgerMode = ledgerModeParam ?? storedLedgerMode;
@@ -67,11 +77,14 @@ export function JournalView() {
   });
 
   const voucherViewModels = groupJournalByVoucher(entries).map((group) =>
-    buildLedgerVoucherViewModel(group, workspace, lookup, { activateExternalRefs: true }),
+    buildLedgerVoucherViewModel(group, workspace, lookup, { activateExternalRefs: true, activateTags: true }),
   );
-  const filteredVoucherViewModels = q
-    ? voucherViewModels.filter((viewModel) => matchesQuery(viewModel, q))
+  const tagFilteredVoucherViewModels = tag
+    ? voucherViewModels.filter((viewModel) => viewModel.tagIds.includes(tag))
     : voucherViewModels;
+  const filteredVoucherViewModels = q
+    ? tagFilteredVoucherViewModels.filter((viewModel) => matchesQuery(viewModel, q))
+    : tagFilteredVoucherViewModels;
 
   const handleToggle = useCallback(
     (voucherId: string) => {
@@ -109,6 +122,26 @@ export function JournalView() {
               aria-label={t("clearSupplierAria")}
               className="rounded-full leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               onClick={() => void setSupplier(null)}
+            >
+              ×
+            </button>
+          </span>
+        </div>
+      ) : null}
+      {tag ? (
+        <div className="flex items-center gap-2">
+          <span
+            data-testid="tag-filter-chip"
+            className="inline-flex items-center gap-2 rounded-full bg-primary-soft px-3 py-1 text-xs font-medium text-primary"
+          >
+            {tLedger("tags.filterChip", {
+              tag: DEFAULT_TAG_DEFINITIONS.find((definition) => definition.id === tag)?.name ?? tag,
+            })}
+            <button
+              type="button"
+              aria-label={tLedger("tags.clearFilterAria")}
+              className="rounded-full leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              onClick={() => void setTag(null)}
             >
               ×
             </button>

@@ -408,6 +408,25 @@
         "working": "Sparar…",
         "error": "Den externa referensen kunde inte sparas. Försök igen."
       },
+      "tags": {
+        "title": "Mjuka taggar",
+        "description": "Välj från arbetsytans register. Taggändringar lägger till metadata och skriver aldrig om det bokförda verifikatet.",
+        "add": "Lägg till tagg",
+        "empty": "Inga taggar.",
+        "addTitle": "Lägg till mjuk tagg",
+        "removeTitle": "Ta bort mjuk tagg",
+        "addConfirmDescription": "Välj en registrerad tagg och bekräfta sedan detta direkta mänskliga metadatatillägg.",
+        "removeConfirmDescription": "Bekräfta borttagning av ”{tag}”. Den ursprungliga tagghändelsen finns kvar i den append-only-förda revisionshistoriken.",
+        "registryAria": "Tillgängliga registrerade taggar",
+        "removeAria": "Ta bort taggen {tag}",
+        "confirmAdd": "Bekräfta tagg",
+        "confirmRemove": "Bekräfta borttagning",
+        "cancel": "Avbryt",
+        "working": "Sparar…",
+        "error": "Taggändringen kunde inte sparas. Försök igen.",
+        "filterChip": "Tagg {tag}",
+        "clearFilterAria": "Rensa taggfiltret"
+      },
       "enrichmentConfirm": {
         "eyebrow": "Mänsklig bekräftelse",
         "title": "Granska föreslagen berikning",
@@ -425,6 +444,8 @@
         "externalReferenceLink": "Lägg till extern länk: {url}",
         "externalReferenceLinkWithLabel": "Lägg till den externa länken ”{label}”: {url}",
         "externalReferenceUnlink": "Ta bort extern referens: {refId}",
+        "voucherTagsAdd": "Lägg till taggar: {tags}",
+        "voucherTagsRemove": "Ta bort taggar: {tags}",
         "statusLabel": "Status",
         "status": {
           "pending": "Väntar på bekräftelse",

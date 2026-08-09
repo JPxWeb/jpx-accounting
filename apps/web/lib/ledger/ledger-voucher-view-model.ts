@@ -11,6 +11,7 @@ export type LedgerVoucherViewModel = {
   lines: VoucherJournalGroup["lines"];
   evidenceIds: string[];
   externalReferences: ExternalReferenceProjection[];
+  tagIds: string[];
   provenanceSummary: string;
   slots: Record<
     "workItemConfirm" | "externalRefs" | "tags" | "lineId" | "vatDeductibility" | "workflows",
@@ -19,9 +20,12 @@ export type LedgerVoucherViewModel = {
 };
 
 type LedgerSnapshot = Pick<WorkspaceSnapshot, "vouchers" | "packets"> &
-  Partial<Pick<WorkspaceSnapshot, "externalReferences">>;
+  Partial<Pick<WorkspaceSnapshot, "externalReferences">> & {
+    voucherTags?: Array<{ voucherId: string; tagIds: string[] }>;
+  };
 type LedgerVoucherViewModelOptions = {
   activateExternalRefs?: boolean;
+  activateTags?: boolean;
 };
 
 export function buildLedgerVoucherViewModel(group: VoucherJournalGroup, lookup: VoucherLookup): LedgerVoucherViewModel;
@@ -55,11 +59,16 @@ export function buildLedgerVoucherViewModel(
       ? (snapshotOrLookup.externalReferences ?? [])
       : []
     ).filter((reference) => reference.voucherId === group.voucherId && !reference.removed),
+    tagIds:
+      snapshotOrLookup && "vouchers" in snapshotOrLookup
+        ? ((snapshotOrLookup.voucherTags ?? []).find((projection) => projection.voucherId === group.voucherId)
+            ?.tagIds ?? [])
+        : [],
     provenanceSummary: "",
     slots: {
       workItemConfirm: "disabled",
       externalRefs: options.activateExternalRefs ? "active" : "disabled",
-      tags: "disabled",
+      tags: options.activateTags ? "active" : "disabled",
       lineId: "disabled",
       vatDeductibility: "disabled",
       workflows: "disabled",
