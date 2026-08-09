@@ -445,10 +445,22 @@
   - Strict `pnpm db:test` applied migrations `0001`–`0011` and passed 101/101
     integration tests, including Memory/Postgres writer parity.
   - Ready for Sol review before Tasks 6b.4–6b.6 UI/gate work.
+- Wave 6b Task 6b.3 + writer Sol review: APPROVE_WITH_FIXES.
+  - API list routes now validate derived responses against the shared
+    open-invoice and payment-history contracts before returning JSON.
+  - First-payment replay, fail-before-append currency validation, workspace
+    serialization, server attribution, store parity, and the existing
+    work-item confirmation path were confirmed.
+  - Focused tests passed 15/15; affected package/test typechecks passed.
+  - Strict `pnpm db:test` applied migrations `0001`–`0011` and passed 101/101
+    integration tests.
+  - No Opus escalation is required. Tasks 6b.4–6b.6 may proceed after the
+    review-fix commit. See `.superpowers/sdd/w6b3-sol-review.md`.
 
 ## In progress
 
-- Wave 6b Tasks 6b.4–6b.6 are stopped at the store/API Sol checkpoint.
+- Wave 6b Tasks 6b.4–6b.6 are cleared to proceed after the Task 6b.3 review-fix
+  commit.
 
 ## Pending
 
