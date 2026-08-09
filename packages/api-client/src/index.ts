@@ -15,6 +15,8 @@ import type {
   ExternalReferenceProjection,
   IntegritySummary,
   JournalEntryProjection,
+  OpenInvoiceListRow,
+  PaymentHistoryListRow,
   ProjectProjection,
   ProjectsListRow,
   ProposeEnrichmentWorkItemInput,
@@ -45,6 +47,8 @@ import {
   externalReferenceProjectionSchema,
   integritySummarySchema,
   journalEntryProjectionSchema,
+  openInvoiceListSchema,
+  paymentHistoryListSchema,
   projectProjectionSchema,
   projectsListSchema,
   proposeEnrichmentWorkItemInputSchema,
@@ -63,6 +67,8 @@ import {
 } from "@jpx-accounting/contracts";
 import {
   buildSieExport,
+  buildOpenInvoicesList,
+  buildPaymentHistoryList,
   buildProjectsList,
   decodeSieBuffer,
   deriveDeterministicExtraction,
@@ -249,6 +255,22 @@ export class AccountingApiClient {
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/projects", projectsListSchema);
+  }
+
+  async getOpenInvoicesList(): Promise<OpenInvoiceListRow[]> {
+    if (this.fallbackStore) {
+      return openInvoiceListSchema.parse(buildOpenInvoicesList(await this.fallbackStore.getEvents()));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/open-invoices", openInvoiceListSchema);
+  }
+
+  async getPaymentHistoryList(): Promise<PaymentHistoryListRow[]> {
+    if (this.fallbackStore) {
+      return paymentHistoryListSchema.parse(buildPaymentHistoryList(await this.fallbackStore.getEvents()));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/payment-history", paymentHistoryListSchema);
   }
 
   /**

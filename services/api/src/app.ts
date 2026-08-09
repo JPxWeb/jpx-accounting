@@ -64,6 +64,7 @@ import { DEFAULT_SUPABASE_JWT_ALGS, type CorsRuntimePolicy, type SupabaseJwtAlgo
 import { queryKnowledge } from "./knowledge";
 import type { ApiRouteEnv } from "./route-types";
 import { registerEnrichmentWorkItemRoutes } from "./routes/enrichment-work-items";
+import { registerInvoiceListRoutes } from "./routes/lists-invoices";
 import { registerProjectListRoutes } from "./routes/lists-projects";
 import { registerReviewEnrichmentIntentRoutes } from "./routes/review-enrichment-intents";
 import { registerReviewProposalRoutes } from "./routes/review-proposals";
@@ -659,6 +660,10 @@ export function createApp({
   });
 
   registerEnrichmentWorkItemRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerInvoiceListRoutes(app, {
     getStore: () => currentStore,
     deriveActorId,
   });
