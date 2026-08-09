@@ -572,12 +572,27 @@
   - Wave 6b is NOT COMPLETE. `NEEDS_OPUS_REVIEW` is set for a contract-first,
     server-attributed, Memory/Postgres-parity approval-to-registration design.
     See `.superpowers/sdd/w6b-ui-sol-review.md`.
+- Wave 6c Task 6c.4 trips UI checkpoint completed: `5f94a94`.
+  - Added packet-bounded trip review validation and a localized
+    `?workflow=trip` list with honest loading, error, and empty states.
+  - Focused E2E proves an advisor proposal targets a real posted cost-line
+    `lineId` and affects the derived trip total only after explicit human
+    confirmation; `pnpm build:e2e` and desktop/Pixel 7 trip E2E passed 4/4.
+  - Web/tests typechecks, focused lint/format/diagnostics, and i18n parity at
+    1078/1078 passed.
+  - Task 6c.5's centralized visual/full gate is pending because concurrent
+    Wave 6b/6d owners currently hold shared journal, review, contract, planner,
+    store, and test files. No visual baseline was updated.
+  - Sol review should decide whether trip pre-post fields require the same
+    contract-first atomic approval seam requested for Wave 6b; the UI does not
+    invent identity or perform a client-side post-approval registration.
 
 ## In progress
 
 - Wave 6b atomic approval-to-invoice registration design requires Opus review
   before implementation and a renewed final gate.
-- Wave 6c Tasks 6c.4–6c.5 are cleared to proceed after the store/API review.
+- Wave 6c Task 6c.4 awaits Sol review; Task 6c.5 awaits the centralized gate
+  after concurrent shared-file owners land.
 - Wave 6d Task 6d.4, remaining writers, and the final gate are cleared to
   proceed after the Task 6d.3 review.
 

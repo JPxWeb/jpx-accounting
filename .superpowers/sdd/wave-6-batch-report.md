@@ -511,3 +511,58 @@ Review this store/API checkpoint for:
 4. server-owned actor attribution and append-only event production;
 5. contract validation on API responses and HTTP/offline api-client methods;
 6. continued stable posted `lineId` derivation for trip expense totals.
+
+# Wave 6c trips UI checkpoint
+
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Base: `16c47c5` (includes Wave 6b UI/gate commits through `0eea053`)
+Scope: Task 6c.4 UI and focused E2E
+Checkpoint: **READY FOR SOL REVIEW; FINAL GATE PENDING**
+
+## Completed task
+
+- Task 6c.4 — trip review validation and Books trips list: `5f94a94`
+  - Added required purpose, traveler, start-date, and ordered end-date fields
+    to the existing focus-trapped review sheet.
+  - Optional evidence is selected only from the voucher's real packet evidence
+    ids.
+  - Added `?workflow=trip` and an honest localized trips panel with loading,
+    error, empty, open/closed, traveler, date, and expense-total states.
+  - Populated E2E registers a trip, targets a real posted cost-line `lineId`,
+    creates an advisor-origin enrichment work item, and requires explicit human
+    confirmation before the list derives the expense total.
+  - Article 50 labeling remains on the AI-origin confirmation surface.
+
+## TDD and verification
+
+- RED: the initial built E2E failed 4/4 because the trip option and list panel
+  did not exist.
+- GREEN: `pnpm build:e2e` passed and focused trip E2E passed 4/4 across desktop
+  and Pixel 7, including axe coverage and the honest empty state.
+- Web and aggregate-test typechecks passed.
+- Focused ESLint, Prettier, IDE diagnostics, i18n parity (1078/1078), and commit
+  whitespace checks passed.
+- The first visual attempt was blocked by a concurrent Playwright server on
+  ports 3200/3201; no baseline was updated.
+- The first full `pnpm check` reached format checking, then stopped on
+  concurrent uncommitted Wave 6b/6d files (including the shared journal shell);
+  the committed Wave 6c files were not the reported blocker. Task 6c.5 remains
+  pending until those owners commit and the centralized gate can run cleanly.
+
+## Sol review ask
+
+Review Task 6c.4 for:
+
+1. packet-bounded optional evidence and ordered-date validation;
+2. honest loading/error/empty and open/closed trip presentation;
+3. expense totals derived only after explicit human confirmation of a real
+   posted `lineId`;
+4. Article 50, focus-trap, mobile activation, axe, and i18n behavior;
+5. whether the pre-post trip fields require the same contract-first atomic
+   approval seam requested for Wave 6b, because this UI commit intentionally
+   does not invent a trip identity or perform a client-side post-approval
+   registration.
+
+No PR was opened, `main` was not touched, invoice panels were not rewritten,
+and no Wave 6e work was started.
