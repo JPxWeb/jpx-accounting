@@ -479,6 +479,23 @@
           "in": "Stock in",
           "out": "Stock out"
         }
+      },
+      "valuedMovements": {
+        "title": "Valued inventory movements",
+        "description": "Append-only movements with explicitly confirmed unit cost and currency. Values are never inferred from tags.",
+        "loading": "Loading valued inventory movements…",
+        "error": "Valued inventory movements could not be loaded.",
+        "empty": "No valued inventory movements.",
+        "sku": "SKU",
+        "directionLabel": "Direction",
+        "quantity": "Quantity",
+        "unitCost": "Unit cost",
+        "extendedAmount": "Total value",
+        "bookedAt": "Booking date",
+        "direction": {
+          "in": "Stock in",
+          "out": "Stock out"
+        }
       }
     },
     "ledger": {

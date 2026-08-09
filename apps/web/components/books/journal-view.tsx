@@ -13,6 +13,7 @@ import { apiClient } from "../../lib/client";
 import { groupJournalByVoucher } from "../../lib/ledger/group-vouchers";
 import { loadLedgerMode, saveLedgerMode, type LedgerMode } from "../../lib/ledger/ledger-mode-storage";
 import { buildLedgerVoucherViewModel, type LedgerVoucherViewModel } from "../../lib/ledger/ledger-voucher-view-model";
+import { valuedInventoryEnabled } from "../../lib/runtime-config";
 import { buildVoucherLookup } from "../reports/voucher-link";
 import { EnrichmentConfirmShell } from "./enrichment-confirm-shell";
 import { LedgerVoucherDrawer } from "./ledger-voucher-drawer";
@@ -22,6 +23,7 @@ import { PaymentHistoryPanel } from "./payment-history-panel";
 import { ProjectsListPanel } from "./projects-list-panel";
 import { SkuMovementsPanel } from "./sku-movements-panel";
 import { TripsListPanel } from "./trips-list-panel";
+import { ValuedMovementsPanel } from "./valued-movements-panel";
 
 const ledgerModes = ["inline", "drawer"] as const;
 const registryTagIds = DEFAULT_TAG_DEFINITIONS.map((definition) => definition.id);
@@ -60,7 +62,10 @@ export function JournalView() {
   const [voucher, setVoucher] = useQueryState("voucher", parseAsString);
   const [q, setQ] = useQueryState("q", parseAsString);
   const [tag, setTag] = useQueryState("tag", parseAsStringEnum(registryTagIds));
-  const [workflow] = useQueryState("workflow", parseAsStringEnum(["project", "invoice", "trip", "quantity_inventory"]));
+  const [workflow] = useQueryState(
+    "workflow",
+    parseAsStringEnum(["project", "invoice", "trip", "quantity_inventory", "valued_inventory"]),
+  );
 
   const storedLedgerMode = useSyncExternalStore(subscribeToLedgerMode, loadLedgerMode, getServerLedgerMode);
   const ledgerMode = ledgerModeParam ?? storedLedgerMode;
@@ -97,6 +102,11 @@ export function JournalView() {
     queryKey: ["lists", "sku-movements"],
     queryFn: () => apiClient.getSkuMovementsList(),
     enabled: workflow === "quantity_inventory",
+  });
+  const valuedMovementsQuery = useQuery({
+    queryKey: ["lists", "valued-movements"],
+    queryFn: () => apiClient.getValuedMovementsList(),
+    enabled: valuedInventoryEnabled && workflow === "valued_inventory",
   });
   const projectVoucherIds = new Set((projectsQuery.data ?? []).flatMap((project) => project.voucherIds));
 
@@ -197,6 +207,13 @@ export function JournalView() {
           rows={skuMovementsQuery.data ?? []}
           loading={skuMovementsQuery.isLoading}
           hasError={skuMovementsQuery.isError}
+        />
+      ) : null}
+      {valuedInventoryEnabled && workflow === "valued_inventory" ? (
+        <ValuedMovementsPanel
+          rows={valuedMovementsQuery.data ?? []}
+          loading={valuedMovementsQuery.isLoading}
+          hasError={valuedMovementsQuery.isError}
         />
       ) : null}
       {supplier ? (

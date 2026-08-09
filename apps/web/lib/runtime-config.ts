@@ -19,6 +19,8 @@ function readRuntimeMode(rawValue?: string): RuntimeMode {
 const runtimeMode = readRuntimeMode(process.env.NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE);
 const configuredApiBaseUrl = normalizeOptionalValue(process.env.NEXT_PUBLIC_API_BASE_URL);
 
+export const valuedInventoryEnabled = process.env.NEXT_PUBLIC_VALUED_INVENTORY === "true";
+
 export const webRuntimeConfig: WebRuntimeConfig = {
   runtimeMode,
   apiBaseUrl: runtimeMode === "normal" ? (configuredApiBaseUrl ?? "/api-proxy") : configuredApiBaseUrl,

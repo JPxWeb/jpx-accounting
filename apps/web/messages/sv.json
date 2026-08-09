@@ -479,6 +479,23 @@
           "in": "Inleverans",
           "out": "Uttag"
         }
+      },
+      "valuedMovements": {
+        "title": "Värderade lagerrörelser",
+        "description": "Append-only-rörelser med uttryckligen bekräftat enhetspris och valuta. Värden härleds aldrig från taggar.",
+        "loading": "Läser in värderade lagerrörelser…",
+        "error": "De värderade lagerrörelserna kunde inte läsas in.",
+        "empty": "Inga värderade lagerrörelser.",
+        "sku": "Artikelnummer",
+        "directionLabel": "Riktning",
+        "quantity": "Antal",
+        "unitCost": "Enhetspris",
+        "extendedAmount": "Totalt värde",
+        "bookedAt": "Bokföringsdatum",
+        "direction": {
+          "in": "Inleverans",
+          "out": "Uttag"
+        }
       }
     },
     "ledger": {
