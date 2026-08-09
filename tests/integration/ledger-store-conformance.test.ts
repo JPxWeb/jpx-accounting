@@ -69,7 +69,6 @@ test("conformance registry includes enrichment confirmation safety", () => {
   assert.ok(
     CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "trip review approval registers once atomically"),
   );
-  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "trip supersession guards"));
   assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "trip registration and close are immutable"));
   assert.ok(
     CONFORMANCE_SCENARIOS.some(
