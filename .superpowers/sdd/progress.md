@@ -257,6 +257,14 @@
   - `pnpm build:e2e` and focused desktop/Pixel 7 tag E2E passed 4/4, including
     reload persistence without cache replay.
   - Wave 4 final gate may proceed. Wave 5 was not started.
+- Task 4.5 Wave 4 final gate: COMPLETE.
+  - `pnpm check` passed with 566/566 unit tests; strict `pnpm db:test` applied
+    migrations `0001`–`0010` and passed 86/86 integration tests.
+  - `pnpm build:e2e` and focused voucher-tag E2E passed 4/4 across desktop and
+    Pixel 7. Visual comparisons passed 20/20 with no baseline update.
+  - Seams passed, i18n remained 1010/1010, and `docs/REPO_MAP.md` was updated
+    in `5e6832f`.
+  - No PR to `main` was opened. Wave 5 may proceed and was already pipelined.
 - Wave 5 pipelined foundation batch completed while the Wave 4 final gate ran.
   - Task 5.1 review-enrichment intent contracts `04789c7`.
   - Task 5.4 additive journal/typed line-enrichment contracts `179429c`.
@@ -276,7 +284,6 @@
 
 ## Pending
 
-- Task 4.5 Wave 4 final gate.
 - Wave 5 Tasks 5.2–5.3 and 5.9–5.12 after Sol review and independent Wave 4
   final-gate evaluation.
 - Waves 6–8 (single feature branch; defer mid-wave PR to main until program
