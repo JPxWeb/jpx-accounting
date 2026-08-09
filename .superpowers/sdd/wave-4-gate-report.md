@@ -1,8 +1,8 @@
 # Wave 4 final gate report
 
-Date: 2026-08-09  
-Branch: `feat/ledger-overview-enrichments-mcp`  
-Wave 4 clearance commits: `b27f824`, `478d08e`  
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Wave 4 clearance commits: `b27f824`, `478d08e`
 Verdict: **COMPLETE**
 
 ## Gate results
