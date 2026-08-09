@@ -371,6 +371,7 @@ export const submitReviewProposalResultSchema = z.object({
   reviewId: z.string().min(1),
   deepLink: z.string().min(1),
   status: z.literal("pending_review"),
+  intentVersion: z.string().min(1),
 });
 
 export type EnrichmentProposal = z.infer<typeof enrichmentProposalSchema>;

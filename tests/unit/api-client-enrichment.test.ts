@@ -158,6 +158,7 @@ test("submitReviewProposal posts the contract body and returns its deep link", a
       reviewId: "review_1",
       deepLink: "/today?view=queue&review=review_1",
       status: "pending_review",
+      intentVersion: "intent_version_1",
     });
   });
   const client = createAccountingApiClient({ baseUrl: BASE_URL, runtimeMode: "normal" });
@@ -171,6 +172,7 @@ test("submitReviewProposal posts the contract body and returns its deep link", a
   const result = await client.submitReviewProposal(proposalInput);
 
   assert.equal(result.status, "pending_review");
+  assert.equal(result.intentVersion, "intent_version_1");
   assert.deepEqual(
     captured.map(({ url, init }) => [url, init?.method, init?.body ? JSON.parse(String(init.body)) : undefined]),
     [

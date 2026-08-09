@@ -487,7 +487,7 @@ export class AccountingApiClient {
       if (!review || review.id !== parsedInput.reviewId || review.status !== "needs-review") {
         throw new AccountingApiError(review ? 409 : 404, review ? "Review must remain open." : "Review not found.");
       }
-      await this.fallbackStore.attachReviewEnrichmentIntent({
+      const intent = await this.fallbackStore.attachReviewEnrichmentIntent({
         reviewId: parsedInput.reviewId,
         proposals: parsedInput.proposals,
       });
@@ -495,6 +495,7 @@ export class AccountingApiClient {
         reviewId: parsedInput.reviewId,
         deepLink: `/today?view=queue&review=${encodeURIComponent(parsedInput.reviewId)}`,
         status: "pending_review",
+        intentVersion: intent.version,
       });
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");

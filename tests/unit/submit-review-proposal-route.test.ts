@@ -73,14 +73,22 @@ test("POST /api/review-proposals attaches server-attributed intent for an open r
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {
+  const result = (await response.json()) as {
+    reviewId: string;
+    deepLink: string;
+    status: string;
+    intentVersion: string;
+  };
+  assert.deepEqual(result, {
     reviewId: created.review.id,
     deepLink: `/today?view=queue&review=${encodeURIComponent(created.review.id)}`,
     status: "pending_review",
+    intentVersion: result.intentVersion,
   });
   const intent = await store.getReviewEnrichmentIntent(created.review.id);
   assert.equal(intent?.voucherId, created.voucher.id);
   assert.equal(intent?.updatedBy, "user_founder");
+  assert.equal(result.intentVersion, intent?.version);
 });
 
 test("POST /api/review-proposals rejects a review and voucher mismatch", async () => {

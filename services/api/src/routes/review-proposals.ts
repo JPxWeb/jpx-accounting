@@ -18,7 +18,7 @@ export function registerReviewProposalRoutes(app: Hono<ApiRouteEnv>, deps: ApiRo
       throw new EnrichmentIntentClosedError(body.reviewId);
     }
 
-    await deps.getStore().attachReviewEnrichmentIntent({
+    const intent = await deps.getStore().attachReviewEnrichmentIntent({
       reviewId: body.reviewId,
       proposals: body.proposals,
       actorId: deps.deriveActorId(context),
@@ -28,6 +28,7 @@ export function registerReviewProposalRoutes(app: Hono<ApiRouteEnv>, deps: ApiRo
         reviewId: body.reviewId,
         deepLink: `/today?view=queue&review=${encodeURIComponent(body.reviewId)}`,
         status: "pending_review",
+        intentVersion: intent.version,
       }),
     );
   });
