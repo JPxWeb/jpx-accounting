@@ -1141,7 +1141,19 @@
     `git diff --check`.
   - See `.superpowers/sdd/w8-session-security-sol-review.md`. Tasks 8.3+ remain
     deferred; Wave 8 is not yet complete.
+- Wave 8 Task 8.3 demo MCP stub retirement is ready for Sol review at
+  `85045e2`.
+  - Removed the legacy demo-only `POST /mcp`; the authenticated and guarded
+    `POST /api/mcp` Streamable HTTP initialization path remains available.
+  - The exact 13 proposal/read-only tools, explicit human approval and
+    confirmation gates, opaque intent-version handling, and bounded HTTP
+    sessions are unchanged.
+  - TDD RED observed the legacy route returning 200 instead of 404. Focused
+    API/MCP tests passed 50/50; API and aggregate tests typechecks, focused
+    ESLint/Prettier, diagnostics, and diff checks passed.
+  - Task 8.4+, PR creation, and `main` remain deferred. Wave 8 is NOT COMPLETE;
+    stop here for Sol review.
 
 ## Pending
 
-- Keep Tasks 8.3+, PR creation, and `main` deferred.
+- Keep Tasks 8.4+, PR creation, and `main` deferred.
