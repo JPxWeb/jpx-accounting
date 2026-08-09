@@ -246,6 +246,17 @@
   - Focused unit tests passed 14/14, affected typechecks passed, strict
     `pnpm db:test` passed 86/86, and focused tag E2E passed 4/4 after
     `pnpm build:e2e`.
+- Wave 4C Sol re-review: APPROVE_WITH_FIXES `b27f824`.
+  - The original reload blocker is fixed with contract-first Memory/Postgres
+    snapshot parity and shared API-client parsing.
+  - Removed both obsolete client-only tag cache projections; direct and
+    MCP/advisor paths now refresh only from the authoritative workspace
+    snapshot.
+  - Focused unit tests passed 20/20; targeted format, lint, web typecheck,
+    diagnostics, and diff checks passed.
+  - `pnpm build:e2e` and focused desktop/Pixel 7 tag E2E passed 4/4, including
+    reload persistence without cache replay.
+  - Wave 4 final gate may proceed. Wave 5 was not started.
 
 ## In progress
 
@@ -253,7 +264,6 @@
 
 ## Pending
 
-- Sol re-review of the Wave 4C blocker resolution; do not run Task 4.5 final
-  gate before clearance.
+- Task 4.5 Wave 4 final gate.
 - Waves 5–8 (single feature branch; defer mid-wave PR to main until program
   ready).
