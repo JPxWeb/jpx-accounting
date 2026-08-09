@@ -1116,7 +1116,20 @@
     diff checks passed.
   - Concurrent Task 8.2 security work was preserved and not staged by this
     repair. Wave 8 remains NOT COMPLETE pending Sol re-review and Tasks 8.2+.
+- Wave 8 Task 8.2 HTTP security boundary is ready for Sol review at `9283ffb`.
+  - POST and GET `/api/mcp` reject missing or disallowed origins and hosts
+    before invoking the adapter, covering the DNS-rebinding boundary.
+  - MCP POST continues through the existing JWT and subject/IP-keyed mutation
+    limiter middleware; RFC 9728 protected-resource metadata advertises only
+    header bearer authentication.
+  - `/ready` remains the unchanged ledger/AI/blob/DocIntel readiness probe.
+    The exact 13 proposal/read-only tools, human confirmation gates, opaque
+    intent-version echo, and no-posting boundary remain regression-pinned.
+  - TDD RED observed missing guards and metadata. After integrating the Task
+    8.1 capacity repair `0bebe8a`, focused MCP tests passed 25/25 and MCP, API,
+    and aggregate tests typechecks passed. Task 8.3+ and Wave 8 completion
+    remain deferred for Sol review.
 
 ## Pending
 
-- Keep Tasks 8.2+, PR creation, and `main` deferred.
+- Keep Tasks 8.3+, PR creation, and `main` deferred.
