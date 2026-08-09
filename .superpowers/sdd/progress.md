@@ -359,14 +359,25 @@
     strict `pnpm db:test` applied migrations `0001`–`0011` and passed 95/95.
   - See `.superpowers/sdd/w5c-sol-review.md`. Task 5.11 is approved after the
     review-fix commit.
+- Task 5.12 Wave 5 final gate: COMPLETE.
+  - `pnpm check` passed with 588/588 unit tests; seams and i18n passed.
+  - Strict `pnpm db:test` applied migrations `0001`–`0011`, passed every
+    capability assertion, and passed 95/95 integration tests.
+  - `pnpm build:e2e` and focused ledger line identity/VAT E2E passed 2/2
+    across desktop and Pixel 7.
+  - Visual comparisons passed 20/20 across both themes and viewports,
+    including `/books`; no baseline was updated.
+  - `docs/REPO_MAP.md` now records Wave 5 routes, line-enrichment events,
+    stable projection identity, pre-post review-intent flow, and migration
+    `0011`.
+  - The branch contains no MCP workspace package and no PR to `main` was
+    opened. Wave 6 may start after the gate documentation commit.
 
 ## In progress
 
-- No Wave 5 task is currently in progress.
+- No task is currently in progress.
 
 ## Pending
 
-- Task 5.12 Wave 5 final gate is unblocked by the completed Task 5.9 and Task
-  5.11 Sol reviews; it was not run as part of either review.
 - Waves 6–8 (single feature branch; defer mid-wave PR to main until program
   ready).

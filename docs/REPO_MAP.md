@@ -2,7 +2,7 @@
 
 **Purpose:** the WHERE-IS-WHAT index for this monorepo — route inventories, module export maps, event-append sites, journey→files traces, and the gotchas that mislead newcomers (human or AI). Complements [CLAUDE.md](../CLAUDE.md) / [AGENTS.md](../AGENTS.md) (conventions + commands) and [architecture.md](architecture.md) (runtime shape); supersedes the short "Repo map" table in [CONTRIBUTING.md](CONTRIBUTING.md) for navigation purposes.
 
-**Verified against code:** 2026-08-09 (commit `f3dab7c` + working tree). Line numbers drift — treat them as anchors, not gospel. Update this file when adding routes, events, packages, or storage keys.
+**Verified against code:** 2026-08-09 (commit `0caaec8` + working tree). Line numbers drift — treat them as anchors, not gospel. Update this file when adding routes, events, packages, or storage keys.
 
 ---
 
@@ -84,6 +84,9 @@ Entry: [services/api/src/index.ts](../services/api/src/index.ts) (telemetry → 
 | POST   | `/api/reviews/:id/approve`                            | Approve → posts to ledger                                                   | `postReviewDecision(..., "approve")`                        |
 | POST   | `/api/reviews/:id/reject`                             | Reject                                                                      | `postReviewDecision(..., "reject")`                         |
 | POST   | `/api/reviews/:id/book-without-vat`                   | Book without VAT deduction                                                  | `postReviewDecision(..., "book-without-vat")`               |
+| POST   | `/api/reviews/:id/enrichment-intents`                 | Attach a server-attributed pre-post enrichment intent to an open review     | `store.attachReviewEnrichmentIntent()`                      |
+| GET    | `/api/reviews/:id/enrichment-intents`                 | Fetch the pending pre-post enrichment intent                                | `store.getReviewEnrichmentIntent()`                         |
+| POST   | `/api/review-proposals`                               | Validate an open review/voucher pair and attach a pending proposal intent   | `store.attachReviewEnrichmentIntent()`                      |
 | POST   | `/api/enrichment-work-items`                          | Propose a server-attributed post-post metadata change (201)                 | `store.proposeEnrichmentWorkItem()`                         |
 | GET    | `/api/enrichment-work-items/:id`                      | Fetch one enrichment work item                                              | `store.getEnrichmentWorkItem()`                             |
 | POST   | `/api/enrichment-work-items/:id/confirm`              | Explicitly confirm through the append-only enrichment planner               | `store.confirmEnrichmentWorkItem()`                         |
@@ -107,6 +110,8 @@ Entry: [services/api/src/index.ts](../services/api/src/index.ts) (telemetry → 
 
 - **`app.ts`** — core route handlers are inline arrows inside `createApp()`; enrichment routes register through the module below. Exported: `createCachedJwksFetcher`, `clientIpKey`, `createApp`.
 - **`routes/enrichment-work-items.ts`** — `registerEnrichmentWorkItemRoutes`; propose/get/confirm/reject with server-derived actor attribution and typed 404/409 mappings.
+- **`routes/review-enrichment-intents.ts`** — `registerReviewEnrichmentIntentRoutes`; attach/get pre-post intents with route/body identity validation and server-derived attribution.
+- **`routes/review-proposals.ts`** — `registerReviewProposalRoutes`; open-review/voucher guard, intent attachment, and review-queue deep link.
 - **`routes/voucher-external-references.ts`** — `registerVoucherExternalReferenceRoutes`; direct human HTTPS link/unlink with server-derived actor attribution.
 - **`routes/voucher-tags.ts`** — `registerVoucherTagRoutes`; direct human registry-backed tag add/remove with server-derived actor attribution and typed 404/422 mappings.
 - **`advisor/chat.ts`** — `createAdvisorChatHandler`, `validateProposalAgainstStore`, `executeReviewApproval`, `buildSystemPrompt`, `selectChatPassages`, `truncateAdvisorHistory`, `resolveAdvisorStreamLimits`; bounds: `MAX_ADVISOR_MESSAGES` 40, `MAX_ADVISOR_MESSAGE_BYTES` 8 KiB, model history 20 msgs / 96 KiB, `ADVISOR_VECTOR_MIN_SIMILARITY` 0.25.
@@ -161,10 +166,11 @@ Cross-cutting: `components/app-shell.tsx` (nav + mobile dock + capture sheet), `
 
 | Module                                                 | Key exports                                                                                                                                                                                                                                                                                                                                                                                     |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `store.ts`                                             | `LedgerStore` (24 methods), `MemoryLedgerStore`, `ReviewAction`, `ActorAttribution`, `DEMO_ACTOR_ID`, `ReviewNotFoundError`, `InvalidReviewEditError`, `SieImportError`, `isDuplicateEvidence`, `validEditVatCodes`, `resolveReviewDecisionEdit`, `planSieImport`, `deriveBookedAt`, `buildPostingLines`, `mergeExtractedFields`, `recomputeVoucherFields`, SIE caps (500 vouchers / 100 lines) |
-| `enrichment-projections.ts`                            | `buildExternalReferencesFromEvents`, `findActiveExternalReference`, `buildVoucherTagsFromEvents` — append-only external-reference and voucher-tag replay                                                                                                                                                                                                                                        |
-| `store-planning.ts`                                    | Enrichment planners and posting guards, including HTTPS reference and bounded registry-backed voucher-tag plans                                                                                                                                                                                                                                                                                 |
-| `projections.ts`                                       | `LedgerLine`, `filterLedgerLines`, `buildJournal`, `buildBalances`, `buildVat`                                                                                                                                                                                                                                                                                                                  |
+| `store.ts`                                             | `LedgerStore` (27 methods), `MemoryLedgerStore`, `ReviewAction`, `ActorAttribution`, `DEMO_ACTOR_ID`, `ReviewNotFoundError`, `InvalidReviewEditError`, `SieImportError`, `isDuplicateEvidence`, `validEditVatCodes`, `resolveReviewDecisionEdit`, `planSieImport`, `deriveBookedAt`, `buildPostingLines`, `mergeExtractedFields`, `recomputeVoucherFields`, SIE caps (500 vouchers / 100 lines) |
+| `enrichment-projections.ts`                            | Append-only external-reference, voucher-tag, and line-enrichment replay; active-line lookup and first-supersession-wins audit semantics                                                                                                                                                                                                                                                         |
+| `list-projections.ts`                                  | Route-free `buildListProjection` framework seam; concrete list builders land with later verticals                                                                                                                                                                                                                                                                                               |
+| `store-planning.ts`                                    | Enrichment planners and posting guards, including pre-post review-intent merge, stable line-target record/supersede, HTTPS reference, and bounded registry-backed voucher-tag plans                                                                                                                                                                                                             |
+| `projections.ts`                                       | `LedgerLine`, `filterLedgerLines`, `buildJournal`, `buildBalances`, `buildVat`; required positional `journal_n` row ids plus optional stable `lineId`, `vatCode`, and `deductible` projection fields                                                                                                                                                                                            |
 | `hash-chain.ts`                                        | `canonicalJson`, `sha256Hex`, `buildEventHash`, `legacyDjb2EventHash`, `detectEventHashScheme`, hash patterns                                                                                                                                                                                                                                                                                   |
 | `integrity.ts`                                         | `summarizeEventIntegrity(events, {verifiedAt, verifyPayloads})` → the `/api/integrity` payload                                                                                                                                                                                                                                                                                                  |
 | `evidence-defaults.ts`                                 | `guessSupplier`, `buildExtractedFields`, `deriveVoucherFields`, `guessAccountingMethod`, `initialLedgerLines`                                                                                                                                                                                                                                                                                   |
@@ -195,7 +201,7 @@ Cross-cutting: `components/app-shell.tsx` (nav + mobile dock + capture sheet), `
 6. Settings (`workspaceProfileSchema`, `aiPostureSchema`, `companySettingsSchema`)
 7. Import/upload · 11. Snapshot (`workspaceSnapshotSchema`) · 12. Tax + observations · 13. Integrity + knowledge + runtime-info
 
-Siblings: `api-errors.ts` (JSON error envelope), `countries.ts`, `enrichment.ts` (work-item, external-reference, voucher-tag event payload, request, and projection schemas); the latter two are re-exported from the barrel.
+Siblings: `api-errors.ts` (JSON error envelope), `countries.ts`, `enrichment.ts` (work-item, review-intent, typed line-enrichment, external-reference, voucher-tag event payload, request, and projection schemas); the latter two are re-exported from the barrel.
 
 ### Other packages
 
@@ -211,7 +217,7 @@ Siblings: `api-errors.ts` (JSON error envelope), `countries.ts`, `enrichment.ts`
 
 ## 5. Event vocabulary
 
-Defined in `packages/contracts/src/index.ts` (`eventTypeSchema`). 23 names, **7 reserved (never emitted)**.
+Defined in `packages/contracts/src/index.ts` (`eventTypeSchema`). 25 names, **7 reserved (never emitted)**.
 
 | Event                                                          | Emitted?          | Append sites                                                                                                         |
 | -------------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -234,6 +240,8 @@ Defined in `packages/contracts/src/index.ts` (`eventTypeSchema`). 23 names, **7 
 | `ExternalReferenceRemoved`                                     | ✅                | both stores; append-only unlink retains prior link history                                                           |
 | `VoucherTagsAdded`                                             | ✅                | both stores; direct human add or confirmed enrichment work item                                                      |
 | `VoucherTagsRemoved`                                           | ✅                | both stores; append-only removal retains prior tag history                                                           |
+| `LineEnrichmentRecorded`                                       | ✅                | both stores; pre-post review approval or confirmed stable-line work item                                             |
+| `LineEnrichmentSuperseded`                                     | ✅                | both stores; append-only replacement names the prior and replacement enrichment ids                                  |
 
 There is no `EvidenceAdded` event — the name is `EvidenceReceived`.
 
@@ -263,9 +271,10 @@ Alternate entry: `apps/web/app/share/route.ts` (PWA share target; demo-only unde
 3. `review-edit-sheet.tsx` — corrected account/VAT before approval
 4. `simulation-preview-modal.tsx` → `POST /api/simulations/run`
 5. API `POST /api/reviews/:id/{approve|reject|book-without-vat}` → `postReviewDecision` → `deriveActorId` (JWT `sub`)
-6. `packages/domain/src/store.ts` `applyReviewDecision` → `resolveReviewDecisionEdit` → `deriveBookedAt` → `buildPostingLines` → `assertBalancedPosting`
-7. Events: `Review*` then `PostedToLedger`
-8. `apps/web/lib/query-invalidation.ts` — `invalidateLedgerDerived` fans out to 5 query families
+6. Optional pre-post metadata: `POST /api/review-proposals` or `/api/reviews/:id/enrichment-intents` → tenant-scoped intent; approval consumes it atomically and merges companion enrichment events without adding a second posting
+7. `packages/domain/src/store.ts` `applyReviewDecision` → `resolveReviewDecisionEdit` → `deriveBookedAt` → `buildPostingLines` → `assertBalancedPosting`
+8. Events: `Review*` then exactly one `PostedToLedger`, followed by any attached `LineEnrichmentRecorded` companions
+9. `apps/web/lib/query-invalidation.ts` — `invalidateLedgerDerived` fans out to 5 query families
 
 ### C. Books & reports (projections → period → drill)
 
@@ -275,7 +284,7 @@ Alternate entry: `apps/web/app/share/route.ts` (PWA share target; demo-only unde
 4. `packages/reporting` kpis / narrative / observations
 5. `components/screens/reports-screen.tsx` → `reports/*` sub-views + `charts/*`
 6. Drill: `reports/account-drill-drawer.tsx` (`?drill=`) → `GET /api/reports/journal?from=&to=`
-7. Books tabs: `components/books/*-view.tsx`; voucher detail renders every packet attachment, active external references, and registry-only soft-tag chips
+7. Books tabs: `components/books/*-view.tsx`; voucher detail renders every packet attachment, active external references, registry-only soft-tag chips, and stable line-target/VAT/deductibility columns when those projection fields exist
 8. External-reference and voucher-tag mutations require explicit human confirmation; direct actions call their voucher routes, while MCP/advisor proposals stay pending until the existing enrichment work-item confirmation shell is activated
 9. `WorkspaceSnapshot.voucherTags` is replay-derived in both stores; `?tag=` filters the journal by registry id and survives reload without client-only cache state
 10. SIE: export `GET /api/exports/sie` (`sie/serialize` + `pc8`), import `POST /api/imports/sie` (`sie/parse` + `planSieImport`)
@@ -361,7 +370,7 @@ Projects `desktop-chromium` + `mobile-chromium` (Pixel 7); servers API `127.0.0.
 ### `infra/`
 
 - `infra/azure/main.bicep` — 2 App Services (web westeurope, api) + Storage (swedencentral) on existing `jpx-app-plan`; `assignStorageRoles` (default `false`) is the CD-unblock flag (`docs/DEPLOY_UNBLOCK.md`).
-- `infra/supabase/migrations/` — `0001_init` (base ledger schema) · `0002_schema_alignment` · `0003_pgvector` (halfvec) · `0004_compliance_and_settings` · `0005_events_id_text` (uuid→text — critical) · `0006_chain_serialization` (seq + fork constraint) · `0007_knowledge_tenant_pk` · `0008_evidence_dedupe_index`.
+- `infra/supabase/migrations/` — `0001_init` (base ledger schema) · `0002_schema_alignment` · `0003_pgvector` (halfvec) · `0004_compliance_and_settings` · `0005_events_id_text` (uuid→text — critical) · `0006_chain_serialization` (seq + fork constraint) · `0007_knowledge_tenant_pk` · `0008_evidence_dedupe_index` · `0009_enrichment_work_items` · `0010_tag_registry` · `0011_review_enrichment_intents`.
 
 ### `.github/workflows/`
 
@@ -430,7 +439,7 @@ Read outside `config.ts`: `ADVISOR_MAX_OUTPUT_TOKENS` / `ADVISOR_STREAM_TIMEOUT_
 3. **`/api/reports/general-ledger` ≡ `/api/reports/trial-balance`** — one handler, two names.
 4. **`closeDatabase` IS wired (P1-13 landed)** — `registerGracefulShutdown` in `services/api/src/shutdown.ts` handles SIGTERM/SIGINT and awaits `runtime.closeDatabase`. **Still open:** verify `WEBSITES_CONTAINER_STOP_TIME_LIMIT` on the deployed Linux App Service (platform default is 5 s, not 30).
 5. **Orphaned assistant chain** — `domain/assistant.ts`, `LedgerStore.answerAssistantQuestion`, `assistantSessionSchema`, and the `ledger.assistant_sessions` table (migration 0004) have no live route since Phase 6.
-6. **7 of 19 event types are reserved, never emitted** — `PeriodLocked` / `CorrectionPosted` etc. do not mean those features exist.
+6. **7 of 25 event types are reserved, never emitted** — `PeriodLocked` / `CorrectionPosted` etc. do not mean those features exist.
 7. **`contracts/src/countries.ts` is not in the barrel** — reachable only transitively via `domain`.
 8. **`check-seams.sh` and `check:corpus` are NOT in CI** — they look like gates but only run manually.
 9. **`packages/advisor/src/corpus.generated.ts` is generated** — hand edits are overwritten by `pnpm build:knowledge`.
