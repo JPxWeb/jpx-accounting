@@ -41,6 +41,30 @@ test("project registry derives archive status without rewriting registration", (
   assert.equal(events[0]?.payload.status, "active");
 });
 
+test("project registry keeps the first registration authoritative", () => {
+  const events = [
+    event("evt_project", "ProjectRegistered", {
+      projectId: "proj_1",
+      name: "Bridge retrofit",
+      status: "active",
+    }),
+    event("evt_archive", "ProjectArchived", { projectId: "proj_1" }),
+    event("evt_duplicate", "ProjectRegistered", {
+      projectId: "proj_1",
+      name: "Rewritten project",
+      status: "active",
+    }),
+  ];
+
+  assert.deepEqual(buildProjectRegistryFromEvents(events), [
+    {
+      projectId: "proj_1",
+      name: "Bridge retrofit",
+      status: "archived",
+    },
+  ]);
+});
+
 test("projects list counts active project line enrichments", () => {
   const rows = buildProjectsList([
     event("evt_project", "ProjectRegistered", {

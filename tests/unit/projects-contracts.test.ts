@@ -36,10 +36,17 @@ test("project registration validates lifecycle fields", () => {
   });
 
   assert.equal(row.status, "active");
-  assert.deepEqual(registerProjectInputSchema.parse({ projectId: "proj_1", name: "Bridge retrofit" }), {
-    projectId: "proj_1",
-    name: "Bridge retrofit",
-  });
+  assert.deepEqual(
+    registerProjectInputSchema.parse({
+      projectId: "proj_1",
+      name: "Bridge retrofit",
+      actorId: "spoofed-client",
+    }),
+    {
+      projectId: "proj_1",
+      name: "Bridge retrofit",
+    },
+  );
 });
 
 test("project archive payload identifies the immutable registry entry", () => {

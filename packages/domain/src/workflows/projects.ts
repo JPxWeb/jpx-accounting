@@ -17,6 +17,9 @@ export function buildProjectRegistryFromEvents(events: LedgerEvent[]): ProjectPr
   for (const event of events) {
     if (event.eventType === "ProjectRegistered") {
       const project = projectRegisteredPayloadSchema.parse(event.payload);
+      // Registration is immutable: a duplicate event must not rename or
+      // reactivate an existing project during replay.
+      if (projects.has(project.projectId)) continue;
       projects.set(project.projectId, project);
       continue;
     }

@@ -380,13 +380,22 @@
     diagnostics are clean.
   - No store or migration changed, so `pnpm db:test` was not required.
   - See `.superpowers/sdd/wave-6-batch-report.md`.
+- Wave 6a Tasks 6a.1–6a.2 Sol review: APPROVE_WITH_FIXES.
+  - Duplicate `ProjectRegistered` replay can no longer rename or reactivate an
+    existing project; the first registration remains authoritative.
+  - A regression assertion pins client `actorId` stripping on project
+    registration input.
+  - Focused project tests passed 11/11; contracts, domain, and tests typechecks,
+    targeted formatting, and diagnostics passed.
+  - No Opus escalation is required. See
+    `.superpowers/sdd/w6a-sol-review.md`; Tasks 6a.3–6a.6 may proceed.
 
 ## In progress
 
-- Wave 6a Tasks 6a.1–6a.2 await Sol review.
+- No task is currently in progress.
 
 ## Pending
 
-- Wave 6a Tasks 6a.3–6a.6 after Sol approval.
+- Wave 6a Tasks 6a.3–6a.6 in plan order.
 - Waves 6b–8 in plan order (single feature branch; defer mid-wave PR to main
   until program ready).
