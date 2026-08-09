@@ -332,6 +332,9 @@ importers:
       '@jpx-accounting/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@jpx-accounting/mcp-server':
+        specifier: workspace:*
+        version: link:../../packages/mcp-server
       '@jpx-accounting/persistence-postgres':
         specifier: workspace:*
         version: link:../../packages/persistence-postgres

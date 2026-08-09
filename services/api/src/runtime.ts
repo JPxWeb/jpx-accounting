@@ -1,8 +1,11 @@
 import { createAiRuntime } from "@jpx-accounting/ai-core";
+import { AccountingApiClient } from "@jpx-accounting/api-client";
 import type { AiProvider } from "@jpx-accounting/contracts";
 import { createDocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import { DEFAULT_TENANT_SCOPE } from "@jpx-accounting/domain";
 import { MemoryLedgerStore, type LedgerStore } from "@jpx-accounting/domain/store";
+import { createMcpHttpAdapter, createMcpHttpSessionStore } from "@jpx-accounting/mcp-server/http-adapter";
+import { createMcpHttpToolHandlers } from "@jpx-accounting/mcp-server/http-tools";
 import {
   closePostgresClient,
   createPostgresClient,
@@ -213,6 +216,33 @@ export async function pingLedgerStore(store: LedgerStore): Promise<void> {
 /** No-op close for wiring that never opened a shared database client (demo mode, or normal mode without a runtime URL). */
 async function closeNothing(): Promise<void> {}
 
+function createMcpHttpRuntime(config: ApiRuntimeConfig) {
+  const resourceUrl = config.mcp?.resourceUrl ?? `http://localhost:${config.port}/api/mcp`;
+  const resource = new URL(resourceUrl);
+  const allowedOrigins = config.corsPolicy.kind === "allowlist" ? config.corsPolicy.origins : ["http://localhost:3002"];
+  const allowedHosts = config.mcp?.allowedHosts ?? [resource.host];
+  const authorizationServers =
+    config.mcp?.authorizationServers ??
+    (config.auth.jwksUrl === undefined ? [] : [config.auth.jwksUrl.replace(/\/keys\/?$/, "")]);
+
+  return createMcpHttpAdapter({
+    sessions: createMcpHttpSessionStore({ ttlMs: config.mcp?.sessionTtlMs ?? 5 * 60_000 }),
+    allowedOrigins,
+    allowedHosts,
+    resourceUrl,
+    authorizationServers,
+    toolHandlers: createMcpHttpToolHandlers((request) => {
+      const authorization = request.headers.get("authorization");
+      const token = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+      return new AccountingApiClient({
+        runtimeMode: config.runtimeMode,
+        baseUrl: resource.origin,
+        getAuthToken: () => token,
+      });
+    }),
+  });
+}
+
 export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
   // ONE structured boot log line (§A N5e): operators see the resolved posture without diffing env vars.
   console.log(JSON.stringify(describeBootPosture(config)));
@@ -257,6 +287,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
       documentIntelligence,
       aiMetadata: buildAiMetadata(config),
       advisor,
+      mcpHttp: createMcpHttpRuntime(config),
       jwksUrl: config.auth.jwksUrl,
       jwtAlgs: config.auth.jwtAlgs,
       closeDatabase: closeNothing,
@@ -301,6 +332,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
     documentIntelligence,
     aiMetadata: buildAiMetadata(config),
     advisor,
+    mcpHttp: createMcpHttpRuntime(config),
     jwksUrl: config.auth.jwksUrl,
     jwtAlgs: config.auth.jwtAlgs,
     /** Closes the shared Postgres pool; wired to SIGTERM/SIGINT via `registerGracefulShutdown` in `index.ts`. */

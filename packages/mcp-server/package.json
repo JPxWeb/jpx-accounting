@@ -6,6 +6,10 @@
   "bin": {
     "jpx-accounting-mcp": "./src/index.ts"
   },
+  "exports": {
+    "./http-adapter": "./src/http-adapter.ts",
+    "./http-tools": "./src/http-tools.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

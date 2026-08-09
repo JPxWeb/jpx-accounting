@@ -67,6 +67,7 @@ import {
   type LedgerStore,
   type ReportRange,
 } from "@jpx-accounting/domain/store";
+import type { McpHttpAdapter } from "@jpx-accounting/mcp-server/http-adapter";
 
 import { AdvisorDisabledError, AdvisorValidationError, createAdvisorChatHandler } from "./advisor/chat";
 import { createAdvisorModel, type AdvisorModelConfig } from "./advisor/model";
@@ -81,6 +82,7 @@ import { registerProjectListRoutes } from "./routes/lists-projects";
 import { registerSkuMovementListRoutes } from "./routes/lists-sku-movements";
 import { registerTripListRoutes } from "./routes/lists-trips";
 import { registerValuedMovementListRoutes } from "./routes/lists-valued-movements";
+import { registerMcpHttpRoutes } from "./routes/mcp-http";
 import { registerReviewEnrichmentIntentRoutes } from "./routes/review-enrichment-intents";
 import { registerReviewProposalRoutes } from "./routes/review-proposals";
 import { registerVoucherExternalReferenceRoutes } from "./routes/voucher-external-references";
@@ -110,6 +112,7 @@ type CreateAppOptions = {
     streamTimeoutMs: number;
     azureOpenAi: AdvisorModelConfig;
   };
+  mcpHttp: McpHttpAdapter;
   /**
    * JWKS endpoint (typically `${SUPABASE_URL}/auth/v1/keys`). When provided, mutating routes
    * require a valid JWT. When absent, mutations stay open — current demo + pilot behavior.
@@ -311,6 +314,7 @@ export function createApp({
   documentIntelligence,
   aiMetadata,
   advisor,
+  mcpHttp,
   jwksUrl,
   jwtAlgs = DEFAULT_SUPABASE_JWT_ALGS,
   allowTestReset,
@@ -729,6 +733,7 @@ export function createApp({
     return jsonError(c, "Unexpected server error.", runtimeMode, 500);
   });
 
+  registerMcpHttpRoutes(app, mcpHttp);
   registerEnrichmentWorkItemRoutes(app, {
     getStore: () => currentStore,
     deriveActorId,

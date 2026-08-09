@@ -20,6 +20,7 @@
     "@jpx-accounting/contracts": "workspace:*",
     "@jpx-accounting/document-intelligence": "workspace:*",
     "@jpx-accounting/domain": "workspace:*",
+    "@jpx-accounting/mcp-server": "workspace:*",
     "@jpx-accounting/persistence-postgres": "workspace:*",
     "@jpx-accounting/reporting": "workspace:*",
     "ai": "7.0.55",

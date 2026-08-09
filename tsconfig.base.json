@@ -21,6 +21,8 @@
       "@jpx-accounting/domain/store": ["packages/domain/src/store.ts"],
       "@jpx-accounting/domain/store-shared": ["packages/domain/src/store-shared.ts"],
       "@jpx-accounting/api-client": ["packages/api-client/src/index.ts"],
+      "@jpx-accounting/mcp-server/http-adapter": ["packages/mcp-server/src/http-adapter.ts"],
+      "@jpx-accounting/mcp-server/http-tools": ["packages/mcp-server/src/http-tools.ts"],
       "@jpx-accounting/ai-core": ["packages/ai-core/src/index.ts"],
       "@jpx-accounting/advisor": ["packages/advisor/src/index.ts"],
       "@jpx-accounting/reporting": ["packages/reporting/src/index.ts"],
