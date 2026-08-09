@@ -1,8 +1,8 @@
 # Wave 4 second Sol-review batch and UI pipeline
 
-Date: 2026-08-09  
-Branch: `feat/ledger-overview-enrichments-mcp`  
-Starting HEAD: `5f9d840`  
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Starting HEAD: `5f9d840`
 Checkpoint HEAD: `f3f0899`
 Sol review fix: `539ca51`
 
