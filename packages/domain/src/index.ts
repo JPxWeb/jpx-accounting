@@ -29,4 +29,5 @@ export * from "./tenant";
 export * from "./tax/calendar";
 export * from "./vat/boxes";
 export * from "./vat/regime";
+export * from "./workflows/invoices";
 export * from "./workflows/projects";
