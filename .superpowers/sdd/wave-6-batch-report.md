@@ -715,9 +715,13 @@ Implementation: `232cdd2`, ownership separation: `9fadc18`
   then the focused Memory execution passed.
 - Strict `pnpm db:test` applied migrations `0001`–`0011` and passed 113/113,
   including Memory, Postgres, and parity executions of the new scenario.
-- Targeted Prettier and IDE diagnostics passed. Aggregate domain/tests
-  typechecks were temporarily blocked by concurrent Wave 6c edits in
-  `store-planning.ts`, outside this repair; those edits remained uncommitted.
+- Targeted Prettier and IDE diagnostics passed.
+- After the strict green gate, concurrent Wave 6b intent-version work began in
+  shared contracts/stores. Against that incomplete working tree the 21 focused
+  quantity tests still pass, while the conformance approval and aggregate
+  typechecks await the finalized consume-version API. Those failures are
+  outside these commits; rerun the 113-test strict gate after the Wave 6b owner
+  lands or withdraws the shared WIP.
 
 No PR was opened, `main` was not touched, and Wave 6e was not started. Stop for
 Sol re-review; Wave 6d remains incomplete and its full/visual gate remains
