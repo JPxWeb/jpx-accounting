@@ -821,6 +821,18 @@
     is outside this verdict and does not block the unchanged valued-list hunks.
   - No Opus escalation is required. Task 6e.4 UI and the full/visual gate remain
     pending. See `.superpowers/sdd/w6e-api-sol-review.md`.
+- Wave 6e Task 6e.4 Books UI Sol review: **REQUEST_CHANGES**.
+  - Flag-off gating suppresses the valued query and panel; quantity-inventory
+    UOM behavior is unchanged, and the read-only UI introduces no writer.
+  - The shared money formatter rounds an authoritative `15.555 SEK` unit cost
+    to `15.56 SEK` while the projection correctly reports `31.11 SEK` for
+    quantity two, making the displayed operands contradict the total.
+  - Preserve explicit unit-cost precision and add populated-row regression
+    coverage. Web typecheck, focused lint/format, i18n 1115/1115, and diff
+    checks passed.
+  - No Opus escalation is required. Wave 6e remains NOT COMPLETE pending the
+    Task 6e.4 fix and Task 6e.5 full/functional/visual gates. See
+    `.superpowers/sdd/w6e-ui-sol-review.md`.
 
 ## Pending
 
