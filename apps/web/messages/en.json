@@ -126,11 +126,23 @@
       "workflowLabel": "Workflow",
       "workflowNone": "No workflow assignment",
       "workflowProject": "Project",
+      "workflowInvoice": "Invoice",
       "project": {
         "idLabel": "Project ID",
         "required": "Choose a project.",
         "activityCodeLabel": "Activity code (optional)",
         "objectCodeLabel": "Object code (optional)"
+      },
+      "invoice": {
+        "directionLabel": "Invoice direction",
+        "directionPlaceholder": "Choose direction",
+        "directionAr": "Accounts receivable",
+        "directionAp": "Accounts payable",
+        "directionRequired": "Choose receivable or payable.",
+        "counterpartyLabel": "Counterparty",
+        "counterpartyRequired": "Enter a counterparty.",
+        "dueDateLabel": "Due date",
+        "dueDateRequired": "Enter a due date."
       },
       "vatCodeLabel": "VAT code",
       "grossLabel": "Gross amount",

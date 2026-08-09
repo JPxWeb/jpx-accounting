@@ -126,11 +126,23 @@
       "workflowLabel": "Arbetsflöde",
       "workflowNone": "Ingen arbetsflödestilldelning",
       "workflowProject": "Projekt",
+      "workflowInvoice": "Faktura",
       "project": {
         "idLabel": "Projekt-ID",
         "required": "Välj ett projekt.",
         "activityCodeLabel": "Aktivitetskod (valfritt)",
         "objectCodeLabel": "Objektkod (valfritt)"
+      },
+      "invoice": {
+        "directionLabel": "Fakturariktning",
+        "directionPlaceholder": "Välj riktning",
+        "directionAr": "Kundfordran",
+        "directionAp": "Leverantörsskuld",
+        "directionRequired": "Välj kundfordran eller leverantörsskuld.",
+        "counterpartyLabel": "Motpart",
+        "counterpartyRequired": "Ange en motpart.",
+        "dueDateLabel": "Förfallodatum",
+        "dueDateRequired": "Ange ett förfallodatum."
       },
       "vatCodeLabel": "Momskod",
       "grossLabel": "Bruttobelopp",

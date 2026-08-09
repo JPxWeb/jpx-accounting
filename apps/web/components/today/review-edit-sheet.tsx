@@ -73,10 +73,13 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
   const localToday = localTodayIso();
   const derivedBookedAt = deriveBookedAt(voucher?.voucherFields, new Date().toISOString());
   const [bookedAtInput, setBookedAtInput] = useState(derivedBookedAt);
-  const [workflow, setWorkflow] = useState<"none" | "project">("none");
+  const [workflow, setWorkflow] = useState<"none" | "project" | "invoice">("none");
   const [projectId, setProjectId] = useState("");
   const [activityCode, setActivityCode] = useState("");
   const [objectCode, setObjectCode] = useState("");
+  const [invoiceDirection, setInvoiceDirection] = useState<"" | "ar" | "ap">("");
+  const [invoiceCounterparty, setInvoiceCounterparty] = useState("");
+  const [invoiceDueDate, setInvoiceDueDate] = useState("");
 
   useDialogFocusTrap(dialogRef, true, onClose, accountSelectRef);
 
@@ -126,9 +129,14 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
   const bookedAtChanged = bookedAtInput !== "" && bookedAtInput !== derivedBookedAt;
   const bookedAtValid = bookedAtInput === "" || (isValidCalendarDay(bookedAtInput) && bookedAtInput <= localToday);
   const projectRequired = workflow === "project" && projectId.trim() === "";
+  const invoiceDirectionRequired = workflow === "invoice" && invoiceDirection === "";
+  const invoiceCounterpartyRequired = workflow === "invoice" && invoiceCounterparty.trim() === "";
+  const invoiceDueDateRequired = workflow === "invoice" && !isValidCalendarDay(invoiceDueDate);
+  const invoiceValid = !invoiceDirectionRequired && !invoiceCounterpartyRequired && !invoiceDueDateRequired;
 
   const accountName = findCoaAccount(defaultCoaTemplate, accountNumber)?.name ?? accountNumber;
-  const submitDisabled = !amountsValid || !bookedAtValid || projectRequired || approveWithEdits.isPending;
+  const submitDisabled =
+    !amountsValid || !bookedAtValid || projectRequired || !invoiceValid || approveWithEdits.isPending;
   const submitError = approveWithEdits.error ? getErrorMessage(approveWithEdits.error, t("submitError")) : null;
 
   useEffect(() => {
@@ -235,11 +243,12 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
                 id="review-edit-workflow"
                 data-testid="edit-workflow"
                 value={workflow}
-                onChange={(event) => setWorkflow(event.target.value as "none" | "project")}
+                onChange={(event) => setWorkflow(event.target.value as "none" | "project" | "invoice")}
                 className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
               >
                 <option value="none">{t("workflowNone")}</option>
                 <option value="project">{t("workflowProject")}</option>
+                <option value="invoice">{t("workflowInvoice")}</option>
               </select>
             </div>
             {workflow === "project" ? (
@@ -288,6 +297,84 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
                     onChange={(event) => setObjectCode(event.target.value)}
                     className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
                   />
+                </div>
+              </>
+            ) : null}
+            {workflow === "invoice" ? (
+              <>
+                <div>
+                  <label htmlFor="review-edit-invoice-direction" className="text-eyebrow block">
+                    {t("invoice.directionLabel")}
+                  </label>
+                  <select
+                    id="review-edit-invoice-direction"
+                    data-testid="invoice-direction"
+                    value={invoiceDirection}
+                    onChange={(event) => setInvoiceDirection(event.target.value as "" | "ar" | "ap")}
+                    aria-invalid={invoiceDirectionRequired}
+                    aria-describedby={invoiceDirectionRequired ? "invoice-direction-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  >
+                    <option value="">{t("invoice.directionPlaceholder")}</option>
+                    <option value="ar">{t("invoice.directionAr")}</option>
+                    <option value="ap">{t("invoice.directionAp")}</option>
+                  </select>
+                  {invoiceDirectionRequired ? (
+                    <p
+                      id="invoice-direction-error"
+                      data-testid="invoice-direction-error"
+                      className="mt-1 text-sm text-danger"
+                    >
+                      {t("invoice.directionRequired")}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <label htmlFor="review-edit-invoice-counterparty" className="text-eyebrow block">
+                    {t("invoice.counterpartyLabel")}
+                  </label>
+                  <input
+                    id="review-edit-invoice-counterparty"
+                    data-testid="invoice-counterparty"
+                    value={invoiceCounterparty}
+                    onChange={(event) => setInvoiceCounterparty(event.target.value)}
+                    aria-invalid={invoiceCounterpartyRequired}
+                    aria-describedby={invoiceCounterpartyRequired ? "invoice-counterparty-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  />
+                  {invoiceCounterpartyRequired ? (
+                    <p
+                      id="invoice-counterparty-error"
+                      data-testid="invoice-counterparty-error"
+                      className="mt-1 text-sm text-danger"
+                    >
+                      {t("invoice.counterpartyRequired")}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="sm:col-span-2">
+                  <label htmlFor="review-edit-invoice-due-date" className="text-eyebrow block">
+                    {t("invoice.dueDateLabel")}
+                  </label>
+                  <input
+                    id="review-edit-invoice-due-date"
+                    data-testid="invoice-due-date"
+                    type="date"
+                    value={invoiceDueDate}
+                    onChange={(event) => setInvoiceDueDate(event.target.value)}
+                    aria-invalid={invoiceDueDateRequired}
+                    aria-describedby={invoiceDueDateRequired ? "invoice-due-date-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
+                  />
+                  {invoiceDueDateRequired ? (
+                    <p
+                      id="invoice-due-date-error"
+                      data-testid="invoice-due-date-error"
+                      className="mt-1 text-sm text-danger"
+                    >
+                      {t("invoice.dueDateRequired")}
+                    </p>
+                  ) : null}
                 </div>
               </>
             ) : null}
