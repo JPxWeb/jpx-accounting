@@ -2,7 +2,7 @@
 
 **Purpose:** the WHERE-IS-WHAT index for this monorepo — route inventories, module export maps, event-append sites, journey→files traces, and the gotchas that mislead newcomers (human or AI). Complements [CLAUDE.md](../CLAUDE.md) / [AGENTS.md](../AGENTS.md) (conventions + commands) and [architecture.md](architecture.md) (runtime shape); supersedes the short "Repo map" table in [CONTRIBUTING.md](CONTRIBUTING.md) for navigation purposes.
 
-**Verified against code:** 2026-08-06 (commit `1da068f` + working tree). Line numbers drift — treat them as anchors, not gospel. Update this file when adding routes, events, packages, or storage keys.
+**Verified against code:** 2026-08-09 (commit `b59ed2d` + working tree). Line numbers drift — treat them as anchors, not gospel. Update this file when adding routes, events, packages, or storage keys.
 
 ---
 
@@ -57,48 +57,53 @@ Entry: [services/api/src/index.ts](../services/api/src/index.ts) (telemetry → 
 
 ### Routes
 
-| Method | Path                                | Purpose                                                                 | Backing dep                                                 |
-| ------ | ----------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------- |
-| GET    | `/health`                           | Liveness `{ok, runtimeMode}` (public, outside `/api`)                   | none                                                        |
-| GET    | `/ready`                            | Readiness — `pingLedgerStore` + `isAiRuntimeOperational` (public)       | store + aiRuntime                                           |
-| GET    | `/api/runtime-info`                 | AI Act Art. 50 transparency — **public even with auth on**              | `aiMetadata`                                                |
-| GET    | `/api/workspace`                    | Full `WorkspaceSnapshot`                                                | `store.getSnapshot()`                                       |
-| GET    | `/api/reviews/feed`                 | Review queue                                                            | `store.getReviewFeed()`                                     |
-| GET    | `/api/reports/journal`              | Journal lines, optional `?from=&to=`                                    | `store.getReports()`                                        |
-| GET    | `/api/reports/general-ledger`       | Balances                                                                | `store.getReports()`                                        |
-| GET    | `/api/reports/trial-balance`        | ⚠ **identical handler** to general-ledger (`reportBalances`)            | `store.getReports()`                                        |
-| GET    | `/api/reports/vat-prep`             | VAT projection rows                                                     | `store.getReports()`                                        |
-| GET    | `/api/reports/pack`                 | ONE `ReportPack` per `?period=` token                                   | `store.getReportPack()`                                     |
-| GET    | `/api/integrity`                    | Hash-chain summary (`verifyPayloads: true`)                             | `summarizeEventIntegrity(store.getEvents())`                |
-| POST   | `/api/evidence`                     | Create evidence (201); actor server-derived                             | `store.createEvidence()`                                    |
-| POST   | `/api/evidence/compose`             | Compose multi-part evidence packet (201)                                | `store.composeEvidence()`                                   |
-| POST   | `/api/uploads/init`                 | Mint upload URL (Azure SAS or stub)                                     | `blobUploader.initUpload()`                                 |
-| PUT    | `/api/uploads/:uploadId`            | **Stub uploader only** — accept-and-discard bytes                       | `blobUploader.kind === "stub"`                              |
-| POST   | `/api/evidence/:id/extract`         | DocIntel on real blobs, persist refreshed extraction, fail-soft         | DocIntel + `mintReadSas` + `store.updateEvidenceExtraction` |
-| GET    | `/api/evidence/:id`                 | Evidence context + review join                                          | `store.getEvidenceContext`                                  |
-| GET    | `/api/evidence/:id/file-url`        | Short-lived read SAS; 404 `preview_unavailable` unless azure uploader   | `blobUploader.mintReadSas`                                  |
-| POST   | `/api/vouchers/:id/suggest`         | Deterministic accounting suggestion                                     | `store.suggestVoucher()`                                    |
-| POST   | `/api/reviews/:id/approve`          | Approve → posts to ledger                                               | `postReviewDecision(..., "approve")`                        |
-| POST   | `/api/reviews/:id/reject`           | Reject                                                                  | `postReviewDecision(..., "reject")`                         |
-| POST   | `/api/reviews/:id/book-without-vat` | Book without VAT deduction                                              | `postReviewDecision(..., "book-without-vat")`               |
-| POST   | `/api/imports/sie`                  | Raw SIE 4 bytes → parse → import                                        | `decodeSieBuffer` + `parseSie` + `store.importSie`          |
-| GET    | `/api/exports/sie`                  | PC8/CP437 `.se` download (`charset=ibm437`)                             | `buildSieExport` + `encodePc8`                              |
-| POST   | `/api/advisor/chat`                 | AI SDK 7 UI-message SSE stream                                          | `advisorChat` handler                                       |
-| POST   | `/api/knowledge/query`              | BM25-lite (or pgvector) retrieval                                       | `queryKnowledge()`                                          |
-| POST   | `/api/simulations/run`              | What-if approval simulation (201)                                       | `store.runSimulation()`                                     |
-| POST   | `/api/close-runs`                   | Returns current close run (201)                                         | `store.getCloseRun()`                                       |
-| GET    | `/api/close-runs/:id`               | Only current close-run id valid; else 404                               | `store.getCloseRun()`                                       |
-| POST   | `/api/compliance-watch/refresh`     | Re-run detectors; `?includeResolved=true`                               | `store.refreshComplianceAlerts()`                           |
-| GET    | `/api/settings/company`             | Company settings or `null`                                              | `store.getCompanySettings()`                                |
-| PUT    | `/api/settings/company`             | Save company settings                                                   | `store.putCompanySettings()`                                |
-| POST   | `/api/testing/reset`                | Swap in fresh `MemoryLedgerStore` — 404 unless `allowTestReset && demo` | in-proc                                                     |
-| POST   | `/mcp`                              | **Demo mode only** — echo stub listing tool names (no real MCP server)  | none                                                        |
+| Method | Path                                     | Purpose                                                                 | Backing dep                                                 |
+| ------ | ---------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------- |
+| GET    | `/health`                                | Liveness `{ok, runtimeMode}` (public, outside `/api`)                   | none                                                        |
+| GET    | `/ready`                                 | Readiness — `pingLedgerStore` + `isAiRuntimeOperational` (public)       | store + aiRuntime                                           |
+| GET    | `/api/runtime-info`                      | AI Act Art. 50 transparency — **public even with auth on**              | `aiMetadata`                                                |
+| GET    | `/api/workspace`                         | Full `WorkspaceSnapshot`                                                | `store.getSnapshot()`                                       |
+| GET    | `/api/reviews/feed`                      | Review queue                                                            | `store.getReviewFeed()`                                     |
+| GET    | `/api/reports/journal`                   | Journal lines, optional `?from=&to=`                                    | `store.getReports()`                                        |
+| GET    | `/api/reports/general-ledger`            | Balances                                                                | `store.getReports()`                                        |
+| GET    | `/api/reports/trial-balance`             | ⚠ **identical handler** to general-ledger (`reportBalances`)            | `store.getReports()`                                        |
+| GET    | `/api/reports/vat-prep`                  | VAT projection rows                                                     | `store.getReports()`                                        |
+| GET    | `/api/reports/pack`                      | ONE `ReportPack` per `?period=` token                                   | `store.getReportPack()`                                     |
+| GET    | `/api/integrity`                         | Hash-chain summary (`verifyPayloads: true`)                             | `summarizeEventIntegrity(store.getEvents())`                |
+| POST   | `/api/evidence`                          | Create evidence (201); actor server-derived                             | `store.createEvidence()`                                    |
+| POST   | `/api/evidence/compose`                  | Compose multi-part evidence packet (201)                                | `store.composeEvidence()`                                   |
+| POST   | `/api/uploads/init`                      | Mint upload URL (Azure SAS or stub)                                     | `blobUploader.initUpload()`                                 |
+| PUT    | `/api/uploads/:uploadId`                 | **Stub uploader only** — accept-and-discard bytes                       | `blobUploader.kind === "stub"`                              |
+| POST   | `/api/evidence/:id/extract`              | DocIntel on real blobs, persist refreshed extraction, fail-soft         | DocIntel + `mintReadSas` + `store.updateEvidenceExtraction` |
+| GET    | `/api/evidence/:id`                      | Evidence context + review join                                          | `store.getEvidenceContext`                                  |
+| GET    | `/api/evidence/:id/file-url`             | Short-lived read SAS; 404 `preview_unavailable` unless azure uploader   | `blobUploader.mintReadSas`                                  |
+| POST   | `/api/vouchers/:id/suggest`              | Deterministic accounting suggestion                                     | `store.suggestVoucher()`                                    |
+| POST   | `/api/reviews/:id/approve`               | Approve → posts to ledger                                               | `postReviewDecision(..., "approve")`                        |
+| POST   | `/api/reviews/:id/reject`                | Reject                                                                  | `postReviewDecision(..., "reject")`                         |
+| POST   | `/api/reviews/:id/book-without-vat`      | Book without VAT deduction                                              | `postReviewDecision(..., "book-without-vat")`               |
+| POST   | `/api/enrichment-work-items`             | Propose a server-attributed post-post metadata change (201)             | `store.proposeEnrichmentWorkItem()`                         |
+| GET    | `/api/enrichment-work-items/:id`         | Fetch one enrichment work item                                          | `store.getEnrichmentWorkItem()`                             |
+| POST   | `/api/enrichment-work-items/:id/confirm` | Explicitly confirm through the append-only enrichment planner           | `store.confirmEnrichmentWorkItem()`                         |
+| POST   | `/api/enrichment-work-items/:id/reject`  | Explicitly reject without changing ledger history                       | `store.rejectEnrichmentWorkItem()`                          |
+| POST   | `/api/imports/sie`                       | Raw SIE 4 bytes → parse → import                                        | `decodeSieBuffer` + `parseSie` + `store.importSie`          |
+| GET    | `/api/exports/sie`                       | PC8/CP437 `.se` download (`charset=ibm437`)                             | `buildSieExport` + `encodePc8`                              |
+| POST   | `/api/advisor/chat`                      | AI SDK 7 UI-message SSE stream                                          | `advisorChat` handler                                       |
+| POST   | `/api/knowledge/query`                   | BM25-lite (or pgvector) retrieval                                       | `queryKnowledge()`                                          |
+| POST   | `/api/simulations/run`                   | What-if approval simulation (201)                                       | `store.runSimulation()`                                     |
+| POST   | `/api/close-runs`                        | Returns current close run (201)                                         | `store.getCloseRun()`                                       |
+| GET    | `/api/close-runs/:id`                    | Only current close-run id valid; else 404                               | `store.getCloseRun()`                                       |
+| POST   | `/api/compliance-watch/refresh`          | Re-run detectors; `?includeResolved=true`                               | `store.refreshComplianceAlerts()`                           |
+| GET    | `/api/settings/company`                  | Company settings or `null`                                              | `store.getCompanySettings()`                                |
+| PUT    | `/api/settings/company`                  | Save company settings                                                   | `store.putCompanySettings()`                                |
+| POST   | `/api/testing/reset`                     | Swap in fresh `MemoryLedgerStore` — 404 unless `allowTestReset && demo` | in-proc                                                     |
+| POST   | `/mcp`                                   | **Demo mode only** — echo stub listing tool names (no real MCP server)  | none                                                        |
 
 ⚠ Retired: `POST /api/assistant/sessions` (removed Phase 6, superseded by `/api/advisor/chat`) — but `store.answerAssistantQuestion()` + `packages/domain/src/assistant.ts` still exist with no live route (see §12).
 
 ### Handler locations
 
-- **`app.ts`** — all route handlers are inline arrows inside `createApp()`. Exported: `createCachedJwksFetcher`, `clientIpKey`, `createApp`.
+- **`app.ts`** — core route handlers are inline arrows inside `createApp()`; enrichment routes register through the module below. Exported: `createCachedJwksFetcher`, `clientIpKey`, `createApp`.
+- **`routes/enrichment-work-items.ts`** — `registerEnrichmentWorkItemRoutes`; propose/get/confirm/reject with server-derived actor attribution and typed 404/409 mappings.
 - **`advisor/chat.ts`** — `createAdvisorChatHandler`, `validateProposalAgainstStore`, `executeReviewApproval`, `buildSystemPrompt`, `selectChatPassages`, `truncateAdvisorHistory`, `resolveAdvisorStreamLimits`; bounds: `MAX_ADVISOR_MESSAGES` 40, `MAX_ADVISOR_MESSAGE_BYTES` 8 KiB, model history 20 msgs / 96 KiB, `ADVISOR_VECTOR_MIN_SIMILARITY` 0.25.
 - **`advisor/model.ts`** — `createAdvisorModel(config)` (Azure via `@ai-sdk/azure`).
 - **`knowledge.ts`** — `queryKnowledge()`, `configureKnowledgeDatabaseClient()`, `VectorKnowledgeRetriever`; vector failures fail-soft to keyword.
