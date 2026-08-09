@@ -9,6 +9,7 @@ import type {
 import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
 import { deriveVoucherFields } from "./evidence-defaults";
+import { createId } from "./ids";
 import { assertBalancedPosting } from "./posting-invariants";
 import type { LedgerLine } from "./projections";
 import { getVatRegime, type VatRegime } from "./vat/regime";
@@ -279,6 +280,7 @@ export function buildPostingLines(
 
   const lines: LedgerLine[] = [
     {
+      lineId: createId("ln"),
       voucherId: voucher.id,
       accountNumber: suggestion.accountNumber,
       accountName: suggestion.accountName,
@@ -293,6 +295,7 @@ export function buildPostingLines(
     // journal shows the explicit "no VAT claimed" decision. buildVat and box 48
     // read input VAT off this account's amounts, so 0 claims nothing.
     {
+      lineId: createId("ln"),
       voucherId: voucher.id,
       accountNumber: inputVatAccount,
       accountName: findCoaAccount(coa, inputVatAccount)?.name ?? inputVatAccount,
@@ -304,6 +307,7 @@ export function buildPostingLines(
       deductible: action !== "book-without-vat",
     },
     {
+      lineId: createId("ln"),
       voucherId: voucher.id,
       accountNumber: bankAccount,
       accountName: findCoaAccount(coa, bankAccount)?.name ?? bankAccount,

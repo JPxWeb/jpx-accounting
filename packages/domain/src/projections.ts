@@ -9,6 +9,7 @@ import type { VatRegime } from "./vat/regime";
 import { swedishVatRegime } from "./vat/regime";
 
 export type LedgerLine = {
+  lineId?: string;
   voucherId: string;
   accountNumber: string;
   accountName: string;
