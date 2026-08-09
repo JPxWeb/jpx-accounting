@@ -1057,8 +1057,23 @@
     visual baseline was updated.
   - No PR was opened, `main` was not touched, and Wave 8 was not started. See
     `.superpowers/sdd/wave-7-gate-report.md`.
+- Wave 7 final Sol gate: **APPROVE — WAVE 7 COMPLETE**.
+  - Fresh independent `pnpm check` passed with 694/694 unit tests, lint, i18n,
+    formatting, all 12 workspace typechecks, aggregate test typecheck, and
+    production web/API builds.
+  - Fresh wired MCP tests passed 11/11 across inventory, handlers, and stdio
+    registration.
+  - The prior zero-tool `REQUEST_CHANGES` remains closed: the entrypoint
+    validates API URL and bearer token before stdio connection and registers
+    exactly the fixed 13-tool inventory.
+  - Mutation-entrypoint tracing remains clean: no ledger store or domain
+    mutation implementation is imported, and proposal tools stop at the
+    existing human approval or confirmation gates.
+  - `pnpm db:test`, E2E, and visual gates were not required because Wave 7
+    changes no store, migration, web UI, or browser workflow.
+  - No PR was opened, `main` was not touched, and Wave 8 was not started. See
+    `.superpowers/sdd/w7-final-gate-sol-review.md`.
 
 ## Pending
 
-- Sol's Wave 7 `COMPLETE` decision. Keep Wave 8, PR creation, and `main`
-  deferred.
+- Keep Wave 8, PR creation, and `main` deferred.
