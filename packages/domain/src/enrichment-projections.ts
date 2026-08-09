@@ -121,6 +121,16 @@ export function buildLineEnrichmentsFromEvents(events: LineEnrichmentEvent[]): L
   return [...enrichments.values()];
 }
 
+export function findActiveLineEnrichment(
+  events: LineEnrichmentEvent[],
+  lineId: string,
+  enrichmentId: string,
+): LineEnrichmentProjection | undefined {
+  return buildLineEnrichmentsFromEvents(events).find(
+    (enrichment) => enrichment.lineId === lineId && enrichment.enrichmentId === enrichmentId && !enrichment.superseded,
+  );
+}
+
 export function findActiveExternalReference(
   events: ExternalReferenceEvent[],
   voucherId: string,

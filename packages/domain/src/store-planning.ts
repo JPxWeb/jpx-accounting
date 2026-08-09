@@ -22,9 +22,11 @@ import {
 import {
   buildVoucherTagsFromEvents,
   findActiveExternalReference,
+  findActiveLineEnrichment,
   MAX_TAGS_PER_REQUEST,
   MAX_TAGS_PER_VOUCHER,
   type ExternalReferenceEvent,
+  type LineEnrichmentEvent,
   type TagDefinition,
   type VoucherTagEvent,
 } from "./enrichment-projections";
@@ -104,6 +106,13 @@ export class EnrichmentNotSupportedError extends Error {
   constructor(kind: string) {
     super(`Enrichment proposal kind is not supported: ${kind}`);
     this.name = "EnrichmentNotSupportedError";
+  }
+}
+
+export class LineEnrichmentNotActiveError extends Error {
+  constructor(public readonly enrichmentId: string) {
+    super(`Active line enrichment not found: ${enrichmentId}`);
+    this.name = "LineEnrichmentNotActiveError";
   }
 }
 
@@ -244,7 +253,7 @@ export type PostedEnrichmentTargets = {
  * line id seen in some unrelated event counts as posted.
  */
 export function collectPostedEnrichmentTargets(
-  events: Array<Pick<LedgerEvent, "aggregateId" | "eventType" | "payload">>,
+  events: Array<Pick<LedgerEvent, "aggregateId" | "eventType" | "payload"> & Partial<Pick<LedgerEvent, "id">>>,
 ): PostedEnrichmentTargets {
   const postedVoucherIds = new Set<string>();
   const postedLineIds = new Set<string>();
@@ -253,10 +262,14 @@ export function collectPostedEnrichmentTargets(
     if (event.eventType !== "PostedToLedger" && event.eventType !== "VoucherImported") continue;
     postedVoucherIds.add(event.aggregateId);
     const lines = Array.isArray(event.payload.lines) ? event.payload.lines : [];
-    for (const line of lines) {
+    for (const [index, line] of lines.entries()) {
       if (typeof line !== "object" || line === null) continue;
       const lineId = (line as { lineId?: unknown }).lineId;
-      if (typeof lineId === "string") postedLineIds.add(lineId);
+      if (typeof lineId === "string") {
+        postedLineIds.add(lineId);
+      } else if (event.id !== undefined) {
+        postedLineIds.add(`legacy_${event.id}_${index}`);
+      }
     }
   }
 
@@ -552,6 +565,7 @@ export function planPostPostEnrichmentConfirm(input: {
   postedVoucherIds: ReadonlySet<string>;
   postedLineIds: ReadonlySet<string>;
   externalReferenceEvents?: ExternalReferenceEvent[];
+  lineEnrichmentEvents?: LineEnrichmentEvent[];
   tagEvents?: VoucherTagEvent[];
   tagDefinitions?: readonly TagDefinition[];
 }): PostPostEnrichmentConfirmPlan {
@@ -650,6 +664,14 @@ export function planPostPostEnrichmentConfirm(input: {
     case "line_enrichment_supersede": {
       if (workItem.targetKind !== "line" || workItem.proposedChange.lineId !== workItem.targetId) {
         throw new EnrichmentNotSupportedError(workItem.proposedChange.kind);
+      }
+      const prior = findActiveLineEnrichment(
+        input.lineEnrichmentEvents ?? [],
+        workItem.targetId,
+        workItem.proposedChange.priorEnrichmentId,
+      );
+      if (!prior) {
+        throw new LineEnrichmentNotActiveError(workItem.proposedChange.priorEnrichmentId);
       }
       const occurredAt = nowIso();
       const replacementEnrichmentId = createId("le");

@@ -276,15 +276,26 @@
   - Task 5.8 route-free list projection framework `e69e746`.
   - Focused unit tests passed 30/30; contracts, domain, and tests typechecks
     passed; no store change, so this batch did not run `pnpm db:test`.
+- Wave 5A Sol review: APPROVE_WITH_FIXES.
+  - Fixed production replay of projection-only legacy line identity while
+    preserving required `journal_n` IDs and immutable historical payloads.
+  - Fixed legacy line-target recognition and rejected unknown/already
+    superseded line enrichments before replacement events can append.
+  - Strict `pnpm db:test` passed 89/89 with Memory/Postgres supersession parity;
+    focused tests and affected typechecks passed.
+  - `NEEDS_OPUS_REVIEW` is set for the legacy ledger-line identity change before
+    Task 5.9 activates identity in the UI. See
+    `.superpowers/sdd/w5a-sol-review.md`.
 
 ## In progress
 
-- Wave 5 foundation batch is stopped at the Sol review checkpoint. See
-  `.superpowers/sdd/wave-5-batch-report.md`.
+- Focused Opus review of the corrected legacy ledger-line identity before Task
+  5.9.
 
 ## Pending
 
-- Wave 5 Tasks 5.2–5.3 and 5.9–5.12 after Sol review and independent Wave 4
-  final-gate evaluation.
+- Wave 5 Tasks 5.2–5.3 and 5.10 may proceed.
+- Wave 5 Task 5.9 after focused Opus identity review; Tasks 5.11–5.12 after
+  their dependencies.
 - Waves 6–8 (single feature branch; defer mid-wave PR to main until program
   ready).

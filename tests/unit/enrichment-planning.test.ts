@@ -57,9 +57,10 @@ test("collectPostedEnrichmentTargets ignores line ids outside posting events", (
       payload: { lines: [{ lineId: "line_not_posted" }] },
     },
     {
+      id: "evt_posted",
       aggregateId: "voucher_posted",
       eventType: "PostedToLedger",
-      payload: { lines: [{ lineId: "line_posted" }] },
+      payload: { lines: [{ lineId: "line_posted" }, { accountNumber: "1930" }] },
     },
   ]);
 
@@ -67,6 +68,7 @@ test("collectPostedEnrichmentTargets ignores line ids outside posting events", (
   assert.equal(targets.postedLineIds.has("line_not_posted"), false);
   assert.equal(targets.postedVoucherIds.has("voucher_posted"), true);
   assert.equal(targets.postedLineIds.has("line_posted"), true);
+  assert.equal(targets.postedLineIds.has("legacy_evt_posted_1"), true);
 });
 
 test("planPostPostEnrichmentConfirm never emits PostedToLedger for noop", () => {

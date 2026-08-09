@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildJournal } from "@jpx-accounting/domain";
+import { buildJournal, collectLedgerLinesFromEvents } from "@jpx-accounting/domain";
 
 const baseLine = {
   voucherId: "v1",
@@ -31,6 +31,22 @@ test("payload lineId wins over projection-only legacy identity", () => {
 
   assert.equal(journal[0]?.id, "journal_1");
   assert.equal(journal[0]?.lineId, "ln_1");
+});
+
+test("event replay supplies event-local legacy lineId without rewriting payloads", () => {
+  const firstPayload = { lines: [baseLine] };
+  const secondPayload = { lines: [{ ...baseLine, voucherId: "v2" }] };
+  const lines = collectLedgerLinesFromEvents([
+    { id: "evt_first", eventType: "PostedToLedger", payload: firstPayload },
+    { id: "evt_second", eventType: "VoucherImported", payload: secondPayload },
+  ]);
+
+  assert.deepEqual(
+    buildJournal(lines).map((entry) => entry.lineId),
+    ["legacy_evt_first_0", "legacy_evt_second_0"],
+  );
+  assert.equal(Object.hasOwn(firstPayload.lines[0]!, "lineId"), false);
+  assert.equal(Object.hasOwn(secondPayload.lines[0]!, "lineId"), false);
 });
 
 test("journal omits lineId without payload identity or event context", () => {

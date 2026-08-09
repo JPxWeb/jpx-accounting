@@ -21,6 +21,9 @@ export type LedgerLine = {
   deductible: boolean;
 };
 
+const LEGACY_PROJECTION_LINE_ID: unique symbol = Symbol("legacyProjectionLineId");
+type ProjectableLedgerLine = LedgerLine & { [LEGACY_PROJECTION_LINE_ID]?: string };
+
 /** Event types whose payloads carry journal `lines` for report replay. */
 export const LINE_CARRYING_EVENT_TYPES = ["PostedToLedger", "VoucherImported"] as const;
 
@@ -31,13 +34,25 @@ const LINE_CARRYING_EVENT_TYPE_SET: ReadonlySet<string> = new Set(LINE_CARRYING_
  * VoucherImported). Memory prepends frozen demo seed separately; Postgres
  * does not.
  */
-export function collectLedgerLinesFromEvents(events: Array<Pick<LedgerEvent, "eventType" | "payload">>): LedgerLine[] {
+export function collectLedgerLinesFromEvents(
+  events: Array<Pick<LedgerEvent, "eventType" | "payload"> & Partial<Pick<LedgerEvent, "id">>>,
+): LedgerLine[] {
   const lines: LedgerLine[] = [];
   for (const event of events) {
     if (!LINE_CARRYING_EVENT_TYPE_SET.has(event.eventType)) continue;
     const payloadLines = (event.payload as { lines?: unknown }).lines;
     if (Array.isArray(payloadLines)) {
-      for (const line of payloadLines as LedgerLine[]) lines.push(line);
+      for (const [index, line] of (payloadLines as LedgerLine[]).entries()) {
+        if (line.lineId !== undefined || event.id === undefined) {
+          lines.push(line);
+        } else {
+          const projectableLine: ProjectableLedgerLine = {
+            ...line,
+            [LEGACY_PROJECTION_LINE_ID]: `legacy_${event.id}_${index}`,
+          };
+          lines.push(projectableLine);
+        }
+      }
     }
   }
   return lines;
@@ -65,7 +80,10 @@ export function buildJournal(
 ): JournalEntryProjection[] {
   return lines.map((line, index) => {
     const eventId = context?.eventIdByLineIndex?.get(index);
-    const lineId = line.lineId ?? (eventId !== undefined ? `legacy_${eventId}_${index}` : undefined);
+    const lineId =
+      line.lineId ??
+      (line as ProjectableLedgerLine)[LEGACY_PROJECTION_LINE_ID] ??
+      (eventId !== undefined ? `legacy_${eventId}_${index}` : undefined);
 
     return {
       id: `journal_${index + 1}`,

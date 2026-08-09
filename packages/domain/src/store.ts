@@ -819,6 +819,7 @@ export class MemoryLedgerStore implements LedgerStore {
       postedVoucherIds,
       postedLineIds,
       externalReferenceEvents: this.events,
+      lineEnrichmentEvents: this.events,
       tagEvents: this.events,
       tagDefinitions: DEFAULT_TAG_DEFINITIONS,
     });

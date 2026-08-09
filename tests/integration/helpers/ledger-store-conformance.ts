@@ -12,6 +12,7 @@ import {
   deriveDeterministicExtraction,
   ExternalReferenceNotFoundError,
   InvalidPeriodTokenError,
+  LineEnrichmentNotActiveError,
   parseSie,
   today,
 } from "@jpx-accounting/domain";
@@ -511,6 +512,76 @@ export async function scenarioEnrichmentWorkItemConfirmNeverPosts(h: Conformance
   };
 }
 
+export async function scenarioLineEnrichmentSupersession(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Line enrichment conformance",
+    originalFilename: "line-enrichment-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+  const eventsAfterPosting = await h.store.getEvents();
+  const posted = eventsAfterPosting.find(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+  const lineId = (posted?.payload.lines as Array<{ lineId?: string }> | undefined)?.[0]?.lineId;
+  assert.ok(lineId);
+
+  const record = await h.store.proposeEnrichmentWorkItem({
+    actorId: h.actorId,
+    targetKind: "line",
+    targetId: lineId,
+    proposedChange: {
+      kind: "line_enrichment_record",
+      lineId,
+      enrichmentType: "project",
+      payload: { projectId: "project_1" },
+    },
+    source: "ui",
+    idempotencyKey: `ui:line-record:${lineId}`,
+  });
+  const confirmedRecord = await h.store.confirmEnrichmentWorkItem(record.id, { actorId: h.actorId });
+  const recordedEvent = (await h.store.getEvents()).find((event) =>
+    confirmedRecord.resultingEventIds?.includes(event.id),
+  );
+  const enrichmentId = recordedEvent?.payload.enrichmentId;
+  assert.equal(typeof enrichmentId, "string");
+
+  const proposeSupersession = (idempotencyKey: string) =>
+    h.store.proposeEnrichmentWorkItem({
+      actorId: h.actorId,
+      targetKind: "line",
+      targetId: lineId,
+      proposedChange: {
+        kind: "line_enrichment_supersede",
+        lineId,
+        priorEnrichmentId: String(enrichmentId),
+        replacement: { enrichmentType: "project", payload: { projectId: "project_2" } },
+      },
+      source: "ui",
+      idempotencyKey,
+    });
+
+  const supersede = await proposeSupersession(`ui:line-supersede:${lineId}`);
+  const confirmedSupersede = await h.store.confirmEnrichmentWorkItem(supersede.id, { actorId: h.actorId });
+  const stale = await proposeSupersession(`ui:line-supersede-stale:${lineId}`);
+  await assert.rejects(
+    () => h.store.confirmEnrichmentWorkItem(stale.id, { actorId: h.actorId }),
+    LineEnrichmentNotActiveError,
+  );
+  const eventsAfterSupersession = await h.store.getEvents();
+
+  return {
+    recordEventCount: confirmedRecord.resultingEventIds?.length ?? 0,
+    supersedeEventCount: confirmedSupersede.resultingEventIds?.length ?? 0,
+    postedEventDelta:
+      eventsAfterSupersession.filter((event) => event.eventType === "PostedToLedger").length -
+      eventsAfterPosting.filter((event) => event.eventType === "PostedToLedger").length,
+    staleStatus: (await h.store.getEnrichmentWorkItem(stale.id))?.status ?? null,
+  };
+}
+
 export async function scenarioExternalReferences(h: ConformanceHarness): Promise<ConformanceOutcome> {
   const created = await h.store.createEvidence({
     actorId: h.actorId,
@@ -667,6 +738,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "review reject", run: scenarioReviewReject },
   { name: "review approve with edits", run: scenarioReviewApproveEdited },
   { name: "enrichment confirm never posts twice", run: scenarioEnrichmentWorkItemConfirmNeverPosts },
+  { name: "line enrichment supersession", run: scenarioLineEnrichmentSupersession },
   { name: "external reference append-only paths", run: scenarioExternalReferences },
   { name: "voucher tag append-only paths", run: scenarioVoucherTags },
 ];

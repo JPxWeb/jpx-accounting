@@ -66,6 +66,7 @@ import {
   type ApprovalGate,
   type ExternalReferenceEvent,
   type LedgerLine,
+  type LineEnrichmentEvent,
   type ReviewAction,
   type TagDefinition,
   type VoucherTagEvent,
@@ -367,6 +368,7 @@ function rowToEnrichmentWorkItem(row: EnrichmentWorkItemRow): EnrichmentWorkItem
 }
 
 type PostedEnrichmentTargetRow = {
+  id: string;
   aggregate_id: string;
   event_type: LedgerEvent["eventType"];
   payload: Record<string, unknown>;
@@ -377,7 +379,7 @@ async function loadPostedEnrichmentTargets(
   scope: { organizationId: string; workspaceId: string },
 ) {
   const rows = await runner<PostedEnrichmentTargetRow[]>`
-    SELECT aggregate_id, event_type, payload
+    SELECT id, aggregate_id, event_type, payload
     FROM ledger.events
     WHERE organization_id = ${scope.organizationId}
       AND workspace_id = ${scope.workspaceId}
@@ -386,6 +388,7 @@ async function loadPostedEnrichmentTargets(
   `;
   return collectPostedEnrichmentTargets(
     rows.map((row) => ({
+      id: row.id,
       aggregateId: row.aggregate_id,
       eventType: row.event_type,
       payload: row.payload,
@@ -424,6 +427,24 @@ async function loadVoucherTagEvents(
       AND workspace_id = ${scope.workspaceId}
       AND aggregate_id = ${voucherId}
       AND event_type IN ('VoucherTagsAdded', 'VoucherTagsRemoved')
+    ORDER BY seq ASC
+  `;
+  return rows.map(rowToEvent);
+}
+
+async function loadLineEnrichmentEvents(
+  runner: PostgresClient,
+  scope: { organizationId: string; workspaceId: string },
+  lineId: string,
+): Promise<LineEnrichmentEvent[]> {
+  const rows = await runner<EventRow[]>`
+    SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+           actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+    FROM ledger.events
+    WHERE organization_id = ${scope.organizationId}
+      AND workspace_id = ${scope.workspaceId}
+      AND aggregate_id = ${lineId}
+      AND event_type IN ('LineEnrichmentRecorded', 'LineEnrichmentSuperseded')
     ORDER BY seq ASC
   `;
   return rows.map(rowToEvent);
@@ -1268,8 +1289,8 @@ export class PostgresLedgerStore implements LedgerStore {
    * and `getReportPack` so the two read paths can never diverge.
    */
   private async collectLedgerLines(): Promise<LedgerLine[]> {
-    const rows = await this.client<{ event_type: string; payload: Record<string, unknown> }[]>`
-      SELECT event_type, payload
+    const rows = await this.client<{ id: string; event_type: string; payload: Record<string, unknown> }[]>`
+      SELECT id, event_type, payload
       FROM ledger.events
       WHERE event_type = ANY(${[...LINE_CARRYING_EVENT_TYPES]})
         AND organization_id = ${this.defaults.organizationId}
@@ -1279,6 +1300,7 @@ export class PostgresLedgerStore implements LedgerStore {
 
     return collectLedgerLinesFromEvents(
       rows.map((r) => ({
+        id: r.id,
         eventType: r.event_type as LedgerEvent["eventType"],
         payload: r.payload,
       })),
@@ -1605,12 +1627,17 @@ export class PostgresLedgerStore implements LedgerStore {
           ? await loadVoucherTagEvents(tx, this.defaults, workItem.targetId)
           : undefined;
         const tagDefinitions = isVoucherTagsProposal ? await loadTagDefinitions(tx, this.defaults) : undefined;
+        const lineEnrichmentEvents =
+          workItem.proposedChange.kind === "line_enrichment_supersede"
+            ? await loadLineEnrichmentEvents(tx, this.defaults, workItem.targetId)
+            : undefined;
         const plan = planPostPostEnrichmentConfirm({
           workItem,
           actorId,
           postedVoucherIds,
           postedLineIds,
           ...(externalReferenceEvents !== undefined ? { externalReferenceEvents } : {}),
+          ...(lineEnrichmentEvents !== undefined ? { lineEnrichmentEvents } : {}),
           ...(tagEvents !== undefined ? { tagEvents } : {}),
           ...(tagDefinitions !== undefined ? { tagDefinitions } : {}),
         });

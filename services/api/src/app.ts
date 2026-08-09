@@ -38,6 +38,7 @@ import {
   ReviewBlockedError,
   summarizeEventIntegrity,
   today,
+  LineEnrichmentNotActiveError,
   type ReviewAction,
   VoucherTagsValidationError,
 } from "@jpx-accounting/domain";
@@ -524,6 +525,10 @@ export function createApp({
 
     if (error instanceof ExternalReferenceNotFoundError) {
       return jsonError(c, error.message, runtimeMode, 404, { code: "external_reference_not_found" });
+    }
+
+    if (error instanceof LineEnrichmentNotActiveError) {
+      return jsonError(c, error.message, runtimeMode, 409, { code: "line_enrichment_not_active" });
     }
 
     if (error instanceof VoucherTagsValidationError) {
