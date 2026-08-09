@@ -501,18 +501,32 @@
   - No Opus escalation is required. Wave 6d store/API may proceed after the
     review-fix commit; Wave 6e remains blocked until Wave 6d is complete. See
     `.superpowers/sdd/w6d-sol-review.md`.
+- Wave 6c store/API checkpoint completed on the reviewed foundation.
+  - Task 6c.3 contract-validated trips read route and HTTP/offline api-client:
+    `c93e5ac`.
+  - Append-only Memory/Postgres/Unavailable lifecycle producers, authenticated
+    API routes, and api-client methods: `5005bc7`.
+  - First registration/close remain authoritative; unknown closes fail before
+    append; route actor attribution is server-derived.
+  - Focused trip tests passed 13/13 and all affected package plus aggregate
+    test typechecks passed.
+  - Strict `pnpm db:test` applied migrations `0001`–`0011` and passed 104/104
+    integration tests including Memory/Postgres trip lifecycle parity.
+  - Wave 6d review fixes `deaf719` / `4fda984` are in the ancestry. Ready for
+    Sol review before Wave 6c Tasks 6c.4–6c.5.
 
 ## In progress
 
 - Wave 6b Tasks 6b.4–6b.6 are cleared to proceed after the Task 6b.3 review-fix
   commit.
-- Wave 6c Tasks 6c.3+ are cleared to proceed after the foundation review-fix
-  commit.
+- Wave 6c Tasks 6c.4–6c.5 are stopped pending Sol review of the store/API
+  checkpoint.
 - Wave 6d Tasks 6d.3+ are cleared to proceed after the foundation review-fix
   commit.
 
 ## Pending
 
-- Wave 6b Tasks 6b.4–6b.6; Wave 6c Tasks 6c.3+; Wave 6d Tasks 6d.3+; then
+- Wave 6b Tasks 6b.4–6b.6; Wave 6c Tasks 6c.4–6c.5 after Sol; Wave 6d Tasks
+  6d.3+; then
   Waves 6e–8 in plan order, with Wave 6e blocked until Wave 6d completion
   (single feature branch; defer mid-wave PR to main until program ready).

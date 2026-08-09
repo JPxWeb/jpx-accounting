@@ -337,3 +337,67 @@ Review the Wave 6d foundation for:
 3. deterministic per-SKU running quantities under interleaved events;
 4. append-only event vocabulary and absence of inferred inventory value;
 5. generic list kind `sku_movement` before store/API/UI work begins.
+
+# Wave 6c store/API Sol checkpoint
+
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Base: `4fda984`
+Scope: Task 6c.3 plus append-only trip lifecycle producers
+Checkpoint: **READY FOR SOL REVIEW**
+
+## Completed tasks
+
+- Task 6c.3 — trips read route and api-client: `c93e5ac`
+  - Added contract-validated `GET /api/lists/trips`.
+  - Added HTTP and offline-demo `getTripsList()` client wiring.
+  - The read route derives from events and appends nothing.
+- Trip lifecycle producers — Memory/Postgres/Unavailable, API, and api-client:
+  `5005bc7`
+  - Added append-only registration and close methods plus authenticated
+    `POST /api/trips` and `POST /api/trips/close`.
+  - First registration and first close remain authoritative; replays append
+    nothing and return the original lifecycle identity.
+  - Closing an unknown trip fails before append with typed HTTP 404.
+  - Request parsing strips forged actor fields and route handlers inject only
+    the server-derived actor.
+  - Postgres mutations serialize behind the workspace advisory lock.
+
+## TDD evidence
+
+- Task 6c.3 RED: the list route returned 404 and the client method was absent;
+  GREEN: the route/client and foundation suite passed 11/11.
+- Lifecycle RED: writer routes returned 404, client/store methods were absent,
+  and Memory conformance failed at the missing method.
+- Lifecycle GREEN: focused trip tests passed 13/13 and Memory conformance
+  passed the new immutable lifecycle scenario.
+
+## Verification
+
+- Focused trip contracts/projection/route/client suite: PASS, 13/13.
+- Memory conformance runner: PASS, 19 passed with 36 expected Postgres skips.
+- Domain, persistence-postgres, API, api-client, and aggregate-tests
+  typechecks: PASS.
+- Focused ESLint, Prettier, IDE diagnostics, and diff checks: PASS.
+- `pnpm db:test`: PASS, migrations `0001`–`0011`, 104/104 integration tests,
+  including Memory/Postgres trip lifecycle parity.
+
+## Pipeline and stop notes
+
+- Wave 6d review fixes `deaf719` and `4fda984` are in this checkpoint's
+  ancestry; no rebase conflict remained.
+- Concurrent Wave 6b UI commit `a5d88cb` is preserved but is outside this
+  checkpoint.
+- No Wave 6c trip UI, Wave 6d store/API, Wave 6e work, PR, or `main` change
+  was made.
+
+## Sol review ask
+
+Review this store/API checkpoint for:
+
+1. immutable first-registration and first-close replay;
+2. fail-before-append behavior for unknown trip close;
+3. Memory/Postgres/Unavailable parity and advisory-lock serialization;
+4. server-owned actor attribution and append-only event production;
+5. contract validation on API responses and HTTP/offline api-client methods;
+6. continued stable posted `lineId` derivation for trip expense totals.
