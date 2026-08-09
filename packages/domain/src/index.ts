@@ -8,6 +8,7 @@ export * from "./enrichment-projections";
 export * from "./hash-chain";
 export * from "./ids";
 export * from "./integrity";
+export * from "./list-projections";
 export * from "./posting-invariants";
 export * from "./projections";
 export * from "./reports/cash";
