@@ -24,6 +24,7 @@ import { AiRuntimeUnavailableError, type AiRuntime, isAiRuntimeOperational } fro
 import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import {
+  EnrichmentTargetNotPostedError,
   buildSieExport,
   currentMonthToken,
   decodeSieBuffer,
@@ -39,6 +40,8 @@ import {
   type ReviewAction,
 } from "@jpx-accounting/domain";
 import {
+  EnrichmentWorkItemConflictError,
+  EnrichmentWorkItemNotFoundError,
   MemoryLedgerStore,
   ReviewNotFoundError,
   SieImportError,
@@ -52,6 +55,8 @@ import type { BlobUploader } from "./blob";
 import { BlobUploaderUnavailableError, MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
 import { DEFAULT_SUPABASE_JWT_ALGS, type CorsRuntimePolicy, type SupabaseJwtAlgorithm } from "./config";
 import { queryKnowledge } from "./knowledge";
+import type { ApiRouteEnv } from "./route-types";
+import { registerEnrichmentWorkItemRoutes } from "./routes/enrichment-work-items";
 import type { AiRuntimeMetadata } from "./runtime";
 import { LedgerStoreUnavailableError, pingLedgerStore } from "./runtime";
 import { ApiValidationError, jsonValidated } from "./validation";
@@ -88,8 +93,7 @@ type CreateAppOptions = {
 };
 
 /** `jwtPayload` is set by `hono/jwk` after successful verification (WS-C R5 consumes it). */
-type AppVariables = { requestId: string; jwtPayload?: Record<string, unknown> | undefined };
-type AppEnv = { Variables: AppVariables };
+type AppEnv = ApiRouteEnv;
 
 const DEFAULT_JSON_BODY_BYTES = 512 * 1024;
 const SIE_IMPORT_BODY_BYTES = 32 * 1024 * 1024;
@@ -510,6 +514,18 @@ export function createApp({
       return jsonError(c, error.message, runtimeMode, 400, { code: error.code });
     }
 
+    if (error instanceof EnrichmentTargetNotPostedError) {
+      return jsonError(c, error.message, runtimeMode, 409, { code: "enrichment_target_not_posted" });
+    }
+
+    if (error instanceof EnrichmentWorkItemNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 404, { code: "enrichment_work_item_not_found" });
+    }
+
+    if (error instanceof EnrichmentWorkItemConflictError) {
+      return jsonError(c, error.message, runtimeMode, 409, { code: "enrichment_work_item_conflict" });
+    }
+
     if (error instanceof HTTPException) {
       return jsonError(c, error.message, runtimeMode, error.status);
     }
@@ -600,6 +616,11 @@ export function createApp({
     );
 
     return jsonError(c, "Unexpected server error.", runtimeMode, 500);
+  });
+
+  registerEnrichmentWorkItemRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
   });
 
   app.get("/health", (context) => context.json({ ok: true, runtimeMode }));
