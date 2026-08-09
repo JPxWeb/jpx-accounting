@@ -1,7 +1,7 @@
 # Wave 6c Sol review
 
-**Date:** 2026-08-09  
-**Scope:** `31f836b`, `6f5294b`, `778afa7` atop `dcc8a60`  
+**Date:** 2026-08-09
+**Scope:** `31f836b`, `6f5294b`, `778afa7` atop `dcc8a60`
 **Verdict:** APPROVE_WITH_FIXES
 
 ## Finding fixed
