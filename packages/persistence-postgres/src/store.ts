@@ -1995,7 +1995,11 @@ export class PostgresLedgerStore implements LedgerStore {
           workItem.proposedChange.enrichmentType === "trip" &&
           typeof workItem.proposedChange.payload.tripId === "string"
             ? workItem.proposedChange.payload.tripId
-            : undefined;
+            : workItem.proposedChange.kind === "line_enrichment_supersede" &&
+                workItem.proposedChange.replacement.enrichmentType === "trip" &&
+                typeof workItem.proposedChange.replacement.payload.tripId === "string"
+              ? workItem.proposedChange.replacement.payload.tripId
+              : undefined;
         const registeredTripRows =
           proposedTripId === undefined
             ? []

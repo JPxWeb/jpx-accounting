@@ -1150,6 +1150,118 @@ export async function scenarioTripReviewApproval(h: ConformanceHarness): Promise
   };
 }
 
+export async function scenarioTripSupersessionGuards(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Trip supersession conformance",
+    originalFilename: "trip-supersession-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+  const posted = (await h.store.getEvents()).find(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+  const lineId = (posted?.payload.lines as Array<{ lineId?: string }> | undefined)?.[0]?.lineId;
+  assert.ok(lineId);
+
+  const tripA = {
+    tripId: "trip_supersession_a",
+    purpose: "Customer visit",
+    traveler: "Ada",
+    startDate: "2026-08-01",
+    endDate: "2026-08-03",
+  };
+  const tripB = {
+    tripId: "trip_supersession_b",
+    purpose: "Conference",
+    traveler: "Ada",
+    startDate: "2026-08-04",
+    endDate: "2026-08-05",
+  };
+  await h.store.registerTrip({ ...tripA, actorId: h.actorId });
+  await h.store.registerTrip({ ...tripB, actorId: h.actorId });
+
+  const proposeRecord = async (enrichmentType: string, payload: Record<string, unknown>, idempotencyKey: string) => {
+    const item = await h.store.proposeEnrichmentWorkItem({
+      actorId: h.actorId,
+      targetKind: "line",
+      targetId: lineId,
+      proposedChange: { kind: "line_enrichment_record", lineId, enrichmentType, payload },
+      source: "ui",
+      idempotencyKey,
+    });
+    return h.store.confirmEnrichmentWorkItem(item.id, { actorId: h.actorId });
+  };
+  const projectConfirmation = await proposeRecord(
+    "project",
+    { projectId: "project_trip_supersession" },
+    `trip-supersession:project:${lineId}`,
+  );
+  const projectEvent = (await h.store.getEvents()).find((event) =>
+    projectConfirmation.resultingEventIds?.includes(event.id),
+  );
+  const projectEnrichmentId = String(projectEvent?.payload.enrichmentId ?? "");
+  assert.match(projectEnrichmentId, /^le_/);
+
+  const proposeSupersession = (priorEnrichmentId: string, trip: typeof tripA, idempotencyKey: string) =>
+    h.store.proposeEnrichmentWorkItem({
+      actorId: h.actorId,
+      targetKind: "line",
+      targetId: lineId,
+      proposedChange: {
+        kind: "line_enrichment_supersede",
+        lineId,
+        priorEnrichmentId,
+        replacement: { enrichmentType: "trip", payload: trip },
+      },
+      source: "ui",
+      idempotencyKey,
+    });
+
+  const unregistered = await proposeSupersession(
+    projectEnrichmentId,
+    { ...tripB, tripId: "trip_supersession_missing" },
+    `trip-supersession:missing:${lineId}`,
+  );
+  const beforeUnregistered = (await h.store.getEvents()).length;
+  await assert.rejects(
+    () => h.store.confirmEnrichmentWorkItem(unregistered.id, { actorId: h.actorId }),
+    /registered trip/i,
+  );
+  const afterUnregistered = (await h.store.getEvents()).length;
+
+  const tripAConfirmation = await proposeRecord("trip", tripA, `trip-supersession:trip-a:${lineId}`);
+  const tripAEvent = (await h.store.getEvents()).find((event) =>
+    tripAConfirmation.resultingEventIds?.includes(event.id),
+  );
+  const tripAEnrichmentId = String(tripAEvent?.payload.enrichmentId ?? "");
+  assert.match(tripAEnrichmentId, /^le_/);
+
+  const crossTrip = await proposeSupersession(projectEnrichmentId, tripB, `trip-supersession:cross-trip:${lineId}`);
+  const beforeCrossTrip = (await h.store.getEvents()).length;
+  await assert.rejects(
+    () => h.store.confirmEnrichmentWorkItem(crossTrip.id, { actorId: h.actorId }),
+    /already assigned to trip trip_supersession_a/i,
+  );
+  const afterCrossTrip = (await h.store.getEvents()).length;
+
+  const move = await proposeSupersession(tripAEnrichmentId, tripB, `trip-supersession:move:${lineId}`);
+  const confirmedMove = await h.store.confirmEnrichmentWorkItem(move.id, { actorId: h.actorId });
+  const resultingEvents = (await h.store.getEvents()).filter((event) =>
+    confirmedMove.resultingEventIds?.includes(event.id),
+  );
+
+  return {
+    unregisteredEventDelta: afterUnregistered - beforeUnregistered,
+    unregisteredStatus: (await h.store.getEnrichmentWorkItem(unregistered.id))?.status ?? null,
+    crossTripEventDelta: afterCrossTrip - beforeCrossTrip,
+    crossTripStatus: (await h.store.getEnrichmentWorkItem(crossTrip.id))?.status ?? null,
+    moveEventTypes: resultingEvents.map((event) => event.eventType),
+    moveTripId: (resultingEvents[1]?.payload.payload as { tripId?: string } | undefined)?.tripId ?? null,
+  };
+}
+
 export async function scenarioQuantityInventoryReviewApproval(h: ConformanceHarness): Promise<ConformanceOutcome> {
   const invalid = await h.store.createEvidence({
     actorId: h.actorId,
@@ -1323,6 +1435,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "invoice and payment identity is immutable", run: scenarioInvoicePayments },
   { name: "invoice review approval registers once atomically", run: scenarioInvoiceReviewApproval },
   { name: "trip review approval registers once atomically", run: scenarioTripReviewApproval },
+  { name: "trip supersession guards", run: scenarioTripSupersessionGuards },
   {
     name: "quantity inventory review approval records once atomically",
     run: scenarioQuantityInventoryReviewApproval,

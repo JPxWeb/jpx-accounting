@@ -191,6 +191,150 @@ test("supersession emits superseded then replacement record without reposting", 
   assert.equal(history.find((entry) => entry.enrichmentId !== "le_old")?.superseded, false);
 });
 
+test("trip supersession rejects an unregistered replacement trip", () => {
+  const priorEvent = {
+    eventType: "LineEnrichmentRecorded" as const,
+    occurredAt: "2026-08-09T09:00:00.000Z",
+    actorId: "user:prior",
+    payload: {
+      lineId: "ln_1",
+      enrichmentId: "le_project",
+      enrichmentType: "project",
+      payload: { projectId: "proj_1" },
+    },
+  };
+
+  assert.throws(
+    () =>
+      planPostPostEnrichmentConfirm({
+        workItem: workItem({
+          kind: "line_enrichment_supersede",
+          lineId: "ln_1",
+          priorEnrichmentId: "le_project",
+          replacement: {
+            enrichmentType: "trip",
+            payload: {
+              tripId: "trip_missing",
+              purpose: "Customer visit",
+              traveler: "Ada",
+              startDate: "2026-08-01",
+              endDate: "2026-08-03",
+            },
+          },
+        }),
+        actorId: "user:abc",
+        ...postedTargets,
+        registeredTripIds: new Set(),
+        lineEnrichmentEvents: [priorEvent],
+      }),
+    /registered trip/i,
+  );
+});
+
+test("trip supersession moves an assignment to another registered trip", () => {
+  const priorTripEvent = {
+    eventType: "LineEnrichmentRecorded" as const,
+    occurredAt: "2026-08-09T09:00:00.000Z",
+    actorId: "user:prior",
+    payload: {
+      lineId: "ln_1",
+      enrichmentId: "le_trip_a",
+      enrichmentType: "trip",
+      payload: {
+        tripId: "trip_a",
+        purpose: "Customer visit",
+        traveler: "Ada",
+        startDate: "2026-08-01",
+        endDate: "2026-08-03",
+      },
+    },
+  };
+
+  const plan = planPostPostEnrichmentConfirm({
+    workItem: workItem({
+      kind: "line_enrichment_supersede",
+      lineId: "ln_1",
+      priorEnrichmentId: "le_trip_a",
+      replacement: {
+        enrichmentType: "trip",
+        payload: {
+          tripId: "trip_b",
+          purpose: "Conference",
+          traveler: "Ada",
+          startDate: "2026-08-04",
+          endDate: "2026-08-05",
+        },
+      },
+    }),
+    actorId: "user:abc",
+    ...postedTargets,
+    registeredTripIds: new Set(["trip_a", "trip_b"]),
+    lineEnrichmentEvents: [priorTripEvent],
+  });
+
+  assert.deepEqual(
+    plan.events.map((event) => event.eventType),
+    ["LineEnrichmentSuperseded", "LineEnrichmentRecorded"],
+  );
+});
+
+test("trip supersession refuses a replacement while another trip remains active", () => {
+  const priorProjectEvent = {
+    eventType: "LineEnrichmentRecorded" as const,
+    occurredAt: "2026-08-09T09:00:00.000Z",
+    actorId: "user:prior",
+    payload: {
+      lineId: "ln_1",
+      enrichmentId: "le_project",
+      enrichmentType: "project",
+      payload: { projectId: "proj_1" },
+    },
+  };
+  const activeTripEvent = {
+    eventType: "LineEnrichmentRecorded" as const,
+    occurredAt: "2026-08-09T09:05:00.000Z",
+    actorId: "user:prior",
+    payload: {
+      lineId: "ln_1",
+      enrichmentId: "le_trip_a",
+      enrichmentType: "trip",
+      payload: {
+        tripId: "trip_a",
+        purpose: "Customer visit",
+        traveler: "Ada",
+        startDate: "2026-08-01",
+        endDate: "2026-08-03",
+      },
+    },
+  };
+
+  assert.throws(
+    () =>
+      planPostPostEnrichmentConfirm({
+        workItem: workItem({
+          kind: "line_enrichment_supersede",
+          lineId: "ln_1",
+          priorEnrichmentId: "le_project",
+          replacement: {
+            enrichmentType: "trip",
+            payload: {
+              tripId: "trip_b",
+              purpose: "Conference",
+              traveler: "Ada",
+              startDate: "2026-08-04",
+              endDate: "2026-08-05",
+            },
+          },
+        }),
+        actorId: "user:abc",
+        ...postedTargets,
+        registeredTripIds: new Set(["trip_a", "trip_b"]),
+        lineEnrichmentEvents: [priorProjectEvent, activeTripEvent],
+      }),
+    /already assigned to trip trip_a/i,
+  );
+});
+
 test("supersession rejects an unknown or already superseded prior enrichment", () => {
   const proposedChange = {
     kind: "line_enrichment_supersede" as const,

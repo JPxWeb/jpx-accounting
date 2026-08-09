@@ -173,6 +173,38 @@ export class TripLineAlreadyAssignedError extends Error {
   }
 }
 
+function validateTripLineReplacement(input: {
+  lineId: string;
+  enrichmentType: string;
+  payload: Record<string, unknown>;
+  registeredTripIds: ReadonlySet<string> | undefined;
+  lineEnrichmentEvents: LineEnrichmentEvent[] | undefined;
+  excludedEnrichmentId?: string;
+  sameTripIsIdempotent: boolean;
+}): "not_trip" | "valid" | "idempotent" {
+  if (input.enrichmentType !== "trip") return "not_trip";
+
+  const trip = tripRegisteredPayloadSchema.safeParse(input.payload);
+  if (!trip.success || !input.registeredTripIds?.has(trip.data.tripId)) {
+    throw new TripEnrichmentTripNotFoundError(
+      trip.success ? trip.data.tripId : String(input.payload.tripId ?? "unknown"),
+    );
+  }
+
+  const activeTrip = buildLineEnrichmentsFromEvents(input.lineEnrichmentEvents ?? []).find(
+    (enrichment) =>
+      enrichment.lineId === input.lineId &&
+      enrichment.enrichmentType === "trip" &&
+      !enrichment.superseded &&
+      enrichment.enrichmentId !== input.excludedEnrichmentId,
+  );
+  if (!activeTrip) return "valid";
+
+  const activeTripId = String(activeTrip.payload.tripId ?? "unknown");
+  if (input.sameTripIsIdempotent && activeTripId === trip.data.tripId) return "idempotent";
+  throw new TripLineAlreadyAssignedError(input.lineId, activeTripId);
+}
+
 export class InvoiceRegistrationLineNotFoundError extends Error {
   constructor() {
     super("Invoice registration requires an eligible posting line.");
@@ -972,24 +1004,16 @@ export function planPostPostEnrichmentConfirm(input: {
       if (workItem.targetKind !== "line" || workItem.proposedChange.lineId !== workItem.targetId) {
         throw new EnrichmentNotSupportedError(workItem.proposedChange.kind);
       }
-      if (workItem.proposedChange.enrichmentType === "trip") {
-        const trip = tripRegisteredPayloadSchema.safeParse(workItem.proposedChange.payload);
-        if (!trip.success || !input.registeredTripIds?.has(trip.data.tripId)) {
-          throw new TripEnrichmentTripNotFoundError(
-            trip.success ? trip.data.tripId : String(workItem.proposedChange.payload.tripId ?? "unknown"),
-          );
-        }
-        const activeTrip = buildLineEnrichmentsFromEvents(input.lineEnrichmentEvents ?? []).find(
-          (enrichment) =>
-            enrichment.lineId === workItem.targetId && enrichment.enrichmentType === "trip" && !enrichment.superseded,
-        );
-        if (activeTrip) {
-          const activeTripId = String(activeTrip.payload.tripId ?? "unknown");
-          if (activeTripId === trip.data.tripId) {
-            return { workItem, events: [] };
-          }
-          throw new TripLineAlreadyAssignedError(workItem.targetId, activeTripId);
-        }
+      const tripValidation = validateTripLineReplacement({
+        lineId: workItem.targetId,
+        enrichmentType: workItem.proposedChange.enrichmentType,
+        payload: workItem.proposedChange.payload,
+        registeredTripIds: input.registeredTripIds,
+        lineEnrichmentEvents: input.lineEnrichmentEvents,
+        sameTripIsIdempotent: true,
+      });
+      if (tripValidation === "idempotent") {
+        return { workItem, events: [] };
       }
       const occurredAt = nowIso();
       const payload = lineEnrichmentRecordedPayloadSchema.parse({
@@ -1026,6 +1050,15 @@ export function planPostPostEnrichmentConfirm(input: {
       if (!prior) {
         throw new LineEnrichmentNotActiveError(workItem.proposedChange.priorEnrichmentId);
       }
+      validateTripLineReplacement({
+        lineId: workItem.targetId,
+        enrichmentType: workItem.proposedChange.replacement.enrichmentType,
+        payload: workItem.proposedChange.replacement.payload,
+        registeredTripIds: input.registeredTripIds,
+        lineEnrichmentEvents: input.lineEnrichmentEvents,
+        excludedEnrichmentId: prior.enrichmentId,
+        sameTripIsIdempotent: false,
+      });
       const occurredAt = nowIso();
       const replacementEnrichmentId = createId("le");
       const supersededPayload = lineEnrichmentSupersededPayloadSchema.parse({
