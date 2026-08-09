@@ -287,15 +287,46 @@
     Task 5.9 activates identity in the UI. See
     `.superpowers/sdd/w5a-sol-review.md`.
 
+- Wave 5 Opus identity review: APPROVE_WITH_FIXES. See
+  `.superpowers/sdd/w5-opus-identity-review.md`.
+  - Fixed a high-severity latent mis-targeting hazard: `buildJournal` had a
+    second legacy-identity derivation keyed on the journal-wide row index while
+    replay and target validation use the event-local index. With the demo seed
+    prepended, that path could hand a row the valid posted-target id of a
+    different line in the same event. The parameter is removed;
+    `collectLedgerLinesFromEvents` is now the only producer.
+  - Fixed append-only supersession replay: a stale `LineEnrichmentSuperseded`
+    naming an already-superseded prior overwrote the first supersession's actor,
+    timestamp, and replacement id. First supersession now wins.
+  - Confirmed unchanged: required `journal_n` IDs, payload `ln_` precedence,
+    immutable historical payloads, Memory/Postgres target parity, and
+    supersession serialized behind the Postgres workspace advisory lock.
+  - Focused identity tests 22/22, full unit suite 583/583, domain/persistence/
+    tests typechecks, formatting, and diagnostics passed. No store, migration,
+    or UI file changed, so `pnpm db:test` and E2E were not re-run.
+- Task 5.2 pre-post enrichment planning `9f978e9`.
+  - Pure planning validates line targets against the approval batch and merges
+    companion enrichment events while preserving exactly one `PostedToLedger`.
+- Task 5.3 review-enrichment intent persistence `25c6804`.
+  - Memory, Postgres, and Unavailable stores expose attach/get parity; approval
+    consumes intent atomically and migration `0011` is tenant-scoped.
+  - Focused tests and affected typechecks passed; strict `pnpm db:test` applied
+    migrations `0001`–`0011` and passed 89/89 integration tests.
+- Task 5.10 open-review proposal guard `b8d1ed5`.
+  - Contract-first `POST /api/review-proposals` verifies the review/voucher
+    relationship, rejects closed reviews, attaches server-attributed intent,
+    and returns a queue deep link.
+  - Focused route/client tests and affected typechecks passed.
+
 ## In progress
 
-- Focused Opus review of the corrected legacy ledger-line identity before Task
-  5.9.
+- Sol review of the completed Tasks 5.2, 5.3, and 5.10 continuation batch.
 
 ## Pending
 
-- Wave 5 Tasks 5.2–5.3 and 5.10 may proceed.
-- Wave 5 Task 5.9 after focused Opus identity review; Tasks 5.11–5.12 after
-  their dependencies.
+- Wave 5 Task 5.9 is unblocked; the UI must gate enrichment affordances on
+  `lineId` presence (demo seed lines have none) and never use the positional
+  `journal_n` `id` as an enrichment target.
+- Wave 5 Tasks 5.11–5.12 after their dependencies.
 - Waves 6–8 (single feature branch; defer mid-wave PR to main until program
   ready).
