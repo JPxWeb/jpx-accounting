@@ -54,6 +54,8 @@ export const eventTypeSchema = z.enum([
   "ExternalReferenceRemoved",
   "VoucherTagsAdded",
   "VoucherTagsRemoved",
+  "LineEnrichmentRecorded",
+  "LineEnrichmentSuperseded",
 ]);
 export const ruleSeveritySchema = z.enum(["info", "warning", "blocking"]);
 export const assistantAnswerStatusSchema = z.enum(["grounded", "insufficient-basis"]);
@@ -194,6 +196,7 @@ export const ledgerEventSchema = z.object({
 
 export const journalEntryProjectionSchema = z.object({
   id: z.string(),
+  lineId: z.string().optional(),
   voucherId: z.string(),
   accountNumber: z.string(),
   accountName: z.string(),
@@ -201,6 +204,8 @@ export const journalEntryProjectionSchema = z.object({
   debit: z.number(),
   credit: z.number(),
   bookedAt: z.string(),
+  vatCode: z.string().optional(),
+  deductible: z.boolean().optional(),
 });
 
 export const accountBalanceProjectionSchema = z.object({

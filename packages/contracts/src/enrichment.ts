@@ -5,6 +5,11 @@ const httpsUrlSchema = z
   .url()
   .refine((value) => new URL(value).protocol === "https:", { message: "URL must use https" });
 
+const lineEnrichmentValueSchema = z.object({
+  enrichmentType: z.string().min(1),
+  payload: z.record(z.string(), z.unknown()),
+});
+
 export const enrichmentProposalSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("noop") }),
   z.object({
@@ -24,7 +29,28 @@ export const enrichmentProposalSchema = z.discriminatedUnion("kind", [
     kind: z.literal("voucher_tags_remove"),
     tagIds: z.array(z.string().min(1)).min(1).max(10),
   }),
+  lineEnrichmentValueSchema.extend({
+    kind: z.literal("line_enrichment_record"),
+    lineId: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal("line_enrichment_supersede"),
+    lineId: z.string().min(1),
+    priorEnrichmentId: z.string().min(1),
+    replacement: lineEnrichmentValueSchema,
+  }),
 ]);
+
+export const lineEnrichmentRecordedPayloadSchema = lineEnrichmentValueSchema.extend({
+  lineId: z.string().min(1),
+  enrichmentId: z.string().min(1),
+});
+
+export const lineEnrichmentSupersededPayloadSchema = z.object({
+  lineId: z.string().min(1),
+  priorEnrichmentId: z.string().min(1),
+  replacementEnrichmentId: z.string().min(1),
+});
 
 export const externalReferenceLinkedPayloadSchema = z.object({
   refId: z.string().min(1),
@@ -114,6 +140,8 @@ export const attachReviewEnrichmentIntentInputSchema = z.object({
 });
 
 export type EnrichmentProposal = z.infer<typeof enrichmentProposalSchema>;
+export type LineEnrichmentRecordedPayload = z.infer<typeof lineEnrichmentRecordedPayloadSchema>;
+export type LineEnrichmentSupersededPayload = z.infer<typeof lineEnrichmentSupersededPayloadSchema>;
 export type ExternalReferenceLinkedPayload = z.infer<typeof externalReferenceLinkedPayloadSchema>;
 export type ExternalReferenceRemovedPayload = z.infer<typeof externalReferenceRemovedPayloadSchema>;
 export type ExternalReferenceProjection = z.infer<typeof externalReferenceProjectionSchema>;
