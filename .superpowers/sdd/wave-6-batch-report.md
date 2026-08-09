@@ -679,3 +679,46 @@ Implementation: `6796c1b`
 
 No PR was opened, `main` was not touched, and Wave 6e was not started. Stop for
 Sol re-review; Wave 6b remains incomplete until Sol clears this repair.
+
+# Wave 6d quantity inventory Sol-blocker repair
+
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Base review: `566755c`
+Scope: Sol-requested Wave 6d quantity inventory repair
+Checkpoint: **READY FOR SOL RE-REVIEW; WAVE 6D NOT COMPLETE**
+Implementation: `232cdd2`, ownership separation: `9fadc18`
+
+## Repair
+
+- Running quantities now use `(skuId, uom)` as the balance identity. Movements
+  for the same SKU in `st` and `kg` retain independent running balances, while
+  the existing quantity-only row and UI continue to display the authoritative
+  UOM.
+- Added a shared quantity-inventory approval conformance scenario. The invalid
+  path proves a missing eligible line rolls back every event and keeps the
+  review and intent open.
+- The successful path proves exactly one `PostedToLedger` and one
+  `InventoryMovementRecorded`, server-derived `mov_` and posted `ln_` identity,
+  matching booking date, server actor attribution, intent consumption, and
+  zero-event replay across Memory, Postgres, and parity.
+- No shared approval implementation was changed. No unit cost, currency,
+  extended amount, valued projection, or Wave 6e behavior was introduced.
+
+## TDD and verification
+
+- RED observed: mixed-UOM replay produced `7 kg` and then `6 st` instead of
+  independent `2 kg` and `4 st` balances.
+- GREEN: focused quantity contract, projection, planner, and route/client tests
+  passed 21/21.
+- The conformance registry test failed before the inventory scenario was added,
+  then the focused Memory execution passed.
+- Strict `pnpm db:test` applied migrations `0001`–`0011` and passed 113/113,
+  including Memory, Postgres, and parity executions of the new scenario.
+- Targeted Prettier and IDE diagnostics passed. Aggregate domain/tests
+  typechecks were temporarily blocked by concurrent Wave 6c edits in
+  `store-planning.ts`, outside this repair; those edits remained uncommitted.
+
+No PR was opened, `main` was not touched, and Wave 6e was not started. Stop for
+Sol re-review; Wave 6d remains incomplete and its full/visual gate remains
+deferred.

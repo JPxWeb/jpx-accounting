@@ -730,21 +730,19 @@
   not mark complete.
 - Wave 6c awaits the trip-supersede validation repair and renewed Sol
   clearance; do not mark complete.
-- Wave 6d Task 6d.4, remaining writers, and the final gate are cleared to
-  proceed after the Task 6d.3 review.
-- Wave 6d quantity inventory UI/writer Sol review: REQUEST_CHANGES.
-  - The running-quantity projection currently adds movements for the same SKU
-    even when their free-form units differ, producing invalid mixed-unit
-    balances.
-  - The 110/110 strict database gate contains no quantity-inventory approval
-    conformance scenario; Memory/Postgres parity for the new writer is not yet
-    regression-pinned.
-  - The Wave 5 atomic intent seam, server-derived identity/actor/date, typed
-    line error, singleton proposal guard, and quantity-only/no-6e boundary were
-    confirmed.
-  - No Opus escalation is required. Wave 6d remains NOT COMPLETE; full and
-    visual gates remain deferred. See
-    `.superpowers/sdd/w6d-inventory-ui-sol-review.md`.
+- Wave 6d quantity inventory UI/writer blockers are repaired for Sol re-review
+  in `232cdd2` + ownership-separation commit `9fadc18`.
+  - Running quantities are now keyed by `(skuId, uom)`, so incompatible units
+    remain separate instead of producing false mixed-unit balances.
+  - Shared conformance now exercises the quantity-inventory approval writer on
+    Memory and Postgres, including rollback, exactly one posting and movement,
+    server-derived movement/line/date/actor fields, intent consumption, replay,
+    and parity.
+  - Focused quantity tests passed 21/21; strict `pnpm db:test` applied
+    migrations `0001`–`0011` and passed 113/113 integration tests.
+  - No shared approval implementation, valued field, or Wave 6e behavior was
+    added. Wave 6d remains NOT COMPLETE; full and visual gates remain deferred
+    pending Sol re-review.
 
 ## Pending
 
