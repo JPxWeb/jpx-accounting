@@ -784,6 +784,16 @@
     WIP referencing an unimported `EnrichmentIntentVersionMismatchError` in
     shared conformance. Task 6e.3 is concurrent sibling WIP outside this
     checkpoint; the full Wave 6e gate remains pending.
+- Wave 6e Task 6e.3 API + client is ready for Sol review at `38e1b99`.
+  - `GET /api/lists/valued-movements` is always available independently of the
+    later web feature flag and validates its derived response contract.
+  - `AccountingApiClient.getValuedMovementsList()` covers both authenticated
+    HTTP and offline-demo replay through the shared valued-list schema.
+  - TDD RED observed the missing route (404) and client method; focused valued
+    route/domain tests pass 6/6, API + client typechecks pass, and focused
+    diagnostics/diff checks are clean.
+  - No writer/store behavior changed; Memory/Postgres parity is therefore not
+    implicated. UI, full gate, and Wave 6e completion remain pending.
 
 ## Pending
 
