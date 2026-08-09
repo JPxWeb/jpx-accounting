@@ -514,6 +514,18 @@
     integration tests including Memory/Postgres trip lifecycle parity.
   - Wave 6d review fixes `deaf719` / `4fda984` are in the ancestry. Ready for
     Sol review before Wave 6c Tasks 6c.4–6c.5.
+- Wave 6d Task 6d.3 store/API checkpoint completed: `c490e66`.
+  - Added contract-validated `GET /api/lists/sku-movements` and matching
+    `getSkuMovementsList()` HTTP/offline-demo client paths.
+  - List reads derive from append-only events, append nothing, retain locked
+    movement row identity, and expose no valued fields.
+  - No direct movement writer was added; the human-reviewed work-item path,
+    posted `lineId` validation, and server actor derivation remain mandatory
+    for the later movement producer.
+  - Focused tests passed 2/2; API, api-client, and tests typechecks plus focused
+    lint, formatting, diagnostics, and diff checks passed.
+  - Store/database code did not change, so `pnpm db:test` was not required.
+    Heavy UI and full gates remain stopped for Sol review.
 
 ## In progress
 
@@ -521,12 +533,12 @@
   commit.
 - Wave 6c Tasks 6c.4–6c.5 are stopped pending Sol review of the store/API
   checkpoint.
-- Wave 6d Tasks 6d.3+ are cleared to proceed after the foundation review-fix
-  commit.
+- Wave 6d Task 6d.4 and the final gate await Sol review of the Task 6d.3
+  checkpoint.
 
 ## Pending
 
 - Wave 6b Tasks 6b.4–6b.6; Wave 6c Tasks 6c.4–6c.5 after Sol; Wave 6d Tasks
-  6d.3+; then
+  6d.4+ after Sol; then
   Waves 6e–8 in plan order, with Wave 6e blocked until Wave 6d completion
   (single feature branch; defer mid-wave PR to main until program ready).

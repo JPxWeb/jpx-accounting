@@ -338,6 +338,55 @@ Review the Wave 6d foundation for:
 4. append-only event vocabulary and absence of inferred inventory value;
 5. generic list kind `sku_movement` before store/API/UI work begins.
 
+# Wave 6d store/API Sol checkpoint
+
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Base: `e9cc504`
+Scope: Task 6d.3
+Checkpoint: **READY FOR SOL REVIEW**
+
+## Completed task
+
+- Task 6d.3 — SKU movement read route and api-client: `c490e66`
+  - Added contract-validated `GET /api/lists/sku-movements`.
+  - Added `getSkuMovementsList()` with matching HTTP and offline-demo
+    validation.
+  - Both paths derive rows from append-only store events without adding a
+    mutable inventory table or valued fields.
+  - No direct movement writer was added; movement creation remains reserved
+    for the human-reviewed work-item path that must validate the posted
+    `lineId` and derive actor attribution server-side.
+
+## TDD evidence
+
+- RED: the route returned 404 and the client method was absent.
+- GREEN: focused route/client tests passed 2/2 and prove list reads append no
+  events.
+
+## Verification
+
+- Focused SKU route/client suite: PASS, 2/2.
+- API, api-client, and tests typechecks: PASS.
+- Focused ESLint, Prettier, IDE diagnostics, and diff checks: PASS.
+- `pnpm db:test` was not required because Task 6d.3 changes no store method,
+  database write path, or migration.
+- Heavy UI, E2E, visual, and full gates were intentionally not run at this
+  checkpoint.
+
+## Sol review ask
+
+Review Task 6d.3 for:
+
+1. response validation preserving locked `id === movementId`;
+2. HTTP/offline client parity over the same append-only projection;
+3. read-only behavior with no event append or valued-inventory leakage;
+4. continued absence of a direct mutation path before the review-bound writer
+   is implemented.
+
+Task 6d.4 UI and the full Wave 6d gate remain intentionally unstarted. Wave 6e
+remains blocked. No PR was opened and `main` was not touched.
+
 # Wave 6c store/API Sol checkpoint
 
 Date: 2026-08-09
