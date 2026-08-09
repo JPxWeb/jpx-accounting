@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { ExternalReferenceNotFoundError } from "@jpx-accounting/domain";
 import { MemoryLedgerStore } from "@jpx-accounting/domain/store";
 import { LedgerStoreUnavailableError, UnavailableLedgerStore } from "../../services/api/src/runtime";
 import { createApp } from "../../services/api/src/app";
@@ -133,6 +134,28 @@ test("work-item confirmation emits external reference events idempotently", asyn
   assert.equal(removedEvents.length, 1);
 });
 
+test("work-item unlink rejects an inactive reference without appending an event", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await createPostedVoucher(store);
+  const proposed = await store.proposeEnrichmentWorkItem({
+    actorId: "system:mcp",
+    targetKind: "voucher",
+    targetId: created.voucher.id,
+    proposedChange: { kind: "external_reference_unlink", refId: "ref_missing" },
+    source: "mcp",
+    idempotencyKey: "mcp:external-reference:missing",
+  });
+  const eventCount = (await store.getEvents()).length;
+
+  await assert.rejects(
+    store.confirmEnrichmentWorkItem(proposed.id, { actorId: "user:confirmer" }),
+    ExternalReferenceNotFoundError,
+  );
+
+  assert.equal((await store.getEvents()).length, eventCount);
+  assert.equal((await store.getEnrichmentWorkItem(proposed.id))?.status, "pending_confirmation");
+});
+
 test("direct external-reference routes strip client actor attribution", async () => {
   const store = new MemoryLedgerStore();
   const created = await createPostedVoucher(store);
@@ -157,6 +180,13 @@ test("direct external-reference routes strip client actor attribution", async ()
   );
   assert.equal(removedResponse.status, 200);
   assert.equal(((await removedResponse.json()) as { removedBy: string }).removedBy, "user_founder");
+
+  const replayedRemoval = await app.request(
+    `http://localhost/api/vouchers/${created.voucher.id}/external-references/${linked.refId}/unlink`,
+    { method: "POST" },
+  );
+  assert.equal(replayedRemoval.status, 404);
+  assert.equal(((await replayedRemoval.json()) as { code: string }).code, "external_reference_not_found");
 });
 
 test("UnavailableLedgerStore fails closed for direct external-reference methods", async () => {

@@ -25,6 +25,7 @@ import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intell
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import {
   EnrichmentTargetNotPostedError,
+  ExternalReferenceNotFoundError,
   buildSieExport,
   currentMonthToken,
   decodeSieBuffer,
@@ -517,6 +518,10 @@ export function createApp({
 
     if (error instanceof EnrichmentTargetNotPostedError) {
       return jsonError(c, error.message, runtimeMode, 409, { code: "enrichment_target_not_posted" });
+    }
+
+    if (error instanceof ExternalReferenceNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 404, { code: "external_reference_not_found" });
     }
 
     if (error instanceof EnrichmentWorkItemNotFoundError) {

@@ -5,7 +5,7 @@ import {
   type LedgerEvent,
 } from "@jpx-accounting/contracts";
 
-type ExternalReferenceEvent = Pick<LedgerEvent, "eventType" | "payload" | "occurredAt" | "actorId">;
+export type ExternalReferenceEvent = Pick<LedgerEvent, "eventType" | "payload" | "occurredAt" | "actorId">;
 
 export function buildExternalReferencesFromEvents(events: ExternalReferenceEvent[]): ExternalReferenceProjection[] {
   const references = new Map<string, ExternalReferenceProjection>();
@@ -36,4 +36,14 @@ export function buildExternalReferencesFromEvents(events: ExternalReferenceEvent
   }
 
   return [...references.values()];
+}
+
+export function findActiveExternalReference(
+  events: ExternalReferenceEvent[],
+  voucherId: string,
+  refId: string,
+): ExternalReferenceProjection | undefined {
+  return buildExternalReferencesFromEvents(events).find(
+    (reference) => reference.voucherId === voucherId && reference.refId === refId && !reference.removed,
+  );
 }

@@ -8,7 +8,13 @@
 import assert from "node:assert/strict";
 
 import type { ExtractionResult } from "@jpx-accounting/contracts";
-import { deriveDeterministicExtraction, InvalidPeriodTokenError, parseSie, today } from "@jpx-accounting/domain";
+import {
+  deriveDeterministicExtraction,
+  ExternalReferenceNotFoundError,
+  InvalidPeriodTokenError,
+  parseSie,
+  today,
+} from "@jpx-accounting/domain";
 import { ReviewNotFoundError, type LedgerStore } from "@jpx-accounting/domain/store";
 
 export type ConformanceHarness = {
@@ -533,6 +539,41 @@ export async function scenarioExternalReferences(h: ConformanceHarness): Promise
     idempotencyKey: `mcp:external-reference:${created.voucher.id}`,
   });
   const confirmed = await h.store.confirmEnrichmentWorkItem(proposed.id, { actorId: h.actorId });
+  const proposedLink = (await h.store.getEvents()).find((event) => event.id === confirmed.resultingEventIds?.[0]);
+  assert.equal(proposedLink?.eventType, "ExternalReferenceLinked");
+  const proposedRefId = proposedLink?.payload.refId;
+  assert.equal(typeof proposedRefId, "string");
+
+  const unlinkProposal = await h.store.proposeEnrichmentWorkItem({
+    actorId: "system:mcp",
+    targetKind: "voucher",
+    targetId: created.voucher.id,
+    proposedChange: { kind: "external_reference_unlink", refId: String(proposedRefId) },
+    source: "mcp",
+    idempotencyKey: `mcp:external-reference:unlink:${created.voucher.id}`,
+  });
+  const unlinkConfirmed = await h.store.confirmEnrichmentWorkItem(unlinkProposal.id, { actorId: h.actorId });
+
+  const invalidUnlink = await h.store.proposeEnrichmentWorkItem({
+    actorId: "system:mcp",
+    targetKind: "voucher",
+    targetId: created.voucher.id,
+    proposedChange: { kind: "external_reference_unlink", refId: "ref_missing" },
+    source: "mcp",
+    idempotencyKey: `mcp:external-reference:missing:${created.voucher.id}`,
+  });
+  const eventCountBeforeInvalid = (await h.store.getEvents()).length;
+  let invalidUnlinkError = "none";
+  try {
+    await h.store.confirmEnrichmentWorkItem(invalidUnlink.id, { actorId: h.actorId });
+  } catch (error) {
+    invalidUnlinkError =
+      error instanceof ExternalReferenceNotFoundError
+        ? "ExternalReferenceNotFoundError"
+        : error instanceof Error
+          ? error.name
+          : "unknown";
+  }
   const events = await h.store.getEvents();
   const postingCountAfter = events.filter((event) => event.eventType === "PostedToLedger").length;
   const externalEvents = events.filter(
@@ -547,7 +588,10 @@ export async function scenarioExternalReferences(h: ConformanceHarness): Promise
     removedRetainsUrl: removed.url,
     eventTypes: externalEvents.map((event) => event.eventType),
     proposedResultCount: confirmed.resultingEventIds?.length ?? 0,
-    proposalActor: externalEvents.at(-1)?.actorId ?? null,
+    proposalUnlinkResultCount: unlinkConfirmed.resultingEventIds?.length ?? 0,
+    proposalActor: externalEvents.at(-2)?.actorId ?? null,
+    invalidUnlinkError,
+    invalidUnlinkEventDelta: events.length - eventCountBeforeInvalid,
     postingDelta: postingCountAfter - postingCountBefore,
   };
 }

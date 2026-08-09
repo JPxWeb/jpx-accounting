@@ -30,7 +30,7 @@ import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
 import { detectComplianceIssues } from "./compliance";
 import { initialLedgerLines } from "./evidence-defaults";
-import { buildExternalReferencesFromEvents } from "./enrichment-projections";
+import { findActiveExternalReference } from "./enrichment-projections";
 import { assertBalancedPosting, postingImbalanceOre } from "./posting-invariants";
 import {
   buildJournal,
@@ -51,6 +51,7 @@ import {
   AUTO_DETECTED_ALERT_KINDS,
   assertEnrichmentTargetPosted,
   collectPostedEnrichmentTargets,
+  ExternalReferenceNotFoundError,
   planComplianceMerge,
   planEvidenceCreate,
   planExternalReferenceLink,
@@ -799,7 +800,13 @@ export class MemoryLedgerStore implements LedgerStore {
 
     const { postedVoucherIds, postedLineIds } = collectPostedEnrichmentTargets(this.events);
     const actorId = input.actorId ?? DEMO_ACTOR_ID;
-    const plan = planPostPostEnrichmentConfirm({ workItem, actorId, postedVoucherIds, postedLineIds });
+    const plan = planPostPostEnrichmentConfirm({
+      workItem,
+      actorId,
+      postedVoucherIds,
+      postedLineIds,
+      externalReferenceEvents: this.events,
+    });
     const resultingEventIds = plan.events.map((event) => this.appendEvent(event).id);
     const confirmed: EnrichmentWorkItem = {
       ...workItem,
@@ -856,10 +863,8 @@ export class MemoryLedgerStore implements LedgerStore {
       { targetKind: "voucher", targetId: voucherId },
       collectPostedEnrichmentTargets(this.events),
     );
-    const reference = buildExternalReferencesFromEvents(this.events).find(
-      (candidate) => candidate.voucherId === voucherId && candidate.refId === refId && !candidate.removed,
-    );
-    if (!reference) throw new Error(`Active external reference not found: ${refId}`);
+    const reference = findActiveExternalReference(this.events, voucherId, refId);
+    if (!reference) throw new ExternalReferenceNotFoundError(refId);
     const plan = planExternalReferenceRemoval(reference, input.actorId ?? DEMO_ACTOR_ID, {
       organizationId: defaultOrganizationId,
       workspaceId: defaultWorkspaceId,

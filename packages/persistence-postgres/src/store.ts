@@ -35,7 +35,6 @@ import {
   buildBalances,
   buildDeterministicSuggestion,
   buildEventHash,
-  buildExternalReferencesFromEvents,
   buildJournal,
   buildReportPack,
   buildVat,
@@ -46,7 +45,9 @@ import {
   DEMO_ACTOR_ID,
   detectComplianceIssues,
   evaluateVoucherRules,
+  ExternalReferenceNotFoundError,
   filterLedgerLines,
+  findActiveExternalReference,
   LINE_CARRYING_EVENT_TYPES,
   nowIso,
   planComplianceMerge,
@@ -60,6 +61,7 @@ import {
   today,
   type ActorAttribution,
   type ApprovalGate,
+  type ExternalReferenceEvent,
   type LedgerLine,
   type ReviewAction,
 } from "@jpx-accounting/domain";
@@ -383,6 +385,24 @@ async function loadPostedEnrichmentTargets(
       payload: row.payload,
     })),
   );
+}
+
+async function loadExternalReferenceEvents(
+  runner: PostgresClient,
+  scope: { organizationId: string; workspaceId: string },
+  voucherId: string,
+): Promise<ExternalReferenceEvent[]> {
+  const rows = await runner<EventRow[]>`
+    SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+           actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+    FROM ledger.events
+    WHERE organization_id = ${scope.organizationId}
+      AND workspace_id = ${scope.workspaceId}
+      AND aggregate_id = ${voucherId}
+      AND event_type IN ('ExternalReferenceLinked', 'ExternalReferenceRemoved')
+    ORDER BY seq ASC
+  `;
+  return rows.map(rowToEvent);
 }
 
 type ComplianceAlertRow = {
@@ -1535,7 +1555,17 @@ export class PostgresLedgerStore implements LedgerStore {
 
         const { postedVoucherIds, postedLineIds } = await loadPostedEnrichmentTargets(tx, this.defaults);
         const actorId = input.actorId ?? DEMO_ACTOR_ID;
-        const plan = planPostPostEnrichmentConfirm({ workItem, actorId, postedVoucherIds, postedLineIds });
+        const externalReferenceEvents =
+          workItem.proposedChange.kind === "external_reference_unlink"
+            ? await loadExternalReferenceEvents(tx, this.defaults, workItem.targetId)
+            : undefined;
+        const plan = planPostPostEnrichmentConfirm({
+          workItem,
+          actorId,
+          postedVoucherIds,
+          postedLineIds,
+          ...(externalReferenceEvents !== undefined ? { externalReferenceEvents } : {}),
+        });
 
         const resultingEventIds: string[] = [];
         let previousHash = tailHash;
@@ -1645,19 +1675,12 @@ export class PostgresLedgerStore implements LedgerStore {
           { targetKind: "voucher", targetId: voucherId },
           await loadPostedEnrichmentTargets(tx, this.defaults),
         );
-        const rows = await tx<EventRow[]>`
-          SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
-                 actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
-          FROM ledger.events
-          WHERE organization_id = ${this.defaults.organizationId}
-            AND workspace_id = ${this.defaults.workspaceId}
-            AND event_type IN ('ExternalReferenceLinked', 'ExternalReferenceRemoved')
-          ORDER BY seq ASC
-        `;
-        const reference = buildExternalReferencesFromEvents(rows.map(rowToEvent)).find(
-          (candidate) => candidate.voucherId === voucherId && candidate.refId === refId && !candidate.removed,
+        const reference = findActiveExternalReference(
+          await loadExternalReferenceEvents(tx, this.defaults, voucherId),
+          voucherId,
+          refId,
         );
-        if (!reference) throw new Error(`Active external reference not found: ${refId}`);
+        if (!reference) throw new ExternalReferenceNotFoundError(refId);
         const plan = planExternalReferenceRemoval(reference, input.actorId ?? DEMO_ACTOR_ID, {
           organizationId: this.defaults.organizationId,
           workspaceId: this.defaults.workspaceId,

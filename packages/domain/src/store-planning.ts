@@ -1,19 +1,21 @@
-import type {
-  AccountingSuggestion,
-  ComplianceAlert,
-  EvidenceContext,
-  EvidenceCreateInput,
-  EvidenceObject,
-  EvidencePacket,
-  EnrichmentWorkItem,
-  ExternalReferenceProjection,
-  ExtractionResult,
-  LedgerEvent,
-  ReviewDecisionInput,
-  ReviewTask,
-  Voucher,
+import {
+  externalReferenceLinkedPayloadSchema,
+  type AccountingSuggestion,
+  type ComplianceAlert,
+  type EvidenceContext,
+  type EvidenceCreateInput,
+  type EvidenceObject,
+  type EvidencePacket,
+  type EnrichmentWorkItem,
+  type ExternalReferenceProjection,
+  type ExtractionResult,
+  type LedgerEvent,
+  type ReviewDecisionInput,
+  type ReviewTask,
+  type Voucher,
 } from "@jpx-accounting/contracts";
 
+import { findActiveExternalReference, type ExternalReferenceEvent } from "./enrichment-projections";
 import { buildExtractedFields, deriveVoucherFields, guessAccountingMethod } from "./evidence-defaults";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso } from "./ids";
@@ -89,15 +91,10 @@ export class EnrichmentNotSupportedError extends Error {
   }
 }
 
-function assertHttpsUrl(url: string): void {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error("External reference URL must be a valid https URL");
-  }
-  if (parsed.protocol !== "https:") {
-    throw new Error("External reference URL must use https");
+export class ExternalReferenceNotFoundError extends Error {
+  constructor(public readonly refId: string) {
+    super(`Active external reference not found: ${refId}`);
+    this.name = "ExternalReferenceNotFoundError";
   }
 }
 
@@ -106,15 +103,14 @@ export function planExternalReferenceLink(
   input: { url: string; label?: string; actorId: string },
   scope: { organizationId: string; workspaceId: string; now?: string },
 ): ExternalReferencePlan {
-  assertHttpsUrl(input.url);
   const refId = createId("ref");
   const occurredAt = scope.now ?? nowIso();
-  const payload = {
+  const payload = externalReferenceLinkedPayloadSchema.parse({
     refId,
     voucherId,
     url: input.url,
     ...(input.label !== undefined ? { label: input.label } : {}),
-  };
+  });
   return {
     reference: {
       ...payload,
@@ -479,6 +475,7 @@ export function planPostPostEnrichmentConfirm(input: {
   actorId: string;
   postedVoucherIds: ReadonlySet<string>;
   postedLineIds: ReadonlySet<string>;
+  externalReferenceEvents?: ExternalReferenceEvent[];
 }): PostPostEnrichmentConfirmPlan {
   const { workItem } = input;
   assertEnrichmentTargetPosted(workItem, input);
@@ -508,22 +505,17 @@ export function planPostPostEnrichmentConfirm(input: {
       if (workItem.targetKind !== "voucher") {
         throw new EnrichmentNotSupportedError(workItem.proposedChange.kind);
       }
-      const occurredAt = nowIso();
-      return {
-        workItem,
-        events: [
-          {
-            organizationId: workItem.organizationId,
-            workspaceId: workItem.workspaceId,
-            aggregateType: "voucher",
-            aggregateId: workItem.targetId,
-            eventType: "ExternalReferenceRemoved",
-            actorId: input.actorId,
-            occurredAt,
-            payload: { refId: workItem.proposedChange.refId, voucherId: workItem.targetId },
-          },
-        ],
-      };
+      const reference = findActiveExternalReference(
+        input.externalReferenceEvents ?? [],
+        workItem.targetId,
+        workItem.proposedChange.refId,
+      );
+      if (!reference) throw new ExternalReferenceNotFoundError(workItem.proposedChange.refId);
+      const plan = planExternalReferenceRemoval(reference, input.actorId, {
+        organizationId: workItem.organizationId,
+        workspaceId: workItem.workspaceId,
+      });
+      return { workItem, events: [plan.event] };
     }
     default:
       throw new EnrichmentNotSupportedError((workItem.proposedChange as { kind: string }).kind);
