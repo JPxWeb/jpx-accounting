@@ -504,6 +504,54 @@ export async function scenarioEnrichmentWorkItemConfirmNeverPosts(h: Conformance
   };
 }
 
+export async function scenarioExternalReferences(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "External reference conformance",
+    originalFilename: "external-reference-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+  const postingCountBefore = (await h.store.getEvents()).filter((event) => event.eventType === "PostedToLedger").length;
+
+  const linked = await h.store.appendVoucherExternalReference(created.voucher.id, {
+    url: "https://example.com/direct",
+    label: "Direct",
+    actorId: h.actorId,
+  });
+  const removed = await h.store.removeVoucherExternalReference(created.voucher.id, linked.refId, {
+    actorId: h.actorId,
+  });
+
+  const proposed = await h.store.proposeEnrichmentWorkItem({
+    actorId: "system:mcp",
+    targetKind: "voucher",
+    targetId: created.voucher.id,
+    proposedChange: { kind: "external_reference_link", url: "https://example.com/proposed" },
+    source: "mcp",
+    idempotencyKey: `mcp:external-reference:${created.voucher.id}`,
+  });
+  const confirmed = await h.store.confirmEnrichmentWorkItem(proposed.id, { actorId: h.actorId });
+  const events = await h.store.getEvents();
+  const postingCountAfter = events.filter((event) => event.eventType === "PostedToLedger").length;
+  const externalEvents = events.filter(
+    (event) =>
+      event.aggregateId === created.voucher.id &&
+      (event.eventType === "ExternalReferenceLinked" || event.eventType === "ExternalReferenceRemoved"),
+  );
+
+  return {
+    linkedRemovedInitially: linked.removed,
+    removedMarked: removed.removed,
+    removedRetainsUrl: removed.url,
+    eventTypes: externalEvents.map((event) => event.eventType),
+    proposedResultCount: confirmed.resultingEventIds?.length ?? 0,
+    proposalActor: externalEvents.at(-1)?.actorId ?? null,
+    postingDelta: postingCountAfter - postingCountBefore,
+  };
+}
+
 export const CONFORMANCE_SCENARIOS: Array<{
   name: string;
   run: (h: ConformanceHarness) => Promise<ConformanceOutcome>;
@@ -518,6 +566,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "review reject", run: scenarioReviewReject },
   { name: "review approve with edits", run: scenarioReviewApproveEdited },
   { name: "enrichment confirm never posts twice", run: scenarioEnrichmentWorkItemConfirmNeverPosts },
+  { name: "external reference append-only paths", run: scenarioExternalReferences },
 ];
 
 export function assertConformanceParity(

@@ -134,6 +134,14 @@ export class UnavailableLedgerStore implements LedgerStore {
     return this.fail();
   }
 
+  async appendVoucherExternalReference() {
+    return this.fail();
+  }
+
+  async removeVoucherExternalReference() {
+    return this.fail();
+  }
+
   async runSimulation() {
     return this.fail();
   }

@@ -10,6 +10,7 @@ import type {
   EvidenceObject,
   EvidencePacket,
   EnrichmentWorkItem,
+  ExternalReferenceProjection,
   ExtractionResult,
   LedgerEvent,
   ProposeEnrichmentWorkItemInput,
@@ -29,6 +30,7 @@ import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
 import { detectComplianceIssues } from "./compliance";
 import { initialLedgerLines } from "./evidence-defaults";
+import { buildExternalReferencesFromEvents } from "./enrichment-projections";
 import { assertBalancedPosting, postingImbalanceOre } from "./posting-invariants";
 import {
   buildJournal,
@@ -51,6 +53,8 @@ import {
   collectPostedEnrichmentTargets,
   planComplianceMerge,
   planEvidenceCreate,
+  planExternalReferenceLink,
+  planExternalReferenceRemoval,
   planExtractionRefresh,
   planPostPostEnrichmentConfirm,
   planReviewDecision,
@@ -333,6 +337,15 @@ export interface LedgerStore {
   getEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem | undefined>;
   confirmEnrichmentWorkItem(id: string, input: ActorAttribution): Promise<EnrichmentWorkItem>;
   rejectEnrichmentWorkItem(id: string, input: ActorAttribution): Promise<EnrichmentWorkItem>;
+  appendVoucherExternalReference(
+    voucherId: string,
+    input: { url: string; label?: string } & ActorAttribution,
+  ): Promise<ExternalReferenceProjection>;
+  removeVoucherExternalReference(
+    voucherId: string,
+    refId: string,
+    input: ActorAttribution,
+  ): Promise<ExternalReferenceProjection>;
   runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun>;
   getCloseRun(): Promise<CloseRun>;
   refreshComplianceAlerts(): Promise<ComplianceAlert[]>;
@@ -810,6 +823,49 @@ export class MemoryLedgerStore implements LedgerStore {
     const rejected: EnrichmentWorkItem = { ...workItem, status: "rejected" };
     this.enrichmentWorkItems.set(id, rejected);
     return snapshotEnrichmentWorkItem(rejected);
+  }
+
+  async appendVoucherExternalReference(
+    voucherId: string,
+    input: { url: string; label?: string } & ActorAttribution,
+  ): Promise<ExternalReferenceProjection> {
+    assertEnrichmentTargetPosted(
+      { targetKind: "voucher", targetId: voucherId },
+      collectPostedEnrichmentTargets(this.events),
+    );
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
+    const plan = planExternalReferenceLink(
+      voucherId,
+      {
+        url: input.url,
+        ...(input.label !== undefined ? { label: input.label } : {}),
+        actorId,
+      },
+      { organizationId: defaultOrganizationId, workspaceId: defaultWorkspaceId },
+    );
+    this.appendEvent(plan.event);
+    return { ...plan.reference };
+  }
+
+  async removeVoucherExternalReference(
+    voucherId: string,
+    refId: string,
+    input: ActorAttribution,
+  ): Promise<ExternalReferenceProjection> {
+    assertEnrichmentTargetPosted(
+      { targetKind: "voucher", targetId: voucherId },
+      collectPostedEnrichmentTargets(this.events),
+    );
+    const reference = buildExternalReferencesFromEvents(this.events).find(
+      (candidate) => candidate.voucherId === voucherId && candidate.refId === refId && !candidate.removed,
+    );
+    if (!reference) throw new Error(`Active external reference not found: ${refId}`);
+    const plan = planExternalReferenceRemoval(reference, input.actorId ?? DEMO_ACTOR_ID, {
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+    });
+    this.appendEvent(plan.event);
+    return { ...plan.reference };
   }
 
   async runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun> {

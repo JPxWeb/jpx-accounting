@@ -6,6 +6,7 @@ import type {
   EvidenceObject,
   EvidencePacket,
   EnrichmentWorkItem,
+  ExternalReferenceProjection,
   ExtractionResult,
   LedgerEvent,
   ReviewDecisionInput,
@@ -69,6 +70,11 @@ export type PostPostEnrichmentConfirmPlan = {
   events: PlannedEvent[];
 };
 
+export type ExternalReferencePlan = {
+  reference: ExternalReferenceProjection;
+  event: PlannedEvent;
+};
+
 export class EnrichmentTargetNotPostedError extends Error {
   constructor(targetId: string) {
     super(`Enrichment target is not posted: ${targetId}`);
@@ -81,6 +87,78 @@ export class EnrichmentNotSupportedError extends Error {
     super(`Enrichment proposal kind is not supported: ${kind}`);
     this.name = "EnrichmentNotSupportedError";
   }
+}
+
+function assertHttpsUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("External reference URL must be a valid https URL");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error("External reference URL must use https");
+  }
+}
+
+export function planExternalReferenceLink(
+  voucherId: string,
+  input: { url: string; label?: string; actorId: string },
+  scope: { organizationId: string; workspaceId: string; now?: string },
+): ExternalReferencePlan {
+  assertHttpsUrl(input.url);
+  const refId = createId("ref");
+  const occurredAt = scope.now ?? nowIso();
+  const payload = {
+    refId,
+    voucherId,
+    url: input.url,
+    ...(input.label !== undefined ? { label: input.label } : {}),
+  };
+  return {
+    reference: {
+      ...payload,
+      linkedAt: occurredAt,
+      linkedBy: input.actorId,
+      removed: false,
+    },
+    event: {
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+      aggregateType: "voucher",
+      aggregateId: voucherId,
+      eventType: "ExternalReferenceLinked",
+      actorId: input.actorId,
+      occurredAt,
+      payload,
+    },
+  };
+}
+
+export function planExternalReferenceRemoval(
+  reference: ExternalReferenceProjection,
+  actorId: string,
+  scope: { organizationId: string; workspaceId: string; now?: string },
+): ExternalReferencePlan {
+  const occurredAt = scope.now ?? nowIso();
+  return {
+    reference: {
+      ...reference,
+      removed: true,
+      removedAt: occurredAt,
+      removedBy: actorId,
+    },
+    event: {
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+      aggregateType: "voucher",
+      aggregateId: reference.voucherId,
+      eventType: "ExternalReferenceRemoved",
+      actorId,
+      occurredAt,
+      payload: { refId: reference.refId, voucherId: reference.voucherId },
+    },
+  };
 }
 
 export type PostedEnrichmentTargets = {
@@ -394,8 +472,7 @@ export function planReviewDecision(
 
 /**
  * Plans a human-confirmed enrichment against an already-posted target.
- * Wave 2 supports only the inert noop proposal; later waves add append-only
- * enrichment event arms here. This path must never emit PostedToLedger.
+ * This path must never emit PostedToLedger.
  */
 export function planPostPostEnrichmentConfirm(input: {
   workItem: EnrichmentWorkItem;
@@ -406,11 +483,51 @@ export function planPostPostEnrichmentConfirm(input: {
   const { workItem } = input;
   assertEnrichmentTargetPosted(workItem, input);
 
-  if (workItem.proposedChange.kind !== "noop") {
-    throw new EnrichmentNotSupportedError(workItem.proposedChange.kind);
+  switch (workItem.proposedChange.kind) {
+    case "noop":
+      return { workItem, events: [] };
+    case "external_reference_link": {
+      if (workItem.targetKind !== "voucher") {
+        throw new EnrichmentNotSupportedError(workItem.proposedChange.kind);
+      }
+      const plan = planExternalReferenceLink(
+        workItem.targetId,
+        {
+          url: workItem.proposedChange.url,
+          ...(workItem.proposedChange.label !== undefined ? { label: workItem.proposedChange.label } : {}),
+          actorId: input.actorId,
+        },
+        {
+          organizationId: workItem.organizationId,
+          workspaceId: workItem.workspaceId,
+        },
+      );
+      return { workItem, events: [plan.event] };
+    }
+    case "external_reference_unlink": {
+      if (workItem.targetKind !== "voucher") {
+        throw new EnrichmentNotSupportedError(workItem.proposedChange.kind);
+      }
+      const occurredAt = nowIso();
+      return {
+        workItem,
+        events: [
+          {
+            organizationId: workItem.organizationId,
+            workspaceId: workItem.workspaceId,
+            aggregateType: "voucher",
+            aggregateId: workItem.targetId,
+            eventType: "ExternalReferenceRemoved",
+            actorId: input.actorId,
+            occurredAt,
+            payload: { refId: workItem.proposedChange.refId, voucherId: workItem.targetId },
+          },
+        ],
+      };
+    }
+    default:
+      throw new EnrichmentNotSupportedError((workItem.proposedChange as { kind: string }).kind);
   }
-
-  return { workItem, events: [] };
 }
 
 /**

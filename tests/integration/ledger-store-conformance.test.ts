@@ -57,6 +57,7 @@ function memoryHarness(): ConformanceHarness {
 
 test("conformance registry includes enrichment confirmation safety", () => {
   assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "enrichment confirm never posts twice"));
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "external reference append-only paths"));
 });
 
 async function withPostgresHarness(label: string, run: (h: ConformanceHarness) => Promise<void>): Promise<void> {

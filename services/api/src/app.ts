@@ -57,6 +57,7 @@ import { DEFAULT_SUPABASE_JWT_ALGS, type CorsRuntimePolicy, type SupabaseJwtAlgo
 import { queryKnowledge } from "./knowledge";
 import type { ApiRouteEnv } from "./route-types";
 import { registerEnrichmentWorkItemRoutes } from "./routes/enrichment-work-items";
+import { registerVoucherExternalReferenceRoutes } from "./routes/voucher-external-references";
 import type { AiRuntimeMetadata } from "./runtime";
 import { LedgerStoreUnavailableError, pingLedgerStore } from "./runtime";
 import { ApiValidationError, jsonValidated } from "./validation";
@@ -619,6 +620,10 @@ export function createApp({
   });
 
   registerEnrichmentWorkItemRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerVoucherExternalReferenceRoutes(app, {
     getStore: () => currentStore,
     deriveActorId,
   });

@@ -84,7 +84,7 @@ test("planPostPostEnrichmentConfirm never emits PostedToLedger for noop", () => 
 test("unknown proposal kinds fail closed at runtime", () => {
   const staleKindWorkItem = {
     ...baseWorkItem,
-    proposedChange: { kind: "external_reference_link", url: "https://example.com" },
+    proposedChange: { kind: "future_kind" },
   } as unknown as EnrichmentWorkItem;
 
   assert.throws(

@@ -12,6 +12,7 @@ import type {
   EvidenceObject,
   EvidencePacket,
   EnrichmentWorkItem,
+  ExternalReferenceProjection,
   ExtractedField,
   ExtractionResult,
   LedgerEvent,
@@ -34,6 +35,7 @@ import {
   buildBalances,
   buildDeterministicSuggestion,
   buildEventHash,
+  buildExternalReferencesFromEvents,
   buildJournal,
   buildReportPack,
   buildVat,
@@ -49,6 +51,8 @@ import {
   nowIso,
   planComplianceMerge,
   planEvidenceCreate,
+  planExternalReferenceLink,
+  planExternalReferenceRemoval,
   planExtractionRefresh,
   planPostPostEnrichmentConfirm,
   planReviewDecision,
@@ -1598,6 +1602,70 @@ export class PostgresLedgerStore implements LedgerStore {
       `;
       return { ...workItem, status: "rejected" };
     });
+  }
+
+  async appendVoucherExternalReference(
+    voucherId: string,
+    input: { url: string; label?: string } & ActorAttribution,
+  ): Promise<ExternalReferenceProjection> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        assertEnrichmentTargetPosted(
+          { targetKind: "voucher", targetId: voucherId },
+          await loadPostedEnrichmentTargets(tx, this.defaults),
+        );
+        const plan = planExternalReferenceLink(
+          voucherId,
+          {
+            url: input.url,
+            ...(input.label !== undefined ? { label: input.label } : {}),
+            actorId: input.actorId ?? DEMO_ACTOR_ID,
+          },
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+          },
+        );
+        await this.appendEvent(tx, plan.event, tailHash);
+        return plan.reference;
+      }),
+    );
+  }
+
+  async removeVoucherExternalReference(
+    voucherId: string,
+    refId: string,
+    input: ActorAttribution,
+  ): Promise<ExternalReferenceProjection> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        assertEnrichmentTargetPosted(
+          { targetKind: "voucher", targetId: voucherId },
+          await loadPostedEnrichmentTargets(tx, this.defaults),
+        );
+        const rows = await tx<EventRow[]>`
+          SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+                 actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+          FROM ledger.events
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND event_type IN ('ExternalReferenceLinked', 'ExternalReferenceRemoved')
+          ORDER BY seq ASC
+        `;
+        const reference = buildExternalReferencesFromEvents(rows.map(rowToEvent)).find(
+          (candidate) => candidate.voucherId === voucherId && candidate.refId === refId && !candidate.removed,
+        );
+        if (!reference) throw new Error(`Active external reference not found: ${refId}`);
+        const plan = planExternalReferenceRemoval(reference, input.actorId ?? DEMO_ACTOR_ID, {
+          organizationId: this.defaults.organizationId,
+          workspaceId: this.defaults.workspaceId,
+        });
+        await this.appendEvent(tx, plan.event, tailHash);
+        return plan.reference;
+      }),
+    );
   }
 
   async runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun> {
