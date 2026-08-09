@@ -47,6 +47,8 @@ test("edit sheet approves a review with a corrected account and VAT code", async
   // edit shaped what landed in the ledger.
   await page.goto("/books");
   await expect(page.getByTestId("journal-view")).toBeVisible();
+  await activateControl(page.getByTestId("ledger-voucher-toggle").first(), isMobile);
+  await expect(page.getByTestId("ledger-voucher-detail")).toBeVisible();
   await expect(page.getByRole("cell", { name: "6110 Kontorsmateriel" })).toBeVisible();
 });
 
