@@ -788,6 +788,20 @@
   - SIE `#OBJEKT` / `#ANTAL` remains deferred per plan. No PR was opened,
     `main` was not touched, and Waves 7–8 were not started. See
     `.superpowers/sdd/wave-6d-gate-report.md`.
+- Task 6d.5 final Sol review: **APPROVE; WAVE 6d COMPLETE**.
+  - Sol independently reran the substantive gates: `pnpm check` passed with
+    683/683 unit tests; strict `pnpm db:test` applied migrations `0001`–`0012`,
+    passed every capability assertion, and passed 119/119 integration tests.
+  - Valued-flag-off `pnpm build:e2e` passed. Quantity-inventory E2E passed 4/4
+    across desktop Chromium and Pixel 7; visuals matched 20/20 across both
+    themes and viewports without a baseline update.
+  - i18n parity passed at 1115/1115 keys, all seam gates passed, and
+    `git diff --check` passed.
+  - SIE `#OBJEKT` / `#ANTAL` remains the plan-required documented deferral.
+    The PR step remains intentionally deferred by the program instruction not
+    to touch `main`; neither item blocks technical completion.
+  - Concurrent Wave 7 commits did not change the approved Wave 6d
+    implementation. See `.superpowers/sdd/w6d-final-gate-sol-review.md`.
 - Wave 6e valued-inventory foundation passed its first Sol checkpoint:
   **APPROVE**.
   - Task 6e.1 distinct valued movement contracts: `ad7e6ff`.
@@ -925,6 +939,6 @@
 
 ## Pending
 
-- Sol review of Task 6d.5 / Wave 6d COMPLETE decision and Wave 7 Tasks 7.1–7.2.
-  After approval, continue Tasks 7.3–7.5 in plan order (single feature branch;
-  defer mid-wave PR to main until program ready).
+- Sol review of Wave 7 Tasks 7.1–7.2. After approval, continue Tasks 7.3–7.5
+  in plan order (single feature branch; defer mid-wave PR to main until program
+  ready).
