@@ -985,8 +985,26 @@
   - No auth or mutation hole warrants escalation. Separately staged Task 7.4
     documentation was not reviewed or included in the review commit. See
     `.superpowers/sdd/w7-handlers-sol-review.md`.
+- Wave 7 Task 7.4 MCP setup documentation is ready for Sol review at
+  `1159a0e`; it is integrated in the approved current branch state `36dfa7d`.
+  - `docs/MCP_SETUP.md` documents the Windows stdio launch, required API URL
+    and bearer-token environment, exact 13-tool inventory, SAS-only upload
+    posture, and Wave 8 HTTP deferral.
+  - The setup and repo map state the proposal-only boundary: MCP cannot
+    approve, confirm, or post; review proposals echo an opaque intent version
+    that the later human approval must match.
+  - `docs/REPO_MAP.md` records the twelfth workspace, dependency edge, handler
+    locations, tool inventory, and excluded direct-mutation surface.
+  - Documentation RED/GREEN was observed with `Test-Path`: absent before the
+    task and present afterward. Targeted Prettier and `git diff --check`
+    passed.
+  - The Task 7.3 review commit landed after the documentation commit in the
+    shared branch, so `36dfa7d` is already the current descendant containing
+    both; no history rewrite or duplicate cherry-pick was needed.
+  - Task 7.5, Wave 8 HTTP transport, PR creation, and `main` remain untouched.
 
 ## Pending
 
-- Continue Wave 7 Tasks 7.4–7.5 in plan order (single feature branch; defer
-  mid-wave PR to main until program ready).
+- Sol review of Wave 7 Task 7.4. Do not start Task 7.5 until that gate is
+  approved (single feature branch; defer mid-wave PR to main until program
+  ready).
