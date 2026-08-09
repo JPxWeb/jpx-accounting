@@ -33,6 +33,7 @@ import {
   evidenceCreateResultSchema,
   integritySummarySchema,
   journalEntryProjectionSchema,
+  proposeEnrichmentWorkItemInputSchema,
   reportPackSchema,
   reviewTaskSchema,
   runtimeInfoSchema,
@@ -260,11 +261,14 @@ export class AccountingApiClient {
   }
 
   async proposeEnrichmentWorkItem(input: ProposeEnrichmentWorkItemInput): Promise<EnrichmentWorkItem> {
-    if (this.fallbackStore) return this.fallbackStore.proposeEnrichmentWorkItem(input);
+    // Parse at the client boundary so unknown fields such as a runtime
+    // `actorId` are stripped in both HTTP and offline-demo modes.
+    const parsedInput = proposeEnrichmentWorkItemInputSchema.parse(input);
+    if (this.fallbackStore) return this.fallbackStore.proposeEnrichmentWorkItem(parsedInput);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/enrichment-work-items", enrichmentWorkItemSchema, {
       method: "POST",
-      json: input,
+      json: parsedInput,
     });
   }
 

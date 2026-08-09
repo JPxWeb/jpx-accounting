@@ -475,15 +475,22 @@ export async function scenarioEnrichmentWorkItemConfirmNeverPosts(h: Conformance
     source: "ui",
     idempotencyKey: `ui:noop:${created.voucher.id}`,
   });
+  const eventsBeforeConfirm = await h.store.getEvents();
   const confirmed = await h.store.confirmEnrichmentWorkItem(item.id, { actorId: h.actorId });
+  const eventsAfterConfirm = await h.store.getEvents();
   const replayed = await h.store.confirmEnrichmentWorkItem(item.id, { actorId: h.actorId });
+  const eventsAfterReplay = await h.store.getEvents();
   const stored = await h.store.getEnrichmentWorkItem(item.id);
-  const postedForVoucher = (await h.store.getEvents()).filter(
-    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
-  );
+  const postedBeforeConfirm = eventsBeforeConfirm.filter((event) => event.eventType === "PostedToLedger");
+  const postedAfterReplay = eventsAfterReplay.filter((event) => event.eventType === "PostedToLedger");
+  const postedForVoucher = postedAfterReplay.filter((event) => event.aggregateId === created.voucher.id);
 
   assert.equal(postedForVoucher.length, 1);
-  assert.deepEqual(replayed.resultingEventIds, confirmed.resultingEventIds);
+  assert.equal(postedAfterReplay.length, postedBeforeConfirm.length);
+  assert.equal(eventsAfterConfirm.length, eventsBeforeConfirm.length);
+  assert.equal(eventsAfterReplay.length, eventsAfterConfirm.length);
+  assert.deepEqual(confirmed.resultingEventIds, []);
+  assert.deepEqual(replayed.resultingEventIds, []);
 
   return {
     initialStatus: item.status,
@@ -491,6 +498,8 @@ export async function scenarioEnrichmentWorkItemConfirmNeverPosts(h: Conformance
     storedStatus: stored?.status ?? null,
     resultingEventCount: confirmed.resultingEventIds?.length ?? 0,
     idempotentReplay: replayed.status === "confirmed",
+    confirmEventDelta: eventsAfterConfirm.length - eventsBeforeConfirm.length,
+    replayEventDelta: eventsAfterReplay.length - eventsAfterConfirm.length,
     postedForVoucher: postedForVoucher.length,
   };
 }

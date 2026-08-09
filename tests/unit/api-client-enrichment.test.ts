@@ -44,6 +44,7 @@ test("proposeEnrichmentWorkItem posts the contract input", async (t) => {
     proposedChange: { kind: "noop" as const },
     source: "ui" as const,
     idempotencyKey: "ui:1",
+    actorId: "spoofed-client",
   };
 
   const result = await client.proposeEnrichmentWorkItem(input);
@@ -51,7 +52,33 @@ test("proposeEnrichmentWorkItem posts the contract input", async (t) => {
   assert.deepEqual(result, pendingItem);
   assert.equal(captured[0]?.url, `${BASE_URL}/api/enrichment-work-items`);
   assert.equal(captured[0]?.init?.method, "POST");
-  assert.deepEqual(JSON.parse(String(captured[0]?.init?.body)), input);
+  assert.deepEqual(JSON.parse(String(captured[0]?.init?.body)), {
+    targetKind: "voucher",
+    targetId: "voucher_1",
+    proposedChange: { kind: "noop" },
+    source: "ui",
+    idempotencyKey: "ui:1",
+  });
+});
+
+test("demo fallback strips client-supplied actor attribution", async () => {
+  const client = createAccountingApiClient({ runtimeMode: "demo" });
+  const snapshot = await client.getSnapshot();
+  const review = snapshot.reviews.find((candidate) => candidate.status === "needs-review");
+  assert.ok(review);
+  await client.approveReview(review.id);
+
+  const input = {
+    targetKind: "voucher" as const,
+    targetId: review.voucherId,
+    proposedChange: { kind: "noop" as const },
+    source: "ui" as const,
+    idempotencyKey: `ui:${review.voucherId}`,
+    actorId: "spoofed-client",
+  };
+  const item = await client.proposeEnrichmentWorkItem(input);
+
+  assert.notEqual(item.createdBy, "spoofed-client");
 });
 
 test("get, confirm, and reject enrichment work items use their dedicated routes", async (t) => {
