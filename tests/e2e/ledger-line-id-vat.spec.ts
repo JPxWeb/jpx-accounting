@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
+import { expectAccessible } from "./a11y-helpers";
 import { installConsoleGuard } from "./console-guard";
 import { activateControl, apiBaseUrl, resetApiState } from "./test-helpers";
 
@@ -50,6 +51,7 @@ test("posted lines expose stable targets and VAT while seed rows remain untarget
   }
   await expect(detail.getByTestId("ledger-line-vat")).toHaveCount(3);
   await expect(detail.getByTestId("ledger-line-deductibility")).toHaveCount(3);
+  await expectAccessible(page);
 
   guard.assertClean();
 });
