@@ -1731,14 +1731,31 @@ export class PostgresLedgerStore implements LedgerStore {
           LIMIT 1
         `;
         const intent = intentRows[0] ? rowToReviewEnrichmentIntent(intentRows[0]) : undefined;
+        // Server-controlled plain approvals replace unseen intent with noop
+        // inside this advisory-locked transaction, before any event append.
+        const proposals = input.clearEnrichmentIntent ? [{ kind: "noop" as const }] : intent?.proposals;
+        const needsPacketEvidence =
+          proposals?.some((proposal) => proposal.kind === "trip_registration" && proposal.evidenceId !== undefined) ??
+          false;
+        const packetEvidenceRows =
+          needsPacketEvidence && action !== "reject"
+            ? await tx<{ evidence_object_id: string }[]>`
+                SELECT evidence_object_id
+                FROM ledger.evidence_packet_items
+                WHERE evidence_packet_id = ${voucher.evidencePacketId}
+                ORDER BY evidence_object_id ASC
+              `
+            : [];
         const plan =
-          intent && action !== "reject"
+          proposals && action !== "reject"
             ? mergePrePostEnrichmentsIntoReviewDecisionPlan(
                 basePlan,
                 planPrePostEnrichment({
                   review,
-                  proposals: intent.proposals,
+                  proposals,
                   postingLines: basePlan.lines ?? [],
+                  postingVoucher: basePlan.postingVoucher,
+                  evidenceIds: packetEvidenceRows.map((row) => row.evidence_object_id),
                   actorId: input.actorId ?? DEMO_ACTOR_ID,
                   organizationId: voucher.organizationId,
                   workspaceId: voucher.workspaceId,
@@ -1966,15 +1983,37 @@ export class PostgresLedgerStore implements LedgerStore {
           ? await loadVoucherTagEvents(tx, this.defaults, workItem.targetId)
           : undefined;
         const tagDefinitions = isVoucherTagsProposal ? await loadTagDefinitions(tx, this.defaults) : undefined;
+        const isTripRecord =
+          workItem.proposedChange.kind === "line_enrichment_record" &&
+          workItem.proposedChange.enrichmentType === "trip";
         const lineEnrichmentEvents =
-          workItem.proposedChange.kind === "line_enrichment_supersede"
+          workItem.proposedChange.kind === "line_enrichment_supersede" || isTripRecord
             ? await loadLineEnrichmentEvents(tx, this.defaults, workItem.targetId)
             : undefined;
+        const proposedTripId =
+          workItem.proposedChange.kind === "line_enrichment_record" &&
+          workItem.proposedChange.enrichmentType === "trip" &&
+          typeof workItem.proposedChange.payload.tripId === "string"
+            ? workItem.proposedChange.payload.tripId
+            : undefined;
+        const registeredTripRows =
+          proposedTripId === undefined
+            ? []
+            : await tx<{ trip_id: string }[]>`
+                SELECT payload->>'tripId' AS trip_id
+                FROM ledger.events
+                WHERE organization_id = ${this.defaults.organizationId}
+                  AND workspace_id = ${this.defaults.workspaceId}
+                  AND event_type = 'TripRegistered'
+                  AND payload->>'tripId' = ${proposedTripId}
+                LIMIT 1
+              `;
         const plan = planPostPostEnrichmentConfirm({
           workItem,
           actorId,
           postedVoucherIds,
           postedLineIds,
+          registeredTripIds: new Set(registeredTripRows.map((row) => row.trip_id)),
           ...(externalReferenceEvents !== undefined ? { externalReferenceEvents } : {}),
           ...(lineEnrichmentEvents !== undefined ? { lineEnrichmentEvents } : {}),
           ...(tagEvents !== undefined ? { tagEvents } : {}),

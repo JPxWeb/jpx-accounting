@@ -117,7 +117,10 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
   // No actorId in any mutation payload (WS-C R5): the server derives the
   // actor from the verified subject / demo sentinel.
   const approveReview = useMutation({
-    mutationFn: (id: string) => apiClient.approveReview(id),
+    mutationFn: async (id: string) => {
+      await apiClient.attachReviewEnrichmentIntent({ reviewId: id, proposals: [{ kind: "noop" }] });
+      return apiClient.approveReview(id);
+    },
     onSuccess: onMutationSuccess,
   });
   const rejectReview = useMutation({

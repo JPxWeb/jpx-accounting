@@ -21,15 +21,18 @@ export const invoiceLineEnrichmentPayloadSchema = z.object({
   direction: z.enum(["ar", "ap"]),
 });
 
-export const tripLineEnrichmentPayloadSchema = z
-  .object({
+const tripDetailsSchema = z.object({
+  purpose: z.string().min(1),
+  traveler: z.string().min(1),
+  startDate: z.iso.date(),
+  endDate: z.iso.date(),
+  evidenceId: z.string().min(1).optional(),
+  distanceKm: z.number().nonnegative().optional(),
+});
+
+export const tripLineEnrichmentPayloadSchema = tripDetailsSchema
+  .extend({
     tripId: z.string().min(1),
-    purpose: z.string().min(1),
-    traveler: z.string().min(1),
-    startDate: z.iso.date(),
-    endDate: z.iso.date(),
-    evidenceId: z.string().min(1).optional(),
-    distanceKm: z.number().nonnegative().optional(),
   })
   .refine((value) => value.startDate <= value.endDate, {
     message: "endDate must be on or after startDate",
@@ -37,6 +40,15 @@ export const tripLineEnrichmentPayloadSchema = z
   });
 
 export const tripRegisteredPayloadSchema = tripLineEnrichmentPayloadSchema;
+
+export const tripRegistrationProposalSchema = tripDetailsSchema
+  .extend({
+    kind: z.literal("trip_registration"),
+  })
+  .refine((value) => value.startDate <= value.endDate, {
+    message: "endDate must be on or after startDate",
+    path: ["endDate"],
+  });
 
 export const tripClosedPayloadSchema = z.object({
   tripId: z.string().min(1),
@@ -67,6 +79,18 @@ export const inventoryMovementPayloadSchema = z
   })
   .strict();
 
+export const quantityInventoryMovementProposalSchema = inventoryMovementPayloadSchema
+  .pick({
+    skuId: true,
+    quantity: true,
+    uom: true,
+    direction: true,
+  })
+  .extend({
+    kind: z.literal("quantity_inventory_movement"),
+  })
+  .strict();
+
 export const skuMovementListRowSchema = inventoryMovementPayloadSchema
   .extend({
     id: z.string().min(1),
@@ -85,15 +109,25 @@ export const invoiceRegisteredPayloadSchema = z.object({
   direction: z.enum(["ar", "ap"]),
   counterparty: z.string().min(1),
   dueDate: z.iso.date(),
-  currency: z.string().length(3),
+  currency: z.string().regex(/^[A-Z]{3}$/),
   originalAmount: z.number().positive(),
 });
+
+export const invoiceRegistrationProposalSchema = invoiceRegisteredPayloadSchema
+  .pick({
+    direction: true,
+    counterparty: true,
+    dueDate: true,
+  })
+  .extend({
+    kind: z.literal("invoice_registration"),
+  });
 
 export const paymentAllocatedPayloadSchema = z.object({
   paymentId: z.string().min(1),
   invoiceId: z.string().min(1),
   amount: z.number().positive(),
-  currency: z.string().length(3),
+  currency: z.string().regex(/^[A-Z]{3}$/),
   allocatedAt: z.iso.datetime(),
 });
 
@@ -103,7 +137,7 @@ export const openInvoiceListRowSchema = z.object({
   direction: z.enum(["ar", "ap"]),
   counterparty: z.string().min(1),
   dueDate: z.iso.date(),
-  currency: z.string().length(3),
+  currency: z.string().regex(/^[A-Z]{3}$/),
   originalAmount: z.number().positive(),
   openAmount: z.number(),
 });
@@ -173,6 +207,9 @@ export const enrichmentProposalSchema = z.discriminatedUnion("kind", [
     tagIds: z.array(z.string().min(1)).min(1).max(10),
   }),
   projectAssignmentProposalSchema,
+  invoiceRegistrationProposalSchema,
+  tripRegistrationProposalSchema,
+  quantityInventoryMovementProposalSchema,
   lineEnrichmentValueSchema.extend({
     kind: z.literal("line_enrichment_record"),
     lineId: z.string().min(1),
@@ -235,6 +272,7 @@ export const externalReferenceProjectionSchema = externalReferenceLinkedPayloadS
 export const enrichmentTargetKindSchema = z.enum(["voucher", "line"]);
 export const enrichmentWorkItemStatusSchema = z.enum(["pending_confirmation", "confirmed", "rejected", "superseded"]);
 export const enrichmentWorkItemSourceSchema = z.enum(["ui", "mcp", "advisor"]);
+export const MAX_PROPOSALS_PER_INTENT = 10;
 
 export const enrichmentWorkItemSchema = z.object({
   id: z.string().min(1),
@@ -269,7 +307,7 @@ export const proposeEnrichmentWorkItemInputSchema = z.object({
 export const reviewEnrichmentIntentSchema = z.object({
   reviewId: z.string().min(1),
   voucherId: z.string().min(1),
-  proposals: z.array(enrichmentProposalSchema).min(1),
+  proposals: z.array(enrichmentProposalSchema).min(1).max(MAX_PROPOSALS_PER_INTENT),
   updatedAt: z.string().min(1),
   updatedBy: z.string().min(1),
 });
@@ -280,7 +318,7 @@ export const reviewEnrichmentIntentSchema = z.object({
  */
 export const attachReviewEnrichmentIntentInputSchema = z.object({
   reviewId: z.string().min(1),
-  proposals: z.array(enrichmentProposalSchema).min(1),
+  proposals: z.array(enrichmentProposalSchema).min(1).max(MAX_PROPOSALS_PER_INTENT),
 });
 
 /**
@@ -290,7 +328,7 @@ export const attachReviewEnrichmentIntentInputSchema = z.object({
 export const submitReviewProposalInputSchema = z.object({
   reviewId: z.string().min(1),
   voucherId: z.string().min(1),
-  proposals: z.array(enrichmentProposalSchema).min(1),
+  proposals: z.array(enrichmentProposalSchema).min(1).max(MAX_PROPOSALS_PER_INTENT),
 });
 
 export const submitReviewProposalResultSchema = z.object({
@@ -304,11 +342,14 @@ export type ProjectLineEnrichmentPayload = z.infer<typeof projectLineEnrichmentP
 export type InvoiceLineEnrichmentPayload = z.infer<typeof invoiceLineEnrichmentPayloadSchema>;
 export type TripLineEnrichmentPayload = z.infer<typeof tripLineEnrichmentPayloadSchema>;
 export type TripRegisteredPayload = z.infer<typeof tripRegisteredPayloadSchema>;
+export type TripRegistrationProposal = z.infer<typeof tripRegistrationProposalSchema>;
 export type TripClosedPayload = z.infer<typeof tripClosedPayloadSchema>;
 export type TripsListRow = z.infer<typeof tripsListRowSchema>;
 export type InventoryMovementPayload = z.infer<typeof inventoryMovementPayloadSchema>;
+export type QuantityInventoryMovementProposal = z.infer<typeof quantityInventoryMovementProposalSchema>;
 export type SkuMovementListRow = z.infer<typeof skuMovementListRowSchema>;
 export type InvoiceRegisteredPayload = z.infer<typeof invoiceRegisteredPayloadSchema>;
+export type InvoiceRegistrationProposal = z.infer<typeof invoiceRegistrationProposalSchema>;
 export type PaymentAllocatedPayload = z.infer<typeof paymentAllocatedPayloadSchema>;
 export type OpenInvoiceListRow = z.infer<typeof openInvoiceListRowSchema>;
 export type PaymentHistoryListRow = z.infer<typeof paymentHistoryListRowSchema>;

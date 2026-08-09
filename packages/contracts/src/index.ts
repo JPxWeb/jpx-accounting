@@ -535,6 +535,12 @@ export type ReviewDecisionEdit = z.infer<typeof reviewDecisionEditSchema>;
 export const reviewDecisionInputSchema = z.object({
   notes: z.string().optional(),
   edited: reviewDecisionEditSchema.optional(),
+  /**
+   * Consuming an attached enrichment intent must be an explicit assertion by
+   * the reviewing surface that it just presented/replaced that intent.
+   * Omission is fail-closed: the API clears any unseen stale intent.
+   */
+  enrichmentIntent: z.enum(["consume", "clear"]).optional(),
 });
 
 export const knowledgeQuerySchema = z.object({

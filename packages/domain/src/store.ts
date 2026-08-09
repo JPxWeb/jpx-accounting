@@ -891,14 +891,19 @@ export class MemoryLedgerStore implements LedgerStore {
     const basePlan = planReviewDecision(review, voucher, action, input);
     if (basePlan.kind === "replay") return basePlan.review;
     const intent = this.reviewEnrichmentIntents.get(reviewId);
+    // Server-controlled plain approvals must never consume an intent the
+    // approver did not see; noop replacement is planned in this same batch.
+    const proposals = input.clearEnrichmentIntent ? [{ kind: "noop" as const }] : intent?.proposals;
     const plan =
-      intent && action !== "reject"
+      proposals && action !== "reject"
         ? mergePrePostEnrichmentsIntoReviewDecisionPlan(
             basePlan,
             planPrePostEnrichment({
               review,
-              proposals: intent.proposals,
+              proposals,
               postingLines: basePlan.lines ?? [],
+              postingVoucher: basePlan.postingVoucher,
+              evidenceIds: this.evidencePackets.get(voucher.evidencePacketId)?.evidenceIds ?? [],
               actorId: input.actorId ?? DEMO_ACTOR_ID,
               organizationId: voucher.organizationId,
               workspaceId: voucher.workspaceId,
@@ -1002,6 +1007,12 @@ export class MemoryLedgerStore implements LedgerStore {
       actorId,
       postedVoucherIds,
       postedLineIds,
+      registeredTripIds: new Set(
+        this.events
+          .filter((event) => event.eventType === "TripRegistered")
+          .map((event) => event.payload.tripId)
+          .filter((tripId): tripId is string => typeof tripId === "string"),
+      ),
       externalReferenceEvents: this.events,
       lineEnrichmentEvents: this.events,
       tagEvents: this.events,

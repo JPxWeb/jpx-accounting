@@ -27,6 +27,7 @@ import {
   EnrichmentIntentClosedError,
   EnrichmentLineNotFoundError,
   EnrichmentNotSupportedError,
+  EnrichmentProposalMultiplicityError,
   EnrichmentTargetNotPostedError,
   ExternalReferenceNotFoundError,
   buildSieExport,
@@ -36,15 +37,22 @@ import {
   encodePc8,
   InvalidPeriodTokenError,
   InvalidReviewEditError,
+  InventoryMovementLineNotFoundError,
   InvoiceAllocationCurrencyError,
   InvoiceNotFoundError,
+  InvoiceRegistrationAmountError,
+  InvoiceRegistrationLineNotFoundError,
   nowIso,
   parseSie,
   ProjectAssignmentLineNotFoundError,
   ReviewBlockedError,
   summarizeEventIntegrity,
   today,
+  TripEvidenceNotInPacketError,
+  TripEnrichmentTripNotFoundError,
+  TripLineAlreadyAssignedError,
   TripNotFoundError,
+  TripRegistrationLineNotFoundError,
   LineEnrichmentNotActiveError,
   type ReviewAction,
   VoucherTagsValidationError,
@@ -345,6 +353,10 @@ export function createApp({
     const review = await currentStore.applyReviewDecision(reviewId, outcome, {
       ...input,
       enforceBlockedReason: runtimeMode === "normal",
+      // Only a surface that just presented/replaced the intent may consume it.
+      // Omitted or explicit "clear" fails closed for queue, MCP, advisor, and
+      // future approve-with-edits callers.
+      clearEnrichmentIntent: input.enrichmentIntent !== "consume",
     });
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return review;
@@ -550,6 +562,38 @@ export function createApp({
 
     if (error instanceof ProjectAssignmentLineNotFoundError) {
       return jsonError(c, error.message, runtimeMode, 422, { code: "project_assignment_line_not_found" });
+    }
+
+    if (error instanceof InvoiceRegistrationLineNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "invoice_registration_line_not_found" });
+    }
+
+    if (error instanceof InvoiceRegistrationAmountError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "invoice_registration_amount_invalid" });
+    }
+
+    if (error instanceof InventoryMovementLineNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "inventory_movement_line_not_found" });
+    }
+
+    if (error instanceof TripRegistrationLineNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "trip_registration_line_not_found" });
+    }
+
+    if (error instanceof TripEvidenceNotInPacketError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "trip_evidence_not_in_packet" });
+    }
+
+    if (error instanceof TripEnrichmentTripNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "trip_enrichment_trip_not_found" });
+    }
+
+    if (error instanceof TripLineAlreadyAssignedError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "trip_line_already_assigned" });
+    }
+
+    if (error instanceof EnrichmentProposalMultiplicityError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "enrichment_proposal_multiplicity_invalid" });
     }
 
     if (error instanceof ExternalReferenceNotFoundError) {

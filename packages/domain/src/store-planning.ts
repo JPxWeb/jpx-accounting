@@ -1,7 +1,11 @@
 import {
   externalReferenceLinkedPayloadSchema,
+  inventoryMovementPayloadSchema,
+  invoiceRegisteredPayloadSchema,
   lineEnrichmentRecordedPayloadSchema,
   lineEnrichmentSupersededPayloadSchema,
+  MAX_PROPOSALS_PER_INTENT,
+  tripRegisteredPayloadSchema,
   voucherTagsAddedPayloadSchema,
   voucherTagsRemovedPayloadSchema,
   type AccountingSuggestion,
@@ -21,6 +25,7 @@ import {
 } from "@jpx-accounting/contracts";
 
 import {
+  buildLineEnrichmentsFromEvents,
   buildVoucherTagsFromEvents,
   findActiveExternalReference,
   findActiveLineEnrichment,
@@ -43,6 +48,7 @@ import {
   recomputeVoucherFields,
   resolveReviewDecisionEdit,
   ReviewBlockedError,
+  round2,
   type ActorAttribution,
   type ApprovalGate,
   type ReviewAction,
@@ -66,6 +72,7 @@ export type ReviewDecisionPlan =
       kind: "apply";
       updatedReview: ReviewTask;
       updatedVoucher: Voucher;
+      postingVoucher: Voucher;
       postingSuggestion: AccountingSuggestion | undefined;
       lines: LedgerLine[] | undefined;
       events: PlannedEvent[];
@@ -135,17 +142,80 @@ export class ProjectAssignmentLineNotFoundError extends Error {
   }
 }
 
-export function bindProjectAssignmentToPrimaryCostLine(
-  proposal: Extract<EnrichmentProposal, { kind: "project_assignment" }>,
-  postingLines: readonly LedgerLine[],
-): Extract<EnrichmentProposal, { kind: "line_enrichment_record" }> {
-  const line = postingLines.find(
+export class TripRegistrationLineNotFoundError extends Error {
+  constructor() {
+    super("Trip registration requires an eligible cost line.");
+    this.name = "TripRegistrationLineNotFoundError";
+  }
+}
+
+export class TripEvidenceNotInPacketError extends Error {
+  constructor(public readonly evidenceId: string) {
+    super(`Trip evidence is not in the voucher packet: ${evidenceId}`);
+    this.name = "TripEvidenceNotInPacketError";
+  }
+}
+
+export class TripEnrichmentTripNotFoundError extends Error {
+  constructor(public readonly tripId: string) {
+    super(`Trip line enrichment requires a registered trip: ${tripId}`);
+    this.name = "TripEnrichmentTripNotFoundError";
+  }
+}
+
+export class TripLineAlreadyAssignedError extends Error {
+  constructor(
+    public readonly lineId: string,
+    public readonly tripId: string,
+  ) {
+    super(`Line ${lineId} is already assigned to trip ${tripId}; supersede the active enrichment first.`);
+    this.name = "TripLineAlreadyAssignedError";
+  }
+}
+
+export class InvoiceRegistrationLineNotFoundError extends Error {
+  constructor() {
+    super("Invoice registration requires an eligible posting line.");
+    this.name = "InvoiceRegistrationLineNotFoundError";
+  }
+}
+
+export class InvoiceRegistrationAmountError extends Error {
+  constructor(public readonly voucherId: string) {
+    super("Invoice registration requires a posted amount greater than zero.");
+    this.name = "InvoiceRegistrationAmountError";
+  }
+}
+
+export class InventoryMovementLineNotFoundError extends Error {
+  constructor() {
+    super("Inventory movement requires an eligible posting line.");
+    this.name = "InventoryMovementLineNotFoundError";
+  }
+}
+
+export class EnrichmentProposalMultiplicityError extends Error {
+  constructor(public readonly kind: string) {
+    super(`Pre-post enrichment accepts only one proposal of kind: ${kind}`);
+    this.name = "EnrichmentProposalMultiplicityError";
+  }
+}
+
+function findPrimaryCostLine(postingLines: readonly LedgerLine[]): LedgerLine | undefined {
+  return postingLines.find(
     ({ accountNumber, lineId }) =>
       lineId !== undefined &&
       !accountNumber.startsWith("26") &&
       !accountNumber.startsWith("19") &&
       !accountNumber.startsWith("24"),
   );
+}
+
+export function bindProjectAssignmentToPrimaryCostLine(
+  proposal: Extract<EnrichmentProposal, { kind: "project_assignment" }>,
+  postingLines: readonly LedgerLine[],
+): Extract<EnrichmentProposal, { kind: "line_enrichment_record" }> {
+  const line = findPrimaryCostLine(postingLines);
   if (!line?.lineId) throw new ProjectAssignmentLineNotFoundError();
 
   return {
@@ -161,13 +231,27 @@ export function bindProjectAssignmentToPrimaryCostLine(
 }
 
 export function assertPrePostEnrichmentIntentSupported(proposals: readonly EnrichmentProposal[]): void {
+  if (proposals.length > MAX_PROPOSALS_PER_INTENT) {
+    throw new EnrichmentProposalMultiplicityError("intent");
+  }
+  const singletonKinds = new Set(["invoice_registration", "trip_registration", "quantity_inventory_movement"]);
+  const seenSingletonKinds = new Set<string>();
   for (const proposal of proposals) {
     if (
       proposal.kind !== "noop" &&
       proposal.kind !== "project_assignment" &&
+      proposal.kind !== "invoice_registration" &&
+      proposal.kind !== "trip_registration" &&
+      proposal.kind !== "quantity_inventory_movement" &&
       proposal.kind !== "line_enrichment_record"
     ) {
       throw new EnrichmentNotSupportedError(proposal.kind);
+    }
+    if (singletonKinds.has(proposal.kind)) {
+      if (seenSingletonKinds.has(proposal.kind)) {
+        throw new EnrichmentProposalMultiplicityError(proposal.kind);
+      }
+      seenSingletonKinds.add(proposal.kind);
     }
   }
 }
@@ -612,6 +696,7 @@ export function planReviewDecision(
     kind: "apply",
     updatedReview,
     updatedVoucher,
+    postingVoucher,
     postingSuggestion,
     lines,
     events,
@@ -622,6 +707,8 @@ export function planPrePostEnrichment(input: {
   review: ReviewTask;
   proposals: EnrichmentProposal[];
   postingLines: readonly LedgerLine[];
+  postingVoucher: Voucher;
+  evidenceIds: readonly string[];
   actorId: string;
   organizationId: string;
   workspaceId: string;
@@ -634,6 +721,119 @@ export function planPrePostEnrichment(input: {
   const companionEvents: PlannedEvent[] = [];
   for (const proposal of input.proposals) {
     if (proposal.kind === "noop") continue;
+    if (proposal.kind === "invoice_registration") {
+      const line = findPrimaryCostLine(input.postingLines);
+      if (!line?.lineId) throw new InvoiceRegistrationLineNotFoundError();
+      const invoiceId = createId("inv");
+      const occurredAt = nowIso();
+      const originalAmount = round2(input.postingLines.reduce((sum, postingLine) => sum + postingLine.debit, 0));
+      if (originalAmount <= 0) throw new InvoiceRegistrationAmountError(input.postingVoucher.id);
+      const registration = invoiceRegisteredPayloadSchema.parse({
+        invoiceId,
+        direction: proposal.direction,
+        counterparty: proposal.counterparty,
+        dueDate: proposal.dueDate,
+        currency: input.postingVoucher.voucherFields.currency.toUpperCase(),
+        originalAmount,
+      });
+      companionEvents.push(
+        {
+          organizationId: input.organizationId,
+          workspaceId: input.workspaceId,
+          aggregateType: "ledger",
+          aggregateId: invoiceId,
+          eventType: "InvoiceRegistered",
+          actorId: input.actorId,
+          occurredAt,
+          payload: registration,
+        },
+        {
+          organizationId: input.organizationId,
+          workspaceId: input.workspaceId,
+          aggregateType: "ledger",
+          aggregateId: line.lineId,
+          eventType: "LineEnrichmentRecorded",
+          actorId: input.actorId,
+          occurredAt,
+          payload: lineEnrichmentRecordedPayloadSchema.parse({
+            lineId: line.lineId,
+            enrichmentId: createId("le"),
+            enrichmentType: "invoice",
+            payload: { invoiceId, direction: proposal.direction },
+          }),
+        },
+      );
+      continue;
+    }
+    if (proposal.kind === "trip_registration") {
+      const line = findPrimaryCostLine(input.postingLines);
+      if (!line?.lineId) throw new TripRegistrationLineNotFoundError();
+      if (proposal.evidenceId !== undefined && !input.evidenceIds.includes(proposal.evidenceId)) {
+        throw new TripEvidenceNotInPacketError(proposal.evidenceId);
+      }
+      const occurredAt = nowIso();
+      const registration = tripRegisteredPayloadSchema.parse({
+        tripId: createId("trip"),
+        purpose: proposal.purpose,
+        traveler: proposal.traveler,
+        startDate: proposal.startDate,
+        endDate: proposal.endDate,
+        ...(proposal.evidenceId !== undefined ? { evidenceId: proposal.evidenceId } : {}),
+        ...(proposal.distanceKm !== undefined ? { distanceKm: proposal.distanceKm } : {}),
+      });
+      companionEvents.push(
+        {
+          organizationId: input.organizationId,
+          workspaceId: input.workspaceId,
+          aggregateType: "ledger",
+          aggregateId: registration.tripId,
+          eventType: "TripRegistered",
+          actorId: input.actorId,
+          occurredAt,
+          payload: registration,
+        },
+        {
+          organizationId: input.organizationId,
+          workspaceId: input.workspaceId,
+          aggregateType: "ledger",
+          aggregateId: line.lineId,
+          eventType: "LineEnrichmentRecorded",
+          actorId: input.actorId,
+          occurredAt,
+          payload: lineEnrichmentRecordedPayloadSchema.parse({
+            lineId: line.lineId,
+            enrichmentId: createId("le"),
+            enrichmentType: "trip",
+            payload: registration,
+          }),
+        },
+      );
+      continue;
+    }
+    if (proposal.kind === "quantity_inventory_movement") {
+      const line = findPrimaryCostLine(input.postingLines);
+      if (!line?.lineId) throw new InventoryMovementLineNotFoundError();
+      const occurredAt = nowIso();
+      companionEvents.push({
+        organizationId: input.organizationId,
+        workspaceId: input.workspaceId,
+        aggregateType: "ledger",
+        aggregateId: line.lineId,
+        eventType: "InventoryMovementRecorded",
+        actorId: input.actorId,
+        occurredAt,
+        payload: inventoryMovementPayloadSchema.parse({
+          movementId: createId("mov"),
+          skuId: proposal.skuId,
+          quantity: proposal.quantity,
+          uom: proposal.uom,
+          direction: proposal.direction,
+          lineId: line.lineId,
+          bookedAt: line.bookedAt,
+        }),
+      });
+      continue;
+    }
     const lineProposal =
       proposal.kind === "project_assignment"
         ? bindProjectAssignmentToPrimaryCostLine(proposal, input.postingLines)
@@ -697,6 +897,7 @@ export function planPostPostEnrichmentConfirm(input: {
   actorId: string;
   postedVoucherIds: ReadonlySet<string>;
   postedLineIds: ReadonlySet<string>;
+  registeredTripIds?: ReadonlySet<string>;
   externalReferenceEvents?: ExternalReferenceEvent[];
   lineEnrichmentEvents?: LineEnrichmentEvent[];
   tagEvents?: VoucherTagEvent[];
@@ -770,6 +971,25 @@ export function planPostPostEnrichmentConfirm(input: {
     case "line_enrichment_record": {
       if (workItem.targetKind !== "line" || workItem.proposedChange.lineId !== workItem.targetId) {
         throw new EnrichmentNotSupportedError(workItem.proposedChange.kind);
+      }
+      if (workItem.proposedChange.enrichmentType === "trip") {
+        const trip = tripRegisteredPayloadSchema.safeParse(workItem.proposedChange.payload);
+        if (!trip.success || !input.registeredTripIds?.has(trip.data.tripId)) {
+          throw new TripEnrichmentTripNotFoundError(
+            trip.success ? trip.data.tripId : String(workItem.proposedChange.payload.tripId ?? "unknown"),
+          );
+        }
+        const activeTrip = buildLineEnrichmentsFromEvents(input.lineEnrichmentEvents ?? []).find(
+          (enrichment) =>
+            enrichment.lineId === workItem.targetId && enrichment.enrichmentType === "trip" && !enrichment.superseded,
+        );
+        if (activeTrip) {
+          const activeTripId = String(activeTrip.payload.tripId ?? "unknown");
+          if (activeTripId === trip.data.tripId) {
+            return { workItem, events: [] };
+          }
+          throw new TripLineAlreadyAssignedError(workItem.targetId, activeTripId);
+        }
       }
       const occurredAt = nowIso();
       const payload = lineEnrichmentRecordedPayloadSchema.parse({

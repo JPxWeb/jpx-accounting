@@ -173,7 +173,11 @@ export type ActorAttribution = { actorId?: string | undefined };
  * (blockedReason is advisory only). Normal mode threads
  * `enforceBlockedReason: true` from the API — never from a client payload.
  */
-export type ApprovalGate = { enforceBlockedReason?: boolean | undefined };
+export type ApprovalGate = {
+  enforceBlockedReason?: boolean | undefined;
+  /** Server-controlled: plain approvals replace any unseen pre-post intent with noop. */
+  clearEnrichmentIntent?: boolean | undefined;
+};
 
 /**
  * Thrown when normal mode refuses to approve a review that still carries

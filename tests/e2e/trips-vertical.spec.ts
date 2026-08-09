@@ -24,20 +24,16 @@ test("trip workflow validates fields and Books shows confirmed posted-line expen
   await editSheet.getByTestId("trip-end-date").fill("2026-08-03");
   await expect(editSheet.getByTestId("edit-submit")).toBeEnabled();
   await expectAccessible(page);
-  await page.keyboard.press("Escape");
+  await activateControl(editSheet.getByTestId("edit-submit"), isMobile);
+  await expect(editSheet).toBeHidden();
 
   const workspaceResponse = await request.get(`${apiBaseUrl}/api/workspace`);
   expect(workspaceResponse.ok()).toBeTruthy();
   const workspace = (await workspaceResponse.json()) as {
     reviews: Array<{ id: string; status: string; voucherId: string }>;
   };
-  const pendingReview = workspace.reviews.find((review) => review.status === "needs-review");
-  expect(pendingReview).toBeDefined();
-
-  const approvalResponse = await request.post(`${apiBaseUrl}/api/reviews/${pendingReview!.id}/approve`, {
-    data: {},
-  });
-  expect(approvalResponse.ok()).toBeTruthy();
+  const approvedReview = workspace.reviews.find((review) => review.status === "approved");
+  expect(approvedReview).toBeDefined();
 
   const journalResponse = await request.get(`${apiBaseUrl}/api/reports/journal`);
   expect(journalResponse.ok()).toBeTruthy();
@@ -48,19 +44,32 @@ test("trip workflow validates fields and Books shows confirmed posted-line expen
     credit: number;
   }>;
   const expenseLine = journal.find(
-    (line) => line.voucherId === pendingReview!.voucherId && line.lineId && line.debit > line.credit,
+    (line) => line.voucherId === approvedReview!.voucherId && line.lineId && line.debit > line.credit,
   );
   expect(expenseLine?.lineId).toMatch(/^ln_/);
 
-  const trip = {
-    tripId: "trip_e2e_1",
+  const prePostTripsResponse = await request.get(`${apiBaseUrl}/api/lists/trips`);
+  expect(prePostTripsResponse.ok()).toBeTruthy();
+  const prePostTrips = (await prePostTripsResponse.json()) as Array<{
+    id: string;
+    purpose: string;
+    traveler: string;
+    expenseTotal: number;
+  }>;
+  const prePostTrip = prePostTrips.find((row) => row.purpose === "Customer visit");
+  expect(prePostTrip).toMatchObject({
+    traveler: "Ada",
+    expenseTotal: expenseLine!.debit - expenseLine!.credit,
+  });
+  expect(prePostTrip?.id).toMatch(/^trip_/);
+
+  const postPostTrip = {
+    tripId: prePostTrip!.id,
     purpose: "Customer visit",
     traveler: "Ada",
     startDate: "2026-08-01",
     endDate: "2026-08-03",
   };
-  const registrationResponse = await request.post(`${apiBaseUrl}/api/trips`, { data: trip });
-  expect(registrationResponse.ok()).toBeTruthy();
 
   const proposalResponse = await request.post(`${apiBaseUrl}/api/enrichment-work-items`, {
     data: {
@@ -70,10 +79,10 @@ test("trip workflow validates fields and Books shows confirmed posted-line expen
         kind: "line_enrichment_record",
         lineId: expenseLine!.lineId,
         enrichmentType: "trip",
-        payload: trip,
+        payload: postPostTrip,
       },
       source: "advisor",
-      idempotencyKey: "e2e:trip:trip_e2e_1",
+      idempotencyKey: `e2e:trip:${postPostTrip.tripId}`,
     },
   });
   const proposalBody = await proposalResponse.text();
@@ -90,13 +99,16 @@ test("trip workflow validates fields and Books shows confirmed posted-line expen
   const tripsResponse = await request.get(`${apiBaseUrl}/api/lists/trips`);
   expect(tripsResponse.ok()).toBeTruthy();
   const trips = (await tripsResponse.json()) as Array<{ id: string; expenseTotal: number }>;
-  expect(trips.find((row) => row.id === trip.tripId)?.expenseTotal).toBe(expenseLine!.debit - expenseLine!.credit);
+  expect(trips.find((row) => row.id === postPostTrip.tripId)?.expenseTotal).toBe(
+    expenseLine!.debit - expenseLine!.credit,
+  );
+  expect(trips.filter((row) => row.id === postPostTrip.tripId)).toHaveLength(1);
 
   const panel = page.getByTestId("trips-list-panel");
   await expect(panel).toBeVisible();
   const row = panel.getByTestId("trips-list-row").filter({ hasText: "Customer visit" });
   await expect(row).toContainText("Ada");
-  await expect(row).toContainText("trip_e2e_1");
+  await expect(row).toContainText(postPostTrip.tripId);
   await expectAccessible(page);
   guard.assertClean();
 });

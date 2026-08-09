@@ -140,7 +140,7 @@ test("review approval reports a typed error when an intent targets no planned li
   const response = await app.request(`http://localhost/api/reviews/${created.review.id}/approve`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: "{}",
+    body: JSON.stringify({ enrichmentIntent: "consume" }),
   });
   assert.equal(response.status, 422);
   assert.equal(((await response.json()) as { code: string }).code, "enrichment_line_not_found");

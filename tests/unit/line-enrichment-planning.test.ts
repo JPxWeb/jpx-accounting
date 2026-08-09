@@ -47,6 +47,114 @@ test("line enrichment record emits one typed event and never reposts", () => {
   assert.ok(plan.events.every((event) => event.eventType !== "PostedToLedger"));
 });
 
+test("trip line enrichment rejects an unregistered trip", () => {
+  assert.throws(
+    () =>
+      planPostPostEnrichmentConfirm({
+        workItem: workItem({
+          kind: "line_enrichment_record",
+          lineId: "ln_1",
+          enrichmentType: "trip",
+          payload: {
+            tripId: "trip_missing",
+            purpose: "Customer visit",
+            traveler: "Ada",
+            startDate: "2026-08-01",
+            endDate: "2026-08-03",
+          },
+        }),
+        actorId: "user:abc",
+        ...postedTargets,
+        registeredTripIds: new Set(),
+      }),
+    /registered trip/i,
+  );
+});
+
+test("trip line enrichment refuses a second active trip on the same line", () => {
+  const priorTripEvent = {
+    eventType: "LineEnrichmentRecorded" as const,
+    occurredAt: "2026-08-09T09:00:00.000Z",
+    actorId: "user:prior",
+    payload: {
+      lineId: "ln_1",
+      enrichmentId: "le_trip_a",
+      enrichmentType: "trip",
+      payload: {
+        tripId: "trip_a",
+        purpose: "Customer visit",
+        traveler: "Ada",
+        startDate: "2026-08-01",
+        endDate: "2026-08-03",
+      },
+    },
+  };
+
+  assert.throws(
+    () =>
+      planPostPostEnrichmentConfirm({
+        workItem: workItem({
+          kind: "line_enrichment_record",
+          lineId: "ln_1",
+          enrichmentType: "trip",
+          payload: {
+            tripId: "trip_b",
+            purpose: "Conference",
+            traveler: "Ada",
+            startDate: "2026-08-04",
+            endDate: "2026-08-05",
+          },
+        }),
+        actorId: "user:abc",
+        ...postedTargets,
+        registeredTripIds: new Set(["trip_a", "trip_b"]),
+        lineEnrichmentEvents: [priorTripEvent],
+      }),
+    /already assigned to trip trip_a/i,
+  );
+});
+
+test("trip line enrichment does not attach the same active trip twice", () => {
+  const priorTripEvent = {
+    eventType: "LineEnrichmentRecorded" as const,
+    occurredAt: "2026-08-09T09:00:00.000Z",
+    actorId: "user:prior",
+    payload: {
+      lineId: "ln_1",
+      enrichmentId: "le_trip_a",
+      enrichmentType: "trip",
+      payload: {
+        tripId: "trip_a",
+        purpose: "Customer visit",
+        traveler: "Ada",
+        startDate: "2026-08-01",
+        endDate: "2026-08-03",
+      },
+    },
+  };
+
+  const plan = planPostPostEnrichmentConfirm({
+    workItem: workItem({
+      kind: "line_enrichment_record",
+      lineId: "ln_1",
+      enrichmentType: "trip",
+      payload: {
+        tripId: "trip_a",
+        purpose: "Customer visit",
+        traveler: "Ada",
+        startDate: "2026-08-01",
+        endDate: "2026-08-03",
+      },
+    }),
+    actorId: "user:abc",
+    ...postedTargets,
+    registeredTripIds: new Set(["trip_a"]),
+    lineEnrichmentEvents: [priorTripEvent],
+  });
+
+  assert.deepEqual(plan.events, []);
+});
+
 test("supersession emits superseded then replacement record without reposting", () => {
   const priorEvent = {
     eventType: "LineEnrichmentRecorded" as const,

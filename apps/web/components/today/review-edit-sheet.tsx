@@ -74,7 +74,7 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
   const localToday = localTodayIso();
   const derivedBookedAt = deriveBookedAt(voucher?.voucherFields, new Date().toISOString());
   const [bookedAtInput, setBookedAtInput] = useState(derivedBookedAt);
-  const [workflow, setWorkflow] = useState<"none" | "project" | "invoice" | "trip">("none");
+  const [workflow, setWorkflow] = useState<"none" | "project" | "invoice" | "trip" | "quantity_inventory">("none");
   const [projectId, setProjectId] = useState("");
   const [activityCode, setActivityCode] = useState("");
   const [objectCode, setObjectCode] = useState("");
@@ -86,8 +86,12 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
   const [tripStartDate, setTripStartDate] = useState("");
   const [tripEndDate, setTripEndDate] = useState("");
   const [tripEvidenceId, setTripEvidenceId] = useState("");
+  const [inventorySkuId, setInventorySkuId] = useState("");
+  const [inventoryQuantity, setInventoryQuantity] = useState("");
+  const [inventoryUom, setInventoryUom] = useState("");
+  const [inventoryDirection, setInventoryDirection] = useState<"" | "in" | "out">("");
 
-  useDialogFocusTrap(dialogRef, true, onClose, accountSelectRef);
+  useDialogFocusTrap(dialogRef, true, handleClose, accountSelectRef);
 
   // No actorId (WS-C R5): the server derives attribution.
   const approveWithEdits = useMutation({
@@ -96,12 +100,16 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
       proposal,
     }: {
       edited: ReviewDecisionEdit;
-      proposal?: Extract<EnrichmentProposal, { kind: "project_assignment" }>;
+      proposal?: Extract<
+        EnrichmentProposal,
+        { kind: "project_assignment" | "invoice_registration" | "trip_registration" | "quantity_inventory_movement" }
+      >;
     }) => {
-      if (proposal) {
-        await apiClient.attachReviewEnrichmentIntent({ reviewId: review.id, proposals: [proposal] });
-      }
-      return apiClient.approveReview(review.id, { edited });
+      await apiClient.attachReviewEnrichmentIntent({
+        reviewId: review.id,
+        proposals: [proposal ?? { kind: "noop" }],
+      });
+      return apiClient.approveReview(review.id, { edited, enrichmentIntent: "consume" });
     },
     onSuccess,
   });
@@ -138,7 +146,9 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
   const invoiceDirectionRequired = workflow === "invoice" && invoiceDirection === "";
   const invoiceCounterpartyRequired = workflow === "invoice" && invoiceCounterparty.trim() === "";
   const invoiceDueDateRequired = workflow === "invoice" && !isValidCalendarDay(invoiceDueDate);
-  const invoiceValid = !invoiceDirectionRequired && !invoiceCounterpartyRequired && !invoiceDueDateRequired;
+  const invoiceAmountInvalid = workflow === "invoice" && (gross === undefined || !Number.isFinite(gross) || gross <= 0);
+  const invoiceValid =
+    !invoiceDirectionRequired && !invoiceCounterpartyRequired && !invoiceDueDateRequired && !invoiceAmountInvalid;
   const tripPurposeRequired = workflow === "trip" && tripPurpose.trim() === "";
   const tripTravelerRequired = workflow === "trip" && tripTraveler.trim() === "";
   const tripStartDateRequired = workflow === "trip" && !isValidCalendarDay(tripStartDate);
@@ -150,16 +160,36 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
     !tripStartDateRequired &&
     !tripEndDateRequired &&
     !tripEvidenceInvalid;
+  const parsedInventoryQuantity = Number(inventoryQuantity);
+  const inventorySkuRequired = workflow === "quantity_inventory" && inventorySkuId.trim() === "";
+  const inventoryQuantityRequired =
+    workflow === "quantity_inventory" && (!Number.isFinite(parsedInventoryQuantity) || parsedInventoryQuantity <= 0);
+  const inventoryUomRequired = workflow === "quantity_inventory" && inventoryUom.trim() === "";
+  const inventoryDirectionRequired = workflow === "quantity_inventory" && inventoryDirection === "";
+  const inventoryValid =
+    !inventorySkuRequired && !inventoryQuantityRequired && !inventoryUomRequired && !inventoryDirectionRequired;
 
   const accountName = findCoaAccount(defaultCoaTemplate, accountNumber)?.name ?? accountNumber;
   const submitDisabled =
-    !amountsValid || !bookedAtValid || projectRequired || !invoiceValid || !tripValid || approveWithEdits.isPending;
+    !amountsValid ||
+    !bookedAtValid ||
+    projectRequired ||
+    !invoiceValid ||
+    !tripValid ||
+    !inventoryValid ||
+    approveWithEdits.isPending;
   const submitError = approveWithEdits.error ? getErrorMessage(approveWithEdits.error, t("submitError")) : null;
 
   useEffect(() => {
     registerGlobalTourBlocker("review-edit-sheet", true);
     return () => registerGlobalTourBlocker("review-edit-sheet", false);
   }, []);
+
+  function handleClose() {
+    void apiClient
+      .attachReviewEnrichmentIntent({ reviewId: review.id, proposals: [{ kind: "noop" }] })
+      .finally(onClose);
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -178,15 +208,48 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
       ...(bookedAtChanged ? { bookedAt: bookedAtInput } : {}),
     };
     const trimmedProjectId = projectId.trim();
-    const proposal =
+    const proposal:
+      | Extract<
+          EnrichmentProposal,
+          { kind: "project_assignment" | "invoice_registration" | "trip_registration" | "quantity_inventory_movement" }
+        >
+      | undefined =
       workflow === "project" && trimmedProjectId !== ""
         ? {
-            kind: "project_assignment" as const,
+            kind: "project_assignment",
             projectId: trimmedProjectId,
             ...(activityCode.trim() !== "" ? { activityCode: activityCode.trim() } : {}),
             ...(objectCode.trim() !== "" ? { objectCode: objectCode.trim() } : {}),
           }
-        : undefined;
+        : workflow === "invoice" && invoiceDirection !== ""
+          ? {
+              kind: "invoice_registration",
+              direction: invoiceDirection,
+              counterparty: invoiceCounterparty.trim(),
+              dueDate: invoiceDueDate,
+            }
+          : workflow === "trip"
+            ? {
+                kind: "trip_registration",
+                purpose: tripPurpose.trim(),
+                traveler: tripTraveler.trim(),
+                startDate: tripStartDate,
+                endDate: tripEndDate,
+                ...(tripEvidenceId !== "" ? { evidenceId: tripEvidenceId } : {}),
+              }
+            : workflow === "quantity_inventory" &&
+                inventorySkuId.trim() !== "" &&
+                parsedInventoryQuantity > 0 &&
+                inventoryUom.trim() !== "" &&
+                inventoryDirection !== ""
+              ? {
+                  kind: "quantity_inventory_movement",
+                  skuId: inventorySkuId.trim(),
+                  quantity: parsedInventoryQuantity,
+                  uom: inventoryUom.trim(),
+                  direction: inventoryDirection,
+                }
+              : undefined;
     approveWithEdits.mutate({ edited, ...(proposal ? { proposal } : {}) });
   }
 
@@ -197,7 +260,7 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
         aria-label={t("closeAria")}
         data-testid="review-edit-backdrop"
         className="absolute inset-0 cursor-default"
-        onClick={onClose}
+        onClick={handleClose}
       />
       <motion.div
         ref={dialogRef}
@@ -220,7 +283,7 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             data-testid="review-edit-close"
             className="rounded-md bg-surface px-3 py-2 text-sm font-medium text-muted-foreground"
           >
@@ -260,13 +323,16 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
                 id="review-edit-workflow"
                 data-testid="edit-workflow"
                 value={workflow}
-                onChange={(event) => setWorkflow(event.target.value as "none" | "project" | "invoice" | "trip")}
+                onChange={(event) =>
+                  setWorkflow(event.target.value as "none" | "project" | "invoice" | "trip" | "quantity_inventory")
+                }
                 className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
               >
                 <option value="none">{t("workflowNone")}</option>
                 <option value="project">{t("workflowProject")}</option>
                 <option value="invoice">{t("workflowInvoice")}</option>
                 <option value="trip">{t("workflowTrip")}</option>
+                <option value="quantity_inventory">{t("workflowQuantityInventory")}</option>
               </select>
             </div>
             {workflow === "project" ? (
@@ -505,6 +571,102 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
                 </div>
               </>
             ) : null}
+            {workflow === "quantity_inventory" ? (
+              <>
+                <div className="sm:col-span-2">
+                  <label htmlFor="review-edit-inventory-sku" className="text-eyebrow block">
+                    {t("inventory.skuLabel")}
+                  </label>
+                  <input
+                    id="review-edit-inventory-sku"
+                    data-testid="inventory-sku"
+                    value={inventorySkuId}
+                    onChange={(event) => setInventorySkuId(event.target.value)}
+                    aria-invalid={inventorySkuRequired}
+                    aria-describedby={inventorySkuRequired ? "inventory-sku-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  />
+                  {inventorySkuRequired ? (
+                    <p id="inventory-sku-error" data-testid="inventory-sku-error" className="mt-1 text-sm text-danger">
+                      {t("inventory.skuRequired")}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <label htmlFor="review-edit-inventory-quantity" className="text-eyebrow block">
+                    {t("inventory.quantityLabel")}
+                  </label>
+                  <input
+                    id="review-edit-inventory-quantity"
+                    data-testid="inventory-quantity"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="any"
+                    value={inventoryQuantity}
+                    onChange={(event) => setInventoryQuantity(event.target.value)}
+                    aria-invalid={inventoryQuantityRequired}
+                    aria-describedby={inventoryQuantityRequired ? "inventory-quantity-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
+                  />
+                  {inventoryQuantityRequired ? (
+                    <p
+                      id="inventory-quantity-error"
+                      data-testid="inventory-quantity-error"
+                      className="mt-1 text-sm text-danger"
+                    >
+                      {t("inventory.quantityRequired")}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <label htmlFor="review-edit-inventory-uom" className="text-eyebrow block">
+                    {t("inventory.uomLabel")}
+                  </label>
+                  <input
+                    id="review-edit-inventory-uom"
+                    data-testid="inventory-uom"
+                    value={inventoryUom}
+                    onChange={(event) => setInventoryUom(event.target.value)}
+                    aria-invalid={inventoryUomRequired}
+                    aria-describedby={inventoryUomRequired ? "inventory-uom-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  />
+                  {inventoryUomRequired ? (
+                    <p id="inventory-uom-error" data-testid="inventory-uom-error" className="mt-1 text-sm text-danger">
+                      {t("inventory.uomRequired")}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="sm:col-span-2">
+                  <label htmlFor="review-edit-inventory-direction" className="text-eyebrow block">
+                    {t("inventory.directionLabel")}
+                  </label>
+                  <select
+                    id="review-edit-inventory-direction"
+                    data-testid="inventory-direction"
+                    value={inventoryDirection}
+                    onChange={(event) => setInventoryDirection(event.target.value as "" | "in" | "out")}
+                    aria-invalid={inventoryDirectionRequired}
+                    aria-describedby={inventoryDirectionRequired ? "inventory-direction-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  >
+                    <option value="">{t("inventory.directionPlaceholder")}</option>
+                    <option value="in">{t("inventory.directionIn")}</option>
+                    <option value="out">{t("inventory.directionOut")}</option>
+                  </select>
+                  {inventoryDirectionRequired ? (
+                    <p
+                      id="inventory-direction-error"
+                      data-testid="inventory-direction-error"
+                      className="mt-1 text-sm text-danger"
+                    >
+                      {t("inventory.directionRequired")}
+                    </p>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
             <div>
               <label htmlFor="review-edit-booked-at" className="text-eyebrow block">
                 {t("bookedAtLabel")}
@@ -586,7 +748,7 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
             </div>
           </div>
 
-          {!amountsValid ? (
+          {!amountsValid || invoiceAmountInvalid ? (
             <p data-testid="edit-amount-error" className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">
               {t("amountError")}
             </p>
@@ -601,7 +763,7 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
           ) : null}
 
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={onClose}>
+            <Button type="button" variant="ghost" onClick={handleClose}>
               {t("cancel")}
             </Button>
             <Button type="submit" data-testid="edit-submit" disabled={submitDisabled}>

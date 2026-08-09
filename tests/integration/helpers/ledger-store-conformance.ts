@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 
-import type { ExtractionResult } from "@jpx-accounting/contracts";
+import type { EnrichmentProposal, ExtractionResult } from "@jpx-accounting/contracts";
 import {
   deriveDeterministicExtraction,
   EnrichmentLineNotFoundError,
@@ -957,6 +957,198 @@ export async function scenarioInvoicePayments(h: ConformanceHarness): Promise<Co
   };
 }
 
+export async function scenarioInvoiceReviewApproval(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const invalid = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Invalid invoice approval conformance",
+    originalFilename: "invalid-invoice-approval-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await h.store.attachReviewEnrichmentIntent({
+    actorId: h.actorId,
+    reviewId: invalid.review.id,
+    proposals: [
+      {
+        kind: "invoice_registration",
+        direction: "ap",
+        counterparty: "Invalid supplier",
+        dueDate: "not-a-date",
+      } as EnrichmentProposal,
+    ],
+  });
+  const eventsBeforeInvalidApproval = await h.store.getEvents();
+  await assert.rejects(() =>
+    h.store.applyReviewDecision(invalid.review.id, "approve", {
+      actorId: h.actorId,
+    }),
+  );
+  const eventsAfterInvalidApproval = await h.store.getEvents();
+  const invalidReview = (await h.store.getSnapshot()).reviews.find((review) => review.id === invalid.review.id);
+  assert.equal(eventsAfterInvalidApproval.length, eventsBeforeInvalidApproval.length);
+  assert.equal(invalidReview?.status, "needs-review");
+
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Invoice approval conformance",
+    originalFilename: "invoice-approval-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await h.store.attachReviewEnrichmentIntent({
+    actorId: h.actorId,
+    reviewId: created.review.id,
+    proposals: [
+      {
+        kind: "invoice_registration",
+        direction: "ap",
+        counterparty: "Conformance supplier",
+        dueDate: "2026-09-01",
+      },
+    ],
+  });
+
+  const approved = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+  const replayed = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: "user:other" });
+  const events = await h.store.getEvents();
+  const postedEvents = events.filter(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+  const registrationEvents = events.filter(
+    (event) => event.eventType === "InvoiceRegistered" && event.payload.counterparty === "Conformance supplier",
+  );
+  const registration = registrationEvents[0];
+  const invoiceId = String(registration?.payload.invoiceId ?? "");
+  const enrichmentEvents = events.filter(
+    (event) =>
+      event.eventType === "LineEnrichmentRecorded" &&
+      event.payload.enrichmentType === "invoice" &&
+      (event.payload.payload as { invoiceId?: string } | undefined)?.invoiceId === invoiceId,
+  );
+  const postedLineIds = new Set(
+    (postedEvents[0]?.payload.lines as Array<{ lineId?: string }> | undefined)
+      ?.map((line) => line.lineId)
+      .filter((lineId): lineId is string => lineId !== undefined) ?? [],
+  );
+
+  assert.equal(approved?.status, "approved");
+  assert.equal(replayed?.status, "approved");
+  assert.equal(postedEvents.length, 1);
+  assert.equal(registrationEvents.length, 1);
+  assert.equal(enrichmentEvents.length, 1);
+  assert.match(invoiceId, /^inv_/);
+  assert.equal(registration?.payload.direction, "ap");
+  assert.equal(registration?.payload.dueDate, "2026-09-01");
+  assert.equal(registration?.payload.currency, created.voucher.voucherFields.currency);
+  assert.equal(registration?.payload.originalAmount, created.voucher.voucherFields.grossAmount);
+  assert.equal(registration?.actorId, h.actorId);
+  assert.ok(postedLineIds.has(String(enrichmentEvents[0]?.payload.lineId)));
+  assert.equal(await h.store.getReviewEnrichmentIntent(created.review.id), undefined);
+
+  return {
+    approvedStatus: approved?.status ?? null,
+    replayedStatus: replayed?.status ?? null,
+    postedCount: postedEvents.length,
+    registrationCount: registrationEvents.length,
+    enrichmentCount: enrichmentEvents.length,
+    direction: registration?.payload.direction ?? null,
+    counterparty: registration?.payload.counterparty ?? null,
+    dueDate: registration?.payload.dueDate ?? null,
+    currency: registration?.payload.currency ?? null,
+    originalAmount: normalizeNumber(registration?.payload.originalAmount),
+    registrationActor: registration?.actorId ?? null,
+    enrichmentBoundToPostedLine: postedLineIds.has(String(enrichmentEvents[0]?.payload.lineId)),
+    intentConsumed: (await h.store.getReviewEnrichmentIntent(created.review.id)) === undefined,
+    invalidApprovalEventDelta: eventsAfterInvalidApproval.length - eventsBeforeInvalidApproval.length,
+    invalidReviewStatus: invalidReview?.status ?? null,
+  };
+}
+
+export async function scenarioTripReviewApproval(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Trip approval conformance",
+    originalFilename: "trip-approval-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  const proposal = {
+    kind: "trip_registration" as const,
+    purpose: "Customer visit",
+    traveler: "Ada",
+    startDate: "2026-08-01",
+    endDate: "2026-08-03",
+    evidenceId: created.evidence.id,
+  };
+
+  await h.store.attachReviewEnrichmentIntent({
+    actorId: h.actorId,
+    reviewId: created.review.id,
+    proposals: [{ ...proposal, evidenceId: "evidence_outside_packet" }],
+  });
+  const eventsBeforeInvalid = await h.store.getEvents();
+  await assert.rejects(
+    () => h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId }),
+    /evidence.*packet/i,
+  );
+  const eventsAfterInvalid = await h.store.getEvents();
+  assert.equal(eventsAfterInvalid.length, eventsBeforeInvalid.length);
+
+  await h.store.attachReviewEnrichmentIntent({
+    actorId: h.actorId,
+    reviewId: created.review.id,
+    proposals: [proposal],
+  });
+  const approved = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+  const replayed = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: "user:other" });
+  const events = await h.store.getEvents();
+  const postedEvents = events.filter(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+  const registrationEvents = events.filter(
+    (event) => event.eventType === "TripRegistered" && event.payload.purpose === proposal.purpose,
+  );
+  const registration = registrationEvents[0];
+  const tripId = String(registration?.payload.tripId ?? "");
+  const enrichmentEvents = events.filter(
+    (event) =>
+      event.eventType === "LineEnrichmentRecorded" &&
+      event.payload.enrichmentType === "trip" &&
+      (event.payload.payload as { tripId?: string } | undefined)?.tripId === tripId,
+  );
+  const postedLineIds = new Set(
+    (postedEvents[0]?.payload.lines as Array<{ lineId?: string }> | undefined)
+      ?.map((line) => line.lineId)
+      .filter((lineId): lineId is string => lineId !== undefined) ?? [],
+  );
+
+  assert.equal(approved?.status, "approved");
+  assert.equal(replayed?.status, "approved");
+  assert.equal(postedEvents.length, 1);
+  assert.equal(registrationEvents.length, 1);
+  assert.equal(enrichmentEvents.length, 1);
+  assert.match(tripId, /^trip_/);
+  assert.equal(registration?.payload.evidenceId, created.evidence.id);
+  assert.equal(registration?.actorId, h.actorId);
+  assert.ok(postedLineIds.has(String(enrichmentEvents[0]?.payload.lineId)));
+  assert.equal(await h.store.getReviewEnrichmentIntent(created.review.id), undefined);
+
+  return {
+    invalidApprovalEventDelta: eventsAfterInvalid.length - eventsBeforeInvalid.length,
+    approvedStatus: approved?.status ?? null,
+    replayedStatus: replayed?.status ?? null,
+    postedCount: postedEvents.length,
+    registrationCount: registrationEvents.length,
+    enrichmentCount: enrichmentEvents.length,
+    purpose: registration?.payload.purpose ?? null,
+    traveler: registration?.payload.traveler ?? null,
+    evidencePreserved: registration?.payload.evidenceId === created.evidence.id,
+    registrationActor: registration?.actorId ?? null,
+    enrichmentBoundToPostedLine: postedLineIds.has(String(enrichmentEvents[0]?.payload.lineId)),
+    intentConsumed: (await h.store.getReviewEnrichmentIntent(created.review.id)) === undefined,
+  };
+}
+
 export async function scenarioTripLifecycle(h: ConformanceHarness): Promise<ConformanceOutcome> {
   const first = await h.store.registerTrip({
     tripId: "trip_conformance",
@@ -1019,6 +1211,8 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "voucher tag append-only paths", run: scenarioVoucherTags },
   { name: "project registration is immutable", run: scenarioProjectRegistration },
   { name: "invoice and payment identity is immutable", run: scenarioInvoicePayments },
+  { name: "invoice review approval registers once atomically", run: scenarioInvoiceReviewApproval },
+  { name: "trip review approval registers once atomically", run: scenarioTripReviewApproval },
   { name: "trip registration and close are immutable", run: scenarioTripLifecycle },
 ];
 

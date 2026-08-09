@@ -668,12 +668,26 @@
   - No shared in-flight file was edited: both fix agents were actively writing
     contracts, planner, stores, `app.ts`, conformance and the review sheet
     during the review, so every other finding is written for its owner to apply.
+- Wave 6b atomic invoice approval repair is implemented and verified for Sol
+  re-review; Wave 6b remains NOT COMPLETE.
+  - Reused the Opus-approved Wave 5 pre-post intent seam; no second mutation or
+    standalone `registerInvoice()` call was introduced.
+  - Invoice identity, normalized currency, rounded posted amount, and real line
+    identity are derived server-side and appended atomically with one posting.
+  - Deselect, close, plain queue/dashboard/API, and advisor paths clear unseen
+    stale intents with `noop`; focused E2E covers the user-visible stale cases.
+  - Typed 422s cover amount-less invoices and vertical-specific missing lines;
+    proposal arrays are bounded and singleton workflow proposals cannot repeat.
+  - Full `pnpm check` passed (661 unit tests), `pnpm db:test` passed 110/110
+    with Memory/Postgres rollback and replay parity, invoice E2E passed 12/12,
+    and visual comparison passed 20/20 without updating baselines.
+  - Intent-author metadata and true 1510/2440 AR/AP posting remain explicitly
+    deferred in the batch report/plan.
 
 ## In progress
 
-- Wave 6b invoice seam implementation is in flight against the Opus-approved
-  design; the seven gate conditions in the Opus review must land before the
-  renewed final gate.
+- Wave 6b awaits Sol re-review; do not mark complete until Sol clears the
+  repaired atomic seam.
 - Wave 6c Task 6c.4 atomic seam repair must absorb the Wave 6c Opus findings
   (error mapping first) before Sol re-review; Task 6c.5 remains deferred to the
   centralized full/visual gate.

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  attachReviewEnrichmentIntentInputSchema,
   enrichmentProposalSchema,
   eventTypeSchema,
   invoiceLineEnrichmentPayloadSchema,
@@ -37,6 +38,7 @@ test("invoice registration requires typed AR or AP fields", () => {
     }).success,
     false,
   );
+  assert.equal(invoiceRegisteredPayloadSchema.safeParse({ ...invoice, currency: "sek" }).success, false);
 });
 
 test("payment allocation requires a positive amount and timestamp", () => {
@@ -68,6 +70,42 @@ test("invoice line enrichment uses the existing human-confirmed line proposal pa
 
   assert.equal(proposal.kind, "line_enrichment_record");
   assert.deepEqual(proposal.payload, { invoiceId: "inv_1", direction: "ar" });
+});
+
+test("invoice registration proposal carries only human-entered review fields", () => {
+  const proposal = enrichmentProposalSchema.parse({
+    kind: "invoice_registration",
+    direction: "ap",
+    counterparty: "Acme AB",
+    dueDate: "2026-09-01",
+    invoiceId: "inv_forged",
+    currency: "USD",
+    originalAmount: 1,
+    actorId: "user:forged",
+  });
+
+  assert.deepEqual(proposal, {
+    kind: "invoice_registration",
+    direction: "ap",
+    counterparty: "Acme AB",
+    dueDate: "2026-09-01",
+  });
+});
+
+test("one review intent cannot register the same invoice workflow twice", () => {
+  const proposal = {
+    kind: "invoice_registration" as const,
+    direction: "ap" as const,
+    counterparty: "Acme AB",
+    dueDate: "2026-09-01",
+  };
+  assert.equal(
+    attachReviewEnrichmentIntentInputSchema.safeParse({
+      reviewId: "review_1",
+      proposals: Array.from({ length: 11 }, () => proposal),
+    }).success,
+    false,
+  );
 });
 
 test("invoice and payment list rows are contract validated", () => {

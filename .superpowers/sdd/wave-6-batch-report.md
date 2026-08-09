@@ -566,3 +566,106 @@ Review Task 6c.4 for:
 
 No PR was opened, `main` was not touched, invoice panels were not rewritten,
 and no Wave 6e work was started.
+
+# Wave 6c atomic trip approval repair
+
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Base review: `97be5a3`
+Scope: Sol-requested Task 6c.4 repair
+Checkpoint: **READY FOR SOL RE-REVIEW; WAVE 6C NOT COMPLETE**
+
+## Repair
+
+- Added a contract-first `trip_registration` pre-post proposal carrying only
+  the reviewer-owned purpose, traveler, ordered dates, and optional evidence.
+  Server-owned trip identity, final line identity, and actor attribution are
+  absent from the input contract.
+- Reused the Wave 5 atomic approval seam approved by the Wave 6b Opus review:
+  the serialized approval planner derives `tripId`, selects a real eligible
+  posting `lineId`, validates optional evidence against the voucher packet,
+  and appends `TripRegistered` plus its `LineEnrichmentRecorded` companion in
+  the same transaction as exactly one `PostedToLedger`.
+- Memory and Postgres pass the packet evidence ids into the same domain
+  planner. An invalid evidence reference fails before any append and leaves the
+  review and replaceable intent open; invalid packet evidence and missing
+  eligible lines surface as typed HTTP 422 responses.
+- The review sheet now submits all trip fields through that intent seam. The
+  existing no-op intent replacement remains the explicit way to clear a stale
+  deselected workflow before approval.
+- The existing post-post advisor confirmation flow remains covered against a
+  real posted `ln_` target and still never posts a second voucher.
+
+## TDD and verification
+
+- RED observed: the proposal discriminator was absent, the planner rejected
+  `trip_registration`, and Memory approval rejected even packet-owned evidence
+  because stores did not provide packet ids.
+- GREEN: focused trip contract/planner tests passed 15/15; trip list projection
+  tests passed 6/6, including duplicate attachment deduplication; typed
+  pre-post API error mapping passed.
+- Affected contracts, domain, Postgres persistence, web, and aggregate tests
+  typechecks passed.
+- Strict `pnpm db:test` passed migrations `0001`–`0011` and 110/110 integration
+  tests. The new conformance scenario passed on Memory, Postgres, and parity,
+  proving invalid-evidence rollback, one registration, one line attachment, one
+  posting, server actor attribution, intent consumption, and replay idempotency.
+- `pnpm build:e2e` passed. Focused trip E2E passed 4/4 on desktop and Pixel 7,
+  proving the pre-post fields survive approval and the post-post real-line
+  confirmation path remains intact.
+
+No PR was opened, `main` was not touched, and Wave 6e was not started. Stop for
+Sol re-review; do not mark Wave 6c complete before the centralized full/visual
+gate and review verdict.
+
+# Wave 6b atomic invoice approval repair
+
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Base review: `b9372df`
+Scope: Sol/Opus-requested Wave 6b repair
+Checkpoint: **READY FOR SOL RE-REVIEW; WAVE 6B NOT COMPLETE**
+
+## Repair
+
+- Added the contract-first `invoice_registration` proposal to the existing
+  Wave 5 pre-post intent seam. It carries only direction, counterparty, and due
+  date; approval derives invoice identity, upper-case currency, exact posted
+  amount, and the real posted line identity server-side.
+- `InvoiceRegistered` and `LineEnrichmentRecorded` are companion events in the
+  same serialized approval plan as exactly one `PostedToLedger`; neither store
+  calls the standalone invoice writer from approval.
+- Stale intent is replaced with `noop` when the workflow is deselected, the
+  sheet closes without approval, or a plain queue/dashboard/API/advisor
+  approval occurs. The server-owned `clearEnrichmentIntent` gate makes plain
+  API clearing part of the approval transaction.
+- Posted amount uses shared `round2`; invalid zero amounts, missing invoice or
+  inventory lines, and singleton-proposal multiplicity now return distinct
+  typed 422 errors.
+- Review-intent proposal arrays are bounded to 10 and invoice/trip/inventory
+  registration-like proposals are singleton per intent.
+- Memory/Postgres conformance proves invalid-plan rollback, one registration,
+  one line attachment, one posting, actor attribution, intent consumption, and
+  no double registration on replay.
+
+## Verification
+
+- Focused contract/planner/API/conformance tests passed.
+- Full `pnpm check` passed (including typechecks, 661 unit tests, and build).
+- `pnpm db:test` passed migrations `0001`–`0011` and 110/110 tests.
+- `pnpm build:e2e` passed. Invoice E2E passed 12/12 stale-intent, close,
+  submission, Books-row, and list scenarios on desktop and Pixel 7.
+- Visual comparison passed 20/20 after concurrent build/port races cleared; no
+  baseline was updated.
+
+## Explicit deferrals / limitations
+
+- Intent authorship (`updatedBy` / `updatedAt`) is not copied into the decision
+  event in this repair. The approving actor remains authoritative; preserving
+  preparer authorship needs a separately reviewed decision-payload contract.
+- The shared posting builder still credits bank at invoice approval, while the
+  invoice projection stays open until payment allocation. True 1510/2440 AR/AP
+  posting is deferred; Books must not imply balance-sheet reconciliation.
+
+No PR was opened, `main` was not touched, and Wave 6e was not started. Stop for
+Sol re-review; Wave 6b remains incomplete until Sol clears this repair.

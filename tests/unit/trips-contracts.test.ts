@@ -75,6 +75,29 @@ test("trip enrichment uses the existing human-confirmed line proposal path", () 
   assert.deepEqual(proposal.payload, payload);
 });
 
+test("trip pre-post proposal carries human fields but strips server-owned identity", () => {
+  const proposal = enrichmentProposalSchema.parse({
+    kind: "trip_registration",
+    purpose: "Customer visit",
+    traveler: "Ada",
+    startDate: "2026-08-01",
+    endDate: "2026-08-03",
+    evidenceId: "evidence_1",
+    tripId: "trip_forged",
+    lineId: "ln_forged",
+    actorId: "user:forged",
+  });
+
+  assert.deepEqual(proposal, {
+    kind: "trip_registration",
+    purpose: "Customer visit",
+    traveler: "Ada",
+    startDate: "2026-08-01",
+    endDate: "2026-08-03",
+    evidenceId: "evidence_1",
+  });
+});
+
 test("trip list rows are contract validated", () => {
   assert.deepEqual(
     tripsListSchema.parse([
