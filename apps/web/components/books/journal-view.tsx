@@ -20,6 +20,7 @@ import { LedgerVoucherOverview } from "./ledger-voucher-overview";
 import { OpenInvoicesPanel } from "./open-invoices-panel";
 import { PaymentHistoryPanel } from "./payment-history-panel";
 import { ProjectsListPanel } from "./projects-list-panel";
+import { TripsListPanel } from "./trips-list-panel";
 
 const ledgerModes = ["inline", "drawer"] as const;
 const registryTagIds = DEFAULT_TAG_DEFINITIONS.map((definition) => definition.id);
@@ -58,7 +59,7 @@ export function JournalView() {
   const [voucher, setVoucher] = useQueryState("voucher", parseAsString);
   const [q, setQ] = useQueryState("q", parseAsString);
   const [tag, setTag] = useQueryState("tag", parseAsStringEnum(registryTagIds));
-  const [workflow] = useQueryState("workflow", parseAsStringEnum(["project", "invoice"]));
+  const [workflow] = useQueryState("workflow", parseAsStringEnum(["project", "invoice", "trip"]));
 
   const storedLedgerMode = useSyncExternalStore(subscribeToLedgerMode, loadLedgerMode, getServerLedgerMode);
   const ledgerMode = ledgerModeParam ?? storedLedgerMode;
@@ -85,6 +86,11 @@ export function JournalView() {
     queryKey: ["lists", "payment-history"],
     queryFn: () => apiClient.getPaymentHistoryList(),
     enabled: workflow === "invoice",
+  });
+  const tripsQuery = useQuery({
+    queryKey: ["lists", "trips"],
+    queryFn: () => apiClient.getTripsList(),
+    enabled: workflow === "trip",
   });
   const projectVoucherIds = new Set((projectsQuery.data ?? []).flatMap((project) => project.voucherIds));
 
@@ -176,6 +182,9 @@ export function JournalView() {
             hasError={paymentHistoryQuery.isError}
           />
         </div>
+      ) : null}
+      {workflow === "trip" ? (
+        <TripsListPanel rows={tripsQuery.data ?? []} loading={tripsQuery.isLoading} hasError={tripsQuery.isError} />
       ) : null}
       {supplier ? (
         <div className="flex items-center gap-2">

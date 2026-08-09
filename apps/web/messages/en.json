@@ -127,6 +127,7 @@
       "workflowNone": "No workflow assignment",
       "workflowProject": "Project",
       "workflowInvoice": "Invoice",
+      "workflowTrip": "Trip",
       "project": {
         "idLabel": "Project ID",
         "required": "Choose a project.",
@@ -143,6 +144,19 @@
         "counterpartyRequired": "Enter a counterparty.",
         "dueDateLabel": "Due date",
         "dueDateRequired": "Enter a due date."
+      },
+      "trip": {
+        "purposeLabel": "Purpose",
+        "purposeRequired": "Enter a trip purpose.",
+        "travelerLabel": "Traveler",
+        "travelerRequired": "Enter a traveler.",
+        "startDateLabel": "Start date",
+        "startDateRequired": "Enter a valid start date.",
+        "endDateLabel": "End date",
+        "endDateRequired": "Enter an end date on or after the start date.",
+        "evidenceLabel": "Supporting evidence (optional)",
+        "evidenceNone": "No linked evidence",
+        "evidenceInvalid": "Choose evidence from this voucher's packet."
       },
       "vatCodeLabel": "VAT code",
       "grossLabel": "Gross amount",
@@ -422,6 +436,19 @@
         "empty": "No payments recorded.",
         "invoice": "Invoice {invoiceId}",
         "allocatedAt": "Allocated {date}"
+      },
+      "trips": {
+        "title": "Trips",
+        "description": "Registered trips with expenses derived from confirmed posted-line enrichments.",
+        "loading": "Loading trips…",
+        "error": "Trips could not be loaded.",
+        "empty": "No trips registered yet.",
+        "traveler": "Traveler: {traveler}",
+        "dates": "{startDate}–{endDate}",
+        "status": {
+          "open": "Open",
+          "closed": "Closed"
+        }
       }
     },
     "ledger": {

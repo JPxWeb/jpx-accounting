@@ -127,6 +127,7 @@
       "workflowNone": "Ingen arbetsflödestilldelning",
       "workflowProject": "Projekt",
       "workflowInvoice": "Faktura",
+      "workflowTrip": "Resa",
       "project": {
         "idLabel": "Projekt-ID",
         "required": "Välj ett projekt.",
@@ -143,6 +144,19 @@
         "counterpartyRequired": "Ange en motpart.",
         "dueDateLabel": "Förfallodatum",
         "dueDateRequired": "Ange ett förfallodatum."
+      },
+      "trip": {
+        "purposeLabel": "Syfte",
+        "purposeRequired": "Ange resans syfte.",
+        "travelerLabel": "Resenär",
+        "travelerRequired": "Ange en resenär.",
+        "startDateLabel": "Startdatum",
+        "startDateRequired": "Ange ett giltigt startdatum.",
+        "endDateLabel": "Slutdatum",
+        "endDateRequired": "Ange ett slutdatum på eller efter startdatumet.",
+        "evidenceLabel": "Stödjande underlag (valfritt)",
+        "evidenceNone": "Inget länkat underlag",
+        "evidenceInvalid": "Välj ett underlag från verifikatets underlagspaket."
       },
       "vatCodeLabel": "Momskod",
       "grossLabel": "Bruttobelopp",
@@ -422,6 +436,19 @@
         "empty": "Inga betalningar har registrerats.",
         "invoice": "Faktura {invoiceId}",
         "allocatedAt": "Allokerad {date}"
+      },
+      "trips": {
+        "title": "Resor",
+        "description": "Registrerade resor med kostnader härledda från bekräftade berikningar av bokförda rader.",
+        "loading": "Läser in resor…",
+        "error": "Resorna kunde inte läsas in.",
+        "empty": "Inga resor har registrerats ännu.",
+        "traveler": "Resenär: {traveler}",
+        "dates": "{startDate}–{endDate}",
+        "status": {
+          "open": "Öppen",
+          "closed": "Stängd"
+        }
       }
     },
     "ledger": {

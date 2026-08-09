@@ -38,6 +38,8 @@ import { Button } from "../ui/button";
  * lives at `/today?view=queue` now. The review gate stays the ONLY path to a
  * posted voucher.
  */
+const EMPTY_REVIEWS: ReviewTask[] = [];
+const EMPTY_VOUCHERS: Voucher[] = [];
 
 function applyOptimisticUpdate(current: WorkspaceSnapshot | undefined, review: ReviewTask | undefined) {
   if (!current || !review) return current;
@@ -137,8 +139,8 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
       }),
   });
 
-  const reviews = useMemo(() => data?.reviews ?? [], [data?.reviews]);
-  const vouchers = useMemo(() => data?.vouchers ?? [], [data?.vouchers]);
+  const reviews = data?.reviews ?? EMPTY_REVIEWS;
+  const vouchers = data?.vouchers ?? EMPTY_VOUCHERS;
 
   // Deep links (/today?review=<id>, e.g. from the command palette) drive focus while
   // the param is present; manual focus takes over once the user picks another card.
@@ -166,6 +168,7 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
     for (const voucher of vouchers) map.set(voucher.id, voucher);
     return map;
   }, [vouchers]);
+  const evidenceIdsByPacketId = new Map((data?.packets ?? []).map((packet) => [packet.id, packet.evidenceIds]));
 
   const pendingReviews = useMemo(() => reviews.filter((r) => r.status === "needs-review"), [reviews]);
   const blockedReviews = useMemo(() => reviews.filter((r) => r.blockedReason), [reviews]);
@@ -387,6 +390,9 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
           key={editingReview.id}
           review={editingReview}
           voucher={voucherById.get(editingReview.voucherId)}
+          evidenceIds={
+            evidenceIdsByPacketId.get(voucherById.get(editingReview.voucherId)?.evidencePacketId ?? "") ?? []
+          }
           onClose={() => setEditingReviewId(null)}
           onSuccess={(review) => {
             onMutationSuccess(review);

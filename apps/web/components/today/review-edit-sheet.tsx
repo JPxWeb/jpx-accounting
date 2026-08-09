@@ -38,6 +38,7 @@ function amountsDiffer(parsed: number | undefined, original: number | undefined)
 type ReviewEditSheetProps = {
   review: ReviewTask;
   voucher: Voucher | undefined;
+  evidenceIds?: string[];
   onClose: () => void;
   /** Wired to TodayScreen's onMutationSuccess so the optimistic snapshot update is reused. */
   onSuccess: (review: ReviewTask | undefined) => void;
@@ -50,7 +51,7 @@ type ReviewEditSheetProps = {
  * the corrections; the stored voucher, suggestion, and event history are
  * never rewritten.
  */
-export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewEditSheetProps) {
+export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, onSuccess }: ReviewEditSheetProps) {
   const t = useTranslations("today.editSheet");
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const accountSelectRef = useRef<HTMLSelectElement | null>(null);
@@ -73,13 +74,18 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
   const localToday = localTodayIso();
   const derivedBookedAt = deriveBookedAt(voucher?.voucherFields, new Date().toISOString());
   const [bookedAtInput, setBookedAtInput] = useState(derivedBookedAt);
-  const [workflow, setWorkflow] = useState<"none" | "project" | "invoice">("none");
+  const [workflow, setWorkflow] = useState<"none" | "project" | "invoice" | "trip">("none");
   const [projectId, setProjectId] = useState("");
   const [activityCode, setActivityCode] = useState("");
   const [objectCode, setObjectCode] = useState("");
   const [invoiceDirection, setInvoiceDirection] = useState<"" | "ar" | "ap">("");
   const [invoiceCounterparty, setInvoiceCounterparty] = useState("");
   const [invoiceDueDate, setInvoiceDueDate] = useState("");
+  const [tripPurpose, setTripPurpose] = useState("");
+  const [tripTraveler, setTripTraveler] = useState("");
+  const [tripStartDate, setTripStartDate] = useState("");
+  const [tripEndDate, setTripEndDate] = useState("");
+  const [tripEvidenceId, setTripEvidenceId] = useState("");
 
   useDialogFocusTrap(dialogRef, true, onClose, accountSelectRef);
 
@@ -133,10 +139,21 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
   const invoiceCounterpartyRequired = workflow === "invoice" && invoiceCounterparty.trim() === "";
   const invoiceDueDateRequired = workflow === "invoice" && !isValidCalendarDay(invoiceDueDate);
   const invoiceValid = !invoiceDirectionRequired && !invoiceCounterpartyRequired && !invoiceDueDateRequired;
+  const tripPurposeRequired = workflow === "trip" && tripPurpose.trim() === "";
+  const tripTravelerRequired = workflow === "trip" && tripTraveler.trim() === "";
+  const tripStartDateRequired = workflow === "trip" && !isValidCalendarDay(tripStartDate);
+  const tripEndDateRequired = workflow === "trip" && (!isValidCalendarDay(tripEndDate) || tripEndDate < tripStartDate);
+  const tripEvidenceInvalid = workflow === "trip" && tripEvidenceId !== "" && !evidenceIds.includes(tripEvidenceId);
+  const tripValid =
+    !tripPurposeRequired &&
+    !tripTravelerRequired &&
+    !tripStartDateRequired &&
+    !tripEndDateRequired &&
+    !tripEvidenceInvalid;
 
   const accountName = findCoaAccount(defaultCoaTemplate, accountNumber)?.name ?? accountNumber;
   const submitDisabled =
-    !amountsValid || !bookedAtValid || projectRequired || !invoiceValid || approveWithEdits.isPending;
+    !amountsValid || !bookedAtValid || projectRequired || !invoiceValid || !tripValid || approveWithEdits.isPending;
   const submitError = approveWithEdits.error ? getErrorMessage(approveWithEdits.error, t("submitError")) : null;
 
   useEffect(() => {
@@ -243,12 +260,13 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
                 id="review-edit-workflow"
                 data-testid="edit-workflow"
                 value={workflow}
-                onChange={(event) => setWorkflow(event.target.value as "none" | "project" | "invoice")}
+                onChange={(event) => setWorkflow(event.target.value as "none" | "project" | "invoice" | "trip")}
                 className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
               >
                 <option value="none">{t("workflowNone")}</option>
                 <option value="project">{t("workflowProject")}</option>
                 <option value="invoice">{t("workflowInvoice")}</option>
+                <option value="trip">{t("workflowTrip")}</option>
               </select>
             </div>
             {workflow === "project" ? (
@@ -373,6 +391,115 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
                       className="mt-1 text-sm text-danger"
                     >
                       {t("invoice.dueDateRequired")}
+                    </p>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+            {workflow === "trip" ? (
+              <>
+                <div className="sm:col-span-2">
+                  <label htmlFor="review-edit-trip-purpose" className="text-eyebrow block">
+                    {t("trip.purposeLabel")}
+                  </label>
+                  <input
+                    id="review-edit-trip-purpose"
+                    data-testid="trip-purpose"
+                    value={tripPurpose}
+                    onChange={(event) => setTripPurpose(event.target.value)}
+                    aria-invalid={tripPurposeRequired}
+                    aria-describedby={tripPurposeRequired ? "trip-purpose-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  />
+                  {tripPurposeRequired ? (
+                    <p id="trip-purpose-error" className="mt-1 text-sm text-danger">
+                      {t("trip.purposeRequired")}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="sm:col-span-2">
+                  <label htmlFor="review-edit-trip-traveler" className="text-eyebrow block">
+                    {t("trip.travelerLabel")}
+                  </label>
+                  <input
+                    id="review-edit-trip-traveler"
+                    data-testid="trip-traveler"
+                    value={tripTraveler}
+                    onChange={(event) => setTripTraveler(event.target.value)}
+                    aria-invalid={tripTravelerRequired}
+                    aria-describedby={tripTravelerRequired ? "trip-traveler-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  />
+                  {tripTravelerRequired ? (
+                    <p id="trip-traveler-error" className="mt-1 text-sm text-danger">
+                      {t("trip.travelerRequired")}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <label htmlFor="review-edit-trip-start-date" className="text-eyebrow block">
+                    {t("trip.startDateLabel")}
+                  </label>
+                  <input
+                    id="review-edit-trip-start-date"
+                    data-testid="trip-start-date"
+                    type="date"
+                    value={tripStartDate}
+                    onChange={(event) => setTripStartDate(event.target.value)}
+                    aria-invalid={tripStartDateRequired}
+                    aria-describedby={tripStartDateRequired ? "trip-start-date-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
+                  />
+                  {tripStartDateRequired ? (
+                    <p id="trip-start-date-error" className="mt-1 text-sm text-danger">
+                      {t("trip.startDateRequired")}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <label htmlFor="review-edit-trip-end-date" className="text-eyebrow block">
+                    {t("trip.endDateLabel")}
+                  </label>
+                  <input
+                    id="review-edit-trip-end-date"
+                    data-testid="trip-end-date"
+                    type="date"
+                    min={tripStartDate || undefined}
+                    value={tripEndDate}
+                    onChange={(event) => setTripEndDate(event.target.value)}
+                    aria-invalid={tripEndDateRequired}
+                    aria-describedby={tripEndDateRequired ? "trip-end-date-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
+                  />
+                  {tripEndDateRequired ? (
+                    <p id="trip-end-date-error" className="mt-1 text-sm text-danger">
+                      {t("trip.endDateRequired")}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="sm:col-span-2">
+                  <label htmlFor="review-edit-trip-evidence" className="text-eyebrow block">
+                    {t("trip.evidenceLabel")}
+                  </label>
+                  <select
+                    id="review-edit-trip-evidence"
+                    data-testid="trip-evidence"
+                    value={tripEvidenceId}
+                    onChange={(event) => setTripEvidenceId(event.target.value)}
+                    aria-invalid={tripEvidenceInvalid}
+                    aria-describedby={tripEvidenceInvalid ? "trip-evidence-error" : undefined}
+                    className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  >
+                    <option value="">{t("trip.evidenceNone")}</option>
+                    {evidenceIds.map((evidenceId) => (
+                      <option key={evidenceId} value={evidenceId}>
+                        {evidenceId}
+                      </option>
+                    ))}
+                  </select>
+                  {tripEvidenceInvalid ? (
+                    <p id="trip-evidence-error" className="mt-1 text-sm text-danger">
+                      {t("trip.evidenceInvalid")}
                     </p>
                   ) : null}
                 </div>
