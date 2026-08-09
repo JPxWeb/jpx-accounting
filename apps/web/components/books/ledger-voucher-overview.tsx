@@ -34,16 +34,19 @@ export function LedgerVoucherOverview({ mode, vouchers, expandedVoucherId, onTog
       <ul className="divide-y divide-border">
         {vouchers.map((vm) => {
           const expanded = mode === "inline" && expandedVoucherId === vm.voucherId;
+          const toggleId = `${listId}-${vm.voucherId}-toggle`;
           const panelId = `${listId}-${vm.voucherId}-panel`;
-          const description = vm.lines[0]?.description ?? vm.supplierName;
+          const description = vm.lines[0]?.description || vm.supplierName || vm.voucherNumber;
 
           return (
             <li key={vm.voucherId}>
               <button
+                id={toggleId}
                 type="button"
                 data-testid="ledger-voucher-toggle"
                 aria-expanded={mode === "inline" ? expanded : expandedVoucherId === vm.voucherId}
                 aria-controls={mode === "inline" ? panelId : undefined}
+                aria-haspopup={mode === "drawer" ? "dialog" : undefined}
                 onClick={() => onToggle(vm.voucherId)}
                 className="flex w-full flex-col gap-1 rounded-lg px-3 py-3 text-left transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid sm:grid-cols-[minmax(0,5.5rem)_minmax(0,4.5rem)_minmax(0,1fr)_minmax(0,5rem)_minmax(0,5rem)] sm:items-center sm:gap-3"
               >
@@ -60,7 +63,12 @@ export function LedgerVoucherOverview({ mode, vouchers, expandedVoucherId, onTog
                 </span>
               </button>
               {expanded ? (
-                <div id={panelId} role="region" className="border-t border-border px-3 pb-4 pt-3">
+                <div
+                  id={panelId}
+                  role="region"
+                  aria-labelledby={toggleId}
+                  className="border-t border-border px-3 pb-4 pt-3"
+                >
                   <LedgerVoucherDetail vm={vm} />
                 </div>
               ) : null}

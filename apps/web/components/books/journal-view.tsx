@@ -4,12 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
-import { useMemo } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 import { usePeriodScope } from "../../hooks/use-period-scope";
 import { apiClient } from "../../lib/client";
 import { groupJournalByVoucher } from "../../lib/ledger/group-vouchers";
-import { resolveLedgerMode, saveLedgerMode, type LedgerMode } from "../../lib/ledger/ledger-mode-storage";
+import { loadLedgerMode, saveLedgerMode, type LedgerMode } from "../../lib/ledger/ledger-mode-storage";
 import { buildLedgerVoucherViewModel, type LedgerVoucherViewModel } from "../../lib/ledger/ledger-voucher-view-model";
 import { buildVoucherLookup } from "../reports/voucher-link";
 import { LedgerVoucherDrawer } from "./ledger-voucher-drawer";
@@ -17,12 +17,19 @@ import { LedgerVoucherOverview } from "./ledger-voucher-overview";
 
 const ledgerModes = ["inline", "drawer"] as const;
 
+function subscribeToLedgerMode() {
+  return () => undefined;
+}
+
+function getServerLedgerMode(): LedgerMode {
+  return "inline";
+}
+
 function matchesQuery(vm: LedgerVoucherViewModel, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
   if (vm.voucherNumber.toLowerCase().includes(needle)) return true;
   if (vm.supplierName.toLowerCase().includes(needle)) return true;
-  if (vm.voucherId.toLowerCase().includes(needle)) return true;
   return vm.lines.some((line) => line.description.toLowerCase().includes(needle));
 }
 
@@ -36,7 +43,8 @@ export function JournalView() {
   const [voucher, setVoucher] = useQueryState("voucher", parseAsString);
   const [q, setQ] = useQueryState("q", parseAsString);
 
-  const ledgerMode: LedgerMode = resolveLedgerMode(ledgerModeParam);
+  const storedLedgerMode = useSyncExternalStore(subscribeToLedgerMode, loadLedgerMode, getServerLedgerMode);
+  const ledgerMode = ledgerModeParam ?? storedLedgerMode;
 
   const journalQuery = useQuery({
     queryKey: ["reports", "journal", from, to],
@@ -57,22 +65,21 @@ export function JournalView() {
     return supplierName.toLowerCase() === supplier.toLowerCase();
   });
 
-  const voucherViewModels = useMemo(() => {
-    return groupJournalByVoucher(entries).map((group) => buildLedgerVoucherViewModel(group, lookup));
-  }, [entries, lookup]);
+  const voucherViewModels = groupJournalByVoucher(entries).map((group) => buildLedgerVoucherViewModel(group, lookup));
+  const filteredVoucherViewModels = q
+    ? voucherViewModels.filter((viewModel) => matchesQuery(viewModel, q))
+    : voucherViewModels;
 
-  const filteredVoucherViewModels = useMemo(() => {
-    if (!q) return voucherViewModels;
-    return voucherViewModels.filter((vm) => matchesQuery(vm, q));
-  }, [q, voucherViewModels]);
+  const handleToggle = useCallback(
+    (voucherId: string) => {
+      void setVoucher(voucher === voucherId ? null : voucherId);
+    },
+    [setVoucher, voucher],
+  );
 
-  function handleToggle(voucherId: string) {
-    void setVoucher(voucher === voucherId ? null : voucherId);
-  }
-
-  function handleDrawerClose() {
+  const handleDrawerClose = useCallback(() => {
     void setVoucher(null);
-  }
+  }, [setVoucher]);
 
   function handleModeChange(mode: LedgerMode) {
     saveLedgerMode(mode);
