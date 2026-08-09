@@ -329,16 +329,19 @@
   - See `.superpowers/sdd/w5b-sol-review.md`. Tasks 5.2, 5.3, and 5.10 are
     approved after the review-fix commit; Wave 6 remains blocked on the full
     Wave 5 gate.
-- Task 5.9 Books line-target and VAT/deductibility UI `67c3642` completed;
-  awaiting Sol UI review.
+- Task 5.9 Books line-target and VAT/deductibility UI `67c3642`; Sol review:
+  APPROVE_WITH_FIXES via accessibility-coverage commit `463ae1f`.
   - Voucher detail activates stable target columns only when projection
     `lineId` exists; demo seed rows remain explicitly disabled.
   - Positional `journal_n` ids are never exposed as enrichment targets.
-  - English/Swedish copy and desktop/Pixel 7 E2E cover the gated behavior.
+  - English/Swedish copy and desktop/Pixel 7 E2E cover the gated behavior;
+    the focused scenario now also runs the shared WCAG 2.2 AA axe assertion.
   - This read-only surface submits no pre-post proposal, so Wave 5B's typed
     422 response is not surfaced or obscured by Task 5.9.
-  - View-model unit tests passed 5/5; web/tests typechecks, targeted lint and
-    formatting, `pnpm build:e2e`, and focused E2E passed 2/2.
+  - Review rerun: view-model unit tests 5/5, focused lint and diagnostics,
+    `pnpm build:e2e`, and desktop/Pixel 7 E2E with axe 2/2 passed.
+  - See `.superpowers/sdd/w5-9-sol-review.md`; Task 5.9 no longer blocks the
+    Wave 5 final gate.
 - Task 5.11 pre-post and line-target integration conformance `d02b503`.
   - Memory/Postgres parity proves pre-post approval consumes its intent with
     exactly one posting and post-post line work-item confirmation never reposts.
@@ -348,11 +351,10 @@
 
 ## In progress
 
-- Sol review of Task 5.9 line identity and VAT affordances.
 - Sol review of Task 5.11 integration conformance.
 
 ## Pending
 
-- Task 5.12 Wave 5 final gate, deferred until Task 5.9 receives Sol clearance.
+- Task 5.12 Wave 5 final gate, deferred until Task 5.11 receives Sol clearance.
 - Waves 6–8 (single feature branch; defer mid-wave PR to main until program
   ready).
