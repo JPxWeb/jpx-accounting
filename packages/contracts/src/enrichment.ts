@@ -96,6 +96,23 @@ export const proposeEnrichmentWorkItemInputSchema = z.object({
   idempotencyKey: z.string().min(1),
 });
 
+export const reviewEnrichmentIntentSchema = z.object({
+  reviewId: z.string().min(1),
+  voucherId: z.string().min(1),
+  proposals: z.array(enrichmentProposalSchema).min(1),
+  updatedAt: z.string().min(1),
+  updatedBy: z.string().min(1),
+});
+
+/**
+ * Actor attribution is server-owned. Zod strips unknown client keys, including
+ * a forged actorId, before this input reaches a store.
+ */
+export const attachReviewEnrichmentIntentInputSchema = z.object({
+  reviewId: z.string().min(1),
+  proposals: z.array(enrichmentProposalSchema).min(1),
+});
+
 export type EnrichmentProposal = z.infer<typeof enrichmentProposalSchema>;
 export type ExternalReferenceLinkedPayload = z.infer<typeof externalReferenceLinkedPayloadSchema>;
 export type ExternalReferenceRemovedPayload = z.infer<typeof externalReferenceRemovedPayloadSchema>;
@@ -109,3 +126,5 @@ export type EnrichmentWorkItemStatus = z.infer<typeof enrichmentWorkItemStatusSc
 export type EnrichmentWorkItemSource = z.infer<typeof enrichmentWorkItemSourceSchema>;
 export type EnrichmentWorkItem = z.infer<typeof enrichmentWorkItemSchema>;
 export type ProposeEnrichmentWorkItemInput = z.infer<typeof proposeEnrichmentWorkItemInputSchema>;
+export type ReviewEnrichmentIntent = z.infer<typeof reviewEnrichmentIntentSchema>;
+export type AttachReviewEnrichmentIntentInput = z.infer<typeof attachReviewEnrichmentIntentInputSchema>;
