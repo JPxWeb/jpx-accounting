@@ -1041,8 +1041,24 @@
     typechecks, direct fail-closed startup, and reviewed-range diff check. The
     implementer full gate remains green at 694/694 unit tests.
   - See `.superpowers/sdd/w7-entrypoint-sol-rereview.md`.
+- Task 7.5 Wave 7 final gate: **PASS; ready for Sol's COMPLETE decision**.
+  - Fresh `pnpm check` passed with 694/694 unit tests, lint, i18n, formatting,
+    all 12 workspace typechecks, aggregate test typecheck, and production
+    web/API builds.
+  - Focused inventory, handler, and stdio registration tests passed 11/11.
+    Registration is exactly the fixed 13-tool surface and startup fails closed
+    before stdio connection without either required environment variable.
+  - Manual mutation-entrypoint tracing confirmed that MCP imports no store or
+    domain mutation implementation. All tools delegate through the
+    authenticated API client; ledger-affecting proposal calls stop at an open
+    review intent or pending confirmation work item.
+  - No store, migration, database, web UI, or browser workflow changed, so
+    `pnpm db:test`, E2E, and visual gates were not required by Task 7.5. No
+    visual baseline was updated.
+  - No PR was opened, `main` was not touched, and Wave 8 was not started. See
+    `.superpowers/sdd/wave-7-gate-report.md`.
 
 ## Pending
 
-- Task 7.5 centralized gates remain pending. Wave 7 is not COMPLETE until they
-  pass; keep Wave 8, PR creation, and `main` deferred.
+- Sol's Wave 7 `COMPLETE` decision. Keep Wave 8, PR creation, and `main`
+  deferred.
