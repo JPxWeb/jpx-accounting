@@ -31,3 +31,4 @@ export * from "./vat/boxes";
 export * from "./vat/regime";
 export * from "./workflows/invoices";
 export * from "./workflows/projects";
+export * from "./workflows/trips";
