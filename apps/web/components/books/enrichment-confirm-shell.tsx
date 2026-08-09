@@ -1,6 +1,6 @@
 "use client";
 
-import type { EnrichmentWorkItem, WorkspaceSnapshot } from "@jpx-accounting/contracts";
+import type { EnrichmentWorkItem } from "@jpx-accounting/contracts";
 import { DEFAULT_TAG_DEFINITIONS } from "@jpx-accounting/domain";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -21,30 +21,6 @@ function tagNames(tagIds: string[]): string {
   return tagIds
     .map((tagId) => DEFAULT_TAG_DEFINITIONS.find((definition) => definition.id === tagId)?.name ?? tagId)
     .join(", ");
-}
-
-function applyConfirmedTagProposal(
-  snapshot: WorkspaceSnapshot | undefined,
-  workItem: EnrichmentWorkItem,
-): WorkspaceSnapshot | undefined {
-  if (
-    !snapshot ||
-    (workItem.proposedChange.kind !== "voucher_tags_add" && workItem.proposedChange.kind !== "voucher_tags_remove")
-  ) {
-    return snapshot;
-  }
-
-  const proposedChange = workItem.proposedChange;
-  const existing = snapshot.voucherTags?.find((projection) => projection.voucherId === workItem.targetId)?.tagIds ?? [];
-  const next =
-    proposedChange.kind === "voucher_tags_add"
-      ? [...new Set([...existing, ...proposedChange.tagIds])]
-      : existing.filter((tagId) => !proposedChange.tagIds.includes(tagId));
-  const otherVouchers = (snapshot.voucherTags ?? []).filter((projection) => projection.voucherId !== workItem.targetId);
-  return {
-    ...snapshot,
-    voucherTags: [...otherVouchers, { voucherId: workItem.targetId, tagIds: next }],
-  };
 }
 
 export function EnrichmentConfirmShell() {
@@ -98,11 +74,6 @@ export function EnrichmentConfirmShell() {
     onSuccess: async (workItem) => {
       queryClient.setQueryData<EnrichmentWorkItem>(queryKey, workItem);
       await queryClient.invalidateQueries({ queryKey: ["workspace"] });
-      if (workItem.status === "confirmed") {
-        queryClient.setQueryData<WorkspaceSnapshot>(["workspace"], (snapshot) =>
-          applyConfirmedTagProposal(snapshot, workItem),
-        );
-      }
     },
   });
 
