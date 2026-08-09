@@ -560,15 +560,30 @@
   - No fix commit or Opus escalation is required. Wave 6d UI and remaining
     writers may proceed; Wave 6e remains blocked until Wave 6d is complete.
     See `.superpowers/sdd/w6d3-sol-review.md`.
+- Wave 6b Tasks 6b.4–6b.6 Sol review: REQUEST_CHANGES.
+  - Invoice review fields currently gate approval but are discarded on submit;
+    approval appends neither `InvoiceRegistered` nor an invoice line
+    enrichment, so the new Books panels cannot reflect the reviewed invoice.
+  - A client-side post-approval `registerInvoice()` call is not acceptable:
+    identity/currency/amount would be inferred outside the authoritative seam
+    and the two writes would not be atomic.
+  - Books panel identity, row-currency formatting, state handling, a11y
+    structure, and i18n parity were reviewed without another finding.
+  - Wave 6b is NOT COMPLETE. `NEEDS_OPUS_REVIEW` is set for a contract-first,
+    server-attributed, Memory/Postgres-parity approval-to-registration design.
+    See `.superpowers/sdd/w6b-ui-sol-review.md`.
 
 ## In progress
 
+- Wave 6b atomic approval-to-invoice registration design requires Opus review
+  before implementation and a renewed final gate.
 - Wave 6c Tasks 6c.4–6c.5 are cleared to proceed after the store/API review.
 - Wave 6d Task 6d.4, remaining writers, and the final gate are cleared to
   proceed after the Task 6d.3 review.
 
 ## Pending
 
-- Wave 6c Tasks 6c.4–6c.5; remaining Wave 6d work; then Waves 6e–8 in plan
-  order, with Wave 6e blocked until Wave 6d completion (single feature branch;
-  defer mid-wave PR to main until program ready).
+- Wave 6b atomic seam rework and renewed gate; Wave 6c Tasks 6c.4–6c.5;
+  remaining Wave 6d work; then Waves 6e–8 in plan order, with Wave 6e blocked
+  until Wave 6d completion (single feature branch; defer mid-wave PR to main
+  until program ready).
