@@ -1,8 +1,11 @@
 # Wave 6b Tasks 6b.1–6b.2 Sol Review
 
-Date: 2026-08-09  
-Branch: `feat/ledger-overview-enrichments-mcp`  
-Reviewed commits: `266e8d4`, `14587d0`, `6d49cd5`  
+Date: 2026-08-09
+
+Branch: `feat/ledger-overview-enrichments-mcp`
+
+Reviewed commits: `266e8d4`, `14587d0`, `6d49cd5`
+
 Verdict: **APPROVE_WITH_FIXES**
 
 ## Findings and fixes
