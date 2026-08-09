@@ -3,6 +3,7 @@ import { z } from "zod";
 import { countryCodeSchema, countryValidationRegistry } from "./countries";
 
 export * from "./countries";
+export * from "./enrichment";
 
 export const roleSchema = z.enum(["Preparer", "Approver", "Accountant", "Admin", "Auditor", "Advisor"]);
 
