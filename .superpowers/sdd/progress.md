@@ -389,6 +389,25 @@
     targeted formatting, and diagnostics passed.
   - No Opus escalation is required. See
     `.superpowers/sdd/w6a-sol-review.md`; Tasks 6a.3–6a.6 may proceed.
+- Wave 6a Tasks 6a.3–6a.5 completed.
+  - Task 6a.3 project registration/list API, store parity, and api-client
+    `b15eaad`.
+  - Task 6a.4 deterministic project pre-post line binding and review fields
+    `663c6c6`.
+  - Task 6a.5 Books project list, workflow filter, and deterministic voucher
+    drill `94f4777`.
+  - Duplicate registration remains immutable; project assignment uses a real
+    eligible posting `lineId` and fails before append when none exists.
+- Task 6a.6 Wave 6a final gate: COMPLETE; ready for Sol review.
+  - Focused project unit tests passed 16/16; `pnpm check` passed with 604/604
+    unit tests and a production build.
+  - Strict `pnpm db:test` applied migrations `0001`–`0011` and passed 95/95
+    integration tests.
+  - `pnpm build:e2e` and focused project workflow E2E passed 4/4 across desktop
+    and Pixel 7.
+  - Visual comparisons passed 20/20 with no baseline update; i18n parity passed
+    at 1029 keys per locale and all seam gates passed.
+  - No PR to `main` was opened. Wave 6b remains blocked pending Sol approval.
 
 ## In progress
 
@@ -396,6 +415,6 @@
 
 ## Pending
 
-- Wave 6a Tasks 6a.3–6a.6 in plan order.
+- Sol review of completed Wave 6a Tasks 6a.3–6a.6.
 - Waves 6b–8 in plan order (single feature branch; defer mid-wave PR to main
   until program ready).
