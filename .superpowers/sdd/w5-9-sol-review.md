@@ -1,7 +1,9 @@
 # Wave 5 Task 5.9 Sol UI review
 
-**Date:** 2026-08-09  
-**Scope:** `67c3642` — Books ledger line-target and VAT/deductibility UI  
+**Date:** 2026-08-09
+
+**Scope:** `67c3642` — Books ledger line-target and VAT/deductibility UI
+
 **Verdict:** APPROVE_WITH_FIXES
 
 ## Review result
