@@ -46,6 +46,7 @@
 ## Verification
 
 - Focused Wave 6a unit tests: PASS, 17/17.
+- `pnpm check`: PASS, including 617/617 unit tests at the pipelined branch state.
 - Domain, web, and tests typechecks: PASS.
 - Targeted ESLint, Prettier, IDE diagnostics, and `git diff --check`: PASS.
 - `pnpm check:i18n`: PASS, 1031 keys per locale.

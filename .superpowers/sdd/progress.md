@@ -418,7 +418,8 @@
   - Shared Memory/Postgres conformance now proves duplicate registration keeps
     the first project name, status, actor, and single append.
   - Focused unit tests passed 17/17; affected typechecks, ESLint, Prettier,
-    diagnostics, diff checks, i18n 1031/1031, and seams passed.
+    diagnostics, diff checks, i18n 1031/1031, and seams passed; full
+    `pnpm check` passed with 617/617 unit tests at the pipelined branch state.
   - Strict `pnpm db:test` passed migrations `0001`–`0011` and 98/98 integration
     tests; `pnpm build:e2e` and focused project E2E passed 4/4 across desktop
     and Pixel 7.
