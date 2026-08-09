@@ -387,6 +387,67 @@ Review Task 6d.3 for:
 Task 6d.4 UI and the full Wave 6d gate remain intentionally unstarted. Wave 6e
 remains blocked. No PR was opened and `main` was not touched.
 
+# Wave 6b invoice/payment UI and final gate
+
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Scope: Tasks 6b.4–6b.6
+Checkpoint: **READY FOR SOL REVIEW**
+
+## Completed tasks
+
+- Task 6b.4 — invoice pre-post review fields: `c38a565`
+  - Added invoice direction, counterparty, and due-date controls to the existing
+    focus-trapped review edit sheet.
+  - All three values are required before the explicit human approval control is
+    enabled; validation copy is localized in English and Swedish.
+  - The planned UI scope does not invent an invoice identity or currency and
+    does not directly append an invoice event from field entry.
+- Task 6b.5 — Books open-invoice and payment-history panels: `a5d88cb`
+  - Added `?workflow=invoice` with contract-validated open-invoice and payment
+    history queries.
+  - Panels distinguish AR/AP, preserve invoice/payment identities, format each
+    amount in the row's authoritative currency, and expose honest loading,
+    error, and empty states.
+  - E2E covers empty data plus an EUR invoice with partial payment so the
+    displayed open amount and both identities are pinned.
+- Task 6b.6 — full Wave 6b gate: COMPLETE
+  - Full repository, strict Postgres, focused E2E, visual, i18n, and seam gates
+    passed. No visual baseline was updated.
+
+## TDD evidence
+
+- Task 6b.4 RED: desktop and Pixel 7 both failed because the invoice workflow
+  option and fields were absent; GREEN: both passed after implementation.
+- Task 6b.5 RED: all four desktop/Pixel 7 scenarios failed because the panels
+  were absent; GREEN: empty and populated invoice/payment scenarios passed on
+  both projects.
+
+## Verification
+
+- `pnpm check`: PASS, including 641/641 unit tests and production build.
+- `pnpm db:test`: PASS, migrations `0001`–`0011` and 104/104 integration tests.
+- `pnpm build:e2e`: PASS.
+- Focused invoice E2E: PASS, 6/6 across desktop and Pixel 7.
+- Visual comparisons: PASS, 20/20; no baseline update.
+- `pnpm check:i18n`: PASS, en/sv parity at 1057 keys each.
+- `pnpm check:seams` and `git diff --check`: PASS.
+
+## Sol review ask
+
+Review Tasks 6b.4–6b.6 for:
+
+1. explicit human activation and focus-trapped validation behavior;
+2. honest empty/loading/error states and authoritative row-currency formatting;
+3. invoice/payment identity preservation through API-client shapes and UI;
+4. whether a later contract-first atomic approval-to-invoice registration seam
+   is required—the planned 6b.4 UI intentionally does not infer identity,
+   currency, or append a registration as a side effect;
+5. i18n, responsive E2E, visual, and full-gate coverage.
+
+No PR was opened, `main` was not touched, and no Wave 6c trip module was edited
+by this batch.
+
 # Wave 6c store/API Sol checkpoint
 
 Date: 2026-08-09

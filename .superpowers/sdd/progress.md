@@ -526,19 +526,49 @@
     lint, formatting, diagnostics, and diff checks passed.
   - Store/database code did not change, so `pnpm db:test` was not required.
     Heavy UI and full gates remain stopped for Sol review.
+- Wave 6c store/API Sol review: APPROVE.
+  - Append-only first-registration/first-close authority, fail-before-append
+    unknown closes, server attribution, advisory-lock serialization, and
+    Memory/Postgres/Unavailable parity were confirmed without findings.
+  - Trip list and client responses remain contract-validated; expense totals
+    still derive from the canonical posted line bound by active enrichment
+    `lineId`, with no direct AI mutation path.
+  - Focused tests passed 28 with 36 expected Postgres skips; strict
+    `pnpm db:test` passed migrations `0001`–`0011` and 104/104 integration
+    tests.
+  - No Opus escalation is required. Wave 6c trips UI may proceed through the
+    existing explicit human-review work-item path. See
+    `.superpowers/sdd/w6c-store-sol-review.md`.
+- Wave 6b Tasks 6b.4–6b.6 completed; ready for Sol review.
+  - Invoice pre-post validation fields and explicit human approval gate:
+    `c38a565`.
+  - Books open-invoice/payment panels with row-currency and identity-preserving
+    empty/populated E2E: `a5d88cb`.
+  - `pnpm check` passed with 641/641 unit tests; strict `pnpm db:test` passed
+    migrations `0001`–`0011` and 104/104 integration tests.
+  - `pnpm build:e2e`, focused desktop/Pixel 7 invoice E2E 6/6, visuals 20/20,
+    i18n 1057/1057, seams, and diff checks passed with no baseline update.
+  - No PR was opened, `main` was not touched, and no Wave 6c trip module was
+    edited by this batch.
+- Wave 6d Task 6d.3 Sol review: APPROVE.
+  - The API route and HTTP/offline clients validate the shared SKU movement
+    list contract, including locked `id === movementId` identity.
+  - Reads remain append-only and quantity-only with no writer, mutable
+    inventory table, valued field, or Wave 6e behavior.
+  - Focused Wave 6d tests passed 10/10; contracts, domain, API client, API, and
+    aggregate tests typechecks passed.
+  - No fix commit or Opus escalation is required. Wave 6d UI and remaining
+    writers may proceed; Wave 6e remains blocked until Wave 6d is complete.
+    See `.superpowers/sdd/w6d3-sol-review.md`.
 
 ## In progress
 
-- Wave 6b Tasks 6b.4–6b.6 are cleared to proceed after the Task 6b.3 review-fix
-  commit.
-- Wave 6c Tasks 6c.4–6c.5 are stopped pending Sol review of the store/API
-  checkpoint.
-- Wave 6d Task 6d.4 and the final gate await Sol review of the Task 6d.3
-  checkpoint.
+- Wave 6c Tasks 6c.4–6c.5 are cleared to proceed after the store/API review.
+- Wave 6d Task 6d.4, remaining writers, and the final gate are cleared to
+  proceed after the Task 6d.3 review.
 
 ## Pending
 
-- Wave 6b Tasks 6b.4–6b.6; Wave 6c Tasks 6c.4–6c.5 after Sol; Wave 6d Tasks
-  6d.4+ after Sol; then
-  Waves 6e–8 in plan order, with Wave 6e blocked until Wave 6d completion
-  (single feature branch; defer mid-wave PR to main until program ready).
+- Wave 6c Tasks 6c.4–6c.5; remaining Wave 6d work; then Waves 6e–8 in plan
+  order, with Wave 6e blocked until Wave 6d completion (single feature branch;
+  defer mid-wave PR to main until program ready).
