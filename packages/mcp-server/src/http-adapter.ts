@@ -23,6 +23,7 @@ type Session = {
   expiresAt: number;
   nextEventId: number;
   events: SessionEvent[];
+  streams: Set<ReadableStreamDefaultController<Uint8Array>>;
   pending: Promise<void>;
 };
 
@@ -44,6 +45,7 @@ export type McpHttpSessionStore = {
   run<T>(session: Session, operation: () => Promise<T>): Promise<T>;
   append(session: Session, method: string, payload: unknown): void;
   eventsAfter(session: Session, lastEventId: number): readonly SessionEvent[];
+  subscribe(session: Session, controller: ReadableStreamDefaultController<Uint8Array>): () => void;
 };
 
 export type McpHttpAdapter = {
@@ -110,6 +112,7 @@ export function createMcpHttpSessionStore({
         expiresAt: currentTime + ttlMs,
         nextEventId: 1,
         events: [],
+        streams: new Set(),
         pending: Promise.resolve(),
       };
       sessions.set(session.id, session);
@@ -125,14 +128,27 @@ export function createMcpHttpSessionStore({
       return result;
     },
     append(session, method, payload) {
-      session.events.push({ id: session.nextEventId, method, payload });
+      const event = { id: session.nextEventId, method, payload };
+      session.events.push(event);
       session.nextEventId += 1;
       if (session.events.length > MAX_SESSION_EVENTS) {
         session.events.splice(0, session.events.length - MAX_SESSION_EVENTS);
       }
+      const frame = new TextEncoder().encode(encodeSse(event));
+      for (const stream of session.streams) {
+        try {
+          stream.enqueue(frame);
+        } catch {
+          session.streams.delete(stream);
+        }
+      }
     },
     eventsAfter(session, lastEventId) {
       return session.events.filter((event) => event.id > lastEventId);
+    },
+    subscribe(session, controller) {
+      session.streams.add(controller);
+      return () => session.streams.delete(controller);
     },
   };
 }
@@ -319,12 +335,15 @@ export function createMcpHttpAdapter({
       }
 
       const encoder = new TextEncoder();
+      let unsubscribe = () => {};
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
           for (const event of sessions.eventsAfter(session, lastEventId)) {
             controller.enqueue(encoder.encode(encodeSse(event)));
           }
+          unsubscribe = sessions.subscribe(session, controller);
         },
+        cancel: () => unsubscribe(),
       });
       return new Response(stream, {
         headers: {
