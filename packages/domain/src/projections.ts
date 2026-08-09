@@ -21,6 +21,15 @@ export type LedgerLine = {
   deductible: boolean;
 };
 
+/**
+ * Projection-only legacy identity. Attached during event replay and read back
+ * by `buildJournal`; it is never part of a payload and never serialized.
+ * `collectLedgerLinesFromEvents` is the ONLY producer — the suffix must stay
+ * the event-local line index, because `collectPostedEnrichmentTargets` derives
+ * the same string from posting payloads to decide what a line enrichment may
+ * target. A second derivation keyed on the journal-wide index would hand a row
+ * the identity of a different line in the same event.
+ */
 const LEGACY_PROJECTION_LINE_ID: unique symbol = Symbol("legacyProjectionLineId");
 type ProjectableLedgerLine = LedgerLine & { [LEGACY_PROJECTION_LINE_ID]?: string };
 
@@ -74,16 +83,15 @@ export function filterLedgerLines(lines: LedgerLine[], range?: { from?: string; 
   });
 }
 
-export function buildJournal(
-  lines: LedgerLine[],
-  context?: { eventIdByLineIndex?: ReadonlyMap<number, string> },
-): JournalEntryProjection[] {
+/**
+ * ONE identity rule: `id` is the positional `journal_${n}` row key and never
+ * carries ledger identity; `lineId` is the stable line identity — the payload
+ * `ln_` id when present, otherwise the replay-supplied legacy id, otherwise
+ * absent (demo seed lines have no posting event, so they stay unenrichable).
+ */
+export function buildJournal(lines: LedgerLine[]): JournalEntryProjection[] {
   return lines.map((line, index) => {
-    const eventId = context?.eventIdByLineIndex?.get(index);
-    const lineId =
-      line.lineId ??
-      (line as ProjectableLedgerLine)[LEGACY_PROJECTION_LINE_ID] ??
-      (eventId !== undefined ? `legacy_${eventId}_${index}` : undefined);
+    const lineId = line.lineId ?? (line as ProjectableLedgerLine)[LEGACY_PROJECTION_LINE_ID];
 
     return {
       id: `journal_${index + 1}`,

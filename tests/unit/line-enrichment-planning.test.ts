@@ -189,6 +189,35 @@ test("MemoryLedgerStore confirms only active line-enrichment supersession", asyn
   await assert.rejects(() => supersede("line-supersede-stale"), /active line enrichment/i);
 });
 
+test("replay keeps the first supersession and ignores a stale second one", () => {
+  const recorded = {
+    eventType: "LineEnrichmentRecorded" as const,
+    occurredAt: "2026-08-09T09:00:00.000Z",
+    actorId: "user:prior",
+    payload: { lineId: "ln_1", enrichmentId: "le_old", enrichmentType: "project", payload: { projectId: "proj_1" } },
+  };
+  const firstSupersession = {
+    eventType: "LineEnrichmentSuperseded" as const,
+    occurredAt: "2026-08-09T09:30:00.000Z",
+    actorId: "user:first",
+    payload: { lineId: "ln_1", priorEnrichmentId: "le_old", replacementEnrichmentId: "le_new" },
+  };
+  const staleSupersession = {
+    eventType: "LineEnrichmentSuperseded" as const,
+    occurredAt: "2026-08-09T10:00:00.000Z",
+    actorId: "user:stale",
+    payload: { lineId: "ln_1", priorEnrichmentId: "le_old", replacementEnrichmentId: "le_other" },
+  };
+
+  const history = buildLineEnrichmentsFromEvents([recorded, firstSupersession, staleSupersession]);
+  const prior = history.find((entry) => entry.enrichmentId === "le_old");
+
+  assert.equal(prior?.superseded, true);
+  assert.equal(prior?.supersededBy, "user:first");
+  assert.equal(prior?.supersededAt, "2026-08-09T09:30:00.000Z");
+  assert.equal(prior?.replacementEnrichmentId, "le_new");
+});
+
 test("line proposal cannot target a different posted line", () => {
   assert.throws(
     () =>

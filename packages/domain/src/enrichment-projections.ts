@@ -108,6 +108,9 @@ export function buildLineEnrichmentsFromEvents(events: LineEnrichmentEvent[]): L
       const payload = lineEnrichmentSupersededPayloadSchema.parse(event.payload);
       const prior = enrichments.get(payload.priorEnrichmentId);
       if (!prior || prior.lineId !== payload.lineId) continue;
+      // First supersession wins: a later event naming an already-superseded
+      // prior is stale, and replaying it would rewrite who superseded what.
+      if (prior.superseded) continue;
       enrichments.set(payload.priorEnrichmentId, {
         ...prior,
         superseded: true,
