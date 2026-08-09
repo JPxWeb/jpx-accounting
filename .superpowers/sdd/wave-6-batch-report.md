@@ -88,5 +88,71 @@ Review completed Wave 6a for:
 4. active-assignment replay for project counts and deterministic voucher drill;
 5. API/client/store parity, actor attribution, i18n, and Wave 5 identity rules.
 
-Do not start Wave 6b until this checkpoint is reviewed and approved. No PR to
-`main` was opened.
+No PR to `main` was opened. While Sol's Wave 6a review remained active, the
+isolated Wave 6b contract/projection foundation below was pipelined by explicit
+instruction; store, API, and UI work remains stopped.
+
+# Wave 6b Sol-review foundation batch
+
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Base: `d8b2a73`
+Scope: Wave 6b Tasks 6b.1–6b.2
+Checkpoint: **READY FOR SOL REVIEW**
+
+## Completed tasks
+
+- Task 6b.1 — invoice/payment event and list contracts: `266e8d4`
+  - Added append-only `InvoiceRegistered` and `PaymentAllocated` event
+    vocabulary and their locked typed payloads.
+  - Added typed invoice line-enrichment payload plus open-invoice and payment
+    history list schemas.
+  - Kept invoice line enrichment on the existing
+    `line_enrichment_record` work-item/review path; no direct mutation path was
+    introduced.
+  - Corrected the plan sample by enforcing its locked required
+    `originalAmount` field.
+- Task 6b.2 — pure invoice/payment projections: `14587d0`
+  - Added `deriveOpenInvoiceAmount`, append-only invoice replay,
+    `buildOpenInvoicesList`, and `buildPaymentHistoryList`.
+  - Partial allocations reduce open amount; fully allocated invoices leave the
+    open list.
+  - First invoice registration remains authoritative during replay, matching
+    the Wave 6a immutable-registry review fix.
+  - Registered `open_invoice` and `payment` on the Wave 5 generic list seam.
+
+## TDD evidence
+
+- Task 6b.1 RED: 5/5 tests failed because event members and schemas were
+  absent; GREEN: 5/5 passed.
+- Task 6b.2 RED: 7/7 tests failed because amount and list builders were absent;
+  GREEN: 7/7 passed.
+
+## Verification
+
+- Focused Wave 6b unit suite: PASS, 12/12.
+- Contracts package typecheck: PASS.
+- Domain package typecheck: PASS.
+- Tests typecheck: PASS.
+- Focused ESLint on changed contract/domain/test files: PASS.
+- Full store/API/E2E/visual gates were intentionally not run because this
+  checkpoint stops before Tasks 6b.3–6b.6.
+
+## Pipeline and integration notes
+
+- Wave 6b was pipelined while Sol reviewed Wave 6a.3–6a.6.
+- Sol's concurrent Wave 6a review edits remain unstaged and were not included
+  in either Wave 6b commit.
+- The only shared seams touched by 6b are additive contract exports,
+  `eventTypeSchema`, the domain barrel, and the generic list dispatcher.
+- No store, API route, Books UI, messages, PR, or Wave 6c work was started.
+
+## Sol review ask
+
+Review the Wave 6b foundation for:
+
+1. locked invoice/payment payload identity and required `originalAmount`;
+2. continued work-item/human-review path for invoice line enrichment;
+3. first-registration authority and append-only allocation replay;
+4. partial/full allocation math and two-decimal rounding;
+5. generic list kind names (`open_invoice`, `payment`) before API work begins.
