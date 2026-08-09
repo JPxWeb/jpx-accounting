@@ -4,6 +4,7 @@ export * from "./coa/types";
 export * from "./compliance";
 export * from "./deterministic-extraction";
 export * from "./evidence-defaults";
+export * from "./enrichment-projections";
 export * from "./hash-chain";
 export * from "./ids";
 export * from "./integrity";
