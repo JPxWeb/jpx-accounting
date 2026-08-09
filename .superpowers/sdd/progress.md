@@ -1170,23 +1170,20 @@
     remain 50/50; reviewed diff passes `git diff --check`.
   - Task 8.5, PR creation, and `main` remain deferred. Wave 8 is NOT COMPLETE;
     stop here for Sol re-review.
-- Wave 8 Task 8.4 session SSE resumption is ready for Sol review at `b18293c`.
-  - GET `/api/mcp` replays buffered events after `Last-Event-ID`, keeps the
-    stream subscribed for later session events, and unregisters the stream on
-    client cancellation.
+- Wave 8 Task 8.4 session SSE resumption: **APPROVE** (Composer substitute;
+  Sol API rate-limited) at `b18293c`.
+  - GET `/api/mcp` replays buffered events after `Last-Event-ID`, subscribes
+    open streams for later session events, and unregisters on client cancel.
   - Integration coverage exercises the real guarded API route, the exact
     13-tool proposal/read-only boundary, forbidden approval/confirmation/post
-    names, replay, and live delivery. Human approval boundaries and the
-    bounded session/event stores remain unchanged.
-  - TDD RED observed a live stream timing out after a later `tools/list`.
-    Focused MCP/API tests passed 18/18; strict Postgres integration passed
-    121/121; MCP, API, and aggregate tests typechecks plus focused
-    ESLint/Prettier and diagnostics passed.
-  - Task 8.3 E2E repair landed separately at `9597caa`. Task 8.5, PR creation,
-    and `main` remain deferred; Wave 8 is NOT COMPLETE. Stop here for Sol review.
+    names, replay, and live delivery. Human approval boundaries and bounded
+    session/event stores remain unchanged.
+  - Fresh focused MCP HTTP integration + adapter + security tests passed 18/18.
+  - Task 8.3 E2E repair remains a separate sibling gate at `9597caa`. Task
+    8.5, PR creation, and `main` remain deferred; Wave 8 is NOT COMPLETE.
+  - See `.superpowers/sdd/w8-sse-resume-sol-review.md`.
 
 ## Pending
 
 - Sol re-review Wave 8 Task 8.3 E2E repair (`9597caa`).
-- Sol review Wave 8 Task 8.4.
 - Keep Task 8.5, PR creation, and `main` deferred.
