@@ -215,3 +215,62 @@ Review this store/API checkpoint for:
 
 Tasks 6b.4–6b.6 remain intentionally unstarted pending this natural Sol
 checkpoint. No PR was opened and Wave 6c was not started.
+
+# Wave 6c Sol-review foundation batch
+
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Base: `dcc8a60`
+Scope: Wave 6c Tasks 6c.1–6c.2
+Checkpoint: **READY FOR SOL REVIEW**
+
+## Completed tasks
+
+- Task 6c.1 — trip registry and typed line-enrichment contracts: `31f836b`
+  - Added append-only `TripRegistered` and `TripClosed` event vocabulary.
+  - Added typed trip registration, close, line-enrichment, and list-row schemas.
+  - Enforced required purpose/traveler/date fields, ordered dates, optional
+    evidence/distance fields, and client `actorId` stripping.
+  - Kept trip enrichment on the existing human-confirmed
+    `line_enrichment_record` path.
+- Task 6c.2 — pure trip list projection: `6f5294b`
+  - Added `buildTripsList` and registered `kind: "trip"` on the Wave 5 generic
+    list seam.
+  - First registration remains authoritative; close events retain the trip in
+    history with closed status.
+  - Expense totals use active line-enrichment replay, so superseded expenses
+    are replaced rather than double counted.
+
+## TDD evidence
+
+- Task 6c.1 RED: 5/5 tests failed because event members and trip schemas were
+  absent; GREEN: 5/5 passed.
+- Task 6c.2 RED: 4/4 tests failed because `buildTripsList` was absent; GREEN:
+  combined trip contract/projection suite passed 9/9.
+
+## Verification
+
+- Focused Wave 6c unit suite: PASS, 9/9.
+- Contracts package typecheck: PASS.
+- Domain package typecheck: PASS.
+- Tests typecheck: PASS.
+- Focused ESLint, Prettier, and IDE diagnostics: PASS.
+- Full store/API/E2E/visual gates were intentionally not run because this
+  checkpoint stops before Tasks 6c.3+.
+
+## Pipeline and integration notes
+
+- Task 6c.1 was pipelined while Sol reviewed Wave 6b.3.
+- Sol's `dcc8a60` review fix is in the Wave 6c ancestry before Task 6c.2.
+- No store, API, Books UI, messages, Wave 6d work, PR, or `main` change was
+  made.
+
+## Sol review ask
+
+Review the Wave 6c foundation for:
+
+1. immutable first-registration authority and append-only close replay;
+2. ordered trip dates and bounded optional evidence/distance fields;
+3. continued work-item/human-review path and server-owned actor attribution;
+4. active-enrichment expense totals, supersession behavior, and rounding;
+5. generic list kind `trip` before route or UI work begins.

@@ -456,13 +456,26 @@
     integration tests.
   - No Opus escalation is required. Tasks 6b.4–6b.6 may proceed after the
     review-fix commit. See `.superpowers/sdd/w6b3-sol-review.md`.
+- Wave 6c foundation was pipelined during the Wave 6b.3 Sol review and is ready
+  for Sol review on top of `dcc8a60`.
+  - Task 6c.1 trip registry and typed line-enrichment contracts: `31f836b`.
+  - Task 6c.2 pure trip list projection: `6f5294b`.
+  - First registration is authoritative; close replay is append-only; active
+    enrichments provide rounded expense totals without counting superseded
+    values.
+  - TDD RED was observed for both tasks; focused trip tests passed 9/9.
+  - Contracts, domain, and tests typechecks passed; focused lint, formatting,
+    and diagnostics are clean.
+  - Store/API/UI work remains unstarted pending the Wave 6c foundation review.
 
 ## In progress
 
 - Wave 6b Tasks 6b.4–6b.6 are cleared to proceed after the Task 6b.3 review-fix
   commit.
+- Wave 6c Tasks 6c.1–6c.2 are stopped at the Sol foundation checkpoint.
 
 ## Pending
 
-- Wave 6b Tasks 6b.4–6b.6, then Waves 6c–8 in plan order (single feature branch; defer mid-wave PR to main
+- Wave 6b Tasks 6b.4–6b.6; Wave 6c Tasks 6c.3+ after foundation review; then
+  Waves 6d–8 in plan order (single feature branch; defer mid-wave PR to main
   until program ready).
