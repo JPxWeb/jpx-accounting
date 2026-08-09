@@ -844,6 +844,16 @@
   - Unrelated dirty Wave 6b review and projects E2E files were not staged.
     Wave 6e remains NOT COMPLETE; Task 6e.5 full/functional/visual gates are
     still pending.
+- Wave 6e Task 6e.4 unit-cost precision Sol re-review: **APPROVE**.
+  - The valued panel now preserves the authoritative unit-cost decimals,
+    displays quantity without rounding, and keeps the extended amount at
+    currency precision; `15,555 SEK × 2 st` reconciles with `31,11 SEK`.
+  - Fresh focused presentation tests passed 5/5 and the full unit suite passed
+    683/683; the reviewed diff check passed.
+  - No high-confidence finding or Opus escalation remains. Task 6e.4 is
+    approved specifically, but Wave 6e remains NOT COMPLETE pending Task
+    6e.5's full functional E2E and human-reviewed visual gates. See
+    `.superpowers/sdd/w6e-ui-unit-cost-sol-rereview.md`.
 - Wave 6b deferred functional E2E was run and found one real regression, now
   fixed; the Opus review doc is updated and Sol should re-confirm the spec.
   - `tests/e2e/projects-vertical.spec.ts` attached a `project_assignment`
