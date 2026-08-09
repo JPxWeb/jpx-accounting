@@ -1129,6 +1129,18 @@
     8.1 capacity repair `0bebe8a`, focused MCP tests passed 25/25 and MCP, API,
     and aggregate tests typechecks passed. Task 8.3+ and Wave 8 completion
     remain deferred for Sol review.
+- Sol re-review approves Wave 8 Tasks 8.1 and 8.2.
+  - Task 8.1: **APPROVE** — creation-time expiry sweeping plus the hard
+    session-count cap bounds abandoned-session retention; the 100-event
+    per-session ring remains intact.
+  - Task 8.2: **APPROVE** — Origin/Host guards, inherited JWT and POST rate
+    limiting, RFC 9728 metadata, unchanged readiness semantics, and the fixed
+    13-tool proposal/read-only boundary match the plan and threat model.
+  - Fresh focused MCP adapter/security/inventory/registration tests passed
+    20/20; MCP, API, and aggregate tests typechecks passed; reviewed diffs pass
+    `git diff --check`.
+  - See `.superpowers/sdd/w8-session-security-sol-review.md`. Tasks 8.3+ remain
+    deferred; Wave 8 is not yet complete.
 
 ## Pending
 
