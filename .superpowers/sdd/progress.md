@@ -372,12 +372,21 @@
     `0011`.
   - The branch contains no MCP workspace package and no PR to `main` was
     opened. Wave 6 may start after the gate documentation commit.
+- Wave 6a first Sol-review batch completed at `3ffb28f`.
+  - Task 6a.1 project registry and typed line-enrichment contracts `c89852f`.
+  - Task 6a.2 pure project registry/list projections `3ffb28f`.
+  - TDD RED was observed for both tasks; focused project tests passed 10/10.
+  - Contracts, domain, and tests typechecks passed; targeted formatting and
+    diagnostics are clean.
+  - No store or migration changed, so `pnpm db:test` was not required.
+  - See `.superpowers/sdd/wave-6-batch-report.md`.
 
 ## In progress
 
-- No task is currently in progress.
+- Wave 6a Tasks 6a.1–6a.2 await Sol review.
 
 ## Pending
 
-- Waves 6–8 (single feature branch; defer mid-wave PR to main until program
-  ready).
+- Wave 6a Tasks 6a.3–6a.6 after Sol approval.
+- Waves 6b–8 in plan order (single feature branch; defer mid-wave PR to main
+  until program ready).
