@@ -695,20 +695,48 @@
   - Centralized verification passed: focused seam tests 63/63, `pnpm check`,
     strict `pnpm db:test` 110/110, `pnpm build:e2e`, and combined invoice/trip
     E2E 12/12 across desktop and Pixel 7.
+- Wave 6b atomic invoice seam Sol re-review: REQUEST_CHANGES;
+  `NEEDS_OPUS_REVIEW` for a new high-risk intent-identity race.
+  - The original discarded-field, Wave 5 pre-post seam, listed stale-intent,
+    öre-rounding, typed-422, vertical error-code, singleton-proposal, parity,
+    and documentation requirements are substantially fixed.
+  - Approval sends only `enrichmentIntent: "consume"` and does not identify the
+    attached intent version. A concurrent upsert between attach and approve is
+    therefore consumed inside the serialized transaction even though the
+    approver saw a different proposal.
+  - Bind consume to an opaque intent id/version and fail closed with zero event
+    append on mismatch; add Memory/Postgres race conformance and API coverage.
+  - This re-review passed 42/42 focused invoice seam tests and
+    `git diff --check`. Wave 6b remains NOT COMPLETE. See
+    `.superpowers/sdd/w6b-invoice-seam-sol-rereview.md`.
+- Wave 6c atomic trip seam Sol re-review: REQUEST_CHANGES; no renewed Opus
+  review is required.
+  - Typed trip 422s, required packet evidence ids, explicit intent
+    consumption, the Wave 5 pre-post seam, same-trip deduplication, and the
+    exercised real-`ln_` post-post path are sound.
+  - `line_enrichment_supersede` trip replacements bypass both registered-trip
+    validation and the one-active-trip-per-line guard. They can append an inert
+    unregistered trip or restore cross-trip double counting.
+  - Apply the shared trip guard to record and supersede arms, with
+    Memory/Postgres conformance for invalid replacement and legitimate trip
+    reassignment.
+  - Focused trip seam tests passed 52/52 and `git diff --check` passed. Wave 6c
+    remains NOT COMPLETE; full functional E2E and visual review remain
+    deferred. See `.superpowers/sdd/w6c-trips-seam-sol-rereview.md`.
 
 ## In progress
 
-- Wave 6b awaits Sol re-review; do not mark complete until Sol clears the
-  repaired atomic seam.
-- Wave 6c awaits Sol re-review of the repaired atomic seam; do not mark complete
-  until Sol clears it.
+- Wave 6b awaits the intent-identity repair and renewed Opus/Sol clearance; do
+  not mark complete.
+- Wave 6c awaits the trip-supersede validation repair and renewed Sol
+  clearance; do not mark complete.
 - Wave 6d Task 6d.4, remaining writers, and the final gate are cleared to
   proceed after the Task 6d.3 review.
 
 ## Pending
 
-- Wave 6b Opus gate conditions and renewed gate; Wave 6c Opus gate conditions,
-  Sol re-review, plus renewed Task 6c.5 gate;
+- Wave 6b intent-identity repair, Opus re-review, and renewed gate; Wave 6c
+  trip-supersede repair, Sol re-review, plus renewed Task 6c.5 gate;
   remaining Wave 6d work; then Waves 6e–8 in plan order, with Wave 6e blocked
   until Wave 6d completion (single feature branch; defer mid-wave PR to main
   until program ready).
