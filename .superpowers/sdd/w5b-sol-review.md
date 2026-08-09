@@ -1,7 +1,7 @@
 # Wave 5B Sol review
 
-**Date:** 2026-08-09  
-**Scope:** Tasks 5.2, 5.3, and 5.10 after Opus identity fixes  
+**Date:** 2026-08-09
+**Scope:** Tasks 5.2, 5.3, and 5.10 after Opus identity fixes
 **Verdict:** APPROVE_WITH_FIXES
 
 ## Finding and fix
