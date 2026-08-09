@@ -479,6 +479,8 @@
     review-fix commit. See `.superpowers/sdd/w6c-sol-review.md`.
 - Wave 6d quantity-inventory foundation was pipelined during the Wave 6c Sol
   review and is ready for its own Sol checkpoint.
+  - Wave 6c fix `5fead99` and normalized report `e2e49d4` are integrated in
+    the current ancestry.
   - Task 6d.1 strict quantity movement contracts: `60351b0`.
   - Task 6d.2 pure per-SKU running-quantity projection: `505ca24`.
   - Quantity payloads require stable movement/line identity and booking date;

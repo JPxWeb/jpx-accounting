@@ -320,6 +320,8 @@ Checkpoint: **READY FOR SOL REVIEW**
 ## Pipeline and integration notes
 
 - Wave 6d was pipelined while Sol reviewed the Wave 6c foundation.
+- Sol's Wave 6c fix `5fead99` and normalized review report `e2e49d4` are now
+  both in the Wave 6d checkpoint ancestry; no rebase conflict remained.
 - Concurrent Wave 6b UI and Wave 6c review files were not included in either
   Wave 6d implementation commit.
 - The plan and spec separate optional valued inventory into Wave 6e; no valued
