@@ -370,6 +370,16 @@
         "title": "Periodavslut är inte tillgängligt ännu",
         "message": "Checklistor för månadsavslut visas här när periodavslut är implementerat. Granskningskön är fortfarande vägen till bokförda verifikat."
       }
+    },
+    "ledger": {
+      "slots": {
+        "workItemConfirm": "Arbetsbekräftelse är inte tillgänglig ännu.",
+        "externalRefs": "Externa referenser är inte tillgängliga ännu.",
+        "tags": "Mjuka taggar är inte tillgängliga ännu.",
+        "lineId": "Stabila rad-ID visas ännu inte.",
+        "vatDeductibility": "Momskod och avdragsrätt visas ännu inte.",
+        "workflows": "Arbetsflödesmärken är inte tillgängliga ännu."
+      }
     }
   },
   "reports": {
@@ -1026,6 +1036,7 @@
           "assistantThreadsLegacy": "Äldre rådgivarhistorik (v1) — migreras vid första läsningen, tas bort vid utloggning.",
           "dashboardLayout": "Din widgetordning och dolda widgets på Idag-panelen.",
           "onboarding": "Vilka introduktionsturer du har slutfört eller avfärdat.",
+          "ledgerMode": "Läge för journalöversikt i Bokföring (inline vs låda).",
           "theme": "Val av ljust/mörkt/systemtema.",
           "captureDraftsSession": "Flikbunden reservkopia av utkast när IndexedDB inte är tillgängligt (endast metadata).",
           "captureDraftsDb": "Lokala utkast inklusive kvittofiler, samt en begränsad förhandsvisningscache för uppladdade underlag.",

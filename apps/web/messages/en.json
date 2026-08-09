@@ -370,6 +370,16 @@
         "title": "Period close not available yet",
         "message": "Month-end checklists will appear here once period-close runs are implemented. The review queue remains the path to posted vouchers."
       }
+    },
+    "ledger": {
+      "slots": {
+        "workItemConfirm": "Work-item confirmation is not available yet.",
+        "externalRefs": "External references are not available yet.",
+        "tags": "Soft tags are not available yet.",
+        "lineId": "Stable line IDs are not available yet.",
+        "vatDeductibility": "VAT code and deductibility columns are not available yet.",
+        "workflows": "Workflow badges are not available yet."
+      }
     }
   },
   "reports": {
@@ -1026,6 +1036,7 @@
           "assistantThreadsLegacy": "Legacy advisor history (v1) — migrated on first read, removed on sign-out.",
           "dashboardLayout": "Your Today-dashboard widget order and hidden widgets.",
           "onboarding": "Which onboarding tours you have completed or dismissed.",
+          "ledgerMode": "Ledger journal overview mode preference (inline disclosure vs drawer).",
           "theme": "Light/dark/system appearance choice.",
           "captureDraftsSession": "Tab-scoped fallback copy of capture drafts when IndexedDB is unavailable (metadata only).",
           "captureDraftsDb": "Local-first capture drafts including receipt files, plus a bounded preview cache of promoted evidence files.",
