@@ -10,6 +10,43 @@ const lineEnrichmentValueSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
 });
 
+export const projectLineEnrichmentPayloadSchema = z.object({
+  projectId: z.string().min(1),
+  activityCode: z.string().min(1).optional(),
+  objectCode: z.string().min(1).optional(),
+});
+
+export const projectRegisteredPayloadSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1),
+  status: z.enum(["active", "archived"]),
+});
+
+export const projectArchivedPayloadSchema = z.object({
+  projectId: z.string().min(1),
+});
+
+export const projectAssignmentProposalSchema = projectLineEnrichmentPayloadSchema.extend({
+  kind: z.literal("project_assignment"),
+});
+
+export const registerProjectInputSchema = projectRegisteredPayloadSchema.pick({
+  projectId: true,
+  name: true,
+});
+
+export const projectProjectionSchema = projectRegisteredPayloadSchema;
+
+export const projectsListRowSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal("project"),
+  name: z.string().min(1),
+  status: z.enum(["active", "archived"]),
+  activityCount: z.number().int().nonnegative(),
+});
+
+export const projectsListSchema = z.array(projectsListRowSchema);
+
 export const enrichmentProposalSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("noop") }),
   z.object({
@@ -29,6 +66,7 @@ export const enrichmentProposalSchema = z.discriminatedUnion("kind", [
     kind: z.literal("voucher_tags_remove"),
     tagIds: z.array(z.string().min(1)).min(1).max(10),
   }),
+  projectAssignmentProposalSchema,
   lineEnrichmentValueSchema.extend({
     kind: z.literal("line_enrichment_record"),
     lineId: z.string().min(1),
@@ -156,6 +194,13 @@ export const submitReviewProposalResultSchema = z.object({
 });
 
 export type EnrichmentProposal = z.infer<typeof enrichmentProposalSchema>;
+export type ProjectLineEnrichmentPayload = z.infer<typeof projectLineEnrichmentPayloadSchema>;
+export type ProjectRegisteredPayload = z.infer<typeof projectRegisteredPayloadSchema>;
+export type ProjectArchivedPayload = z.infer<typeof projectArchivedPayloadSchema>;
+export type ProjectAssignmentProposal = z.infer<typeof projectAssignmentProposalSchema>;
+export type RegisterProjectInput = z.infer<typeof registerProjectInputSchema>;
+export type ProjectProjection = z.infer<typeof projectProjectionSchema>;
+export type ProjectsListRow = z.infer<typeof projectsListRowSchema>;
 export type LineEnrichmentRecordedPayload = z.infer<typeof lineEnrichmentRecordedPayloadSchema>;
 export type LineEnrichmentSupersededPayload = z.infer<typeof lineEnrichmentSupersededPayloadSchema>;
 export type ExternalReferenceLinkedPayload = z.infer<typeof externalReferenceLinkedPayloadSchema>;
