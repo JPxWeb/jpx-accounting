@@ -87,6 +87,7 @@ test("projects list counts active project line enrichments", () => {
       name: "Bridge retrofit",
       status: "active",
       activityCount: 1,
+      voucherIds: [],
     },
   ]);
 });
@@ -142,4 +143,38 @@ test("project list builder is registered on the generic projection seam", () => 
 
   assert.deepEqual(buildListProjection("project", events), buildProjectsList(events));
   assert.deepEqual(buildListProjection("unknown", events), []);
+});
+
+test("projects list links active assignments to their posted vouchers", () => {
+  const rows = buildProjectsList([
+    event("evt_project", "ProjectRegistered", {
+      projectId: "proj_1",
+      name: "Bridge retrofit",
+      status: "active",
+    }),
+    event("evt_posted", "PostedToLedger", {
+      lines: [
+        {
+          voucherId: "voucher_1",
+          lineId: "ln_cost",
+          accountNumber: "6540",
+          accountName: "IT",
+          description: "Cost",
+          debit: 100,
+          credit: 0,
+          vatCode: "VAT25",
+          bookedAt: "2026-08-09",
+          deductible: true,
+        },
+      ],
+    }),
+    event("evt_enrichment", "LineEnrichmentRecorded", {
+      lineId: "ln_cost",
+      enrichmentType: "project",
+      enrichmentId: "le_1",
+      payload: { projectId: "proj_1" },
+    }),
+  ]);
+
+  assert.deepEqual(rows[0]?.voucherIds, ["voucher_1"]);
 });

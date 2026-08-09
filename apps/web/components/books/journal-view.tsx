@@ -1,5 +1,6 @@
 "use client";
 
+import type { ProjectsListRow } from "@jpx-accounting/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { DEFAULT_TAG_DEFINITIONS } from "@jpx-accounting/domain";
 import { useTranslations } from "next-intl";
@@ -16,6 +17,7 @@ import { buildVoucherLookup } from "../reports/voucher-link";
 import { EnrichmentConfirmShell } from "./enrichment-confirm-shell";
 import { LedgerVoucherDrawer } from "./ledger-voucher-drawer";
 import { LedgerVoucherOverview } from "./ledger-voucher-overview";
+import { ProjectsListPanel } from "./projects-list-panel";
 
 const ledgerModes = ["inline", "drawer"] as const;
 const registryTagIds = DEFAULT_TAG_DEFINITIONS.map((definition) => definition.id);
@@ -54,6 +56,7 @@ export function JournalView() {
   const [voucher, setVoucher] = useQueryState("voucher", parseAsString);
   const [q, setQ] = useQueryState("q", parseAsString);
   const [tag, setTag] = useQueryState("tag", parseAsStringEnum(registryTagIds));
+  const [workflow] = useQueryState("workflow", parseAsStringEnum(["project"]));
 
   const storedLedgerMode = useSyncExternalStore(subscribeToLedgerMode, loadLedgerMode, getServerLedgerMode);
   const ledgerMode = ledgerModeParam ?? storedLedgerMode;
@@ -65,6 +68,11 @@ export function JournalView() {
   const { data: workspace } = useQuery({
     queryKey: ["workspace"],
     queryFn: () => apiClient.getSnapshot(),
+  });
+  const projectsQuery = useQuery({
+    queryKey: ["lists", "projects"],
+    queryFn: () => apiClient.getProjectsList(),
+    enabled: workflow === "project",
   });
 
   const lookup = buildVoucherLookup(workspace);
@@ -78,7 +86,11 @@ export function JournalView() {
   });
 
   const voucherViewModels = groupJournalByVoucher(entries).map((group) =>
-    buildLedgerVoucherViewModel(group, workspace, lookup, { activateExternalRefs: true, activateTags: true }),
+    buildLedgerVoucherViewModel(group, workspace, lookup, {
+      activateExternalRefs: true,
+      activateTags: true,
+      activateWorkflows: workflow === "project",
+    }),
   );
   const tagFilteredVoucherViewModels = tag
     ? voucherViewModels.filter((viewModel) => viewModel.tagIds.includes(tag))
@@ -98,6 +110,16 @@ export function JournalView() {
     void setVoucher(null);
   }, [setVoucher]);
 
+  const handleProjectOpen = useCallback(
+    (project: ProjectsListRow) => {
+      const voucherId = project.voucherIds.find((candidate) =>
+        filteredVoucherViewModels.some((viewModel) => viewModel.voucherId === candidate),
+      );
+      if (voucherId) void setVoucher(voucherId);
+    },
+    [filteredVoucherViewModels, setVoucher],
+  );
+
   function handleModeChange(mode: LedgerMode) {
     saveLedgerMode(mode);
     void setLedgerModeParam(mode);
@@ -110,6 +132,7 @@ export function JournalView() {
 
   return (
     <div className="space-y-3" data-testid="journal-view" data-tour="books-journal">
+      {workflow === "project" ? <ProjectsListPanel rows={projectsQuery.data ?? []} onOpen={handleProjectOpen} /> : null}
       {supplier ? (
         <div className="flex items-center gap-2">
           <span

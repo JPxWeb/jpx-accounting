@@ -114,6 +114,13 @@ export function LedgerVoucherDetail({ vm }: { vm: LedgerVoucherViewModel }) {
 
       {vm.slots.tags === "active" ? <VoucherTagList voucherId={vm.voucherId} tagIds={vm.tagIds} /> : null}
 
+      {vm.slots.workflows === "active" ? (
+        <div className="mt-4 border-t border-border pt-4" data-testid="ledger-slot-workflows-active">
+          <p className="text-sm font-semibold text-foreground">{tSlots("workflowProject")}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{tSlots("workflowProjectHint")}</p>
+        </div>
+      ) : null}
+
       {vm.provenanceSummary ? (
         <p className="mt-4 text-sm text-muted-foreground" data-testid="ledger-voucher-provenance">
           {vm.provenanceSummary}

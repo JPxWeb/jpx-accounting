@@ -24,6 +24,7 @@ type LedgerSnapshot = Pick<WorkspaceSnapshot, "vouchers" | "packets" | "voucherT
 type LedgerVoucherViewModelOptions = {
   activateExternalRefs?: boolean;
   activateTags?: boolean;
+  activateWorkflows?: boolean;
 };
 
 export function buildLedgerVoucherViewModel(group: VoucherJournalGroup, lookup: VoucherLookup): LedgerVoucherViewModel;
@@ -71,7 +72,7 @@ export function buildLedgerVoucherViewModel(
       tags: options.activateTags ? "active" : "disabled",
       lineId: hasStableLineTarget ? "active" : "disabled",
       vatDeductibility: hasVatDeductibility ? "active" : "disabled",
-      workflows: "disabled",
+      workflows: options.activateWorkflows ? "active" : "disabled",
     },
   };
 }

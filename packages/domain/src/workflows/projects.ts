@@ -8,6 +8,7 @@ import {
 } from "@jpx-accounting/contracts";
 
 import { buildLineEnrichmentsFromEvents } from "../enrichment-projections";
+import { collectLedgerLinesFromEvents } from "../projections";
 
 export type { ProjectsListRow } from "@jpx-accounting/contracts";
 
@@ -37,7 +38,7 @@ export function buildProjectRegistryFromEvents(events: LedgerEvent[]): ProjectPr
 }
 
 export function buildProjectsList(events: LedgerEvent[]): ProjectsListRow[] {
-  const projects = new Map(
+  const projects = new Map<string, ProjectsListRow>(
     buildProjectRegistryFromEvents(events).map((project) => [
       project.projectId,
       {
@@ -46,8 +47,14 @@ export function buildProjectsList(events: LedgerEvent[]): ProjectsListRow[] {
         name: project.name,
         status: project.status,
         activityCount: 0,
+        voucherIds: [],
       },
     ]),
+  );
+  const voucherIdByLineId = new Map(
+    collectLedgerLinesFromEvents(events).flatMap((line) =>
+      line.lineId === undefined ? [] : [[line.lineId, line.voucherId] as const],
+    ),
   );
 
   for (const enrichment of buildLineEnrichmentsFromEvents(events)) {
@@ -57,7 +64,13 @@ export function buildProjectsList(events: LedgerEvent[]): ProjectsListRow[] {
     if (!projectPayload.success) continue;
 
     const project = projects.get(projectPayload.data.projectId);
-    if (project) project.activityCount += 1;
+    if (project) {
+      project.activityCount += 1;
+      const voucherId = voucherIdByLineId.get(enrichment.lineId);
+      if (voucherId !== undefined && !project.voucherIds.includes(voucherId)) {
+        project.voucherIds.push(voucherId);
+      }
+    }
   }
 
   return [...projects.values()];

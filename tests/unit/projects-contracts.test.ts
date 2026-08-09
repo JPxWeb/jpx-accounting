@@ -82,6 +82,7 @@ test("projects list rows are contract validated", () => {
         name: "Bridge retrofit",
         status: "active",
         activityCount: 2,
+        voucherIds: [],
       },
     ]),
     [
@@ -91,6 +92,7 @@ test("projects list rows are contract validated", () => {
         name: "Bridge retrofit",
         status: "active",
         activityCount: 2,
+        voucherIds: [],
       },
     ],
   );

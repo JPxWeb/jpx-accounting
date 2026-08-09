@@ -380,6 +380,14 @@
         "message": "Checklistor för månadsavslut visas här när periodavslut är implementerat. Granskningskön är fortfarande vägen till bokförda verifikat."
       }
     },
+    "lists": {
+      "projects": {
+        "title": "Projekt",
+        "description": "Registrerade projekt och deras aktiva tilldelningar till bokförda rader.",
+        "empty": "Inga projekt har registrerats ännu.",
+        "activityCount": "{count, plural, one {# aktivitet} other {# aktiviteter}}"
+      }
+    },
     "ledger": {
       "drawerClose": "Stäng",
       "searchPlaceholder": "Sök verifikat…",
@@ -400,7 +408,9 @@
         "deductibilityHeader": "Avdragsrätt",
         "deductible": "Avdragsgill",
         "notDeductible": "Inte avdragsgill",
-        "workflows": "Arbetsflödesmärken är inte tillgängliga ännu."
+        "workflows": "Arbetsflödesmärken är inte tillgängliga ännu.",
+        "workflowProject": "Projektarbetsflöde",
+        "workflowProjectHint": "Öppnat från projektlistan. Bokförda rader och underlag förblir append-only."
       },
       "externalReferences": {
         "title": "Externa referenser",

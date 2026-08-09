@@ -60,6 +60,7 @@ test("POST /api/projects registers a project and GET returns it", async () => {
       name: "Bridge retrofit",
       status: "active",
       activityCount: 0,
+      voucherIds: [],
     },
   ]);
 });

@@ -380,6 +380,14 @@
         "message": "Month-end checklists will appear here once period-close runs are implemented. The review queue remains the path to posted vouchers."
       }
     },
+    "lists": {
+      "projects": {
+        "title": "Projects",
+        "description": "Registered projects and their active posted-line assignments.",
+        "empty": "No projects registered yet.",
+        "activityCount": "{count, plural, one {# activity} other {# activities}}"
+      }
+    },
     "ledger": {
       "drawerClose": "Close",
       "searchPlaceholder": "Search vouchers…",
@@ -400,7 +408,9 @@
         "deductibilityHeader": "Deductibility",
         "deductible": "Deductible",
         "notDeductible": "Not deductible",
-        "workflows": "Workflow badges are not available yet."
+        "workflows": "Workflow badges are not available yet.",
+        "workflowProject": "Project workflow",
+        "workflowProjectHint": "Opened from the project workflow list. Posted lines and evidence remain append-only."
       },
       "externalReferences": {
         "title": "External references",

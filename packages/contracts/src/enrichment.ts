@@ -43,6 +43,7 @@ export const projectsListRowSchema = z.object({
   name: z.string().min(1),
   status: z.enum(["active", "archived"]),
   activityCount: z.number().int().nonnegative(),
+  voucherIds: z.array(z.string().min(1)).default([]),
 });
 
 export const projectsListSchema = z.array(projectsListRowSchema);
