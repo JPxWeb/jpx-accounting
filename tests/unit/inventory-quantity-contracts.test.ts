@@ -34,6 +34,13 @@ test("quantity movement payload requires the locked identity and booking fields"
     }).success,
     false,
   );
+  assert.equal(
+    inventoryMovementPayloadSchema.safeParse({
+      ...movement,
+      actorId: "forged-client-actor",
+    }).success,
+    false,
+  );
 });
 
 test("quantity movement payload forbids valued inventory fields", () => {
@@ -66,4 +73,15 @@ test("SKU movement list rows expose quantity and running quantity only", () => {
 
   assert.equal(row?.runningQuantity, -3);
   assert.equal(Object.hasOwn(row!, "unitCost"), false);
+  assert.equal(
+    skuMovementListSchema.safeParse([
+      {
+        id: "mov_other",
+        kind: "sku_movement",
+        ...movement,
+        runningQuantity: -3,
+      },
+    ]).success,
+    false,
+  );
 });

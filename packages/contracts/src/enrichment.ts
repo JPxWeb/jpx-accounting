@@ -67,11 +67,16 @@ export const inventoryMovementPayloadSchema = z
   })
   .strict();
 
-export const skuMovementListRowSchema = inventoryMovementPayloadSchema.extend({
-  id: z.string().min(1),
-  kind: z.literal("sku_movement"),
-  runningQuantity: z.number(),
-});
+export const skuMovementListRowSchema = inventoryMovementPayloadSchema
+  .extend({
+    id: z.string().min(1),
+    kind: z.literal("sku_movement"),
+    runningQuantity: z.number(),
+  })
+  .refine((row) => row.id === row.movementId, {
+    message: "SKU movement row id must match movementId",
+    path: ["id"],
+  });
 
 export const skuMovementListSchema = z.array(skuMovementListRowSchema);
 

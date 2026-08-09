@@ -491,6 +491,16 @@
   - Contracts, domain, and tests typechecks passed; focused lint, formatting,
     diagnostics, and diff checks are clean.
   - Store/API/UI and optional Wave 6e valued inventory remain unstarted.
+- Wave 6d Tasks 6d.1–6d.2 Sol review: APPROVE_WITH_FIXES.
+  - SKU movement list rows now require `id === movementId`, preserving one
+    contract identity for append-only replay and API validation.
+  - Quantity payloads remain strict and reject valued fields plus forged client
+    `actorId`; per-SKU running balances and first-movement authority are intact.
+  - Focused tests passed 8/8; contracts/domain typechecks, ESLint, Prettier,
+    diagnostics, and diff checks passed.
+  - No Opus escalation is required. Wave 6d store/API may proceed after the
+    review-fix commit; Wave 6e remains blocked until Wave 6d is complete. See
+    `.superpowers/sdd/w6d-sol-review.md`.
 
 ## In progress
 
@@ -498,10 +508,11 @@
   commit.
 - Wave 6c Tasks 6c.3+ are cleared to proceed after the foundation review-fix
   commit.
-- Wave 6d Tasks 6d.1–6d.2 are stopped at the Sol foundation checkpoint.
+- Wave 6d Tasks 6d.3+ are cleared to proceed after the foundation review-fix
+  commit.
 
 ## Pending
 
-- Wave 6b Tasks 6b.4–6b.6; Wave 6c Tasks 6c.3+; Wave 6d Tasks 6d.3+ after
-  foundation review; then Waves 6e–8 in plan order (single feature branch;
-  defer mid-wave PR to main until program ready).
+- Wave 6b Tasks 6b.4–6b.6; Wave 6c Tasks 6c.3+; Wave 6d Tasks 6d.3+; then
+  Waves 6e–8 in plan order, with Wave 6e blocked until Wave 6d completion
+  (single feature branch; defer mid-wave PR to main until program ready).
