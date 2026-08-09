@@ -124,6 +124,49 @@ test("superseded trip assignments move their bound line amount", () => {
   assert.equal(rows.find((row) => row.id === "trip_2")?.expenseTotal, 300);
 });
 
+test("a posted line counts once per trip across pre-post and post-post attachment", () => {
+  const rows = buildTripsList([
+    event("evt_trip", "TripRegistered", trip),
+    postedLine("ln_1", 250),
+    event("evt_pre_post", "LineEnrichmentRecorded", {
+      lineId: "ln_1",
+      enrichmentId: "le_1",
+      enrichmentType: "trip",
+      payload: trip,
+    }),
+    event("evt_post_post", "LineEnrichmentRecorded", {
+      lineId: "ln_1",
+      enrichmentId: "le_2",
+      enrichmentType: "trip",
+      payload: trip,
+    }),
+  ]);
+
+  assert.equal(rows.find((row) => row.id === "trip_1")?.expenseTotal, 250);
+});
+
+test("distinct posted lines still accumulate onto the same trip", () => {
+  const rows = buildTripsList([
+    event("evt_trip", "TripRegistered", trip),
+    postedLine("ln_1", 250),
+    postedLine("ln_2", 100),
+    event("evt_expense_1", "LineEnrichmentRecorded", {
+      lineId: "ln_1",
+      enrichmentId: "le_1",
+      enrichmentType: "trip",
+      payload: trip,
+    }),
+    event("evt_expense_2", "LineEnrichmentRecorded", {
+      lineId: "ln_2",
+      enrichmentId: "le_2",
+      enrichmentType: "trip",
+      payload: trip,
+    }),
+  ]);
+
+  assert.equal(rows.find((row) => row.id === "trip_1")?.expenseTotal, 350);
+});
+
 test("trip list builder is registered on the generic projection seam", () => {
   const events = [event("evt_trip", "TripRegistered", trip)];
 

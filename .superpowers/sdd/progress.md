@@ -631,22 +631,59 @@
   - No code was changed — the fix agent holds uncommitted work in every file the
     fixes touch. Wave 6b is NOT COMPLETE; the seven gate conditions are in
     `.superpowers/sdd/w6b-opus-invoice-seam-review.md`.
+- Wave 6c atomic trip approval repair is implemented and verified for Sol
+  re-review; Wave 6c remains NOT COMPLETE.
+  - Added the contract-first `trip_registration` proposal and reused the Wave 5
+    atomic pre-post intent seam approved by the Wave 6b Opus design review.
+  - Approval derives `tripId` and a real eligible posting `lineId`, validates
+    optional packet evidence, and appends one registration plus one line
+    enrichment beside exactly one posting in the serialized transaction.
+  - Memory/Postgres conformance proves invalid-evidence rollback, persist-once,
+    server actor attribution, intent consumption, and no double attach/repost;
+    list replay counts a posted line only once per trip.
+  - Focused contract/planner tests passed 15/15, trip-list tests passed 6/6,
+    typed trip refusal mapping passed, and affected typechecks passed; strict
+    `pnpm db:test` passed 110/110; `build:e2e` and trip E2E passed 4/4 across
+    desktop and Pixel 7 while retaining the post-post real-line path.
+  - See `.superpowers/sdd/wave-6-batch-report.md`.
+- Wave 6c Opus review of the atomic trip approval seam is published in
+  `.superpowers/sdd/w6c-opus-trip-seam-review.md`; verdict REQUEST_CHANGES with
+  the design APPROVED as built. Wave 6c remains NOT COMPLETE.
+  - Sol's escalation is upheld and answered: the required seam is the Wave 5
+    pre-post intent path, already used correctly by the implementation. Server
+    `tripId`, primary-cost-line binding, packet-bounded evidence, one posting
+    plus registration plus enrichment per transaction, and store parity all
+    verified. No alternative seam should be built.
+  - Fixed during review: `buildTripsList` double-counted a posted line whenever
+    the same trip was attached both pre-post and post-post (1 000 kr line
+    reported 2 000). Fix plus two regression tests in
+    `packages/domain/src/workflows/trips.ts` and `tests/unit/trips-list.test.ts`
+    (6/6 PASS, domain typecheck and lint clean).
+  - Must land before the gate: `TripRegistrationLineNotFoundError` and
+    `TripEvidenceNotInPacketError` have no `app.onError` branch and answer 500
+    instead of a mapped 422. Four medium findings (cross-trip double count,
+    optional `evidenceIds`, intent consumption inferred from `edited`,
+    silently inert unregistered trip references) must be fixed or deferred with
+    a reason. Seven gate conditions are listed in the review.
+  - No shared in-flight file was edited: both fix agents were actively writing
+    contracts, planner, stores, `app.ts`, conformance and the review sheet
+    during the review, so every other finding is written for its owner to apply.
 
 ## In progress
 
 - Wave 6b invoice seam implementation is in flight against the Opus-approved
   design; the seven gate conditions in the Opus review must land before the
   renewed final gate.
-- Wave 6c Task 6c.4 requires an Opus-reviewed atomic pre-post trip seam;
-  Task 6c.5 awaits that fix and the centralized gate after concurrent
-  shared-file owners land.
+- Wave 6c Task 6c.4 atomic seam repair must absorb the Wave 6c Opus findings
+  (error mapping first) before Sol re-review; Task 6c.5 remains deferred to the
+  centralized full/visual gate.
 - Wave 6d Task 6d.4, remaining writers, and the final gate are cleared to
   proceed after the Task 6d.3 review.
 
 ## Pending
 
-- Wave 6b Opus gate conditions and renewed gate; Wave 6c atomic seam rework
-  reusing the Wave 6b seam, plus renewed Tasks 6c.4–6c.5 gate;
+- Wave 6b Opus gate conditions and renewed gate; Wave 6c Opus gate conditions,
+  Sol re-review, plus renewed Task 6c.5 gate;
   remaining Wave 6d work; then Waves 6e–8 in plan order, with Wave 6e blocked
   until Wave 6d completion (single feature branch; defer mid-wave PR to main
   until program ready).

@@ -68,6 +68,12 @@ export function buildTripsList(events: LedgerEvent[]): TripsListRow[] {
     ),
   );
 
+  // A posted line contributes to a trip at most once, however many active
+  // `trip` enrichments bind it: the pre-post approval seam and the post-post
+  // work-item path can both attach the same line to the same trip, and the
+  // ledger keeps both records forever.
+  const countedLineIdsByTrip = new Map<string, Set<string>>();
+
   for (const enrichment of buildLineEnrichmentsFromEvents(events)) {
     if (enrichment.superseded || enrichment.enrichmentType !== "trip") continue;
 
@@ -76,9 +82,14 @@ export function buildTripsList(events: LedgerEvent[]): TripsListRow[] {
 
     const trip = trips.get(payload.data.tripId);
     const expense = expenseByLineId.get(enrichment.lineId);
-    if (trip && expense !== undefined) {
-      trips.set(trip.id, { ...trip, expenseTotal: round2(trip.expenseTotal + expense) });
-    }
+    if (!trip || expense === undefined) continue;
+
+    const countedLineIds = countedLineIdsByTrip.get(trip.id) ?? new Set<string>();
+    if (countedLineIds.has(enrichment.lineId)) continue;
+    countedLineIds.add(enrichment.lineId);
+    countedLineIdsByTrip.set(trip.id, countedLineIds);
+
+    trips.set(trip.id, { ...trip, expenseTotal: round2(trip.expenseTotal + expense) });
   }
 
   return [...trips.values()];
