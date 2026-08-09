@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createAccountingApiClient } from "@jpx-accounting/api-client";
-import type { EnrichmentWorkItem, ExternalReferenceProjection } from "@jpx-accounting/contracts";
+import type {
+  EnrichmentWorkItem,
+  ExternalReferenceProjection,
+  ReviewEnrichmentIntent,
+} from "@jpx-accounting/contracts";
 
 const BASE_URL = "http://api.test";
 
@@ -101,6 +105,46 @@ test("get, confirm, and reject enrichment work items use their dedicated routes"
       [`${BASE_URL}/api/enrichment-work-items/ewi_1`, "GET"],
       [`${BASE_URL}/api/enrichment-work-items/ewi_1/confirm`, "POST"],
       [`${BASE_URL}/api/enrichment-work-items/ewi_1/reject`, "POST"],
+    ],
+  );
+});
+
+test("attach and get review enrichment intent use review-scoped routes", async (t) => {
+  const intent: ReviewEnrichmentIntent = {
+    reviewId: "review_1",
+    voucherId: "voucher_1",
+    proposals: [{ kind: "noop" }],
+    updatedAt: "2026-08-09T10:00:00.000Z",
+    updatedBy: "user:abc",
+  };
+  const captured: CapturedRequest[] = [];
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    captured.push({ url: String(input), init });
+    return Response.json(intent);
+  });
+  const client = createAccountingApiClient({ baseUrl: BASE_URL, runtimeMode: "normal" });
+
+  assert.deepEqual(
+    await client.attachReviewEnrichmentIntent({
+      reviewId: "review_1",
+      proposals: [{ kind: "noop" }],
+    }),
+    intent,
+  );
+  assert.deepEqual(await client.getReviewEnrichmentIntent("review_1"), intent);
+  assert.deepEqual(
+    captured.map(({ url, init }) => [
+      url,
+      init?.method ?? "GET",
+      init?.body ? JSON.parse(String(init.body)) : undefined,
+    ]),
+    [
+      [
+        `${BASE_URL}/api/reviews/review_1/enrichment-intents`,
+        "POST",
+        { reviewId: "review_1", proposals: [{ kind: "noop" }] },
+      ],
+      [`${BASE_URL}/api/reviews/review_1/enrichment-intents`, "GET", undefined],
     ],
   );
 });

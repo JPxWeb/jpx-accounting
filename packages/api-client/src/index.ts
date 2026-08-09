@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import type {
   AccountBalanceProjection,
+  AttachReviewEnrichmentIntentInput,
   CompanySettings,
   ComplianceAlert,
   EnrichmentWorkItem,
@@ -17,6 +18,7 @@ import type {
   ProposeEnrichmentWorkItemInput,
   ReportPack,
   ReviewDecisionInput,
+  ReviewEnrichmentIntent,
   ReviewTask,
   RuntimeInfo,
   RuntimeMode,
@@ -28,6 +30,7 @@ import type {
 } from "@jpx-accounting/contracts";
 import {
   accountBalanceProjectionSchema,
+  attachReviewEnrichmentIntentInputSchema,
   appendVoucherTagsInputSchema,
   complianceAlertSchema,
   enrichmentWorkItemSchema,
@@ -39,6 +42,7 @@ import {
   journalEntryProjectionSchema,
   proposeEnrichmentWorkItemInputSchema,
   reportPackSchema,
+  reviewEnrichmentIntentSchema,
   reviewTaskSchema,
   runtimeInfoSchema,
   sieImportResultSchema,
@@ -292,6 +296,33 @@ export class AccountingApiClient {
       throw new AccountingApiError(response.status, `getEnrichmentWorkItem failed: ${response.status}`);
     }
     return parseJsonBody(response, enrichmentWorkItemSchema);
+  }
+
+  async attachReviewEnrichmentIntent(input: AttachReviewEnrichmentIntentInput): Promise<ReviewEnrichmentIntent> {
+    const parsedInput = attachReviewEnrichmentIntentInputSchema.parse(input);
+    if (this.fallbackStore) return this.fallbackStore.attachReviewEnrichmentIntent(parsedInput);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/reviews/${encodeURIComponent(parsedInput.reviewId)}/enrichment-intents`,
+      reviewEnrichmentIntentSchema,
+      { method: "POST", json: parsedInput },
+    );
+  }
+
+  async getReviewEnrichmentIntent(reviewId: string): Promise<ReviewEnrichmentIntent | undefined> {
+    if (this.fallbackStore) return this.fallbackStore.getReviewEnrichmentIntent(reviewId);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const response = await this.authorizedFetch(
+      `${this.baseUrl}/api/reviews/${encodeURIComponent(reviewId)}/enrichment-intents`,
+      { headers: { accept: "application/json" } },
+    );
+    if (response.status === 404) return undefined;
+    if (!response.ok) {
+      throw new AccountingApiError(response.status, `getReviewEnrichmentIntent failed: ${response.status}`);
+    }
+    return parseJsonBody(response, reviewEnrichmentIntentSchema);
   }
 
   async confirmEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem> {

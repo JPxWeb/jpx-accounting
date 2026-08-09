@@ -25,6 +25,7 @@ import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intell
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import {
   EnrichmentTargetNotPostedError,
+  EnrichmentIntentClosedError,
   ExternalReferenceNotFoundError,
   buildSieExport,
   currentMonthToken,
@@ -60,6 +61,7 @@ import { DEFAULT_SUPABASE_JWT_ALGS, type CorsRuntimePolicy, type SupabaseJwtAlgo
 import { queryKnowledge } from "./knowledge";
 import type { ApiRouteEnv } from "./route-types";
 import { registerEnrichmentWorkItemRoutes } from "./routes/enrichment-work-items";
+import { registerReviewEnrichmentIntentRoutes } from "./routes/review-enrichment-intents";
 import { registerVoucherExternalReferenceRoutes } from "./routes/voucher-external-references";
 import { registerVoucherTagRoutes } from "./routes/voucher-tags";
 import type { AiRuntimeMetadata } from "./runtime";
@@ -523,6 +525,10 @@ export function createApp({
       return jsonError(c, error.message, runtimeMode, 409, { code: "enrichment_target_not_posted" });
     }
 
+    if (error instanceof EnrichmentIntentClosedError) {
+      return jsonError(c, error.message, runtimeMode, 409, { code: "review_not_open" });
+    }
+
     if (error instanceof ExternalReferenceNotFoundError) {
       return jsonError(c, error.message, runtimeMode, 404, { code: "external_reference_not_found" });
     }
@@ -636,6 +642,10 @@ export function createApp({
   });
 
   registerEnrichmentWorkItemRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerReviewEnrichmentIntentRoutes(app, {
     getStore: () => currentStore,
     deriveActorId,
   });

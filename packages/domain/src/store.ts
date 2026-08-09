@@ -1,5 +1,6 @@
 import type {
   AccountingSuggestion,
+  AttachReviewEnrichmentIntentInput,
   CompanySettings,
   ComplianceAlert,
   CloseRun,
@@ -16,6 +17,7 @@ import type {
   ProposeEnrichmentWorkItemInput,
   ReportBundle,
   ReportPack,
+  ReviewEnrichmentIntent,
   ReviewDecisionInput,
   ReviewTask,
   SieImportResult,
@@ -57,12 +59,15 @@ import {
   AUTO_DETECTED_ALERT_KINDS,
   assertEnrichmentTargetPosted,
   collectPostedEnrichmentTargets,
+  EnrichmentIntentClosedError,
   ExternalReferenceNotFoundError,
   planComplianceMerge,
   planEvidenceCreate,
   planExternalReferenceLink,
   planExternalReferenceRemoval,
   planExtractionRefresh,
+  mergePrePostEnrichmentsIntoReviewDecisionPlan,
+  planPrePostEnrichment,
   planPostPostEnrichmentConfirm,
   planReviewDecision,
   planVoucherTagsAppend,
@@ -150,6 +155,10 @@ function snapshotEnrichmentWorkItem(workItem: EnrichmentWorkItem): EnrichmentWor
     proposedChange: { ...workItem.proposedChange },
     resultingEventIds: workItem.resultingEventIds?.slice(),
   };
+}
+
+function snapshotReviewEnrichmentIntent(intent: ReviewEnrichmentIntent): ReviewEnrichmentIntent {
+  return structuredClone(intent);
 }
 
 /**
@@ -345,6 +354,10 @@ export interface LedgerStore {
   getEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem | undefined>;
   confirmEnrichmentWorkItem(id: string, input: ActorAttribution): Promise<EnrichmentWorkItem>;
   rejectEnrichmentWorkItem(id: string, input: ActorAttribution): Promise<EnrichmentWorkItem>;
+  attachReviewEnrichmentIntent(
+    input: AttachReviewEnrichmentIntentInput & ActorAttribution,
+  ): Promise<ReviewEnrichmentIntent>;
+  getReviewEnrichmentIntent(reviewId: string): Promise<ReviewEnrichmentIntent | undefined>;
   appendVoucherExternalReference(
     voucherId: string,
     input: { url: string; label?: string } & ActorAttribution,
@@ -380,6 +393,7 @@ export class MemoryLedgerStore implements LedgerStore {
   private readonly voucherIdToReviewId = new Map<string, string>();
   private readonly enrichmentWorkItems = new Map<string, EnrichmentWorkItem>();
   private readonly enrichmentWorkItemIdsByIdempotencyKey = new Map<string, string>();
+  private readonly reviewEnrichmentIntents = new Map<string, ReviewEnrichmentIntent>();
   private readonly events: LedgerEvent[] = [];
   /** Frozen demo seed — never mutated; reports replay event payloads on top. */
   private readonly seedLines: LedgerLine[] = assertBalancedPosting(initialLedgerLines(), "demo seed lines");
@@ -748,8 +762,23 @@ export class MemoryLedgerStore implements LedgerStore {
     const voucher = this.vouchers.get(review.voucherId);
     if (!voucher) return undefined;
 
-    const plan = planReviewDecision(review, voucher, action, input);
-    if (plan.kind === "replay") return plan.review;
+    const basePlan = planReviewDecision(review, voucher, action, input);
+    if (basePlan.kind === "replay") return basePlan.review;
+    const intent = this.reviewEnrichmentIntents.get(reviewId);
+    const plan =
+      intent && action !== "reject"
+        ? mergePrePostEnrichmentsIntoReviewDecisionPlan(
+            basePlan,
+            planPrePostEnrichment({
+              review,
+              proposals: intent.proposals,
+              postingLines: basePlan.lines ?? [],
+              actorId: input.actorId ?? DEMO_ACTOR_ID,
+              organizationId: voucher.organizationId,
+              workspaceId: voucher.workspaceId,
+            }).companionEvents,
+          )
+        : basePlan;
 
     // Clone-before-mutate (Rule 17): review/voucher may have been returned by
     // getSnapshot() — replace read models instead of mutating shared objects.
@@ -765,8 +794,36 @@ export class MemoryLedgerStore implements LedgerStore {
     for (const event of plan.events) {
       this.appendEvent(event);
     }
+    this.reviewEnrichmentIntents.delete(reviewId);
 
     return { ...plan.updatedReview };
+  }
+
+  async attachReviewEnrichmentIntent(
+    input: AttachReviewEnrichmentIntentInput & ActorAttribution,
+  ): Promise<ReviewEnrichmentIntent> {
+    const review = this.reviews.get(input.reviewId);
+    if (!review || review.status !== "needs-review") {
+      throw new EnrichmentIntentClosedError(input.reviewId);
+    }
+    const voucher = this.vouchers.get(review.voucherId);
+    if (!voucher || voucher.status !== "needs-review") {
+      throw new EnrichmentIntentClosedError(input.reviewId);
+    }
+    const intent: ReviewEnrichmentIntent = {
+      reviewId: review.id,
+      voucherId: voucher.id,
+      proposals: structuredClone(input.proposals),
+      updatedAt: nowIso(),
+      updatedBy: input.actorId ?? DEMO_ACTOR_ID,
+    };
+    this.reviewEnrichmentIntents.set(review.id, intent);
+    return snapshotReviewEnrichmentIntent(intent);
+  }
+
+  async getReviewEnrichmentIntent(reviewId: string): Promise<ReviewEnrichmentIntent | undefined> {
+    const intent = this.reviewEnrichmentIntents.get(reviewId);
+    return intent ? snapshotReviewEnrichmentIntent(intent) : undefined;
   }
 
   async proposeEnrichmentWorkItem(

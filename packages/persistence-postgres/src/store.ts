@@ -1,6 +1,7 @@
 import type {
   AccountingMethod,
   AccountingSuggestion,
+  AttachReviewEnrichmentIntentInput,
   CloseRun,
   CompanySettings,
   ComplianceAlert,
@@ -19,6 +20,7 @@ import type {
   ProposeEnrichmentWorkItemInput,
   ReportBundle,
   ReportPack,
+  ReviewEnrichmentIntent,
   ReviewDecisionInput,
   ReviewTask,
   SieImportResult,
@@ -46,6 +48,7 @@ import {
   currentMonthToken,
   DEMO_ACTOR_ID,
   detectComplianceIssues,
+  EnrichmentIntentClosedError,
   evaluateVoucherRules,
   ExternalReferenceNotFoundError,
   filterLedgerLines,
@@ -57,6 +60,8 @@ import {
   planExternalReferenceLink,
   planExternalReferenceRemoval,
   planExtractionRefresh,
+  mergePrePostEnrichmentsIntoReviewDecisionPlan,
+  planPrePostEnrichment,
   planPostPostEnrichmentConfirm,
   planReviewDecision,
   planVoucherTagsAppend,
@@ -257,6 +262,14 @@ type EnrichmentWorkItemRow = {
   superseded_by_work_item_id: string | null;
 };
 
+type ReviewEnrichmentIntentRow = {
+  review_id: string;
+  voucher_id: string;
+  proposals: ReviewEnrichmentIntent["proposals"];
+  updated_at: Date | string;
+  updated_by: string;
+};
+
 function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
 }
@@ -365,6 +378,16 @@ function rowToEnrichmentWorkItem(row: EnrichmentWorkItemRow): EnrichmentWorkItem
     workItem.supersededByWorkItemId = row.superseded_by_work_item_id;
   }
   return workItem;
+}
+
+function rowToReviewEnrichmentIntent(row: ReviewEnrichmentIntentRow): ReviewEnrichmentIntent {
+  return {
+    reviewId: row.review_id,
+    voucherId: row.voucher_id,
+    proposals: structuredClone(row.proposals),
+    updatedAt: toIso(row.updated_at),
+    updatedBy: row.updated_by,
+  };
 }
 
 type PostedEnrichmentTargetRow = {
@@ -1484,8 +1507,31 @@ export class PostgresLedgerStore implements LedgerStore {
 
         // Planner validates edits (InvalidReviewEditError) before any write and
         // is re-entered on every chain-fork retry.
-        const plan = planReviewDecision(review, voucher, action, input);
-        if (plan.kind === "replay") return plan.review;
+        const basePlan = planReviewDecision(review, voucher, action, input);
+        if (basePlan.kind === "replay") return basePlan.review;
+        const intentRows = await tx<ReviewEnrichmentIntentRow[]>`
+          SELECT review_id, voucher_id, proposals, updated_at, updated_by
+          FROM ledger.review_enrichment_intents
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND review_id = ${reviewId}
+          LIMIT 1
+        `;
+        const intent = intentRows[0] ? rowToReviewEnrichmentIntent(intentRows[0]) : undefined;
+        const plan =
+          intent && action !== "reject"
+            ? mergePrePostEnrichmentsIntoReviewDecisionPlan(
+                basePlan,
+                planPrePostEnrichment({
+                  review,
+                  proposals: intent.proposals,
+                  postingLines: basePlan.lines ?? [],
+                  actorId: input.actorId ?? DEMO_ACTOR_ID,
+                  organizationId: voucher.organizationId,
+                  workspaceId: voucher.workspaceId,
+                }).companionEvents,
+              )
+            : basePlan;
 
         await tx`
         UPDATE ledger.review_tasks
@@ -1516,9 +1562,88 @@ export class PostgresLedgerStore implements LedgerStore {
           prev = appended.eventHash;
         }
 
+        await tx`
+          DELETE FROM ledger.review_enrichment_intents
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND review_id = ${reviewId}
+        `;
+
         return plan.updatedReview;
       }),
     );
+  }
+
+  async attachReviewEnrichmentIntent(
+    input: AttachReviewEnrichmentIntentInput & ActorAttribution,
+  ): Promise<ReviewEnrichmentIntent> {
+    return this.client.begin(async (tx) => {
+      await this.lockWorkspaceTail(tx);
+      const reviewRows = await tx<ReviewRow[]>`
+        SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
+               suggested_action, suggestion, provenance_timeline, title, created_at
+        FROM ledger.review_tasks
+        WHERE id = ${input.reviewId}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+        LIMIT 1
+      `;
+      const reviewRow = reviewRows[0];
+      if (!reviewRow || reviewRow.status !== "needs-review") {
+        throw new EnrichmentIntentClosedError(input.reviewId);
+      }
+      const voucherRows = await tx<{ id: string; status: string }[]>`
+        SELECT id, status
+        FROM ledger.vouchers
+        WHERE id = ${reviewRow.voucher_id}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+        LIMIT 1
+      `;
+      const voucherRow = voucherRows[0];
+      if (!voucherRow || voucherRow.status !== "needs-review") {
+        throw new EnrichmentIntentClosedError(input.reviewId);
+      }
+
+      const updatedAt = nowIso();
+      const updatedBy = input.actorId ?? DEMO_ACTOR_ID;
+      await tx`
+        INSERT INTO ledger.review_enrichment_intents (
+          organization_id, workspace_id, review_id, voucher_id,
+          proposals, updated_at, updated_by
+        ) VALUES (
+          ${this.defaults.organizationId}, ${this.defaults.workspaceId},
+          ${reviewRow.id}, ${voucherRow.id},
+          ${tx.json(input.proposals as unknown as Parameters<typeof tx.json>[0])},
+          ${updatedAt}, ${updatedBy}
+        )
+        ON CONFLICT (organization_id, workspace_id, review_id)
+        DO UPDATE SET
+          voucher_id = EXCLUDED.voucher_id,
+          proposals = EXCLUDED.proposals,
+          updated_at = EXCLUDED.updated_at,
+          updated_by = EXCLUDED.updated_by
+      `;
+      return {
+        reviewId: reviewRow.id,
+        voucherId: voucherRow.id,
+        proposals: structuredClone(input.proposals),
+        updatedAt,
+        updatedBy,
+      };
+    });
+  }
+
+  async getReviewEnrichmentIntent(reviewId: string): Promise<ReviewEnrichmentIntent | undefined> {
+    const rows = await this.client<ReviewEnrichmentIntentRow[]>`
+      SELECT review_id, voucher_id, proposals, updated_at, updated_by
+      FROM ledger.review_enrichment_intents
+      WHERE organization_id = ${this.defaults.organizationId}
+        AND workspace_id = ${this.defaults.workspaceId}
+        AND review_id = ${reviewId}
+      LIMIT 1
+    `;
+    return rows[0] ? rowToReviewEnrichmentIntent(rows[0]) : undefined;
   }
 
   async proposeEnrichmentWorkItem(

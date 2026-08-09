@@ -617,6 +617,14 @@ export function planPrePostEnrichment(input: {
 }
 
 export function mergePrePostEnrichmentsIntoReviewDecisionPlan(
+  plan: Extract<ReviewDecisionPlan, { kind: "apply" }>,
+  companionEvents: PlannedEvent[],
+): Extract<ReviewDecisionPlan, { kind: "apply" }>;
+export function mergePrePostEnrichmentsIntoReviewDecisionPlan(
+  plan: ReviewDecisionPlan,
+  companionEvents: PlannedEvent[],
+): ReviewDecisionPlan;
+export function mergePrePostEnrichmentsIntoReviewDecisionPlan(
   plan: ReviewDecisionPlan,
   companionEvents: PlannedEvent[],
 ): ReviewDecisionPlan {
