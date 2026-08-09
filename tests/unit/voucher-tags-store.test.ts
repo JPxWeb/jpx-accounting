@@ -127,6 +127,17 @@ test("direct tag route strips client actor attribution and validates bounds", as
   });
   assert.equal(invalid.status, 400);
   assert.equal(((await invalid.json()) as { code: string }).code, "validation_error");
+
+  const unknown = await app.request(`http://localhost/api/vouchers/${created.voucher.id}/tags`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      tagIds: ["tag_missing"],
+      mode: "add",
+    }),
+  });
+  assert.equal(unknown.status, 422);
+  assert.equal(((await unknown.json()) as { code: string }).code, "voucher_tags_invalid");
 });
 
 test("UnavailableLedgerStore fails closed for direct voucher tags", async () => {
@@ -149,6 +160,34 @@ test("API client appends voucher tags through the offline demo transport", async
   };
 
   const result = await client.appendVoucherTags(voucher.id, untrustedInput);
+  const removed = await client.appendVoucherTags(voucher.id, {
+    tagIds: ["tag_travel"],
+    mode: "remove",
+  });
 
   assert.deepEqual(result, { voucherId: voucher.id, tagIds: ["tag_travel"] });
+  assert.deepEqual(removed, { voucherId: voucher.id, tagIds: [] });
+});
+
+test("API client accepts a contract-valid empty tag projection from HTTP", async (t) => {
+  let sentBody: unknown;
+  t.mock.method(globalThis, "fetch", async (_input: string | URL | Request, init?: RequestInit) => {
+    sentBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ voucherId: "voucher_1", tagIds: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  });
+  const client = new AccountingApiClient({
+    baseUrl: "http://api.test",
+    runtimeMode: "normal",
+  });
+
+  const result = await client.appendVoucherTags("voucher_1", {
+    tagIds: ["tag_travel"],
+    mode: "remove",
+  });
+
+  assert.deepEqual(sentBody, { tagIds: ["tag_travel"], mode: "remove" });
+  assert.deepEqual(result, { voucherId: "voucher_1", tagIds: [] });
 });

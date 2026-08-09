@@ -112,6 +112,13 @@ export class ExternalReferenceNotFoundError extends Error {
   }
 }
 
+export class VoucherTagsValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VoucherTagsValidationError";
+  }
+}
+
 export function planExternalReferenceLink(
   voucherId: string,
   input: { url: string; label?: string; actorId: string },
@@ -183,13 +190,13 @@ export function planVoucherTagsAppend(
   scope: { organizationId: string; workspaceId: string; now?: string },
 ): VoucherTagsPlan {
   if (input.tagIds.length === 0 || input.tagIds.length > MAX_TAGS_PER_REQUEST) {
-    throw new Error(`Bounded tag request requires 1-${MAX_TAGS_PER_REQUEST} tag ids`);
+    throw new VoucherTagsValidationError(`Bounded tag request requires 1-${MAX_TAGS_PER_REQUEST} tag ids`);
   }
 
   const uniqueTagIds = [...new Set(input.tagIds)];
   const registeredTagIds = new Set(input.tagDefinitions.map((tag) => tag.id));
   const unknownTagId = uniqueTagIds.find((tagId) => !registeredTagIds.has(tagId));
-  if (unknownTagId) throw new Error(`Tag id is not in the registry: ${unknownTagId}`);
+  if (unknownTagId) throw new VoucherTagsValidationError(`Tag id is not in the registry: ${unknownTagId}`);
 
   const activeTagIds = new Set(input.existingActiveTagIds);
   const effectiveTagIds = uniqueTagIds.filter((tagId) =>
@@ -198,7 +205,7 @@ export function planVoucherTagsAppend(
   if (effectiveTagIds.length === 0) return { events: [] };
 
   if (input.mode === "add" && activeTagIds.size + effectiveTagIds.length > MAX_TAGS_PER_VOUCHER) {
-    throw new Error(`Bounded voucher tag limit is ${MAX_TAGS_PER_VOUCHER}`);
+    throw new VoucherTagsValidationError(`Bounded voucher tag limit is ${MAX_TAGS_PER_VOUCHER}`);
   }
 
   const payloadSchema = input.mode === "add" ? voucherTagsAddedPayloadSchema : voucherTagsRemovedPayloadSchema;

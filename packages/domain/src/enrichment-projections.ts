@@ -5,10 +5,11 @@ import {
   voucherTagsRemovedPayloadSchema,
   type ExternalReferenceProjection,
   type LedgerEvent,
+  type VoucherTagsProjection as ContractVoucherTagsProjection,
 } from "@jpx-accounting/contracts";
 
 export type TagDefinition = { id: string; name: string; color?: string };
-export type VoucherTagsProjection = { voucherId: string; tagIds: string[] };
+export type VoucherTagsProjection = ContractVoucherTagsProjection;
 
 export const MAX_TAGS_PER_REQUEST = 10;
 export const MAX_TAGS_PER_VOUCHER = 50;

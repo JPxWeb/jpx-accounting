@@ -39,6 +39,7 @@ import {
   summarizeEventIntegrity,
   today,
   type ReviewAction,
+  VoucherTagsValidationError,
 } from "@jpx-accounting/domain";
 import {
   EnrichmentWorkItemConflictError,
@@ -523,6 +524,10 @@ export function createApp({
 
     if (error instanceof ExternalReferenceNotFoundError) {
       return jsonError(c, error.message, runtimeMode, 404, { code: "external_reference_not_found" });
+    }
+
+    if (error instanceof VoucherTagsValidationError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "voucher_tags_invalid" });
     }
 
     if (error instanceof EnrichmentWorkItemNotFoundError) {

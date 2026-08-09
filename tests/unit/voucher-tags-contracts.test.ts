@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  appendVoucherTagsInputSchema,
   eventTypeSchema,
   voucherTagsAddedPayloadSchema,
+  voucherTagsProjectionSchema,
   voucherTagsRemovedPayloadSchema,
 } from "@jpx-accounting/contracts";
 
@@ -55,6 +57,27 @@ test("voucher tag payloads reject missing, empty, and unbounded identifiers", ()
       voucherId: "voucher_1",
       tagIds: Array.from({ length: 11 }, (_, index) => `tag_${index}`),
       actorId: "user:abc",
+    }),
+  );
+});
+
+test("voucher tag API contracts strip attribution and allow an empty active projection", () => {
+  const input = appendVoucherTagsInputSchema.parse({
+    tagIds: ["tag_travel"],
+    mode: "remove",
+    actorId: "user:forged-client",
+  });
+  const projection = voucherTagsProjectionSchema.parse({
+    voucherId: "voucher_1",
+    tagIds: [],
+  });
+
+  assert.equal(Object.hasOwn(input, "actorId"), false);
+  assert.deepEqual(projection.tagIds, []);
+  assert.throws(() =>
+    voucherTagsProjectionSchema.parse({
+      voucherId: "voucher_1",
+      tagIds: Array.from({ length: 51 }, (_, index) => `tag_${index}`),
     }),
   );
 });
