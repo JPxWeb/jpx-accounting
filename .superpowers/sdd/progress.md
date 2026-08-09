@@ -709,6 +709,22 @@
   - This re-review passed 42/42 focused invoice seam tests and
     `git diff --check`. Wave 6b remains NOT COMPLETE. See
     `.superpowers/sdd/w6b-invoice-seam-sol-rereview.md`.
+- Wave 6b intent-version consume-race Sol re-review: **APPROVE; COMPLETE**.
+  - Every attach mints a fresh opaque version; consume must echo that exact
+    version, and stale/forged assertions fail before any append with typed 409
+    `enrichment_intent_stale`.
+  - Memory/Postgres use one shared resolver, omission remains fail-closed, and
+    migration `0012` backfills legacy rows with `gen_random_uuid()`.
+  - Fresh focused intent tests passed 30/30 and the reviewed range passed
+    `git diff --check`. Existing clean records remain typecheck 11/11 plus
+    tests typecheck, and strict disposable-Postgres 119/119 with consume-race
+    parity.
+  - Reject+stale, redundant noop attaches, and English domain 409 detail are
+    documented non-blocking notes. No further Opus review is requested.
+  - Invoice E2E and visuals are explicitly deferred to the centralized
+    pre-merge gate because Wave 6e UI files are actively dirty; no visual
+    baseline may be updated without human review. See
+    `.superpowers/sdd/w6b-intent-version-sol-rereview.md`.
 - Wave 6c atomic trip seam Sol re-review: REQUEST_CHANGES; no renewed Opus
   review is required.
   - Typed trip 422s, required packet evidence ids, explicit intent
@@ -742,35 +758,6 @@
 
 ## In progress
 
-- Wave 6b intent-identity repair is implemented, reviewed by Opus, and awaits
-  Sol re-review; do not mark complete.
-  - Opus confirmed Sol's `[95]` race against the pre-fix code: approval read
-    the intent by review id only, so an MCP/advisor/second-tab/second-reviewer
-    upsert between attach and approve was appended under a human approval that
-    never saw it.
-  - Fix on the existing Wave 5 pre-post seam, no second seam: every attach
-    mints a fresh opaque `version`; `enrichmentIntent` becomes
-    `{ mode: "consume", version }` | `{ mode: "clear" }`, so a consume
-    assertion cannot be expressed without naming the intent; one shared
-    resolver refuses a stale/forged token with a typed 409
-    `enrichment_intent_stale` inside the decision transaction (Memory before
-    any read-model write, Postgres under the advisory lock before any append).
-    Omission stays fail-closed as `noop`.
-  - Fixed during review: migration `0012` backfilled the guessable token
-    `'rei_legacy_' || review_id`, which any client could forge from the review
-    id in the URL; it now uses `gen_random_uuid()`.
-  - Verified: `pnpm typecheck` 11/11, `pnpm typecheck:tests` (also clearing the
-    aggregate-typecheck blocker the Wave 6d/6e checkpoints reported), focused
-    intent tests 30/30, and strict `pnpm db:test` with migrations `0001`–`0012`
-    at 119/119 including the new consume-race scenario on Memory, Postgres, and
-    as a parity assertion.
-  - Commits: `5ec5169` plus the `app.ts` / api-client hunks that a concurrent
-    Wave 6e commit collision carried into `11e69d9`; the tree is correct and no
-    history was rewritten while other agents were committing.
-  - Still open: invoice E2E and visuals after `pnpm build:e2e`, deferred until
-    the concurrent Wave 6d/6e churn settles. `pnpm check` currently stops at
-    `format:check` on two committed Wave 6e files outside Wave 6b ownership.
-    See `.superpowers/sdd/w6b-opus-intent-consume-race-review.md`.
 - Wave 6d quantity inventory UOM/conformance Sol re-review: APPROVE.
   - Reviewed repairs: `232cdd2` + ownership-separation commit `9fadc18`.
   - Running quantities are now keyed by `(skuId, uom)`, so incompatible units
@@ -837,7 +824,6 @@
 
 ## Pending
 
-- Wave 6b intent-identity repair, Opus re-review, and renewed gate; remaining
-  Wave 6d full/visual gate; then Wave 6e Tasks 6e.3–6e.5, followed by Waves
-  7–8 in plan order (single feature branch; defer mid-wave PR to main until
-  program ready).
+- Remaining Wave 6d full/visual gate; then Wave 6e Tasks 6e.4–6e.5, followed
+  by Waves 7–8 in plan order (single feature branch; defer mid-wave PR to main
+  until program ready).
