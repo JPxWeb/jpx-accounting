@@ -967,8 +967,26 @@
     diff checks passed.
   - No approve, confirm, post, direct tag/reference, HTTP transport, Task 7.4,
     Task 7.5, PR, or `main` change is included.
+- Wave 7 Task 7.3 MCP handlers Sol review: **APPROVE**.
+  - The handlers call only authenticated existing API routes and expose no
+    approval, confirmation, posting, or direct ledger-mutation path.
+  - Open-review checks remain store-enforced; the response echoes the exact
+    freshly attached intent version, and closed reviews map to a structured
+    `review_not_open` conflict.
+  - MCP source attribution is forced before the post-post proposal API call;
+    actor attribution remains server-derived, and ledger effects still require
+    separate human confirmation.
+  - Upload initialization returns no file body, rejects relative/demo URLs, and
+    exposes only the API-minted HTTPS upload credential plus upload/blob
+    identity. API bearer credentials are not used for absolute blob uploads.
+  - Fresh independent verification passed: full unit suite 692/692, focused
+    MCP/API-client/review-proposal tests 18/18, changed-workspace and aggregate
+    test typechecks, focused ESLint/Prettier, and reviewed-range diff check.
+  - No auth or mutation hole warrants escalation. Separately staged Task 7.4
+    documentation was not reviewed or included in the review commit. See
+    `.superpowers/sdd/w7-handlers-sol-review.md`.
 
 ## Pending
 
-- Sol review of Wave 7 Task 7.3. After approval, continue Tasks 7.4–7.5 in plan
-  order (single feature branch; defer mid-wave PR to main until program ready).
+- Continue Wave 7 Tasks 7.4–7.5 in plan order (single feature branch; defer
+  mid-wave PR to main until program ready).
