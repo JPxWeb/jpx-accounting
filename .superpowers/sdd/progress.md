@@ -951,8 +951,24 @@
   - No high-risk auth/mutation hole or escalation is required. Tasks 7.3–7.5
     may continue in plan order. See
     `.superpowers/sdd/w7-foundation-sol-review.md`.
+- Wave 7 Task 7.3 MCP handlers are ready for Sol review at `0c16b4f`.
+  - `initialize_upload` exposes only an HTTPS SAS URL plus upload/blob
+    identity; relative/demo upload URLs fail closed and no base64 body exists.
+  - The stdio client requires `ACCOUNTING_API_BASE_URL` and
+    `JPX_MCP_BEARER_TOKEN`, forwarding the bearer through the existing
+    authenticated API client without sending it to blob storage.
+  - Review proposals use the open-review API, map closed-review 409s to a
+    structured MCP error, and now atomically echo the exact attached intent
+    version. Post-post proposals force `source: "mcp"`, preserve idempotency,
+    and stop at `pending_confirmation`.
+  - TDD RED observed the missing handler module and missing intent-version
+    response. The full unit suite passed 692/692; MCP/contracts/api-client/API
+    plus aggregate test typechecks, focused ESLint/Prettier, diagnostics, and
+    diff checks passed.
+  - No approve, confirm, post, direct tag/reference, HTTP transport, Task 7.4,
+    Task 7.5, PR, or `main` change is included.
 
 ## Pending
 
-- Continue Wave 7 Tasks 7.3–7.5 in plan order (single feature branch; defer
-  mid-wave PR to main until program ready).
+- Sol review of Wave 7 Task 7.3. After approval, continue Tasks 7.4–7.5 in plan
+  order (single feature branch; defer mid-wave PR to main until program ready).
