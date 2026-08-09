@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { eventTypeSchema, inventoryMovementPayloadSchema, skuMovementListSchema } from "@jpx-accounting/contracts";
+import {
+  enrichmentProposalSchema,
+  eventTypeSchema,
+  inventoryMovementPayloadSchema,
+  skuMovementListSchema,
+} from "@jpx-accounting/contracts";
 
 const movement = {
   movementId: "mov_1",
@@ -59,6 +64,28 @@ test("quantity movement payload forbids valued inventory fields", () => {
     }).success,
     false,
   );
+});
+
+test("quantity inventory proposal accepts quantity fields but not identity, value, or attribution", () => {
+  const proposal = {
+    kind: "quantity_inventory_movement",
+    skuId: "sku_1",
+    quantity: 3,
+    uom: "st",
+    direction: "out",
+  } as const;
+
+  assert.deepEqual(enrichmentProposalSchema.parse(proposal), proposal);
+  for (const forbidden of [
+    { movementId: "mov_forged" },
+    { lineId: "ln_forged" },
+    { bookedAt: "2026-08-09" },
+    { unitCost: 10 },
+    { currency: "SEK" },
+    { actorId: "user:forged" },
+  ]) {
+    assert.equal(enrichmentProposalSchema.safeParse({ ...proposal, ...forbidden }).success, false);
+  }
 });
 
 test("SKU movement list rows expose quantity and running quantity only", () => {
