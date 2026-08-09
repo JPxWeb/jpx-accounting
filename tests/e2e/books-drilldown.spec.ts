@@ -39,7 +39,11 @@ test("supplier row drills into the journal with a supplier filter chip", async (
   await expect(page.getByTestId("journal-supplier-filter")).toHaveCount(0);
 });
 
-test("?period= filters the journal server-side (month and fiscal quarter windows)", async ({ page, request }) => {
+test("?period= filters the journal server-side (month and fiscal quarter windows)", async ({
+  page,
+  request,
+  isMobile,
+}) => {
   // Seed lines are booked "now" (current month), so a pinned 2026-03-15 SIE
   // voucher is a permanent out-of-default-period fixture (plan finding 8).
   const sieFixture = [
@@ -62,15 +66,17 @@ test("?period= filters the journal server-side (month and fiscal quarter windows
   // Default period (current month): the seeded journal renders, March's 6110 does not.
   await page.goto("/books");
   const journalView = page.getByTestId("journal-view");
-  await expect(journalView.locator("table tbody tr")).not.toHaveCount(0);
+  await expect(journalView.getByTestId("ledger-voucher-toggle")).not.toHaveCount(0);
   await expect(journalView).not.toContainText("6110");
 
-  // Explicit March month token → the imported voucher's lines appear.
+  // Explicit March month token → expand the imported voucher to see account lines.
   await page.goto("/books?period=2026-03");
+  await activateControl(journalView.getByTestId("ledger-voucher-toggle").first(), isMobile);
   await expect(journalView).toContainText("6110");
 
   // Fiscal quarter token (Q1 of the fiscal year starting 2026 = Jan–Mar with
   // the default 01-01 fiscal year start) → March is inside the window.
   await page.goto("/books?period=2026-Q1");
+  await activateControl(journalView.getByTestId("ledger-voucher-toggle").first(), isMobile);
   await expect(journalView).toContainText("6110");
 });

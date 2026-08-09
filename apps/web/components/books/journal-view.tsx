@@ -9,21 +9,32 @@ import { useMemo } from "react";
 import { usePeriodScope } from "../../hooks/use-period-scope";
 import { apiClient } from "../../lib/client";
 import { groupJournalByVoucher } from "../../lib/ledger/group-vouchers";
-import { resolveLedgerMode, type LedgerMode } from "../../lib/ledger/ledger-mode-storage";
-import { buildLedgerVoucherViewModel } from "../../lib/ledger/ledger-voucher-view-model";
+import { resolveLedgerMode, saveLedgerMode, type LedgerMode } from "../../lib/ledger/ledger-mode-storage";
+import { buildLedgerVoucherViewModel, type LedgerVoucherViewModel } from "../../lib/ledger/ledger-voucher-view-model";
 import { buildVoucherLookup } from "../reports/voucher-link";
 import { LedgerVoucherDrawer } from "./ledger-voucher-drawer";
 import { LedgerVoucherOverview } from "./ledger-voucher-overview";
 
 const ledgerModes = ["inline", "drawer"] as const;
 
+function matchesQuery(vm: LedgerVoucherViewModel, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  if (vm.voucherNumber.toLowerCase().includes(needle)) return true;
+  if (vm.supplierName.toLowerCase().includes(needle)) return true;
+  if (vm.voucherId.toLowerCase().includes(needle)) return true;
+  return vm.lines.some((line) => line.description.toLowerCase().includes(needle));
+}
+
 export function JournalView() {
   const t = useTranslations("books.journal");
+  const tLedger = useTranslations("books.ledger");
   const tBooks = useTranslations("books");
   const { from, to } = usePeriodScope();
   const [supplier, setSupplier] = useQueryState("supplier", parseAsString);
-  const [ledgerModeParam] = useQueryState("ledgerMode", parseAsStringEnum([...ledgerModes]));
+  const [ledgerModeParam, setLedgerModeParam] = useQueryState("ledgerMode", parseAsStringEnum([...ledgerModes]));
   const [voucher, setVoucher] = useQueryState("voucher", parseAsString);
+  const [q, setQ] = useQueryState("q", parseAsString);
 
   const ledgerMode: LedgerMode = resolveLedgerMode(ledgerModeParam);
 
@@ -50,6 +61,11 @@ export function JournalView() {
     return groupJournalByVoucher(entries).map((group) => buildLedgerVoucherViewModel(group, lookup));
   }, [entries, lookup]);
 
+  const filteredVoucherViewModels = useMemo(() => {
+    if (!q) return voucherViewModels;
+    return voucherViewModels.filter((vm) => matchesQuery(vm, q));
+  }, [q, voucherViewModels]);
+
   function handleToggle(voucherId: string) {
     void setVoucher(voucher === voucherId ? null : voucherId);
   }
@@ -58,8 +74,15 @@ export function JournalView() {
     void setVoucher(null);
   }
 
-  const selectedViewModel = voucherViewModels.find((vm) => vm.voucherId === voucher) ?? null;
+  function handleModeChange(mode: LedgerMode) {
+    saveLedgerMode(mode);
+    void setLedgerModeParam(mode);
+    void setVoucher(null);
+  }
+
+  const selectedViewModel = filteredVoucherViewModels.find((vm) => vm.voucherId === voucher) ?? null;
   const drawerOpen = ledgerMode === "drawer" && selectedViewModel !== null;
+  const hasJournalEntries = voucherViewModels.length > 0;
 
   return (
     <div className="space-y-3" data-testid="journal-view" data-tour="books-journal">
@@ -82,7 +105,51 @@ export function JournalView() {
           </span>
         </div>
       ) : null}
-      {voucherViewModels.length === 0 ? (
+      {hasJournalEntries ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <label className="block flex-1">
+            <span className="sr-only">{tLedger("searchPlaceholder")}</span>
+            <input
+              type="search"
+              data-testid="journal-search"
+              value={q ?? ""}
+              placeholder={tLedger("searchPlaceholder")}
+              onChange={(event) => void setQ(event.target.value || null)}
+              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            />
+          </label>
+          <div
+            role="group"
+            aria-label={tLedger("modeSwitchAria")}
+            data-testid="ledger-mode-switch"
+            className="inline-flex rounded-lg border border-border bg-surface p-1"
+          >
+            <button
+              type="button"
+              data-testid="ledger-mode-inline"
+              aria-pressed={ledgerMode === "inline"}
+              onClick={() => handleModeChange("inline")}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                ledgerMode === "inline" ? "bg-primary text-white shadow-sm" : "text-muted-foreground"
+              }`}
+            >
+              {tLedger("modeInline")}
+            </button>
+            <button
+              type="button"
+              data-testid="ledger-mode-drawer"
+              aria-pressed={ledgerMode === "drawer"}
+              onClick={() => handleModeChange("drawer")}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                ledgerMode === "drawer" ? "bg-primary text-white shadow-sm" : "text-muted-foreground"
+              }`}
+            >
+              {tLedger("modeDrawer")}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {!hasJournalEntries ? (
         supplier ? (
           <div className="glass-panel rounded-xl p-8 text-center">
             <p className="text-sm text-muted-foreground">{t("emptyForSupplier", { supplier })}</p>
@@ -109,10 +176,14 @@ export function JournalView() {
             </div>
           </div>
         )
+      ) : filteredVoucherViewModels.length === 0 ? (
+        <div className="glass-panel rounded-xl p-8 text-center" data-testid="journal-search-empty">
+          <p className="text-sm text-muted-foreground">{tLedger("emptySearch")}</p>
+        </div>
       ) : (
         <LedgerVoucherOverview
           mode={ledgerMode}
-          vouchers={voucherViewModels}
+          vouchers={filteredVoucherViewModels}
           expandedVoucherId={voucher}
           onToggle={handleToggle}
         />

@@ -373,6 +373,11 @@
     },
     "ledger": {
       "drawerClose": "Close",
+      "searchPlaceholder": "Search vouchers…",
+      "modeInline": "Expand inline",
+      "modeDrawer": "Side drawer",
+      "modeSwitchAria": "Journal overview layout",
+      "emptySearch": "No vouchers match your search.",
       "slots": {
         "workItemConfirm": "Work-item confirmation is not available yet.",
         "externalRefs": "External references are not available yet.",

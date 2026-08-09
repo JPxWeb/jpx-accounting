@@ -373,6 +373,11 @@
     },
     "ledger": {
       "drawerClose": "Stäng",
+      "searchPlaceholder": "Sök verifikat…",
+      "modeInline": "Expandera inline",
+      "modeDrawer": "Sidopanel",
+      "modeSwitchAria": "Layout för journalöversikt",
+      "emptySearch": "Inga verifikat matchar sökningen.",
       "slots": {
         "workItemConfirm": "Arbetsbekräftelse är inte tillgänglig ännu.",
         "externalRefs": "Externa referenser är inte tillgängliga ännu.",
