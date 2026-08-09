@@ -59,17 +59,28 @@ export function filterLedgerLines(lines: LedgerLine[], range?: { from?: string; 
   });
 }
 
-export function buildJournal(lines: LedgerLine[]): JournalEntryProjection[] {
-  return lines.map((line, index) => ({
-    id: `journal_${index + 1}`,
-    voucherId: line.voucherId,
-    accountNumber: line.accountNumber,
-    accountName: line.accountName,
-    description: line.description,
-    debit: line.debit,
-    credit: line.credit,
-    bookedAt: line.bookedAt,
-  }));
+export function buildJournal(
+  lines: LedgerLine[],
+  context?: { eventIdByLineIndex?: ReadonlyMap<number, string> },
+): JournalEntryProjection[] {
+  return lines.map((line, index) => {
+    const eventId = context?.eventIdByLineIndex?.get(index);
+    const lineId = line.lineId ?? (eventId !== undefined ? `legacy_${eventId}_${index}` : undefined);
+
+    return {
+      id: `journal_${index + 1}`,
+      ...(lineId !== undefined ? { lineId } : {}),
+      voucherId: line.voucherId,
+      accountNumber: line.accountNumber,
+      accountName: line.accountName,
+      description: line.description,
+      debit: line.debit,
+      credit: line.credit,
+      bookedAt: line.bookedAt,
+      vatCode: line.vatCode,
+      deductible: line.deductible,
+    };
+  });
 }
 
 export function buildBalances(lines: LedgerLine[]): AccountBalanceProjection[] {
