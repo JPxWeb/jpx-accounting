@@ -1088,6 +1088,24 @@
   - Task 8.2 Origin/Host/JWT/rate-limit/RFC 9728 security work, Task 8.3 demo
     stub retirement, and Task 8.4 live SSE resumption remain unstarted. Wave 8
     and the overall program are NOT COMPLETE; stop here for Sol review.
+- Wave 8 Task 8.1 Streamable HTTP adapter Sol review: **REQUEST_CHANGES**.
+  - The per-session SSE event ring is capped at 100 and serialized operations
+    preserve accepted request order, but the session map itself has no capacity
+    bound.
+  - Expired sessions are removed only when their exact ids are queried, so
+    repeated abandoned `initialize` requests can retain sessions indefinitely;
+    TTL alone does not bound process memory.
+  - Add a configured maximum session count plus expiry sweep/capacity behavior
+    and regression coverage. POST/GET routing and the unchanged 13-tool
+    proposal/read-only boundary were otherwise verified; no ledger mutation
+    entrypoint was added.
+  - Fresh focused HTTP adapter tests passed 8/8; the implementer records focused
+    MCP 19/19 and full unit 702/702. No packaged escalation is required because
+    this is a localized capacity defect, not authentication bypass, session
+    hijack, or ledger mutation.
+  - Task 8.1 remains unapproved pending repair. Task 8.2 sibling work may
+    continue in disjoint files. See
+    `.superpowers/sdd/w8-http-adapter-sol-review.md`.
 
 ## Pending
 
