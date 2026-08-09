@@ -23,8 +23,13 @@ test.beforeEach(async ({ request }) => {
     },
   });
   expect(intentResponse.ok()).toBe(true);
+  const intent = (await intentResponse.json()) as { version: string };
 
-  const approvalResponse = await request.post(`${apiBaseUrl}/api/reviews/${review!.id}/approve`, { data: {} });
+  // Approval must name the intent it consumes; omitting the version is
+  // fail-closed and would post the voucher without the project assignment.
+  const approvalResponse = await request.post(`${apiBaseUrl}/api/reviews/${review!.id}/approve`, {
+    data: { enrichmentIntent: { mode: "consume", version: intent.version } },
+  });
   expect(approvalResponse.ok()).toBe(true);
 });
 

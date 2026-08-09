@@ -833,6 +833,35 @@
   - No Opus escalation is required. Wave 6e remains NOT COMPLETE pending the
     Task 6e.4 fix and Task 6e.5 full/functional/visual gates. See
     `.superpowers/sdd/w6e-ui-sol-review.md`.
+- Wave 6e Task 6e.4 unit-cost precision blocker fixed in `3acc905`; ready for
+  Sol re-review.
+  - Unit costs preserve their authoritative decimal precision while extended
+    amounts continue using normal currency precision, so `15.555 SEK × 2`
+    reconciles with the displayed `31.11 SEK`.
+  - TDD RED observed the missing precision formatter; focused presentation
+    tests passed 5/5, the full unit suite passed 683/683, and web/tests
+    typechecks plus focused lint/format checks passed.
+  - Unrelated dirty Wave 6b review and projects E2E files were not staged.
+    Wave 6e remains NOT COMPLETE; Task 6e.5 full/functional/visual gates are
+    still pending.
+- Wave 6b deferred functional E2E was run and found one real regression, now
+  fixed; the Opus review doc is updated and Sol should re-confirm the spec.
+  - `tests/e2e/projects-vertical.spec.ts` attached a `project_assignment`
+    intent and approved with an empty body. Under the new fail-closed
+    semantics that discards the assignment, so the projects panel rendered
+    empty on both projects. The spec now echoes the version its attach
+    returned; no product code changed.
+  - It was the only approving caller that did not name its intent. The review
+    edit sheet echoes the version; the queue, dashboard widget, advisor
+    `executeReviewApproval`, and demo transport attach a deliberate `noop` and
+    correctly omit the assertion.
+  - 53/53 approval and enrichment E2E specs pass on desktop and Pixel 7.
+  - Eight first-pass failures were cross-run contamination, not defects: a
+    sibling agent's concurrent Playwright run shared the test API on `:3201`
+    and its `resetApiState` wiped state mid-spec. Run only one Playwright
+    process against this worktree.
+  - The visual suite remains deferred; no baseline was updated. Wave 6b's
+    verdict is otherwise unchanged.
 
 ## Pending
 

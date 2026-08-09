@@ -198,11 +198,36 @@ New coverage proving the escalation is closed:
 - Contracts: an intent without a version fails to parse, and
   `{ mode: "consume" }` without a version is unrepresentable.
 
-**Not run:** `pnpm build:e2e` + invoice E2E and the visual suite. The review
-sheet's submit path changed shape (attach now returns a value the approval
-echoes), so both should be re-run once the concurrent Wave 6d/6e file churn
-settles — running them against a worktree three agents are writing to would
-produce noise, not signal.
+### E2E follow-up (run after the first pass of this review)
+
+The deferred functional E2E was run after all: 53 specs across the approval and
+enrichment surfaces (`projects-`, `trips-`, `inventory-quantity-`,
+`invoices-`, `invoices-review-fields`, `review-edit`, `external-references`,
+`reports-drill`, `voucher-tags`, `ledger-line-id-vat`, `api`) on desktop and
+Pixel 7. It found one genuine regression, now fixed.
+
+**[90] `tests/e2e/projects-vertical.spec.ts` encoded the old racy contract.**
+Its `beforeEach` attached a `project_assignment` intent and then approved with
+`data: {}`. Under implicit consume that posted the assignment; under
+fail-closed omission the assignment is discarded, so `projects-list-panel`
+rendered empty and the spec failed on **both** projects. This is the intended
+behavior change reaching a caller that never named its intent — the fix is to
+echo the version the attach returned, which the spec now does. It is also the
+only such caller: every other approving surface either echoes the version
+(review edit sheet) or attaches a deliberate `noop` and omits the assertion
+(queue, dashboard widget, advisor `executeReviewApproval`, the demo transport).
+
+All 53 pass after the spec fix. Eight failures in the first pass —
+`review-edit` ×4 and `trips-vertical` ×2 on Pixel 7 only, plus the two real
+`projects-vertical` ones — were cross-run contamination, not defects: a sibling
+agent's concurrent Playwright run shared the test API on `:3201`, so its
+`resetApiState` wiped state mid-spec (the giveaway was
+`trip list has an honest empty state` failing, a spec that never touches an
+intent). All eight pass in isolation. Only ever run one Playwright process
+against this worktree.
+
+**Still not run:** the visual suite. No baseline may be updated while Wave 6e
+UI files are dirty; that belongs to the centralized pre-merge gate.
 
 `pnpm check` currently stops at `format:check` on two committed Wave 6e files
 outside Wave 6b ownership (`services/api/src/routes/lists-valued-movements.ts`,
@@ -220,7 +245,19 @@ Prettier-clean. That gate belongs to the Wave 6e owner.
    **met**.
 6. Migration additive, idempotent, and fail-closed for pre-existing rows —
    **met after the `gen_random_uuid()` fix**.
-7. Invoice E2E and visual re-run — **open**, deferred to the centralized gate.
+7. Functional E2E across the approval and enrichment surfaces — **met** (53/53
+   after repairing `projects-vertical.spec.ts`, the one caller that approved
+   without naming its intent). Visual re-run remains **open**, deferred to the
+   centralized gate.
 
 Wave 6b is **NOT COMPLETE**. No PR was opened, `main` was not touched, and no
 Wave 6e behavior was implemented by this review.
+
+## 7. Addendum — after Sol's re-review
+
+Sol cleared this finding (`w6b-intent-version-sol-rereview.md`, "APPROVE;
+COMPLETE") with E2E explicitly deferred. The `projects-vertical` regression
+above was found inside that deferral and is fixed in the same spirit as the
+rest of the change: the approval now names the intent it consumes. It touches
+one test file, no product code, and does not reopen the design. Sol should
+re-confirm the spec change; nothing else in the verdict moves.
