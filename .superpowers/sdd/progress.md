@@ -257,13 +257,27 @@
   - `pnpm build:e2e` and focused desktop/Pixel 7 tag E2E passed 4/4, including
     reload persistence without cache replay.
   - Wave 4 final gate may proceed. Wave 5 was not started.
+- Wave 5 pipelined foundation batch completed while the Wave 4 final gate ran.
+  - Task 5.1 review-enrichment intent contracts `04789c7`.
+  - Task 5.4 additive journal/typed line-enrichment contracts `179429c`.
+  - Task 5.5 stable `ln_` identifiers on new posting lines `b99c8bc`.
+  - Task 5.6 locked `journal_n` plus projection-only legacy `lineId` rule
+    `508ff1a`.
+  - Task 5.7 line-target record/supersede planning and replay `d627d6e`.
+  - Concurrent Wave 4 gate documentation commit `5e6832f` was preserved.
+  - Task 5.8 route-free list projection framework `e69e746`.
+  - Focused unit tests passed 30/30; contracts, domain, and tests typechecks
+    passed; no store change, so this batch did not run `pnpm db:test`.
 
 ## In progress
 
-- None.
+- Wave 5 foundation batch is stopped at the Sol review checkpoint. See
+  `.superpowers/sdd/wave-5-batch-report.md`.
 
 ## Pending
 
 - Task 4.5 Wave 4 final gate.
-- Waves 5–8 (single feature branch; defer mid-wave PR to main until program
+- Wave 5 Tasks 5.2–5.3 and 5.9–5.12 after Sol review and independent Wave 4
+  final-gate evaluation.
+- Waves 6–8 (single feature branch; defer mid-wave PR to main until program
   ready).
