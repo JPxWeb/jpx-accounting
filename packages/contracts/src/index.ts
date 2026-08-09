@@ -58,6 +58,8 @@ export const eventTypeSchema = z.enum([
   "LineEnrichmentSuperseded",
   "ProjectRegistered",
   "ProjectArchived",
+  "InvoiceRegistered",
+  "PaymentAllocated",
 ]);
 export const ruleSeveritySchema = z.enum(["info", "warning", "blocking"]);
 export const assistantAnswerStatusSchema = z.enum(["grounded", "insufficient-basis"]);

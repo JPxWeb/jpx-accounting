@@ -16,6 +16,47 @@ export const projectLineEnrichmentPayloadSchema = z.object({
   objectCode: z.string().min(1).optional(),
 });
 
+export const invoiceLineEnrichmentPayloadSchema = z.object({
+  invoiceId: z.string().min(1),
+  direction: z.enum(["ar", "ap"]),
+});
+
+export const invoiceRegisteredPayloadSchema = z.object({
+  invoiceId: z.string().min(1),
+  direction: z.enum(["ar", "ap"]),
+  counterparty: z.string().min(1),
+  dueDate: z.iso.date(),
+  currency: z.string().length(3),
+  originalAmount: z.number().positive(),
+});
+
+export const paymentAllocatedPayloadSchema = z.object({
+  paymentId: z.string().min(1),
+  invoiceId: z.string().min(1),
+  amount: z.number().positive(),
+  currency: z.string().length(3),
+  allocatedAt: z.iso.datetime(),
+});
+
+export const openInvoiceListRowSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal("open_invoice"),
+  direction: z.enum(["ar", "ap"]),
+  counterparty: z.string().min(1),
+  dueDate: z.iso.date(),
+  currency: z.string().length(3),
+  originalAmount: z.number().positive(),
+  openAmount: z.number(),
+});
+
+export const paymentHistoryListRowSchema = paymentAllocatedPayloadSchema.extend({
+  id: z.string().min(1),
+  kind: z.literal("payment"),
+});
+
+export const openInvoiceListSchema = z.array(openInvoiceListRowSchema);
+export const paymentHistoryListSchema = z.array(paymentHistoryListRowSchema);
+
 export const projectRegisteredPayloadSchema = z.object({
   projectId: z.string().min(1),
   name: z.string().min(1),
@@ -196,6 +237,11 @@ export const submitReviewProposalResultSchema = z.object({
 
 export type EnrichmentProposal = z.infer<typeof enrichmentProposalSchema>;
 export type ProjectLineEnrichmentPayload = z.infer<typeof projectLineEnrichmentPayloadSchema>;
+export type InvoiceLineEnrichmentPayload = z.infer<typeof invoiceLineEnrichmentPayloadSchema>;
+export type InvoiceRegisteredPayload = z.infer<typeof invoiceRegisteredPayloadSchema>;
+export type PaymentAllocatedPayload = z.infer<typeof paymentAllocatedPayloadSchema>;
+export type OpenInvoiceListRow = z.infer<typeof openInvoiceListRowSchema>;
+export type PaymentHistoryListRow = z.infer<typeof paymentHistoryListRowSchema>;
 export type ProjectRegisteredPayload = z.infer<typeof projectRegisteredPayloadSchema>;
 export type ProjectArchivedPayload = z.infer<typeof projectArchivedPayloadSchema>;
 export type ProjectAssignmentProposal = z.infer<typeof projectAssignmentProposalSchema>;
