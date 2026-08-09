@@ -436,12 +436,21 @@
   - No Opus escalation is required. Tasks 6b.3+ may proceed; the eventual
     server-attributed event producer must validate allocation currency before
     Wave 6b is declared complete. See `.superpowers/sdd/w6b-sol-review.md`.
+- Wave 6b store/API checkpoint completed.
+  - Task 6b.3 read routes and api-client methods: `ee1d9bf`.
+  - Sol-required append-only invoice/payment writers: `e66a0c1`.
+  - First invoice/payment identity is authoritative; currency mismatch fails
+    before append; API attribution remains server-derived.
+  - Focused invoice tests passed 15/15; affected typechecks passed.
+  - Strict `pnpm db:test` applied migrations `0001`–`0011` and passed 101/101
+    integration tests, including Memory/Postgres writer parity.
+  - Ready for Sol review before Tasks 6b.4–6b.6 UI/gate work.
 
 ## In progress
 
-- No task is currently in progress.
+- Wave 6b Tasks 6b.4–6b.6 are stopped at the store/API Sol checkpoint.
 
 ## Pending
 
-- Waves 6b–8 in plan order (single feature branch; defer mid-wave PR to main
+- Wave 6b Tasks 6b.4–6b.6, then Waves 6c–8 in plan order (single feature branch; defer mid-wave PR to main
   until program ready).

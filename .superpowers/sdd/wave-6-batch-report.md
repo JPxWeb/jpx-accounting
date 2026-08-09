@@ -156,3 +156,62 @@ Review the Wave 6b foundation for:
 3. first-registration authority and append-only allocation replay;
 4. partial/full allocation math and two-decimal rounding;
 5. generic list kind names (`open_invoice`, `payment`) before API work begins.
+
+# Wave 6b store/API Sol checkpoint
+
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Base: `a80cfa5`
+Scope: Task 6b.3 plus the Sol-required production event-writer completion
+Checkpoint: **READY FOR SOL REVIEW**
+
+## Completed tasks
+
+- Task 6b.3 — open-invoice and payment-history read routes and api-client:
+  `ee1d9bf`
+  - Added pure `GET /api/lists/open-invoices` and
+    `GET /api/lists/payment-history` routes.
+  - Added contract-validated HTTP and offline-demo client methods.
+  - Read routes append no events.
+- Sol-required production writers — invoice registration/payment allocation:
+  `e66a0c1`
+  - Added append-only Memory/Postgres/Unavailable store parity, authenticated
+    API routes, and HTTP/offline client methods.
+  - Duplicate invoice and payment identities keep the first event authoritative.
+  - Payment allocation validates the registered invoice currency before append;
+    mismatch returns typed HTTP 422 and appends nothing.
+  - API payload parsing strips forged actor fields and routes inject only the
+    server-derived actor.
+  - No AI direct-write path was added; invoice line enrichment remains on the
+    existing work-item/review path.
+
+## TDD evidence
+
+- Task 6b.3 RED: both list routes returned 404; GREEN: exact empty derived JSON
+  and no event append.
+- Writer RED: store methods were absent and both writer routes returned 404.
+  GREEN: immutable first-identity replay, server attribution, and fail-before-
+  append currency validation pass across Memory and Postgres.
+
+## Verification
+
+- Focused invoice unit/route suite: PASS, 15/15.
+- Focused Memory writer conformance: PASS; Postgres cases correctly skipped
+  outside the strict gate.
+- Contracts/domain/persistence/API/api-client/tests typechecks: PASS.
+- `pnpm db:test`: PASS, migrations `0001`–`0011`, 101/101 integration tests,
+  including Memory/Postgres invoice/payment parity.
+- Formatting, ESLint/IDE diagnostics, and `git diff --check`: PASS.
+
+## Sol review ask
+
+Review this store/API checkpoint for:
+
+1. first-registration and first-payment identity under replay;
+2. fail-before-append allocation currency validation;
+3. workspace advisory-lock serialization and Memory/Postgres parity;
+4. server-owned actor attribution and no AI direct-write path;
+5. read-route/client contract validation.
+
+Tasks 6b.4–6b.6 remain intentionally unstarted pending this natural Sol
+checkpoint. No PR was opened and Wave 6c was not started.
