@@ -33,6 +33,7 @@ test("books projects list and workflow filter", async ({ page, isMobile }) => {
   await page.goto("/books?view=journal&workflow=project");
 
   await expect(page.getByTestId("projects-list-panel")).toBeVisible();
+  await expect(page.getByTestId("ledger-voucher-toggle")).toHaveCount(1);
   await activateControl(page.getByTestId("projects-list-row").first(), isMobile);
   await expect(page.getByTestId("ledger-voucher-detail")).toBeVisible();
   guard.assertClean();

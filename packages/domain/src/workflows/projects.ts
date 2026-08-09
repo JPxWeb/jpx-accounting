@@ -8,7 +8,7 @@ import {
 } from "@jpx-accounting/contracts";
 
 import { buildLineEnrichmentsFromEvents } from "../enrichment-projections";
-import { collectLedgerLinesFromEvents } from "../projections";
+import { buildJournal, collectLedgerLinesFromEvents } from "../projections";
 
 export type { ProjectsListRow } from "@jpx-accounting/contracts";
 
@@ -51,8 +51,10 @@ export function buildProjectsList(events: LedgerEvent[]): ProjectsListRow[] {
       },
     ]),
   );
+  // Reuse the canonical journal projection so payload `ln_` ids and
+  // projection-only legacy ids follow the single Wave 5 identity rule.
   const voucherIdByLineId = new Map(
-    collectLedgerLinesFromEvents(events).flatMap((line) =>
+    buildJournal(collectLedgerLinesFromEvents(events)).flatMap((line) =>
       line.lineId === undefined ? [] : [[line.lineId, line.voucherId] as const],
     ),
   );

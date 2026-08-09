@@ -384,6 +384,8 @@
       "projects": {
         "title": "Projekt",
         "description": "Registrerade projekt och deras aktiva tilldelningar till bokförda rader.",
+        "loading": "Läser in projekt…",
+        "error": "Projekten kunde inte läsas in.",
         "empty": "Inga projekt har registrerats ännu.",
         "activityCount": "{count, plural, one {# aktivitet} other {# aktiviteter}}"
       }

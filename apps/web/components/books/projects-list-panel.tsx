@@ -6,9 +6,13 @@ import { useTranslations } from "next-intl";
 export function ProjectsListPanel({
   rows,
   onOpen,
+  loading = false,
+  hasError = false,
 }: {
   rows: ProjectsListRow[];
   onOpen: (row: ProjectsListRow) => void;
+  loading?: boolean;
+  hasError?: boolean;
 }) {
   const t = useTranslations("books.lists.projects");
 
@@ -22,7 +26,15 @@ export function ProjectsListPanel({
         {t("title")}
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">{t("description")}</p>
-      {rows.length === 0 ? (
+      {loading ? (
+        <p className="mt-4 text-sm text-muted-foreground" role="status">
+          {t("loading")}
+        </p>
+      ) : hasError ? (
+        <p className="mt-4 text-sm text-danger" role="alert">
+          {t("error")}
+        </p>
+      ) : rows.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">{t("empty")}</p>
       ) : (
         <ul className="mt-4 divide-y divide-border">

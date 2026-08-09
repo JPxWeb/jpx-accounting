@@ -74,6 +74,7 @@ export function JournalView() {
     queryFn: () => apiClient.getProjectsList(),
     enabled: workflow === "project",
   });
+  const projectVoucherIds = new Set((projectsQuery.data ?? []).flatMap((project) => project.voucherIds));
 
   const lookup = buildVoucherLookup(workspace);
   const vouchersById = lookup.vouchersById;
@@ -89,15 +90,24 @@ export function JournalView() {
     buildLedgerVoucherViewModel(group, workspace, lookup, {
       activateExternalRefs: true,
       activateTags: true,
-      activateWorkflows: workflow === "project",
+      activateWorkflows: workflow === "project" && projectVoucherIds.has(group.voucherId),
     }),
   );
+  const workflowFilteredVoucherViewModels =
+    workflow === "project" && projectsQuery.data !== undefined
+      ? voucherViewModels.filter((viewModel) => projectVoucherIds.has(viewModel.voucherId))
+      : voucherViewModels;
   const tagFilteredVoucherViewModels = tag
-    ? voucherViewModels.filter((viewModel) => viewModel.tagIds.includes(tag))
-    : voucherViewModels;
+    ? workflowFilteredVoucherViewModels.filter((viewModel) => viewModel.tagIds.includes(tag))
+    : workflowFilteredVoucherViewModels;
   const filteredVoucherViewModels = q
     ? tagFilteredVoucherViewModels.filter((viewModel) => matchesQuery(viewModel, q))
     : tagFilteredVoucherViewModels;
+  const availableVoucherIds = new Set(voucherViewModels.map((viewModel) => viewModel.voucherId));
+  const visibleProjects = (projectsQuery.data ?? []).map((project) => ({
+    ...project,
+    voucherIds: project.voucherIds.filter((voucherId) => availableVoucherIds.has(voucherId)),
+  }));
 
   const handleToggle = useCallback(
     (voucherId: string) => {
@@ -112,12 +122,13 @@ export function JournalView() {
 
   const handleProjectOpen = useCallback(
     (project: ProjectsListRow) => {
-      const voucherId = project.voucherIds.find((candidate) =>
-        filteredVoucherViewModels.some((viewModel) => viewModel.voucherId === candidate),
-      );
-      if (voucherId) void setVoucher(voucherId);
+      const voucherId = project.voucherIds[0];
+      if (!voucherId) return;
+      void setQ(null);
+      void setTag(null);
+      void setVoucher(voucherId);
     },
-    [filteredVoucherViewModels, setVoucher],
+    [setQ, setTag, setVoucher],
   );
 
   function handleModeChange(mode: LedgerMode) {
@@ -132,7 +143,14 @@ export function JournalView() {
 
   return (
     <div className="space-y-3" data-testid="journal-view" data-tour="books-journal">
-      {workflow === "project" ? <ProjectsListPanel rows={projectsQuery.data ?? []} onOpen={handleProjectOpen} /> : null}
+      {workflow === "project" ? (
+        <ProjectsListPanel
+          rows={visibleProjects}
+          onOpen={handleProjectOpen}
+          loading={projectsQuery.isLoading}
+          hasError={projectsQuery.isError}
+        />
+      ) : null}
       {supplier ? (
         <div className="flex items-center gap-2">
           <span

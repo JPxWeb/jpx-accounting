@@ -408,6 +408,23 @@
   - Visual comparisons passed 20/20 with no baseline update; i18n parity passed
     at 1029 keys per locale and all seam gates passed.
   - No PR to `main` was opened. Wave 6b remains blocked pending Sol approval.
+- Wave 6a Tasks 6a.3–6a.6 Sol review: APPROVE_WITH_FIXES.
+  - Legacy project assignments now reuse the canonical journal projection to
+    map Opus-approved `legacy_<eventId>_<index>` targets to voucher drill ids;
+    `journal_n` remains presentation-only.
+  - `?workflow=project` now filters to assigned vouchers and activates workflow
+    detail only for those vouchers; localized loading/error states replace
+    false empty-registry rendering.
+  - Shared Memory/Postgres conformance now proves duplicate registration keeps
+    the first project name, status, actor, and single append.
+  - Focused unit tests passed 17/17; affected typechecks, ESLint, Prettier,
+    diagnostics, diff checks, i18n 1031/1031, and seams passed.
+  - Strict `pnpm db:test` passed migrations `0001`–`0011` and 98/98 integration
+    tests; `pnpm build:e2e` and focused project E2E passed 4/4 across desktop
+    and Pixel 7.
+  - No Opus escalation is required. Wave 6a is COMPLETE and Wave 6b may
+    proceed, including already-pipelined disjoint work. See
+    `.superpowers/sdd/w6a-b-sol-review.md`.
 
 ## In progress
 
@@ -415,6 +432,5 @@
 
 ## Pending
 
-- Sol review of completed Wave 6a Tasks 6a.3–6a.6.
 - Waves 6b–8 in plan order (single feature branch; defer mid-wave PR to main
   until program ready).

@@ -178,3 +178,36 @@ test("projects list links active assignments to their posted vouchers", () => {
 
   assert.deepEqual(rows[0]?.voucherIds, ["voucher_1"]);
 });
+
+test("projects list links legacy line targets through canonical projection identity", () => {
+  const rows = buildProjectsList([
+    event("evt_project", "ProjectRegistered", {
+      projectId: "proj_1",
+      name: "Bridge retrofit",
+      status: "active",
+    }),
+    event("evt_legacy_posted", "PostedToLedger", {
+      lines: [
+        {
+          voucherId: "voucher_legacy",
+          accountNumber: "6540",
+          accountName: "IT",
+          description: "Legacy cost",
+          debit: 100,
+          credit: 0,
+          vatCode: "VAT25",
+          bookedAt: "2026-08-09",
+          deductible: true,
+        },
+      ],
+    }),
+    event("evt_enrichment", "LineEnrichmentRecorded", {
+      lineId: "legacy_evt_legacy_posted_0",
+      enrichmentType: "project",
+      enrichmentId: "le_1",
+      payload: { projectId: "proj_1" },
+    }),
+  ]);
+
+  assert.deepEqual(rows[0]?.voucherIds, ["voucher_legacy"]);
+});

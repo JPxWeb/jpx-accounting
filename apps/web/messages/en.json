@@ -384,6 +384,8 @@
       "projects": {
         "title": "Projects",
         "description": "Registered projects and their active posted-line assignments.",
+        "loading": "Loading projects…",
+        "error": "Projects could not be loaded.",
         "empty": "No projects registered yet.",
         "activityCount": "{count, plural, one {# activity} other {# activities}}"
       }

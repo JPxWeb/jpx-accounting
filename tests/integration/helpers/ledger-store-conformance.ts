@@ -854,6 +854,32 @@ export async function scenarioVoucherTags(h: ConformanceHarness): Promise<Confor
   };
 }
 
+export async function scenarioProjectRegistration(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const eventsBefore = (await h.store.getEvents()).length;
+  const first = await h.store.registerProject({
+    projectId: "proj_conformance",
+    name: "Original project",
+    actorId: h.actorId,
+  });
+  const duplicate = await h.store.registerProject({
+    projectId: "proj_conformance",
+    name: "Replacement name",
+    actorId: "user:other",
+  });
+  const projectEvents = (await h.store.getEvents()).filter(
+    (event) => event.eventType === "ProjectRegistered" && event.aggregateId === "proj_conformance",
+  );
+
+  return {
+    firstName: first.name,
+    duplicateName: duplicate.name,
+    duplicateStatus: duplicate.status,
+    eventDelta: (await h.store.getEvents()).length - eventsBefore,
+    projectEventCount: projectEvents.length,
+    registrationActor: projectEvents[0]?.actorId ?? null,
+  };
+}
+
 export const CONFORMANCE_SCENARIOS: Array<{
   name: string;
   run: (h: ConformanceHarness) => Promise<ConformanceOutcome>;
@@ -873,6 +899,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "line enrichment supersession", run: scenarioLineEnrichmentSupersession },
   { name: "external reference append-only paths", run: scenarioExternalReferences },
   { name: "voucher tag append-only paths", run: scenarioVoucherTags },
+  { name: "project registration is immutable", run: scenarioProjectRegistration },
 ];
 
 export function assertConformanceParity(
