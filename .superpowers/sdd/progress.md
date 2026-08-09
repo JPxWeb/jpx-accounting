@@ -1167,9 +1167,23 @@
   - See `.superpowers/sdd/w8-legacy-mcp-sol-review.md`. Task 8.4 sibling work
     may start in disjoint files; Task 8.3 remains unapproved, and Wave 8 is NOT
     COMPLETE.
+- Wave 8 Task 8.4 session SSE resumption is ready for Sol review at `b18293c`.
+  - GET `/api/mcp` replays buffered events after `Last-Event-ID`, keeps the
+    stream subscribed for later session events, and unregisters the stream on
+    client cancellation.
+  - Integration coverage exercises the real guarded API route, the exact
+    13-tool proposal/read-only boundary, forbidden approval/confirmation/post
+    names, replay, and live delivery. Human approval boundaries and the
+    bounded session/event stores remain unchanged.
+  - TDD RED observed a live stream timing out after a later `tools/list`.
+    Focused MCP/API tests passed 18/18; strict Postgres integration passed
+    121/121; MCP, API, and aggregate tests typechecks plus focused
+    ESLint/Prettier and diagnostics passed.
+  - Task 8.3's E2E repair remains owned separately. Task 8.5, PR creation, and
+    `main` remain deferred; Wave 8 is NOT COMPLETE. Stop here for Sol review.
 
 ## Pending
 
 - Repair and re-review the Task 8.3 functional E2E assertion.
-- Task 8.4 sibling work may proceed in disjoint files. Keep PR creation and
-  `main` deferred.
+- Sol review Wave 8 Task 8.4.
+- Keep Task 8.5, PR creation, and `main` deferred.
