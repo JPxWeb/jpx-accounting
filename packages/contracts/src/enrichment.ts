@@ -21,6 +21,40 @@ export const invoiceLineEnrichmentPayloadSchema = z.object({
   direction: z.enum(["ar", "ap"]),
 });
 
+export const tripLineEnrichmentPayloadSchema = z
+  .object({
+    tripId: z.string().min(1),
+    purpose: z.string().min(1),
+    traveler: z.string().min(1),
+    startDate: z.iso.date(),
+    endDate: z.iso.date(),
+    evidenceId: z.string().min(1).optional(),
+    distanceKm: z.number().nonnegative().optional(),
+  })
+  .refine((value) => value.startDate <= value.endDate, {
+    message: "endDate must be on or after startDate",
+    path: ["endDate"],
+  });
+
+export const tripRegisteredPayloadSchema = tripLineEnrichmentPayloadSchema;
+
+export const tripClosedPayloadSchema = z.object({
+  tripId: z.string().min(1),
+});
+
+export const tripsListRowSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal("trip"),
+  purpose: z.string().min(1),
+  traveler: z.string().min(1),
+  startDate: z.iso.date(),
+  endDate: z.iso.date(),
+  status: z.enum(["open", "closed"]),
+  expenseTotal: z.number(),
+});
+
+export const tripsListSchema = z.array(tripsListRowSchema);
+
 export const invoiceRegisteredPayloadSchema = z.object({
   invoiceId: z.string().min(1),
   direction: z.enum(["ar", "ap"]),
@@ -243,6 +277,10 @@ export const submitReviewProposalResultSchema = z.object({
 export type EnrichmentProposal = z.infer<typeof enrichmentProposalSchema>;
 export type ProjectLineEnrichmentPayload = z.infer<typeof projectLineEnrichmentPayloadSchema>;
 export type InvoiceLineEnrichmentPayload = z.infer<typeof invoiceLineEnrichmentPayloadSchema>;
+export type TripLineEnrichmentPayload = z.infer<typeof tripLineEnrichmentPayloadSchema>;
+export type TripRegisteredPayload = z.infer<typeof tripRegisteredPayloadSchema>;
+export type TripClosedPayload = z.infer<typeof tripClosedPayloadSchema>;
+export type TripsListRow = z.infer<typeof tripsListRowSchema>;
 export type InvoiceRegisteredPayload = z.infer<typeof invoiceRegisteredPayloadSchema>;
 export type PaymentAllocatedPayload = z.infer<typeof paymentAllocatedPayloadSchema>;
 export type OpenInvoiceListRow = z.infer<typeof openInvoiceListRowSchema>;
