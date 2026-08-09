@@ -1073,7 +1073,22 @@
     changes no store, migration, web UI, or browser workflow.
   - No PR was opened, `main` was not touched, and Wave 8 was not started. See
     `.superpowers/sdd/w7-final-gate-sol-review.md`.
+- Wave 8 Task 8.1 first HTTP checkpoint is ready for Sol review at `0ae028f`.
+  - Added the bounded TTL session store and `/api/mcp` POST + GET adapter; v1
+    registers no DELETE route.
+  - Initialize issues `Mcp-Session-Id`; later JSON-RPC supports
+    `notifications/initialized`, `tools/list`, and `tools/call`, with typed
+    protocol errors and request-ordered buffering capped at 100 events.
+  - HTTP reuses the exact 13 proposal/read tools from Wave 7. Per-request
+    bearer credentials are forwarded only through the existing API client;
+    no approve, confirm, post, or direct-mutation MCP tool was added.
+  - TDD RED observed the missing adapter and out-of-order concurrent buffering.
+    Focused MCP tests passed 19/19; MCP/API/tests typechecks passed; the full
+    unit suite passed 702/702 before commit.
+  - Task 8.2 Origin/Host/JWT/rate-limit/RFC 9728 security work, Task 8.3 demo
+    stub retirement, and Task 8.4 live SSE resumption remain unstarted. Wave 8
+    and the overall program are NOT COMPLETE; stop here for Sol review.
 
 ## Pending
 
-- Keep Wave 8, PR creation, and `main` deferred.
+- Keep Tasks 8.2+, PR creation, and `main` deferred.
