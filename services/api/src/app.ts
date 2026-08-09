@@ -25,6 +25,7 @@ import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intell
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import {
   EnrichmentIntentClosedError,
+  EnrichmentIntentVersionMismatchError,
   EnrichmentLineNotFoundError,
   EnrichmentNotSupportedError,
   EnrichmentProposalMultiplicityError,
@@ -79,6 +80,7 @@ import { registerInvoiceListRoutes } from "./routes/lists-invoices";
 import { registerProjectListRoutes } from "./routes/lists-projects";
 import { registerSkuMovementListRoutes } from "./routes/lists-sku-movements";
 import { registerTripListRoutes } from "./routes/lists-trips";
+import { registerValuedMovementListRoutes } from "./routes/lists-valued-movements";
 import { registerReviewEnrichmentIntentRoutes } from "./routes/review-enrichment-intents";
 import { registerReviewProposalRoutes } from "./routes/review-proposals";
 import { registerVoucherExternalReferenceRoutes } from "./routes/voucher-external-references";
@@ -353,10 +355,13 @@ export function createApp({
     const review = await currentStore.applyReviewDecision(reviewId, outcome, {
       ...input,
       enforceBlockedReason: runtimeMode === "normal",
-      // Only a surface that just presented/replaced the intent may consume it.
-      // Omitted or explicit "clear" fails closed for queue, MCP, advisor, and
-      // future approve-with-edits callers.
-      clearEnrichmentIntent: input.enrichmentIntent !== "consume",
+      // Only a surface that presented THAT intent may consume it, proven by
+      // echoing the version its attach returned. Omitted or "clear" fails
+      // closed for queue, MCP, advisor, and future approve-with-edits callers;
+      // a stale version is refused with 409 inside the decision transaction.
+      ...(input.enrichmentIntent?.mode === "consume"
+        ? { consumeEnrichmentIntentVersion: input.enrichmentIntent.version }
+        : {}),
     });
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return review;
@@ -552,6 +557,10 @@ export function createApp({
       return jsonError(c, error.message, runtimeMode, 409, { code: "review_not_open" });
     }
 
+    if (error instanceof EnrichmentIntentVersionMismatchError) {
+      return jsonError(c, error.message, runtimeMode, 409, { code: error.code });
+    }
+
     if (error instanceof EnrichmentNotSupportedError) {
       return jsonError(c, error.message, runtimeMode, 422, { code: "enrichment_not_supported" });
     }
@@ -737,6 +746,10 @@ export function createApp({
     deriveActorId,
   });
   registerTripListRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerValuedMovementListRoutes(app, {
     getStore: () => currentStore,
     deriveActorId,
   });

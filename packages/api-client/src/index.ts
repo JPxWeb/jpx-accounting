@@ -40,6 +40,7 @@ import type {
   TripsListRow,
   UploadInit,
   UploadInitResult,
+  ValuedMovementListRow,
 } from "@jpx-accounting/contracts";
 import {
   accountBalanceProjectionSchema,
@@ -74,6 +75,7 @@ import {
   tripRegisteredPayloadSchema,
   tripsListSchema,
   uploadInitResultSchema,
+  valuedMovementListSchema,
   voucherTagsProjectionSchema,
   workspaceSnapshotSchema,
 } from "@jpx-accounting/contracts";
@@ -84,6 +86,7 @@ import {
   buildProjectsList,
   buildSkuMovementList,
   buildTripsList,
+  buildValuedMovementList,
   decodeSieBuffer,
   deriveDeterministicExtraction,
   encodePc8,
@@ -91,6 +94,7 @@ import {
   parseSie,
   summarizeEventIntegrity,
   today,
+  type ApprovalGate,
 } from "@jpx-accounting/domain";
 // Demo fallback still statically constructs MemoryLedgerStore — keep off
 // `server-only` on domain/store until this path is dynamic-imported (P1).
@@ -198,6 +202,18 @@ async function requestJson<T>(
   }
 
   return parseJsonBody(response, schema);
+}
+
+/**
+ * The offline fallback store is reached WITHOUT going through the API, so it
+ * has to translate the wire field into the server-side approval gate itself —
+ * otherwise the demo path would fail open and consume whatever intent happened
+ * to be attached. Mirrors `postReviewDecision` in `services/api/src/app.ts`.
+ */
+function toEnrichmentIntentGate(input: ReviewDecisionInput): ApprovalGate {
+  return input.enrichmentIntent?.mode === "consume"
+    ? { consumeEnrichmentIntentVersion: input.enrichmentIntent.version }
+    : {};
 }
 
 export class AccountingApiClient {
@@ -317,6 +333,14 @@ export class AccountingApiClient {
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/sku-movements", skuMovementListSchema);
+  }
+
+  async getValuedMovementsList(): Promise<ValuedMovementListRow[]> {
+    if (this.fallbackStore) {
+      return valuedMovementListSchema.parse(buildValuedMovementList(await this.fallbackStore.getEvents()));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/valued-movements", valuedMovementListSchema);
   }
 
   async registerTrip(input: TripRegisteredPayload): Promise<TripRegisteredPayload> {
@@ -556,7 +580,12 @@ export class AccountingApiClient {
   // the API and in the offline fallback store. `input` defaults to `{}` since
   // notes/edited are the only remaining fields and most decisions send neither.
   async approveReview(reviewId: string, input: ReviewDecisionInput = {}): Promise<ReviewTask | undefined> {
-    if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "approve", input);
+    if (this.fallbackStore) {
+      return this.fallbackStore.applyReviewDecision(reviewId, "approve", {
+        ...input,
+        ...toEnrichmentIntentGate(input),
+      });
+    }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, `/api/reviews/${reviewId}/approve`, reviewTaskSchema, {
       method: "POST",
@@ -565,7 +594,12 @@ export class AccountingApiClient {
   }
 
   async rejectReview(reviewId: string, input: ReviewDecisionInput = {}): Promise<ReviewTask | undefined> {
-    if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "reject", input);
+    if (this.fallbackStore) {
+      return this.fallbackStore.applyReviewDecision(reviewId, "reject", {
+        ...input,
+        ...toEnrichmentIntentGate(input),
+      });
+    }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, `/api/reviews/${reviewId}/reject`, reviewTaskSchema, {
       method: "POST",
@@ -574,7 +608,12 @@ export class AccountingApiClient {
   }
 
   async bookWithoutVatReview(reviewId: string, input: ReviewDecisionInput = {}): Promise<ReviewTask | undefined> {
-    if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "book-without-vat", input);
+    if (this.fallbackStore) {
+      return this.fallbackStore.applyReviewDecision(reviewId, "book-without-vat", {
+        ...input,
+        ...toEnrichmentIntentGate(input),
+      });
+    }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(
       this.authorizedFetch,
