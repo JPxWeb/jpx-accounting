@@ -43,6 +43,7 @@ import {
   sieImportResultSchema,
   simulationRunSchema,
   uploadInitResultSchema,
+  voucherTagsAddedPayloadSchema,
   workspaceSnapshotSchema,
 } from "@jpx-accounting/contracts";
 import {
@@ -115,6 +116,13 @@ const complianceAlertListSchema = z.array(complianceAlertSchema);
 const linkExternalReferenceInputSchema = externalReferenceLinkedPayloadSchema.pick({
   url: true,
   label: true,
+});
+const appendVoucherTagsInputSchema = voucherTagsAddedPayloadSchema
+  .pick({ tagIds: true })
+  .extend({ mode: z.enum(["add", "remove"]) });
+const voucherTagsProjectionSchema = voucherTagsAddedPayloadSchema.pick({
+  voucherId: true,
+  tagIds: true,
 });
 
 /** Serialize an optional report window into `?from=&to=` (empty when unscoped). */
@@ -345,6 +353,19 @@ export class AccountingApiClient {
       `/api/vouchers/${encodeURIComponent(voucherId)}/external-references/${encodeURIComponent(refId)}/unlink`,
       externalReferenceProjectionSchema,
       { method: "POST" },
+    );
+  }
+
+  async appendVoucherTags(voucherId: string, input: { tagIds: string[]; mode: "add" | "remove" }) {
+    const parsedInput = appendVoucherTagsInputSchema.parse(input);
+    if (this.fallbackStore) return this.fallbackStore.appendVoucherTags(voucherId, parsedInput);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/vouchers/${encodeURIComponent(voucherId)}/tags`,
+      voucherTagsProjectionSchema,
+      { method: "POST", json: parsedInput },
     );
   }
 

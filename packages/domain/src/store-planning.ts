@@ -18,11 +18,13 @@ import {
 } from "@jpx-accounting/contracts";
 
 import {
+  buildVoucherTagsFromEvents,
   findActiveExternalReference,
   MAX_TAGS_PER_REQUEST,
   MAX_TAGS_PER_VOUCHER,
   type ExternalReferenceEvent,
   type TagDefinition,
+  type VoucherTagEvent,
 } from "./enrichment-projections";
 import { buildExtractedFields, deriveVoucherFields, guessAccountingMethod } from "./evidence-defaults";
 import { buildEventHash } from "./hash-chain";
@@ -541,6 +543,8 @@ export function planPostPostEnrichmentConfirm(input: {
   postedVoucherIds: ReadonlySet<string>;
   postedLineIds: ReadonlySet<string>;
   externalReferenceEvents?: ExternalReferenceEvent[];
+  tagEvents?: VoucherTagEvent[];
+  tagDefinitions?: readonly TagDefinition[];
 }): PostPostEnrichmentConfirmPlan {
   const { workItem } = input;
   assertEnrichmentTargetPosted(workItem, input);
@@ -581,6 +585,31 @@ export function planPostPostEnrichmentConfirm(input: {
         workspaceId: workItem.workspaceId,
       });
       return { workItem, events: [plan.event] };
+    }
+    case "voucher_tags_add":
+    case "voucher_tags_remove": {
+      if (workItem.targetKind !== "voucher") {
+        throw new EnrichmentNotSupportedError(workItem.proposedChange.kind);
+      }
+      const activeTagIds =
+        buildVoucherTagsFromEvents(input.tagEvents ?? []).find(
+          (projection) => projection.voucherId === workItem.targetId,
+        )?.tagIds ?? [];
+      const plan = planVoucherTagsAppend(
+        {
+          voucherId: workItem.targetId,
+          tagIds: workItem.proposedChange.tagIds,
+          mode: workItem.proposedChange.kind === "voucher_tags_add" ? "add" : "remove",
+          existingActiveTagIds: activeTagIds,
+          tagDefinitions: input.tagDefinitions ?? [],
+          actorId: input.actorId,
+        },
+        {
+          organizationId: workItem.organizationId,
+          workspaceId: workItem.workspaceId,
+        },
+      );
+      return { workItem, events: plan.events };
     }
     default:
       throw new EnrichmentNotSupportedError((workItem.proposedChange as { kind: string }).kind);

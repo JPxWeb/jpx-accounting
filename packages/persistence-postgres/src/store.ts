@@ -36,6 +36,7 @@ import {
   buildDeterministicSuggestion,
   buildEventHash,
   buildExternalReferencesFromEvents,
+  buildVoucherTagsFromEvents,
   buildJournal,
   buildReportPack,
   buildVat,
@@ -58,6 +59,7 @@ import {
   planExtractionRefresh,
   planPostPostEnrichmentConfirm,
   planReviewDecision,
+  planVoucherTagsAppend,
   simulateApprovals,
   today,
   type ActorAttribution,
@@ -65,6 +67,9 @@ import {
   type ExternalReferenceEvent,
   type LedgerLine,
   type ReviewAction,
+  type TagDefinition,
+  type VoucherTagEvent,
+  type VoucherTagsProjection,
 } from "@jpx-accounting/domain";
 import {
   isDuplicateEvidence,
@@ -404,6 +409,37 @@ async function loadExternalReferenceEvents(
     ORDER BY seq ASC
   `;
   return rows.map(rowToEvent);
+}
+
+async function loadVoucherTagEvents(
+  runner: PostgresClient,
+  scope: { organizationId: string; workspaceId: string },
+  voucherId: string,
+): Promise<VoucherTagEvent[]> {
+  const rows = await runner<EventRow[]>`
+    SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+           actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+    FROM ledger.events
+    WHERE organization_id = ${scope.organizationId}
+      AND workspace_id = ${scope.workspaceId}
+      AND aggregate_id = ${voucherId}
+      AND event_type IN ('VoucherTagsAdded', 'VoucherTagsRemoved')
+    ORDER BY seq ASC
+  `;
+  return rows.map(rowToEvent);
+}
+
+async function loadTagDefinitions(
+  runner: PostgresClient,
+  scope: { organizationId: string; workspaceId: string },
+): Promise<TagDefinition[]> {
+  return runner<TagDefinition[]>`
+    SELECT id, name, color
+    FROM ledger.tag_definitions
+    WHERE organization_id = ${scope.organizationId}
+      AND workspace_id = ${scope.workspaceId}
+    ORDER BY id ASC
+  `;
 }
 
 type ComplianceAlertRow = {
@@ -1562,12 +1598,20 @@ export class PostgresLedgerStore implements LedgerStore {
           workItem.proposedChange.kind === "external_reference_unlink"
             ? await loadExternalReferenceEvents(tx, this.defaults, workItem.targetId)
             : undefined;
+        const isVoucherTagsProposal =
+          workItem.proposedChange.kind === "voucher_tags_add" || workItem.proposedChange.kind === "voucher_tags_remove";
+        const tagEvents = isVoucherTagsProposal
+          ? await loadVoucherTagEvents(tx, this.defaults, workItem.targetId)
+          : undefined;
+        const tagDefinitions = isVoucherTagsProposal ? await loadTagDefinitions(tx, this.defaults) : undefined;
         const plan = planPostPostEnrichmentConfirm({
           workItem,
           actorId,
           postedVoucherIds,
           postedLineIds,
           ...(externalReferenceEvents !== undefined ? { externalReferenceEvents } : {}),
+          ...(tagEvents !== undefined ? { tagEvents } : {}),
+          ...(tagDefinitions !== undefined ? { tagDefinitions } : {}),
         });
 
         const resultingEventIds: string[] = [];
@@ -1690,6 +1734,52 @@ export class PostgresLedgerStore implements LedgerStore {
         });
         await this.appendEvent(tx, plan.event, tailHash);
         return plan.reference;
+      }),
+    );
+  }
+
+  async appendVoucherTags(
+    voucherId: string,
+    input: { tagIds: string[]; mode: "add" | "remove" } & ActorAttribution,
+  ): Promise<VoucherTagsProjection> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        assertEnrichmentTargetPosted(
+          { targetKind: "voucher", targetId: voucherId },
+          await loadPostedEnrichmentTargets(tx, this.defaults),
+        );
+        const tagEvents = await loadVoucherTagEvents(tx, this.defaults, voucherId);
+        const existingActiveTagIds =
+          buildVoucherTagsFromEvents(tagEvents).find((projection) => projection.voucherId === voucherId)?.tagIds ?? [];
+        const plan = planVoucherTagsAppend(
+          {
+            voucherId,
+            tagIds: input.tagIds,
+            mode: input.mode,
+            existingActiveTagIds,
+            tagDefinitions: await loadTagDefinitions(tx, this.defaults),
+            actorId: input.actorId ?? DEMO_ACTOR_ID,
+          },
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+          },
+        );
+        let previousHash = tailHash;
+        for (const event of plan.events) {
+          const appended = await this.appendEvent(
+            tx,
+            { ...event, payload: event.payload as unknown as Record<string, unknown> },
+            previousHash,
+          );
+          previousHash = appended.eventHash;
+        }
+        return (
+          buildVoucherTagsFromEvents([...tagEvents, ...plan.events]).find(
+            (projection) => projection.voucherId === voucherId,
+          ) ?? { voucherId, tagIds: [] }
+        );
       }),
     );
   }

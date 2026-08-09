@@ -30,7 +30,13 @@ import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
 import { detectComplianceIssues } from "./compliance";
 import { initialLedgerLines } from "./evidence-defaults";
-import { buildExternalReferencesFromEvents, findActiveExternalReference } from "./enrichment-projections";
+import {
+  buildExternalReferencesFromEvents,
+  buildVoucherTagsFromEvents,
+  DEFAULT_TAG_DEFINITIONS,
+  findActiveExternalReference,
+  type VoucherTagsProjection,
+} from "./enrichment-projections";
 import { assertBalancedPosting, postingImbalanceOre } from "./posting-invariants";
 import {
   buildJournal,
@@ -59,6 +65,7 @@ import {
   planExtractionRefresh,
   planPostPostEnrichmentConfirm,
   planReviewDecision,
+  planVoucherTagsAppend,
 } from "./store-planning";
 import {
   DEMO_ACTOR_ID,
@@ -347,6 +354,10 @@ export interface LedgerStore {
     refId: string,
     input: ActorAttribution,
   ): Promise<ExternalReferenceProjection>;
+  appendVoucherTags(
+    voucherId: string,
+    input: { tagIds: string[]; mode: "add" | "remove" } & ActorAttribution,
+  ): Promise<VoucherTagsProjection>;
   runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun>;
   getCloseRun(): Promise<CloseRun>;
   refreshComplianceAlerts(): Promise<ComplianceAlert[]>;
@@ -807,6 +818,8 @@ export class MemoryLedgerStore implements LedgerStore {
       postedVoucherIds,
       postedLineIds,
       externalReferenceEvents: this.events,
+      tagEvents: this.events,
+      tagDefinitions: DEFAULT_TAG_DEFINITIONS,
     });
     const resultingEventIds = plan.events.map((event) => this.appendEvent(event).id);
     const confirmed: EnrichmentWorkItem = {
@@ -872,6 +885,36 @@ export class MemoryLedgerStore implements LedgerStore {
     });
     this.appendEvent(plan.event);
     return { ...plan.reference };
+  }
+
+  async appendVoucherTags(
+    voucherId: string,
+    input: { tagIds: string[]; mode: "add" | "remove" } & ActorAttribution,
+  ): Promise<VoucherTagsProjection> {
+    assertEnrichmentTargetPosted(
+      { targetKind: "voucher", targetId: voucherId },
+      collectPostedEnrichmentTargets(this.events),
+    );
+    const existingActiveTagIds =
+      buildVoucherTagsFromEvents(this.events).find((projection) => projection.voucherId === voucherId)?.tagIds ?? [];
+    const plan = planVoucherTagsAppend(
+      {
+        voucherId,
+        tagIds: input.tagIds,
+        mode: input.mode,
+        existingActiveTagIds,
+        tagDefinitions: DEFAULT_TAG_DEFINITIONS,
+        actorId: input.actorId ?? DEMO_ACTOR_ID,
+      },
+      { organizationId: defaultOrganizationId, workspaceId: defaultWorkspaceId },
+    );
+    for (const event of plan.events) this.appendEvent(event);
+    return (
+      buildVoucherTagsFromEvents(this.events).find((projection) => projection.voucherId === voucherId) ?? {
+        voucherId,
+        tagIds: [],
+      }
+    );
   }
 
   async runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun> {

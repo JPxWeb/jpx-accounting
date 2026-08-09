@@ -59,6 +59,7 @@ import { queryKnowledge } from "./knowledge";
 import type { ApiRouteEnv } from "./route-types";
 import { registerEnrichmentWorkItemRoutes } from "./routes/enrichment-work-items";
 import { registerVoucherExternalReferenceRoutes } from "./routes/voucher-external-references";
+import { registerVoucherTagRoutes } from "./routes/voucher-tags";
 import type { AiRuntimeMetadata } from "./runtime";
 import { LedgerStoreUnavailableError, pingLedgerStore } from "./runtime";
 import { ApiValidationError, jsonValidated } from "./validation";
@@ -629,6 +630,10 @@ export function createApp({
     deriveActorId,
   });
   registerVoucherExternalReferenceRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerVoucherTagRoutes(app, {
     getStore: () => currentStore,
     deriveActorId,
   });

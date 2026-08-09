@@ -23,6 +23,7 @@ export type ConformanceHarness = {
   organizationId: string;
   workspaceId: string;
   actorId: string;
+  seedTagDefinition?: (definition: { id: string; name: string; color?: string }) => Promise<void>;
 };
 
 /** Stable structural outcome — no ids / hashes / wall-clock fields. */
@@ -596,6 +597,54 @@ export async function scenarioExternalReferences(h: ConformanceHarness): Promise
   };
 }
 
+export async function scenarioVoucherTags(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  await h.seedTagDefinition?.({ id: "tag_travel", name: "Travel" });
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Voucher tags conformance",
+    originalFilename: "voucher-tags-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+  const postingCountBefore = (await h.store.getEvents()).filter((event) => event.eventType === "PostedToLedger").length;
+
+  const direct = await h.store.appendVoucherTags(created.voucher.id, {
+    tagIds: ["tag_travel"],
+    mode: "add",
+    actorId: h.actorId,
+  });
+  const directReplay = await h.store.appendVoucherTags(created.voucher.id, {
+    tagIds: ["tag_travel"],
+    mode: "add",
+    actorId: h.actorId,
+  });
+  const removeProposal = await h.store.proposeEnrichmentWorkItem({
+    actorId: "system:mcp",
+    targetKind: "voucher",
+    targetId: created.voucher.id,
+    proposedChange: { kind: "voucher_tags_remove", tagIds: ["tag_travel"] },
+    source: "mcp",
+    idempotencyKey: `mcp:tags:remove:${created.voucher.id}`,
+  });
+  const removed = await h.store.confirmEnrichmentWorkItem(removeProposal.id, { actorId: h.actorId });
+  const replayedRemoval = await h.store.confirmEnrichmentWorkItem(removeProposal.id, { actorId: h.actorId });
+
+  const events = await h.store.getEvents();
+  const tagEvents = events.filter(
+    (event) => event.eventType === "VoucherTagsAdded" || event.eventType === "VoucherTagsRemoved",
+  );
+  const postingCountAfter = events.filter((event) => event.eventType === "PostedToLedger").length;
+  return {
+    directTags: direct.tagIds,
+    directReplayTags: directReplay.tagIds,
+    tagEventTypes: tagEvents.map((event) => event.eventType),
+    removeResultCount: removed.resultingEventIds?.length ?? 0,
+    idempotentRemoval: replayedRemoval.resultingEventIds?.length === removed.resultingEventIds?.length,
+    postingDelta: postingCountAfter - postingCountBefore,
+  };
+}
+
 export const CONFORMANCE_SCENARIOS: Array<{
   name: string;
   run: (h: ConformanceHarness) => Promise<ConformanceOutcome>;
@@ -611,6 +660,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "review approve with edits", run: scenarioReviewApproveEdited },
   { name: "enrichment confirm never posts twice", run: scenarioEnrichmentWorkItemConfirmNeverPosts },
   { name: "external reference append-only paths", run: scenarioExternalReferences },
+  { name: "voucher tag append-only paths", run: scenarioVoucherTags },
 ];
 
 export function assertConformanceParity(

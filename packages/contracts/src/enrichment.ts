@@ -16,6 +16,14 @@ export const enrichmentProposalSchema = z.discriminatedUnion("kind", [
     kind: z.literal("external_reference_unlink"),
     refId: z.string().min(1),
   }),
+  z.object({
+    kind: z.literal("voucher_tags_add"),
+    tagIds: z.array(z.string().min(1)).min(1).max(10),
+  }),
+  z.object({
+    kind: z.literal("voucher_tags_remove"),
+    tagIds: z.array(z.string().min(1)).min(1).max(10),
+  }),
 ]);
 
 export const externalReferenceLinkedPayloadSchema = z.object({
