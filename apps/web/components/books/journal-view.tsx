@@ -17,6 +17,8 @@ import { buildVoucherLookup } from "../reports/voucher-link";
 import { EnrichmentConfirmShell } from "./enrichment-confirm-shell";
 import { LedgerVoucherDrawer } from "./ledger-voucher-drawer";
 import { LedgerVoucherOverview } from "./ledger-voucher-overview";
+import { OpenInvoicesPanel } from "./open-invoices-panel";
+import { PaymentHistoryPanel } from "./payment-history-panel";
 import { ProjectsListPanel } from "./projects-list-panel";
 
 const ledgerModes = ["inline", "drawer"] as const;
@@ -56,7 +58,7 @@ export function JournalView() {
   const [voucher, setVoucher] = useQueryState("voucher", parseAsString);
   const [q, setQ] = useQueryState("q", parseAsString);
   const [tag, setTag] = useQueryState("tag", parseAsStringEnum(registryTagIds));
-  const [workflow] = useQueryState("workflow", parseAsStringEnum(["project"]));
+  const [workflow] = useQueryState("workflow", parseAsStringEnum(["project", "invoice"]));
 
   const storedLedgerMode = useSyncExternalStore(subscribeToLedgerMode, loadLedgerMode, getServerLedgerMode);
   const ledgerMode = ledgerModeParam ?? storedLedgerMode;
@@ -73,6 +75,16 @@ export function JournalView() {
     queryKey: ["lists", "projects"],
     queryFn: () => apiClient.getProjectsList(),
     enabled: workflow === "project",
+  });
+  const openInvoicesQuery = useQuery({
+    queryKey: ["lists", "open-invoices"],
+    queryFn: () => apiClient.getOpenInvoicesList(),
+    enabled: workflow === "invoice",
+  });
+  const paymentHistoryQuery = useQuery({
+    queryKey: ["lists", "payment-history"],
+    queryFn: () => apiClient.getPaymentHistoryList(),
+    enabled: workflow === "invoice",
   });
   const projectVoucherIds = new Set((projectsQuery.data ?? []).flatMap((project) => project.voucherIds));
 
@@ -150,6 +162,20 @@ export function JournalView() {
           loading={projectsQuery.isLoading}
           hasError={projectsQuery.isError}
         />
+      ) : null}
+      {workflow === "invoice" ? (
+        <div className="grid gap-3 xl:grid-cols-2">
+          <OpenInvoicesPanel
+            rows={openInvoicesQuery.data ?? []}
+            loading={openInvoicesQuery.isLoading}
+            hasError={openInvoicesQuery.isError}
+          />
+          <PaymentHistoryPanel
+            rows={paymentHistoryQuery.data ?? []}
+            loading={paymentHistoryQuery.isLoading}
+            hasError={paymentHistoryQuery.isError}
+          />
+        </div>
       ) : null}
       {supplier ? (
         <div className="flex items-center gap-2">

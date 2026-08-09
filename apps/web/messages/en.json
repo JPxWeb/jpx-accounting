@@ -400,6 +400,28 @@
         "error": "Projects could not be loaded.",
         "empty": "No projects registered yet.",
         "activityCount": "{count, plural, one {# activity} other {# activities}}"
+      },
+      "openInvoices": {
+        "title": "Open invoices",
+        "description": "Derived receivables and payables after recorded payment allocations.",
+        "loading": "Loading open invoices…",
+        "error": "Open invoices could not be loaded.",
+        "empty": "No open invoices.",
+        "direction": {
+          "ar": "Accounts receivable",
+          "ap": "Accounts payable"
+        },
+        "dueDate": "Due {date}",
+        "originalAmount": "Original: {amount}"
+      },
+      "paymentHistory": {
+        "title": "Payment history",
+        "description": "Append-only allocations recorded against invoice identities.",
+        "loading": "Loading payments…",
+        "error": "Payment history could not be loaded.",
+        "empty": "No payments recorded.",
+        "invoice": "Invoice {invoiceId}",
+        "allocatedAt": "Allocated {date}"
       }
     },
     "ledger": {
