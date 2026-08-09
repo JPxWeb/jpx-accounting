@@ -46,6 +46,8 @@ export function buildLedgerVoucherViewModel(
 
   const voucher = resolvedLookup.vouchersById.get(group.voucherId);
   const packet = voucher ? resolvedLookup.packetsById.get(voucher.evidencePacketId) : undefined;
+  const hasStableLineTarget = group.lines.some((line) => line.lineId !== undefined);
+  const hasVatDeductibility = group.lines.some((line) => line.vatCode !== undefined || line.deductible !== undefined);
   return {
     voucherId: group.voucherId,
     voucherNumber: voucher?.voucherNumber ?? group.voucherId,
@@ -67,8 +69,8 @@ export function buildLedgerVoucherViewModel(
       workItemConfirm: "disabled",
       externalRefs: options.activateExternalRefs ? "active" : "disabled",
       tags: options.activateTags ? "active" : "disabled",
-      lineId: "disabled",
-      vatDeductibility: "disabled",
+      lineId: hasStableLineTarget ? "active" : "disabled",
+      vatDeductibility: hasVatDeductibility ? "active" : "disabled",
       workflows: "disabled",
     },
   };

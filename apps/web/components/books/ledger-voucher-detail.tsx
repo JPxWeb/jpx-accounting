@@ -36,11 +36,18 @@ export function LedgerVoucherDetail({ vm }: { vm: LedgerVoucherViewModel }) {
               <TableHead>{tJournal("headerAccount")}</TableHead>
               <TableHead className="text-right">{tJournal("headerDebit")}</TableHead>
               <TableHead className="text-right">{tJournal("headerCredit")}</TableHead>
+              {vm.slots.lineId === "active" ? <TableHead>{tSlots("lineIdHeader")}</TableHead> : null}
+              {vm.slots.vatDeductibility === "active" ? (
+                <>
+                  <TableHead>{tSlots("vatCodeHeader")}</TableHead>
+                  <TableHead>{tSlots("deductibilityHeader")}</TableHead>
+                </>
+              ) : null}
             </TableRow>
           </TableHeader>
           <TableBody>
             {vm.lines.map((line) => (
-              <TableRow key={line.id}>
+              <TableRow key={line.lineId ?? line.id}>
                 <TableCell>
                   {line.accountNumber} {line.accountName}
                 </TableCell>
@@ -50,6 +57,33 @@ export function LedgerVoucherDetail({ vm }: { vm: LedgerVoucherViewModel }) {
                 <TableCell className="text-right">
                   <Money value={line.credit} />
                 </TableCell>
+                {vm.slots.lineId === "active" ? (
+                  <TableCell>
+                    {line.lineId ? (
+                      <code
+                        data-testid="ledger-line-target"
+                        data-line-id={line.lineId}
+                        className="break-all text-xs text-muted-foreground"
+                      >
+                        {line.lineId}
+                      </code>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{tSlots("notTargetable")}</span>
+                    )}
+                  </TableCell>
+                ) : null}
+                {vm.slots.vatDeductibility === "active" ? (
+                  <>
+                    <TableCell data-testid="ledger-line-vat">{line.vatCode ?? "—"}</TableCell>
+                    <TableCell data-testid="ledger-line-deductibility">
+                      {line.deductible === undefined
+                        ? "—"
+                        : line.deductible
+                          ? tSlots("deductible")
+                          : tSlots("notDeductible")}
+                    </TableCell>
+                  </>
+                ) : null}
               </TableRow>
             ))}
           </TableBody>

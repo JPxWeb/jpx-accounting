@@ -383,8 +383,14 @@
         "workItemHint": "Öppna en säker arbetsobjektslänk för att granska och besluta om en föreslagen ändring.",
         "externalRefs": "Externa referenser",
         "tags": "Mjuka taggar är inte tillgängliga ännu.",
-        "lineId": "Stabila rad-ID visas ännu inte.",
-        "vatDeductibility": "Momskod och avdragsrätt visas ännu inte.",
+        "lineId": "Raden saknar ett stabilt mål för en bokförd rad.",
+        "lineIdHeader": "Radmål",
+        "notTargetable": "Kan inte berikas",
+        "vatDeductibility": "Momskod och avdragsrätt saknas för raden.",
+        "vatCodeHeader": "Momskod",
+        "deductibilityHeader": "Avdragsrätt",
+        "deductible": "Avdragsgill",
+        "notDeductible": "Inte avdragsgill",
         "workflows": "Arbetsflödesmärken är inte tillgängliga ännu."
       },
       "externalReferences": {

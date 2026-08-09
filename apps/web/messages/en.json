@@ -383,8 +383,14 @@
         "workItemHint": "Open a secure work-item link to review and decide a proposed change.",
         "externalRefs": "External references",
         "tags": "Soft tags are not available yet.",
-        "lineId": "Stable line IDs are not available yet.",
-        "vatDeductibility": "VAT code and deductibility columns are not available yet.",
+        "lineId": "This row has no stable posted-line target.",
+        "lineIdHeader": "Line target",
+        "notTargetable": "Not targetable",
+        "vatDeductibility": "VAT code and deductibility are unavailable for this row.",
+        "vatCodeHeader": "VAT code",
+        "deductibilityHeader": "Deductibility",
+        "deductible": "Deductible",
+        "notDeductible": "Not deductible",
         "workflows": "Workflow badges are not available yet."
       },
       "externalReferences": {
