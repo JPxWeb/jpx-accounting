@@ -34,6 +34,7 @@ import type {
   SimulationRun,
   SubmitReviewProposalInput,
   SubmitReviewProposalResult,
+  TripsListRow,
   UploadInit,
   UploadInitResult,
 } from "@jpx-accounting/contracts";
@@ -65,6 +66,7 @@ import {
   simulationRunSchema,
   submitReviewProposalInputSchema,
   submitReviewProposalResultSchema,
+  tripsListSchema,
   uploadInitResultSchema,
   voucherTagsProjectionSchema,
   workspaceSnapshotSchema,
@@ -74,6 +76,7 @@ import {
   buildOpenInvoicesList,
   buildPaymentHistoryList,
   buildProjectsList,
+  buildTripsList,
   decodeSieBuffer,
   deriveDeterministicExtraction,
   encodePc8,
@@ -299,6 +302,14 @@ export class AccountingApiClient {
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/payment-history", paymentHistoryListSchema);
+  }
+
+  async getTripsList(): Promise<TripsListRow[]> {
+    if (this.fallbackStore) {
+      return tripsListSchema.parse(buildTripsList(await this.fallbackStore.getEvents()));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/trips", tripsListSchema);
   }
 
   /**
