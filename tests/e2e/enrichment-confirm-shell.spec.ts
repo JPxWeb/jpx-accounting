@@ -88,7 +88,15 @@ test("deep-linked enrichment can be rejected and Escape closes the controlled ov
   const guard = await installConsoleGuard(page);
   const workItem = await createPendingWorkItem(request, "mcp");
 
-  await page.goto(`/books?view=journal&enrichmentWorkItem=${encodeURIComponent(workItem.id)}`);
+  await page.goto("/books?view=journal");
+  const returnTarget = page.getByTestId("journal-search");
+  await returnTarget.focus();
+  await page.evaluate((id) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("enrichmentWorkItem", id);
+    window.history.pushState(null, "", url);
+  }, workItem.id);
+
   const shell = page.getByTestId("enrichment-confirm-shell");
   await expect(shell).toBeVisible();
   await expect(shell.getByTestId("enrichment-article-50-marker")).toBeVisible();
@@ -99,5 +107,6 @@ test("deep-linked enrichment can be rejected and Escape closes the controlled ov
   await page.keyboard.press("Escape");
   await expect(shell).toHaveCount(0);
   await expect(page).not.toHaveURL(/enrichmentWorkItem=/);
+  await expect(returnTarget).toBeFocused();
   guard.assertClean();
 });

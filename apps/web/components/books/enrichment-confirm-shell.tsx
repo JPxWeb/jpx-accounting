@@ -29,8 +29,6 @@ export function EnrichmentConfirmShell() {
     void setWorkItemId(null);
   }, [setWorkItemId]);
 
-  useDialogFocusTrap(panelRef, open, close, closeButtonRef);
-
   useEffect(() => {
     if (!open) {
       return undefined;
@@ -46,6 +44,8 @@ export function EnrichmentConfirmShell() {
       });
     };
   }, [open]);
+
+  useDialogFocusTrap(panelRef, open, close, closeButtonRef);
 
   const queryKey = ["enrichment-work-item", workItemId] as const;
   const workItemQuery = useQuery({
