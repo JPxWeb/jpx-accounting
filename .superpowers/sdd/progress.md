@@ -1013,10 +1013,22 @@
   - Focused MCP tests passed 9/9 and targeted documentation Prettier passed,
     but those tests cover the inventory and three standalone handlers rather
     than stdio registration. See `.superpowers/sdd/w7-docs-sol-review.md`.
+- Wave 7 Task 7.4 stdio runtime blocker fixed in `7044967`; ready for Sol
+  re-review.
+  - The entrypoint now validates `ACCOUNTING_API_BASE_URL` and
+    `JPX_MCP_BEARER_TOKEN` before connecting and registers the exact fixed
+    13-tool inventory with contract-backed input schemas.
+  - All capture/proposal/read tools delegate through the authenticated API
+    client. Review proposals still return the API's exact opaque
+    `intentVersion`; no approval, confirmation, posting, direct tag, or direct
+    external-reference tool was added.
+  - TDD RED observed the absent server registry. Focused MCP tests passed
+    11/11, MCP/API-client/tests typechecks and focused lint/format passed, and
+    direct entrypoint startup without required environment failed closed.
+  - Full `pnpm check` passed with 694/694 unit tests. Wave 8, PR creation, and
+    `main` remain untouched.
 
 ## Pending
 
-- Resolve the Task 7.4 stdio setup/runtime mismatch, then request Sol
-  re-review. Task 7.5 may proceed as a sibling gate, but cannot approve the
-  Wave 7 deliverable while this finding remains open. Keep Wave 8, PR creation,
-  and `main` deferred.
+- Sol re-review of Task 7.4. Task 7.5 remains a sibling gate; keep Wave 8, PR
+  creation, and `main` deferred.
