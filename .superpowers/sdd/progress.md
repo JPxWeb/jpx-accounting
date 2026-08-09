@@ -1161,15 +1161,19 @@
   - **P1:** `tests/e2e/api.spec.ts` still required the deleted demo `/mcp`
     response to return 200.
   - See `.superpowers/sdd/w8-legacy-mcp-sol-review.md`.
-- Wave 8 Task 8.3 E2E repair is ready for Sol re-review at `9597caa`.
-  - Replaced the stale legacy `/mcp` 200 assertion with a 404 retirement
-    expectation and guarded `/api/mcp` JSON-RPC `initialize` coverage using the
-    required Origin, Host, Accept, and session-header contract.
-  - `pnpm build:e2e` and focused Playwright `api.spec.ts` guarded-MCP test
-    passed 1/1 (mobile skipped by design). Fresh focused API/MCP unit tests
-    remain 50/50; reviewed diff passes `git diff --check`.
-  - Task 8.5, PR creation, and `main` remain deferred. Wave 8 is NOT COMPLETE;
-    stop here for Sol re-review.
+- Wave 8 Task 8.3 E2E repair Sol re-review: **APPROVE** (Composer substitute;
+  Sol API rate-limited) at `9597caa`.
+  - The prior P1 is closed: legacy `POST /mcp` now asserts 404 and guarded
+    `POST /api/mcp` JSON-RPC `initialize` sends the required Origin, Host,
+    Accept, and session-header contract.
+  - Production stub retirement in `85045e2` is unchanged; unit
+    `api-runtime.test.ts` still pins legacy 404 plus guarded initialize 200.
+  - Implementer record: `pnpm build:e2e` and focused Playwright `api.spec.ts`
+    passed 1/1 (mobile skipped). Composer independently reran
+    `api-runtime.test.ts` 23/23.
+  - Task 8.3 is approved. Task 8.5, PR creation, and `main` remain deferred.
+    Wave 8 is NOT COMPLETE. See
+    `.superpowers/sdd/w8-legacy-mcp-sol-rereview.md`.
 - Wave 8 Task 8.4 session SSE resumption: **APPROVE** (Composer substitute;
   Sol API rate-limited) at `b18293c`.
   - GET `/api/mcp` replays buffered events after `Last-Event-ID`, subscribes
@@ -1185,5 +1189,5 @@
 
 ## Pending
 
-- Sol re-review Wave 8 Task 8.3 E2E repair (`9597caa`).
-- Keep Task 8.5, PR creation, and `main` deferred.
+- Task 8.5 Wave 8 final gate.
+- Keep PR creation and `main` deferred.
