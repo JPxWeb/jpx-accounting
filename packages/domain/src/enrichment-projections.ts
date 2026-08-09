@@ -1,6 +1,8 @@
 import {
   externalReferenceLinkedPayloadSchema,
   externalReferenceRemovedPayloadSchema,
+  lineEnrichmentRecordedPayloadSchema,
+  lineEnrichmentSupersededPayloadSchema,
   voucherTagsAddedPayloadSchema,
   voucherTagsRemovedPayloadSchema,
   type ExternalReferenceProjection,
@@ -19,6 +21,19 @@ export const DEFAULT_TAG_DEFINITIONS = [
 
 export type ExternalReferenceEvent = Pick<LedgerEvent, "eventType" | "payload" | "occurredAt" | "actorId">;
 export type VoucherTagEvent = Pick<LedgerEvent, "eventType" | "payload">;
+export type LineEnrichmentEvent = Pick<LedgerEvent, "eventType" | "payload" | "occurredAt" | "actorId">;
+export type LineEnrichmentProjection = {
+  lineId: string;
+  enrichmentId: string;
+  enrichmentType: string;
+  payload: Record<string, unknown>;
+  recordedAt: string;
+  recordedBy: string;
+  superseded: boolean;
+  supersededAt?: string;
+  supersededBy?: string;
+  replacementEnrichmentId?: string;
+};
 
 export function buildVoucherTagsFromEvents(events: VoucherTagEvent[]): VoucherTagsProjection[] {
   const tagsByVoucher = new Map<string, Set<string>>();
@@ -72,6 +87,38 @@ export function buildExternalReferencesFromEvents(events: ExternalReferenceEvent
   }
 
   return [...references.values()];
+}
+
+export function buildLineEnrichmentsFromEvents(events: LineEnrichmentEvent[]): LineEnrichmentProjection[] {
+  const enrichments = new Map<string, LineEnrichmentProjection>();
+
+  for (const event of events) {
+    if (event.eventType === "LineEnrichmentRecorded") {
+      const payload = lineEnrichmentRecordedPayloadSchema.parse(event.payload);
+      enrichments.set(payload.enrichmentId, {
+        ...payload,
+        recordedAt: event.occurredAt,
+        recordedBy: event.actorId,
+        superseded: false,
+      });
+      continue;
+    }
+
+    if (event.eventType === "LineEnrichmentSuperseded") {
+      const payload = lineEnrichmentSupersededPayloadSchema.parse(event.payload);
+      const prior = enrichments.get(payload.priorEnrichmentId);
+      if (!prior || prior.lineId !== payload.lineId) continue;
+      enrichments.set(payload.priorEnrichmentId, {
+        ...prior,
+        superseded: true,
+        supersededAt: event.occurredAt,
+        supersededBy: event.actorId,
+        replacementEnrichmentId: payload.replacementEnrichmentId,
+      });
+    }
+  }
+
+  return [...enrichments.values()];
 }
 
 export function findActiveExternalReference(

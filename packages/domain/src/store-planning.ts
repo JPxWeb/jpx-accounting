@@ -1,5 +1,7 @@
 import {
   externalReferenceLinkedPayloadSchema,
+  lineEnrichmentRecordedPayloadSchema,
+  lineEnrichmentSupersededPayloadSchema,
   voucherTagsAddedPayloadSchema,
   voucherTagsRemovedPayloadSchema,
   type AccountingSuggestion,
@@ -617,6 +619,76 @@ export function planPostPostEnrichmentConfirm(input: {
         },
       );
       return { workItem, events: plan.events };
+    }
+    case "line_enrichment_record": {
+      if (workItem.targetKind !== "line" || workItem.proposedChange.lineId !== workItem.targetId) {
+        throw new EnrichmentNotSupportedError(workItem.proposedChange.kind);
+      }
+      const occurredAt = nowIso();
+      const payload = lineEnrichmentRecordedPayloadSchema.parse({
+        lineId: workItem.targetId,
+        enrichmentId: createId("le"),
+        enrichmentType: workItem.proposedChange.enrichmentType,
+        payload: workItem.proposedChange.payload,
+      });
+      return {
+        workItem,
+        events: [
+          {
+            organizationId: workItem.organizationId,
+            workspaceId: workItem.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: workItem.targetId,
+            eventType: "LineEnrichmentRecorded",
+            actorId: input.actorId,
+            occurredAt,
+            payload,
+          },
+        ],
+      };
+    }
+    case "line_enrichment_supersede": {
+      if (workItem.targetKind !== "line" || workItem.proposedChange.lineId !== workItem.targetId) {
+        throw new EnrichmentNotSupportedError(workItem.proposedChange.kind);
+      }
+      const occurredAt = nowIso();
+      const replacementEnrichmentId = createId("le");
+      const supersededPayload = lineEnrichmentSupersededPayloadSchema.parse({
+        lineId: workItem.targetId,
+        priorEnrichmentId: workItem.proposedChange.priorEnrichmentId,
+        replacementEnrichmentId,
+      });
+      const recordedPayload = lineEnrichmentRecordedPayloadSchema.parse({
+        lineId: workItem.targetId,
+        enrichmentId: replacementEnrichmentId,
+        enrichmentType: workItem.proposedChange.replacement.enrichmentType,
+        payload: workItem.proposedChange.replacement.payload,
+      });
+      return {
+        workItem,
+        events: [
+          {
+            organizationId: workItem.organizationId,
+            workspaceId: workItem.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: workItem.targetId,
+            eventType: "LineEnrichmentSuperseded",
+            actorId: input.actorId,
+            occurredAt,
+            payload: supersededPayload,
+          },
+          {
+            organizationId: workItem.organizationId,
+            workspaceId: workItem.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: workItem.targetId,
+            eventType: "LineEnrichmentRecorded",
+            actorId: input.actorId,
+            occurredAt,
+            payload: recordedPayload,
+          },
+        ],
+      };
     }
     default:
       throw new EnrichmentNotSupportedError((workItem.proposedChange as { kind: string }).kind);
