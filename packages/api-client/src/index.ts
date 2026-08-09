@@ -32,6 +32,7 @@ import type {
   SieImportResult,
   SimulationRequest,
   SimulationRun,
+  SkuMovementListRow,
   SubmitReviewProposalInput,
   SubmitReviewProposalResult,
   TripClosedPayload,
@@ -66,6 +67,7 @@ import {
   runtimeInfoSchema,
   sieImportResultSchema,
   simulationRunSchema,
+  skuMovementListSchema,
   submitReviewProposalInputSchema,
   submitReviewProposalResultSchema,
   tripClosedPayloadSchema,
@@ -80,6 +82,7 @@ import {
   buildOpenInvoicesList,
   buildPaymentHistoryList,
   buildProjectsList,
+  buildSkuMovementList,
   buildTripsList,
   decodeSieBuffer,
   deriveDeterministicExtraction,
@@ -306,6 +309,14 @@ export class AccountingApiClient {
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/payment-history", paymentHistoryListSchema);
+  }
+
+  async getSkuMovementsList(): Promise<SkuMovementListRow[]> {
+    if (this.fallbackStore) {
+      return skuMovementListSchema.parse(buildSkuMovementList(await this.fallbackStore.getEvents()));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/sku-movements", skuMovementListSchema);
   }
 
   async registerTrip(input: TripRegisteredPayload): Promise<TripRegisteredPayload> {

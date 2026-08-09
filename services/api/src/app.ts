@@ -69,6 +69,7 @@ import type { ApiRouteEnv } from "./route-types";
 import { registerEnrichmentWorkItemRoutes } from "./routes/enrichment-work-items";
 import { registerInvoiceListRoutes } from "./routes/lists-invoices";
 import { registerProjectListRoutes } from "./routes/lists-projects";
+import { registerSkuMovementListRoutes } from "./routes/lists-sku-movements";
 import { registerTripListRoutes } from "./routes/lists-trips";
 import { registerReviewEnrichmentIntentRoutes } from "./routes/review-enrichment-intents";
 import { registerReviewProposalRoutes } from "./routes/review-proposals";
@@ -684,6 +685,10 @@ export function createApp({
     deriveActorId,
   });
   registerProjectListRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerSkuMovementListRoutes(app, {
     getStore: () => currentStore,
     deriveActorId,
   });
