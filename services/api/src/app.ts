@@ -1092,23 +1092,5 @@ export function createApp({
     return context.json({ ok: true });
   });
 
-  if (runtimeMode === "demo") {
-    app.use("/mcp", async (c, next) => {
-      if (c.req.method !== "POST") {
-        return next();
-      }
-      return defaultJsonBodyLimit(c, next);
-    });
-
-    app.post("/mcp", async (context) => {
-      const body = await context.req.json().catch(() => ({}));
-      return context.json({
-        server: "jpx-accounting",
-        tools: ["lookup_policy", "lookup_vat_rule", "lookup_supplier_history", "query_reports", "run_simulation"],
-        request: body,
-      });
-    });
-  }
-
   return app;
 }

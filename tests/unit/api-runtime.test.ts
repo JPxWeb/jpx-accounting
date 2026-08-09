@@ -40,6 +40,12 @@ function createTestApiApp(runtimeMode: "demo" | "normal", overrides: TestAppOver
     azureDocumentIntelligence: {},
     auth: { jwksUrl: overrides.jwksUrl },
     advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
+    mcp: {
+      allowedHosts: ["localhost"],
+      resourceUrl: "http://localhost/api/mcp",
+      authorizationServers: [],
+      sessionTtlMs: 60_000,
+    },
   });
 
   return createApp({
@@ -733,4 +739,36 @@ test("normal mode rejects wrong-secret forged tool approval before executeReview
 
   const after = await store.getSnapshot();
   assert.equal(after.reviews.find((item) => item.id === reviewId)?.status, "needs-review");
+});
+
+test("demo POST /mcp is removed; POST /api/mcp exists", async () => {
+  const app = createTestApiApp("demo");
+  const legacy = await app.request("http://localhost/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(legacy.status, 404);
+
+  const current = await app.request("http://localhost/api/mcp", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      origin: "http://localhost:3002",
+      host: "localhost",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "test", version: "1.0.0" },
+      },
+    }),
+  });
+  assert.equal(current.status, 200);
+  assert.ok(current.headers.get("Mcp-Session-Id"));
 });
