@@ -936,9 +936,23 @@
     diagnostics, and diff checks passed.
   - Tasks 7.3–7.5 remain unstarted. No handler, direct mutation tool, HTTP
     transport, PR, or change to `main` is included in this checkpoint.
+- Wave 7 Tasks 7.1–7.2 Sol review: **APPROVE**.
+  - The stdio workspace typechecks and the exact 13-name proposal/read surface
+    is regression-pinned, including duplicate and forbidden direct-mutation
+    exclusions.
+  - The threat model preserves server-derived attribution and the existing
+    human approval/confirmation gates: MCP creates open-review intents or
+    post-post work items and never approves, confirms, or posts.
+  - No Task 7.3 handler, Task 7.4 documentation, Task 7.5 gate, or Wave 8 HTTP
+    transport is included or claimed complete.
+  - Fresh focused verification passed: MCP typecheck, aggregate tests
+    typecheck, registry tests 2/2, ESLint, Prettier, and reviewed-range diff
+    check.
+  - No high-risk auth/mutation hole or escalation is required. Tasks 7.3–7.5
+    may continue in plan order. See
+    `.superpowers/sdd/w7-foundation-sol-review.md`.
 
 ## Pending
 
-- Sol review of Wave 7 Tasks 7.1–7.2. After approval, continue Tasks 7.3–7.5
-  in plan order (single feature branch; defer mid-wave PR to main until program
-  ready).
+- Continue Wave 7 Tasks 7.3–7.5 in plan order (single feature branch; defer
+  mid-wave PR to main until program ready).
