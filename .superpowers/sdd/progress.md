@@ -329,12 +329,14 @@
   - See `.superpowers/sdd/w5b-sol-review.md`. Tasks 5.2, 5.3, and 5.10 are
     approved after the review-fix commit; Wave 6 remains blocked on the full
     Wave 5 gate.
-- Task 5.9 Books line-target and VAT/deductibility UI completed; awaiting Sol
-  UI review.
+- Task 5.9 Books line-target and VAT/deductibility UI `67c3642` completed;
+  awaiting Sol UI review.
   - Voucher detail activates stable target columns only when projection
     `lineId` exists; demo seed rows remain explicitly disabled.
   - Positional `journal_n` ids are never exposed as enrichment targets.
   - English/Swedish copy and desktop/Pixel 7 E2E cover the gated behavior.
+  - This read-only surface submits no pre-post proposal, so Wave 5B's typed
+    422 response is not surfaced or obscured by Task 5.9.
   - View-model unit tests passed 5/5; web/tests typechecks, targeted lint and
     formatting, `pnpm build:e2e`, and focused E2E passed 2/2.
 
