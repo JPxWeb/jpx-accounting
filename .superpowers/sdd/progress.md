@@ -1153,20 +1153,23 @@
     ESLint/Prettier, diagnostics, and diff checks passed.
   - Task 8.4+, PR creation, and `main` remain deferred. Wave 8 is NOT COMPLETE;
     stop here for Sol review.
-- Sol review requests changes on Wave 8 Task 8.3.
+- Sol review requests changes on Wave 8 Task 8.3 at `a5e9450`.
   - The production change is sound: legacy `/mcp` is gone, guarded `/api/mcp`
     remains under the JWT/rate-limit/Origin/Host boundary, and the fixed 13-tool
     proposal/read-only inventory exposes no approval, confirmation, posting, or
     direct-ledger mutation entrypoint.
-  - **P1:** `tests/e2e/api.spec.ts` still requires the deleted demo `/mcp`
-    response to return 200. The functional E2E gate will therefore fail
-    deterministically until that assertion is replaced with the retirement
-    expectation and guarded `/api/mcp` initialization coverage.
-  - Fresh focused API/MCP tests pass 50/50 and the reviewed diff passes
-    `git diff --check`.
-  - See `.superpowers/sdd/w8-legacy-mcp-sol-review.md`. Task 8.4 sibling work
-    may start in disjoint files; Task 8.3 remains unapproved, and Wave 8 is NOT
-    COMPLETE.
+  - **P1:** `tests/e2e/api.spec.ts` still required the deleted demo `/mcp`
+    response to return 200.
+  - See `.superpowers/sdd/w8-legacy-mcp-sol-review.md`.
+- Wave 8 Task 8.3 E2E repair is ready for Sol re-review at `9597caa`.
+  - Replaced the stale legacy `/mcp` 200 assertion with a 404 retirement
+    expectation and guarded `/api/mcp` JSON-RPC `initialize` coverage using the
+    required Origin, Host, Accept, and session-header contract.
+  - `pnpm build:e2e` and focused Playwright `api.spec.ts` guarded-MCP test
+    passed 1/1 (mobile skipped by design). Fresh focused API/MCP unit tests
+    remain 50/50; reviewed diff passes `git diff --check`.
+  - Task 8.5, PR creation, and `main` remain deferred. Wave 8 is NOT COMPLETE;
+    stop here for Sol re-review.
 - Wave 8 Task 8.4 session SSE resumption is ready for Sol review at `b18293c`.
   - GET `/api/mcp` replays buffered events after `Last-Event-ID`, keeps the
     stream subscribed for later session events, and unregisters the stream on
@@ -1179,11 +1182,11 @@
     Focused MCP/API tests passed 18/18; strict Postgres integration passed
     121/121; MCP, API, and aggregate tests typechecks plus focused
     ESLint/Prettier and diagnostics passed.
-  - Task 8.3's E2E repair remains owned separately. Task 8.5, PR creation, and
-    `main` remain deferred; Wave 8 is NOT COMPLETE. Stop here for Sol review.
+  - Task 8.3 E2E repair landed separately at `9597caa`. Task 8.5, PR creation,
+    and `main` remain deferred; Wave 8 is NOT COMPLETE. Stop here for Sol review.
 
 ## Pending
 
-- Repair and re-review the Task 8.3 functional E2E assertion.
+- Sol re-review Wave 8 Task 8.3 E2E repair (`9597caa`).
 - Sol review Wave 8 Task 8.4.
 - Keep Task 8.5, PR creation, and `main` deferred.
