@@ -19,7 +19,7 @@ import { resetApiState } from "./test-helpers";
 const SCREENS: { name: string; path: string; readySelector?: string }[] = [
   { name: "today", path: "/today" },
   { name: "capture", path: "/capture" },
-  { name: "books", path: "/books" },
+  { name: "books", path: "/books?view=journal&ledgerMode=inline" },
   // The report charts mount via next/dynamic({ ssr: false }) — networkidle can
   // fire before the lazy chunk renders, so wait for the waterfall SVG.
   { name: "reports", path: "/reports", readySelector: '[data-testid="cash-bridge"] svg' },
