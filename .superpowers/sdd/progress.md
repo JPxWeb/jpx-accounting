@@ -854,8 +854,8 @@
     approved specifically, but Wave 6e remains NOT COMPLETE pending Task
     6e.5's full functional E2E and human-reviewed visual gates. See
     `.superpowers/sdd/w6e-ui-unit-cost-sol-rereview.md`.
-- Wave 6b deferred functional E2E was run and found one real regression, now
-  fixed; the Opus review doc is updated and Sol should re-confirm the spec.
+- Wave 6b deferred functional E2E follow-up Sol re-review: **APPROVE**; Wave 6b
+  remains COMPLETE.
   - `tests/e2e/projects-vertical.spec.ts` attached a `project_assignment`
     intent and approved with an empty body. Under the new fail-closed
     semantics that discards the assignment, so the projects panel rendered
@@ -866,12 +866,19 @@
     `executeReviewApproval`, and demo transport attach a deliberate `noop` and
     correctly omit the assertion.
   - 53/53 approval and enrichment E2E specs pass on desktop and Pixel 7.
+  - Sol audited every production approval entry point: the review edit sheet
+    echoes the attached version, while queue, dashboard, server advisor, and
+    demo advisor paths deliberately attach `noop` before plain approval. No
+    enrichment-consuming caller still relies on implicit consume.
+  - Fresh focused `projects-vertical.spec.ts` verification passed 2/2 on
+    desktop Chromium and Pixel 7; `git diff 56abac1..b684bdd --check` passed.
   - Eight first-pass failures were cross-run contamination, not defects: a
     sibling agent's concurrent Playwright run shared the test API on `:3201`
     and its `resetApiState` wiped state mid-spec. Run only one Playwright
     process against this worktree.
-  - The visual suite remains deferred; no baseline was updated. Wave 6b's
-    verdict is otherwise unchanged.
+  - The visual suite remains deferred; no baseline was updated. No renewed
+    Opus review is required. See
+    `.superpowers/sdd/w6b-projects-e2e-intent-sol-rereview.md`.
 
 ## Pending
 
