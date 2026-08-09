@@ -20,6 +20,7 @@
 | `packages/advisor`               | `advisor`               | Retrieval (BM25-lite), corpus, grounding, injection sanitizing, demo turn              | contracts, reporting                                                                        |
 | `packages/ai-core`               | `ai-core`               | `AiRuntime` factory + embeddings (OpenAI SDK against Azure)                            | contracts, domain                                                                           |
 | `packages/api-client`            | `api-client`            | Typed fetch client with Zod response validation + demo fallback store                  | contracts, domain                                                                           |
+| `packages/mcp-server`            | `mcp-server`            | MCP SDK stdio adapter — authenticated reads, capture, and proposal-only tools          | api-client                                                                                  |
 | `packages/document-intelligence` | `document-intelligence` | Azure Document Intelligence OCR client + field→contract mapping                        | contracts, domain                                                                           |
 | `packages/persistence-postgres`  | `persistence-postgres`  | `PostgresLedgerStore` + pgvector knowledge tables + pool client                        | advisor, contracts, domain                                                                  |
 | `packages/ui-tokens`             | `ui-tokens`             | Brand/theme token constants + `styles.css`                                             | —                                                                                           |
@@ -29,6 +30,7 @@
 ```
 contracts ← domain ← ai-core, api-client, document-intelligence, persistence-postgres
 contracts ← reporting ← advisor ← persistence-postgres, services/api, apps/web
+api-client ← mcp-server
 ui-tokens (leaf)
 services/api → everything except api-client, ui-tokens
 apps/web    → advisor, api-client, contracts, domain, reporting, ui-tokens
@@ -209,9 +211,19 @@ Siblings: `api-errors.ts` (JSON error envelope), `countries.ts`, `enrichment.ts`
 - **`advisor`** — `retrieval.ts` (BM25-lite + `hasRetrievableContent` gate), `corpus.generated.ts` (⚠ generated — `pnpm build:knowledge`), `corpus-source.ts` (chunker; not in barrel), `excerpt.ts` (`buildExcerpt`), `sanitize.ts` (`delimitUntrustedText` with `«»`), `context.ts` (`buildAdvisorGrounding` — copies numbers, never recomputes), `demo-turn.ts` (`buildDemoAdvisorTurn`), `prompts.ts`.
 - **`ai-core`** — `createAiRuntime`, `isAiRuntimeOperational`, `AiRuntimeUnavailableError`, `embed()`.
 - **`api-client`** — `createAccountingApiClient` (25 methods, Zod-validated responses, bearer via `getAuthToken`, demo fallback store).
+- **`mcp-server`** — `src/index.ts` is the MCP SDK stdio entrypoint; `src/tools/index.ts` pins the 13-name tool inventory; `src/tools/handlers.ts` forwards authenticated calls through `api-client`, requires `ACCOUNTING_API_BASE_URL` + `JPX_MCP_BEARER_TOKEN`, returns HTTPS SAS credentials without file bodies, echoes review-intent versions, and forces post-post proposal source to `mcp`. Setup: [`MCP_SETUP.md`](MCP_SETUP.md).
 - **`document-intelligence`** — `createDocumentIntelligenceClient`, `pickModelForDocument`, `mapFieldsToContract`.
 - **`persistence-postgres`** — `client.ts` (`createPostgresClient`/`closePostgresClient`), `store.ts` (largest file in the repo: `PostgresLedgerStore`, `HashChainForkError`, advisory-lock chain serialization), `knowledge.ts` (`upsertKnowledgeDocuments`, `queryKnowledgeByEmbedding`, halfvec 1536).
 - **`ui-tokens`** — `brand`, `theme`, `styles.css` (imported by `apps/web/app/globals.css`).
+
+MCP tool inventory: capture/evidence
+`initialize_upload`, `register_evidence`, `compose_evidence_packet`,
+`extract_evidence`, `get_evidence`; proposal-only
+`submit_enrichment_proposal`, `submit_review_proposal`,
+`get_review_deep_link`; reads `list_reviews`, `get_journal`,
+`get_trial_balance`, `get_integrity`, `query_knowledge`. The stdio adapter has
+no approval, confirmation, posting, direct-tag, or direct-reference tool.
+Streamable HTTP `/api/mcp` is deferred to Wave 8.
 
 ---
 
