@@ -744,19 +744,24 @@
 
 - Wave 6b awaits the intent-identity repair and renewed Opus/Sol clearance; do
   not mark complete.
-- Wave 6d quantity inventory UI/writer blockers are repaired for Sol re-review
-  in `232cdd2` + ownership-separation commit `9fadc18`.
+- Wave 6d quantity inventory UOM/conformance Sol re-review: APPROVE.
+  - Reviewed repairs: `232cdd2` + ownership-separation commit `9fadc18`.
   - Running quantities are now keyed by `(skuId, uom)`, so incompatible units
     remain separate instead of producing false mixed-unit balances.
   - Shared conformance now exercises the quantity-inventory approval writer on
     Memory and Postgres, including rollback, exactly one posting and movement,
     server-derived movement/line/date/actor fields, intent consumption, replay,
     and parity.
-  - Focused quantity tests passed 21/21; strict `pnpm db:test` applied
-    migrations `0001`–`0011` and passed 113/113 integration tests.
+  - Focused quantity tests passed 21/21. The pre-Wave-6b-WIP strict
+    `pnpm db:test` applied migrations `0001`–`0011` and passed 113/113
+    integration tests.
+  - A focused Memory conformance rerun is currently disrupted only by
+    concurrent uncommitted Wave 6b intent-version work changing the consume
+    API. Wave 6d paths are clean; rerun the strict gate after that WIP settles.
   - No shared approval implementation, valued field, or Wave 6e behavior was
-    added. Wave 6d remains NOT COMPLETE; full and visual gates remain deferred
-    pending Sol re-review.
+    added. No Opus escalation is required. Wave 6d remains NOT COMPLETE; full
+    and visual gates remain deferred. See
+    `.superpowers/sdd/w6d-inventory-uom-sol-rereview.md`.
 
 ## Pending
 
