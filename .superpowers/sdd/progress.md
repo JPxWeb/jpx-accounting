@@ -728,8 +728,20 @@
 
 - Wave 6b awaits the intent-identity repair and renewed Opus/Sol clearance; do
   not mark complete.
-- Wave 6c awaits the trip-supersede validation repair and renewed Sol
-  clearance; do not mark complete.
+- Wave 6c trip-supersede validation repair is committed in `1ea40e9` and awaits
+  renewed Sol clearance; do not mark complete.
+  - One shared trip-replacement guard now validates both record and supersede
+    proposals. Supersession requires a registered trip and excludes only the
+    exact prior enrichment when enforcing one active trip per posted line.
+  - Postgres now loads the registered replacement trip id for supersession,
+    matching Memory behavior. Shared conformance covers an unregistered
+    replacement, blocked cross-trip attachment, and moving trip A to trip B.
+  - TDD RED was observed in focused planner tests and strict Postgres parity.
+    GREEN: planner 12/12, affected typechecks, and strict `pnpm db:test`
+    116/116. A later focused 55-test run had 52 passes and 3 failures solely
+    because the concurrent Wave 6b intent repair was transiently incomplete
+    (`resolveConsumableIntentProposals` undefined); rerun after that owner
+    settles.
 - Wave 6d quantity inventory UI/writer blockers are repaired for Sol re-review
   in `232cdd2` + ownership-separation commit `9fadc18`.
   - Running quantities are now keyed by `(skuId, uom)`, so incompatible units
