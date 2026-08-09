@@ -586,19 +586,39 @@
   - Sol review should decide whether trip pre-post fields require the same
     contract-first atomic approval seam requested for Wave 6b; the UI does not
     invent identity or perform a client-side post-approval registration.
+- Wave 6c Task 6c.4 Sol review: REQUEST_CHANGES.
+  - Trip purpose, traveler, dates, and optional evidence are validated in the
+    edit sheet but discarded on submit; the committed handler only persists a
+    project proposal.
+  - The focused E2E closes the sheet, approves with an empty API request, then
+    separately registers and post-post enriches the trip. It correctly proves
+    explicit human confirmation against a real posted `lineId`, but not the
+    claimed pre-post workflow.
+  - Atomic-seam decision: YES. Pre-post trip fields must be contract-first and
+    consumed in the serialized approval transaction that derives identity,
+    binds a real eligible cost-line `lineId`, and appends exactly one posting
+    plus trip registration/enrichment events.
+  - `NEEDS_OPUS_REVIEW` is set because the repair crosses identity,
+    review-intent contracts, posting-line binding, and Memory/Postgres
+    all-or-nothing behavior. Reuse/generalize the Wave 6b seam where possible.
+  - No implementation fix was made while Wave 6b/6d owners hold shared files.
+    Wave 6c remains NOT COMPLETE and the full/visual gate remains deferred.
+    See `.superpowers/sdd/w6c-trips-ui-sol-review.md`.
 
 ## In progress
 
 - Wave 6b atomic approval-to-invoice registration design requires Opus review
   before implementation and a renewed final gate.
-- Wave 6c Task 6c.4 awaits Sol review; Task 6c.5 awaits the centralized gate
-  after concurrent shared-file owners land.
+- Wave 6c Task 6c.4 requires an Opus-reviewed atomic pre-post trip seam;
+  Task 6c.5 awaits that fix and the centralized gate after concurrent
+  shared-file owners land.
 - Wave 6d Task 6d.4, remaining writers, and the final gate are cleared to
   proceed after the Task 6d.3 review.
 
 ## Pending
 
-- Wave 6b atomic seam rework and renewed gate; Wave 6c Tasks 6c.4–6c.5;
+- Wave 6b atomic seam rework and renewed gate; Wave 6c atomic seam rework plus
+  renewed Tasks 6c.4–6c.5 gate;
   remaining Wave 6d work; then Waves 6e–8 in plan order, with Wave 6e blocked
   until Wave 6d completion (single feature branch; defer mid-wave PR to main
   until program ready).
