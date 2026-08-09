@@ -723,25 +723,27 @@
   - Focused trip seam tests passed 52/52 and `git diff --check` passed. Wave 6c
     remains NOT COMPLETE; full functional E2E and visual review remain
     deferred. See `.superpowers/sdd/w6c-trips-seam-sol-rereview.md`.
+- Wave 6c trip-supersession Sol re-review: APPROVE; Wave 6c is COMPLETE for
+  all open Sol blockers.
+  - The shared validator now rejects unregistered supersede replacements and
+    a second active trip while permitting trip A to move to registered trip B.
+  - Postgres loads the replacement registration before shared planning;
+    Memory/Postgres conformance covers both refusals and legitimate movement.
+  - Fresh focused verification passed 55/55, including planner 12/12 and
+    Memory supersession conformance. The repair's clean strict Postgres record
+    remains 116/116.
+  - A review-time strict rerun was contaminated by concurrent dirty Wave 6b
+    intent-version work: migration `0012` appeared after migration and 42 tests
+    then failed on its missing `version` column. This is unrelated to the
+    committed trip repair and does not block Wave 6c.
+  - No Opus escalation is required. Full functional E2E and human-reviewed
+    visuals remain deferred. See
+    `.superpowers/sdd/w6c-trips-supersession-sol-rereview.md`.
 
 ## In progress
 
 - Wave 6b awaits the intent-identity repair and renewed Opus/Sol clearance; do
   not mark complete.
-- Wave 6c trip-supersede validation repair is committed in `1ea40e9` and awaits
-  renewed Sol clearance; do not mark complete.
-  - One shared trip-replacement guard now validates both record and supersede
-    proposals. Supersession requires a registered trip and excludes only the
-    exact prior enrichment when enforcing one active trip per posted line.
-  - Postgres now loads the registered replacement trip id for supersession,
-    matching Memory behavior. Shared conformance covers an unregistered
-    replacement, blocked cross-trip attachment, and moving trip A to trip B.
-  - TDD RED was observed in focused planner tests and strict Postgres parity.
-    GREEN: planner 12/12, affected typechecks, and strict `pnpm db:test`
-    116/116. A later focused 55-test run had 52 passes and 3 failures solely
-    because the concurrent Wave 6b intent repair was transiently incomplete
-    (`resolveConsumableIntentProposals` undefined); rerun after that owner
-    settles.
 - Wave 6d quantity inventory UI/writer blockers are repaired for Sol re-review
   in `232cdd2` + ownership-separation commit `9fadc18`.
   - Running quantities are now keyed by `(skuId, uom)`, so incompatible units
@@ -758,8 +760,7 @@
 
 ## Pending
 
-- Wave 6b intent-identity repair, Opus re-review, and renewed gate; Wave 6c
-  trip-supersede repair, Sol re-review, plus renewed Task 6c.5 gate;
-  remaining Wave 6d work; then Waves 6e–8 in plan order, with Wave 6e blocked
-  until Wave 6d completion (single feature branch; defer mid-wave PR to main
-  until program ready).
+- Wave 6b intent-identity repair, Opus re-review, and renewed gate; remaining
+  Wave 6d work; then Waves 6e–8 in plan order, with Wave 6e blocked until Wave
+  6d completion (single feature branch; defer mid-wave PR to main until program
+  ready).
