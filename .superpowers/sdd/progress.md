@@ -1212,8 +1212,20 @@
   - No PR was opened and `main` was not touched. See
     `.superpowers/sdd/w8-final-gate-sol-review.md`.
 
+- Program wrap-up final gate: **PASS** at `fcfca5d` (2026-08-09).
+  - Worktree clean; no fix commits required.
+  - `pnpm check` passed 711/711 unit tests, lint, i18n 1115/1115, formatting,
+    all workspace typechecks, and production web/API builds.
+  - Strict `pnpm db:test` applied migrations `0001`–`0012`, passed every
+    capability assertion, and passed 121/121 integration tests.
+  - `pnpm build:e2e` passed. Full functional E2E (`--grep-invert "visual:"`)
+    passed 190/190 with 22 expected skips and 0 failures (single Playwright
+    process; no port-3201 contamination).
+  - Visual regression passed 20/20 across desktop and Pixel 7 in light/dark;
+    every image matched its baseline; no baseline was updated.
+  - PR to `main` opened as the authorized program handoff (Task 8.5 Step 5).
+    See `.superpowers/sdd/program-wrap-up-gate.md`.
+
 ## Pending
 
-- Program wrap-up: open PR from `feat/ledger-overview-enrichments-mcp` → `main`
-  when authorized (plan Task 8.5 Step 5 / execution handoff). Not started in
-  this review task.
+- None — Waves 0–8 and program wrap-up gates are complete on this branch.
