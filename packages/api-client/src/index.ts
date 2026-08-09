@@ -8,10 +8,12 @@ import type {
   AccountBalanceProjection,
   CompanySettings,
   ComplianceAlert,
+  EnrichmentWorkItem,
   EvidenceContext,
   EvidenceCreateInput,
   IntegritySummary,
   JournalEntryProjection,
+  ProposeEnrichmentWorkItemInput,
   ReportPack,
   ReviewDecisionInput,
   ReviewTask,
@@ -26,6 +28,7 @@ import type {
 import {
   accountBalanceProjectionSchema,
   complianceAlertSchema,
+  enrichmentWorkItemSchema,
   evidenceContextSchema,
   evidenceCreateResultSchema,
   integritySummarySchema,
@@ -254,6 +257,52 @@ export class AccountingApiClient {
       method: "POST",
       json: input,
     });
+  }
+
+  async proposeEnrichmentWorkItem(input: ProposeEnrichmentWorkItemInput): Promise<EnrichmentWorkItem> {
+    if (this.fallbackStore) return this.fallbackStore.proposeEnrichmentWorkItem(input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/enrichment-work-items", enrichmentWorkItemSchema, {
+      method: "POST",
+      json: input,
+    });
+  }
+
+  async getEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem | undefined> {
+    if (this.fallbackStore) return this.fallbackStore.getEnrichmentWorkItem(id);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const response = await this.authorizedFetch(`${this.baseUrl}/api/enrichment-work-items/${encodeURIComponent(id)}`, {
+      headers: { accept: "application/json" },
+    });
+    if (response.status === 404) return undefined;
+    if (!response.ok) {
+      throw new AccountingApiError(response.status, `getEnrichmentWorkItem failed: ${response.status}`);
+    }
+    return parseJsonBody(response, enrichmentWorkItemSchema);
+  }
+
+  async confirmEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem> {
+    if (this.fallbackStore) return this.fallbackStore.confirmEnrichmentWorkItem(id, {});
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/enrichment-work-items/${encodeURIComponent(id)}/confirm`,
+      enrichmentWorkItemSchema,
+      { method: "POST" },
+    );
+  }
+
+  async rejectEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem> {
+    if (this.fallbackStore) return this.fallbackStore.rejectEnrichmentWorkItem(id, {});
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/enrichment-work-items/${encodeURIComponent(id)}/reject`,
+      enrichmentWorkItemSchema,
+      { method: "POST" },
+    );
   }
 
   // Review decisions carry no actor (WS-C R5): attribution is derived
