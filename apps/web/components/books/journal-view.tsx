@@ -12,6 +12,7 @@ import { groupJournalByVoucher } from "../../lib/ledger/group-vouchers";
 import { resolveLedgerMode, type LedgerMode } from "../../lib/ledger/ledger-mode-storage";
 import { buildLedgerVoucherViewModel } from "../../lib/ledger/ledger-voucher-view-model";
 import { buildVoucherLookup } from "../reports/voucher-link";
+import { LedgerVoucherDrawer } from "./ledger-voucher-drawer";
 import { LedgerVoucherOverview } from "./ledger-voucher-overview";
 
 const ledgerModes = ["inline", "drawer"] as const;
@@ -53,7 +54,12 @@ export function JournalView() {
     void setVoucher(voucher === voucherId ? null : voucherId);
   }
 
-  const expandedVoucherId = ledgerMode === "inline" ? voucher : null;
+  function handleDrawerClose() {
+    void setVoucher(null);
+  }
+
+  const selectedViewModel = voucherViewModels.find((vm) => vm.voucherId === voucher) ?? null;
+  const drawerOpen = ledgerMode === "drawer" && selectedViewModel !== null;
 
   return (
     <div className="space-y-3" data-testid="journal-view" data-tour="books-journal">
@@ -107,10 +113,11 @@ export function JournalView() {
         <LedgerVoucherOverview
           mode={ledgerMode}
           vouchers={voucherViewModels}
-          expandedVoucherId={expandedVoucherId}
+          expandedVoucherId={voucher}
           onToggle={handleToggle}
         />
       )}
+      <LedgerVoucherDrawer open={drawerOpen} viewModel={selectedViewModel} onClose={handleDrawerClose} />
     </div>
   );
 }

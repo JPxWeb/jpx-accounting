@@ -372,6 +372,7 @@
       }
     },
     "ledger": {
+      "drawerClose": "Stäng",
       "slots": {
         "workItemConfirm": "Arbetsbekräftelse är inte tillgänglig ännu.",
         "externalRefs": "Externa referenser är inte tillgängliga ännu.",

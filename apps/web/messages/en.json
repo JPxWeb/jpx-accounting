@@ -372,6 +372,7 @@
       }
     },
     "ledger": {
+      "drawerClose": "Close",
       "slots": {
         "workItemConfirm": "Work-item confirmation is not available yet.",
         "externalRefs": "External references are not available yet.",
