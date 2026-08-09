@@ -10,6 +10,7 @@ import type {
   EvidenceCreateResult,
   EvidenceObject,
   EvidencePacket,
+  EnrichmentProposal,
   EnrichmentWorkItem,
   ExternalReferenceProjection,
   ExtractionResult,
@@ -89,6 +90,7 @@ import {
 } from "./store-planning";
 import {
   DEMO_ACTOR_ID,
+  EnrichmentIntentVersionMismatchError,
   InvalidReviewEditError,
   ReviewBlockedError,
   buildPostingLines,
@@ -97,6 +99,7 @@ import {
   localDayOfTimestamp,
   mergeExtractedFields,
   recomputeVoucherFields,
+  resolveConsumableIntentProposals,
   resolveReviewDecisionEdit,
   round2,
   validEditVatCodes,
@@ -112,6 +115,7 @@ import {
 // statically constructs MemoryLedgerStore for the demo fallback (P1 stretch).
 export {
   DEMO_ACTOR_ID,
+  EnrichmentIntentVersionMismatchError,
   InvalidReviewEditError,
   ReviewBlockedError,
   buildPostingLines,
@@ -120,6 +124,7 @@ export {
   localDayOfTimestamp,
   mergeExtractedFields,
   recomputeVoucherFields,
+  resolveConsumableIntentProposals,
   resolveReviewDecisionEdit,
   round2,
   validEditVatCodes,
@@ -891,11 +896,17 @@ export class MemoryLedgerStore implements LedgerStore {
     const basePlan = planReviewDecision(review, voucher, action, input);
     if (basePlan.kind === "replay") return basePlan.review;
     const intent = this.reviewEnrichmentIntents.get(reviewId);
-    // Server-controlled plain approvals must never consume an intent the
-    // approver did not see; noop replacement is planned in this same batch.
-    const proposals = input.clearEnrichmentIntent ? [{ kind: "noop" as const }] : intent?.proposals;
+    // Identity-bound consume: only the surface that echoes the exact attached
+    // version may append its proposals. Throws BEFORE any read model is
+    // replaced or event appended, so a stale consume leaves the review open.
+    const proposals = resolveConsumableIntentProposals<EnrichmentProposal>(
+      reviewId,
+      intent,
+      input.consumeEnrichmentIntentVersion,
+      { kind: "noop" },
+    );
     const plan =
-      proposals && action !== "reject"
+      action !== "reject"
         ? mergePrePostEnrichmentsIntoReviewDecisionPlan(
             basePlan,
             planPrePostEnrichment({
@@ -946,6 +957,9 @@ export class MemoryLedgerStore implements LedgerStore {
       reviewId: review.id,
       voucherId: voucher.id,
       proposals: structuredClone(input.proposals),
+      // Fresh token per attach: whoever replaces this intent invalidates the
+      // consume assertion of everyone who read the previous one.
+      version: createId("rei"),
       updatedAt: nowIso(),
       updatedBy: input.actorId ?? DEMO_ACTOR_ID,
     };

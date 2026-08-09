@@ -335,6 +335,15 @@ export const reviewEnrichmentIntentSchema = z.object({
   reviewId: z.string().min(1),
   voucherId: z.string().min(1),
   proposals: z.array(enrichmentProposalSchema).min(1).max(MAX_PROPOSALS_PER_INTENT),
+  /**
+   * Server-minted optimistic-concurrency token, freshly generated on EVERY
+   * attach (the row is replaced, not versioned in place). An approval that
+   * wants to consume this intent must echo this exact value — a concurrent
+   * producer (second tab, another reviewer, MCP `/api/review-proposals`, the
+   * advisor) mints a different one, so the stores can refuse to append
+   * enrichment data the approving human never saw.
+   */
+  version: z.string().min(1),
   updatedAt: z.string().min(1),
   updatedBy: z.string().min(1),
 });

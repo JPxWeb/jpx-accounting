@@ -537,10 +537,20 @@ export const reviewDecisionInputSchema = z.object({
   edited: reviewDecisionEditSchema.optional(),
   /**
    * Consuming an attached enrichment intent must be an explicit assertion by
-   * the reviewing surface that it just presented/replaced that intent.
-   * Omission is fail-closed: the API clears any unseen stale intent.
+   * the reviewing surface that it presented THAT EXACT intent — hence the
+   * `version` echoed from the `attachReviewEnrichmentIntent` response. The
+   * stores compare it inside the advisory-locked decision transaction and
+   * refuse (409 `enrichment_intent_stale`) when a concurrent producer replaced
+   * the intent in the meantime, so an approval can never append enrichment
+   * data the human never saw. Omission is fail-closed: the intent is cleared
+   * (planned as noop) and discarded, never consumed.
    */
-  enrichmentIntent: z.enum(["consume", "clear"]).optional(),
+  enrichmentIntent: z
+    .discriminatedUnion("mode", [
+      z.object({ mode: z.literal("consume"), version: z.string().min(1) }),
+      z.object({ mode: z.literal("clear") }),
+    ])
+    .optional(),
 });
 
 export const knowledgeQuerySchema = z.object({

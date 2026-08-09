@@ -105,11 +105,18 @@ export function ReviewEditSheet({ review, voucher, evidenceIds = [], onClose, on
         { kind: "project_assignment" | "invoice_registration" | "trip_registration" | "quantity_inventory_movement" }
       >;
     }) => {
-      await apiClient.attachReviewEnrichmentIntent({
+      // Approve consumes THIS attach, identified by the version the server just
+      // minted. If anything replaced the intent in between (another tab, a
+      // second reviewer, an MCP/advisor proposal) the approval is refused with
+      // 409 instead of silently posting enrichment this reviewer never saw.
+      const intent = await apiClient.attachReviewEnrichmentIntent({
         reviewId: review.id,
         proposals: [proposal ?? { kind: "noop" }],
       });
-      return apiClient.approveReview(review.id, { edited, enrichmentIntent: "consume" });
+      return apiClient.approveReview(review.id, {
+        edited,
+        enrichmentIntent: { mode: "consume", version: intent.version },
+      });
     },
     onSuccess,
   });

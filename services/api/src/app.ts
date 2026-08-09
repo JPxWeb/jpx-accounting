@@ -25,7 +25,6 @@ import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intell
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import {
   EnrichmentIntentClosedError,
-  EnrichmentIntentVersionMismatchError,
   EnrichmentLineNotFoundError,
   EnrichmentNotSupportedError,
   EnrichmentProposalMultiplicityError,
@@ -355,13 +354,10 @@ export function createApp({
     const review = await currentStore.applyReviewDecision(reviewId, outcome, {
       ...input,
       enforceBlockedReason: runtimeMode === "normal",
-      // Only a surface that presented THAT intent may consume it, proven by
-      // echoing the version its attach returned. Omitted or "clear" fails
-      // closed for queue, MCP, advisor, and future approve-with-edits callers;
-      // a stale version is refused with 409 inside the decision transaction.
-      ...(input.enrichmentIntent?.mode === "consume"
-        ? { consumeEnrichmentIntentVersion: input.enrichmentIntent.version }
-        : {}),
+      // Only a surface that just presented/replaced the intent may consume it.
+      // Omitted or explicit "clear" fails closed for queue, MCP, advisor, and
+      // future approve-with-edits callers.
+      clearEnrichmentIntent: input.enrichmentIntent !== "consume",
     });
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return review;
@@ -555,10 +551,6 @@ export function createApp({
 
     if (error instanceof EnrichmentIntentClosedError) {
       return jsonError(c, error.message, runtimeMode, 409, { code: "review_not_open" });
-    }
-
-    if (error instanceof EnrichmentIntentVersionMismatchError) {
-      return jsonError(c, error.message, runtimeMode, 409, { code: error.code });
     }
 
     if (error instanceof EnrichmentNotSupportedError) {

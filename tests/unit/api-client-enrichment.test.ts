@@ -114,6 +114,7 @@ test("attach and get review enrichment intent use review-scoped routes", async (
     reviewId: "review_1",
     voucherId: "voucher_1",
     proposals: [{ kind: "noop" }],
+    version: "rei_intent_1",
     updatedAt: "2026-08-09T10:00:00.000Z",
     updatedBy: "user:abc",
   };

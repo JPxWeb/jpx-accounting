@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import type { EnrichmentProposal, ExtractionResult } from "@jpx-accounting/contracts";
 import {
   deriveDeterministicExtraction,
+  EnrichmentIntentVersionMismatchError,
   EnrichmentLineNotFoundError,
   ExternalReferenceNotFoundError,
   InvalidPeriodTokenError,
@@ -475,7 +476,7 @@ export async function scenarioPrePostEnrichmentSinglePosting(h: ConformanceHarne
     mimeType: "application/pdf",
     modalities: ["upload"],
   });
-  await h.store.attachReviewEnrichmentIntent({
+  const invalidIntent = await h.store.attachReviewEnrichmentIntent({
     actorId: h.actorId,
     reviewId: created.review.id,
     proposals: [
@@ -489,7 +490,11 @@ export async function scenarioPrePostEnrichmentSinglePosting(h: ConformanceHarne
   });
   const eventsBeforeRejectedApproval = await h.store.getEvents();
   await assert.rejects(
-    () => h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId }),
+    () =>
+      h.store.applyReviewDecision(created.review.id, "approve", {
+        actorId: h.actorId,
+        consumeEnrichmentIntentVersion: invalidIntent.version,
+      }),
     EnrichmentLineNotFoundError,
   );
   const eventsAfterRejectedApproval = await h.store.getEvents();
@@ -497,15 +502,26 @@ export async function scenarioPrePostEnrichmentSinglePosting(h: ConformanceHarne
   assert.ok(await h.store.getReviewEnrichmentIntent(created.review.id));
 
   // Replacing the invalid intent proves the failed approval left the review open
-  // and permits the ordinary human approval path to post exactly once.
-  await h.store.attachReviewEnrichmentIntent({
+  // and permits the ordinary human approval path to post exactly once. The
+  // replacement also invalidates the version the first approval quoted.
+  const replacementIntent = await h.store.attachReviewEnrichmentIntent({
     actorId: h.actorId,
     reviewId: created.review.id,
     proposals: [{ kind: "noop" }],
   });
+  assert.notEqual(replacementIntent.version, invalidIntent.version);
+  await assert.rejects(
+    () =>
+      h.store.applyReviewDecision(created.review.id, "approve", {
+        actorId: h.actorId,
+        consumeEnrichmentIntentVersion: invalidIntent.version,
+      }),
+    EnrichmentIntentVersionMismatchError,
+  );
 
   const decided = await h.store.applyReviewDecision(created.review.id, "approve", {
     actorId: h.actorId,
+    consumeEnrichmentIntentVersion: replacementIntent.version,
   });
   const events = await h.store.getEvents();
   const postedForVoucher = events.filter(
@@ -520,7 +536,82 @@ export async function scenarioPrePostEnrichmentSinglePosting(h: ConformanceHarne
     postedForVoucher: postedForVoucher.length,
     rejectedApprovalEventDelta: eventsAfterRejectedApproval.length - eventsBeforeRejectedApproval.length,
     failedClosed: true,
+    supersededVersionRefused: true,
     intentConsumed: (await h.store.getReviewEnrichmentIntent(created.review.id)) === undefined,
+  };
+}
+
+/**
+ * The consume assertion is bound to ONE intent. Reviewer A attaches and reads
+ * a version; producer B replaces the intent; A's approval must append nothing
+ * rather than post B's unseen proposal. Then a plain approval that makes no
+ * assertion at all must post WITHOUT the enrichment (fail-closed default).
+ * Store parity here is the whole point: Memory throws before mutating, Postgres
+ * throws inside the advisory-locked transaction so it rolls back to zero events.
+ */
+export async function scenarioEnrichmentIntentConsumeRace(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const created = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Intent consume race conformance",
+    originalFilename: "intent-consume-race-conformance.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+
+  const seenByA = await h.store.attachReviewEnrichmentIntent({
+    actorId: h.actorId,
+    reviewId: created.review.id,
+    proposals: [{ kind: "noop" }],
+  });
+  const attachedByB = await h.store.attachReviewEnrichmentIntent({
+    actorId: "user:other",
+    reviewId: created.review.id,
+    proposals: [
+      { kind: "invoice_registration", direction: "ap", counterparty: "Unseen supplier", dueDate: "2026-09-01" },
+    ],
+  });
+
+  const eventsBeforeStale = await h.store.getEvents();
+  await assert.rejects(
+    () =>
+      h.store.applyReviewDecision(created.review.id, "approve", {
+        actorId: h.actorId,
+        consumeEnrichmentIntentVersion: seenByA.version,
+      }),
+    EnrichmentIntentVersionMismatchError,
+  );
+  const eventsAfterStale = await h.store.getEvents();
+  const staleReview = (await h.store.getSnapshot()).reviews.find((review) => review.id === created.review.id);
+  const intentAfterStale = await h.store.getReviewEnrichmentIntent(created.review.id);
+
+  // No assertion at all: post, discard the intent, append no enrichment.
+  const decided = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+  const events = await h.store.getEvents();
+  const postedEvents = events.filter(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === created.voucher.id,
+  );
+  const unseenRegistrations = events.filter(
+    (event) => event.eventType === "InvoiceRegistered" && event.payload.counterparty === "Unseen supplier",
+  );
+
+  assert.notEqual(seenByA.version, attachedByB.version);
+  assert.equal(eventsAfterStale.length, eventsBeforeStale.length);
+  assert.equal(staleReview?.status, "needs-review");
+  assert.equal(intentAfterStale?.version, attachedByB.version);
+  assert.equal(decided?.status, "approved");
+  assert.equal(postedEvents.length, 1);
+  assert.equal(unseenRegistrations.length, 0);
+  assert.equal(await h.store.getReviewEnrichmentIntent(created.review.id), undefined);
+
+  return {
+    versionsDiffer: seenByA.version !== attachedByB.version,
+    staleApprovalEventDelta: eventsAfterStale.length - eventsBeforeStale.length,
+    staleReviewStatus: staleReview?.status ?? null,
+    replacementIntentPreserved: intentAfterStale?.version === attachedByB.version,
+    approvedStatus: decided?.status ?? null,
+    postedCount: postedEvents.length,
+    unseenRegistrationCount: unseenRegistrations.length,
+    intentDiscarded: (await h.store.getReviewEnrichmentIntent(created.review.id)) === undefined,
   };
 }
 
@@ -966,7 +1057,7 @@ export async function scenarioInvoiceReviewApproval(h: ConformanceHarness): Prom
     mimeType: "application/pdf",
     modalities: ["upload"],
   });
-  await h.store.attachReviewEnrichmentIntent({
+  const invalidIntent = await h.store.attachReviewEnrichmentIntent({
     actorId: h.actorId,
     reviewId: invalid.review.id,
     proposals: [
@@ -982,6 +1073,7 @@ export async function scenarioInvoiceReviewApproval(h: ConformanceHarness): Prom
   await assert.rejects(() =>
     h.store.applyReviewDecision(invalid.review.id, "approve", {
       actorId: h.actorId,
+      consumeEnrichmentIntentVersion: invalidIntent.version,
     }),
   );
   const eventsAfterInvalidApproval = await h.store.getEvents();
@@ -996,7 +1088,7 @@ export async function scenarioInvoiceReviewApproval(h: ConformanceHarness): Prom
     mimeType: "application/pdf",
     modalities: ["upload"],
   });
-  await h.store.attachReviewEnrichmentIntent({
+  const intent = await h.store.attachReviewEnrichmentIntent({
     actorId: h.actorId,
     reviewId: created.review.id,
     proposals: [
@@ -1009,7 +1101,10 @@ export async function scenarioInvoiceReviewApproval(h: ConformanceHarness): Prom
     ],
   });
 
-  const approved = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+  const approved = await h.store.applyReviewDecision(created.review.id, "approve", {
+    actorId: h.actorId,
+    consumeEnrichmentIntentVersion: intent.version,
+  });
   const replayed = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: "user:other" });
   const events = await h.store.getEvents();
   const postedEvents = events.filter(
@@ -1082,25 +1177,32 @@ export async function scenarioTripReviewApproval(h: ConformanceHarness): Promise
     evidenceId: created.evidence.id,
   };
 
-  await h.store.attachReviewEnrichmentIntent({
+  const invalidIntent = await h.store.attachReviewEnrichmentIntent({
     actorId: h.actorId,
     reviewId: created.review.id,
     proposals: [{ ...proposal, evidenceId: "evidence_outside_packet" }],
   });
   const eventsBeforeInvalid = await h.store.getEvents();
   await assert.rejects(
-    () => h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId }),
+    () =>
+      h.store.applyReviewDecision(created.review.id, "approve", {
+        actorId: h.actorId,
+        consumeEnrichmentIntentVersion: invalidIntent.version,
+      }),
     /evidence.*packet/i,
   );
   const eventsAfterInvalid = await h.store.getEvents();
   assert.equal(eventsAfterInvalid.length, eventsBeforeInvalid.length);
 
-  await h.store.attachReviewEnrichmentIntent({
+  const intent = await h.store.attachReviewEnrichmentIntent({
     actorId: h.actorId,
     reviewId: created.review.id,
     proposals: [proposal],
   });
-  const approved = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+  const approved = await h.store.applyReviewDecision(created.review.id, "approve", {
+    actorId: h.actorId,
+    consumeEnrichmentIntentVersion: intent.version,
+  });
   const replayed = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: "user:other" });
   const events = await h.store.getEvents();
   const postedEvents = events.filter(
@@ -1270,7 +1372,7 @@ export async function scenarioQuantityInventoryReviewApproval(h: ConformanceHarn
     mimeType: "application/pdf",
     modalities: ["upload"],
   });
-  await h.store.attachReviewEnrichmentIntent({
+  const invalidIntent = await h.store.attachReviewEnrichmentIntent({
     actorId: h.actorId,
     reviewId: invalid.review.id,
     proposals: [
@@ -1288,6 +1390,7 @@ export async function scenarioQuantityInventoryReviewApproval(h: ConformanceHarn
     () =>
       h.store.applyReviewDecision(invalid.review.id, "approve", {
         actorId: h.actorId,
+        consumeEnrichmentIntentVersion: invalidIntent.version,
         edited: {
           accountNumber: "1930",
           accountName: "Bank",
@@ -1312,7 +1415,7 @@ export async function scenarioQuantityInventoryReviewApproval(h: ConformanceHarn
     mimeType: "application/pdf",
     modalities: ["upload"],
   });
-  await h.store.attachReviewEnrichmentIntent({
+  const intent = await h.store.attachReviewEnrichmentIntent({
     actorId: h.actorId,
     reviewId: created.review.id,
     proposals: [
@@ -1326,7 +1429,10 @@ export async function scenarioQuantityInventoryReviewApproval(h: ConformanceHarn
     ],
   });
 
-  const approved = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: h.actorId });
+  const approved = await h.store.applyReviewDecision(created.review.id, "approve", {
+    actorId: h.actorId,
+    consumeEnrichmentIntentVersion: intent.version,
+  });
   const eventsAfterApproval = await h.store.getEvents();
   const replayed = await h.store.applyReviewDecision(created.review.id, "approve", { actorId: "user:other" });
   const eventsAfterReplay = await h.store.getEvents();
@@ -1426,6 +1532,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "review reject", run: scenarioReviewReject },
   { name: "review approve with edits", run: scenarioReviewApproveEdited },
   { name: "pre-post enrichment single posting", run: scenarioPrePostEnrichmentSinglePosting },
+  { name: "enrichment intent consume race fails closed", run: scenarioEnrichmentIntentConsumeRace },
   { name: "line-target work item never posts", run: scenarioLineTargetWorkItemNeverPosts },
   { name: "enrichment confirm never posts twice", run: scenarioEnrichmentWorkItemConfirmNeverPosts },
   { name: "line enrichment supersession", run: scenarioLineEnrichmentSupersession },

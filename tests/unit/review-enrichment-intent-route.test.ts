@@ -136,12 +136,107 @@ test("review approval reports a typed error when an intent targets no planned li
     }),
   });
   assert.equal(attached.status, 200);
+  const { version } = (await attached.json()) as { version: string };
 
   const response = await app.request(`http://localhost/api/reviews/${created.review.id}/approve`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ enrichmentIntent: "consume" }),
+    body: JSON.stringify({ enrichmentIntent: { mode: "consume", version } }),
   });
   assert.equal(response.status, 422);
   assert.equal(((await response.json()) as { code: string }).code, "enrichment_line_not_found");
+});
+
+test("approval refuses to consume an intent that was replaced after it was presented", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await store.createEvidence({
+    actorId: "user:test",
+    title: "Concurrent intent replacement",
+    originalFilename: "concurrent-intent-replacement.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  const app = createTestApp(store);
+
+  // Reviewer A attaches and reads the version their sheet will echo.
+  const seen = await app.request(`http://localhost/api/reviews/${created.review.id}/enrichment-intents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ reviewId: created.review.id, proposals: [{ kind: "noop" }] }),
+  });
+  const { version: seenVersion } = (await seen.json()) as { version: string };
+
+  // A concurrent producer (second tab / MCP proposal / advisor) replaces it.
+  await app.request(`http://localhost/api/reviews/${created.review.id}/enrichment-intents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      reviewId: created.review.id,
+      proposals: [
+        { kind: "invoice_registration", direction: "ap", counterparty: "Unseen supplier", dueDate: "2026-09-01" },
+      ],
+    }),
+  });
+
+  const eventsBefore = (await store.getEvents()).length;
+  const stale = await app.request(`http://localhost/api/reviews/${created.review.id}/approve`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-request-id": "stale-consume" },
+    body: JSON.stringify({ enrichmentIntent: { mode: "consume", version: seenVersion } }),
+  });
+
+  assert.equal(stale.status, 409);
+  const staleBody = (await stale.json()) as { code: string; requestId: string };
+  assert.equal(staleBody.code, "enrichment_intent_stale");
+  assert.equal(staleBody.requestId, "stale-consume");
+  const events = await store.getEvents();
+  assert.equal(events.length, eventsBefore);
+  assert.equal(
+    events.some((event) => event.eventType === "InvoiceRegistered"),
+    false,
+  );
+  assert.equal((await store.findReviewByVoucher(created.voucher.id))?.status, "needs-review");
+});
+
+test("a forged consume token cannot append a pre-existing intent", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await store.createEvidence({
+    actorId: "user:test",
+    title: "Forged consume token",
+    originalFilename: "forged-consume-token.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  const app = createTestApp(store);
+  await store.attachReviewEnrichmentIntent({
+    actorId: "user:other",
+    reviewId: created.review.id,
+    proposals: [
+      { kind: "invoice_registration", direction: "ap", counterparty: "Unseen supplier", dueDate: "2026-09-01" },
+    ],
+  });
+
+  const forged = await app.request(`http://localhost/api/reviews/${created.review.id}/approve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ enrichmentIntent: { mode: "consume", version: "rei_forged" } }),
+  });
+  assert.equal(forged.status, 409);
+  assert.equal(((await forged.json()) as { code: string }).code, "enrichment_intent_stale");
+
+  // Omitting the assertion entirely is fail-closed, not fail-open: the review
+  // posts, and the intent nobody presented is discarded rather than appended.
+  const plain = await app.request(`http://localhost/api/reviews/${created.review.id}/approve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(plain.status, 200);
+  const events = await store.getEvents();
+  assert.equal(
+    events.some((event) => event.eventType === "InvoiceRegistered"),
+    false,
+  );
+  assert.equal(events.filter((event) => event.eventType === "PostedToLedger").length, 1);
+  assert.equal(await store.getReviewEnrichmentIntent(created.review.id), undefined);
 });

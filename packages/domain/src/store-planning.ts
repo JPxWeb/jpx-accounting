@@ -737,7 +737,7 @@ export function planReviewDecision(
 
 export function planPrePostEnrichment(input: {
   review: ReviewTask;
-  proposals: EnrichmentProposal[];
+  proposals: readonly EnrichmentProposal[];
   postingLines: readonly LedgerLine[];
   postingVoucher: Voucher;
   evidenceIds: readonly string[];

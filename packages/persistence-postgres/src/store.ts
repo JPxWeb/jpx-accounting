@@ -12,6 +12,7 @@ import type {
   EvidenceModality,
   EvidenceObject,
   EvidencePacket,
+  EnrichmentProposal,
   EnrichmentWorkItem,
   ExternalReferenceProjection,
   ExtractedField,
@@ -79,6 +80,7 @@ import {
   planPostPostEnrichmentConfirm,
   planReviewDecision,
   planVoucherTagsAppend,
+  resolveConsumableIntentProposals,
   simulateApprovals,
   today,
   TripNotFoundError,
@@ -281,6 +283,7 @@ type ReviewEnrichmentIntentRow = {
   review_id: string;
   voucher_id: string;
   proposals: ReviewEnrichmentIntent["proposals"];
+  version: string;
   updated_at: Date | string;
   updated_by: string;
 };
@@ -400,6 +403,7 @@ function rowToReviewEnrichmentIntent(row: ReviewEnrichmentIntentRow): ReviewEnri
     reviewId: row.review_id,
     voucherId: row.voucher_id,
     proposals: structuredClone(row.proposals),
+    version: row.version,
     updatedAt: toIso(row.updated_at),
     updatedBy: row.updated_by,
   };
@@ -1723,7 +1727,7 @@ export class PostgresLedgerStore implements LedgerStore {
         const basePlan = planReviewDecision(review, voucher, action, input);
         if (basePlan.kind === "replay") return basePlan.review;
         const intentRows = await tx<ReviewEnrichmentIntentRow[]>`
-          SELECT review_id, voucher_id, proposals, updated_at, updated_by
+          SELECT review_id, voucher_id, proposals, version, updated_at, updated_by
           FROM ledger.review_enrichment_intents
           WHERE organization_id = ${this.defaults.organizationId}
             AND workspace_id = ${this.defaults.workspaceId}
@@ -1731,12 +1735,18 @@ export class PostgresLedgerStore implements LedgerStore {
           LIMIT 1
         `;
         const intent = intentRows[0] ? rowToReviewEnrichmentIntent(intentRows[0]) : undefined;
-        // Server-controlled plain approvals replace unseen intent with noop
-        // inside this advisory-locked transaction, before any event append.
-        const proposals = input.clearEnrichmentIntent ? [{ kind: "noop" as const }] : intent?.proposals;
-        const needsPacketEvidence =
-          proposals?.some((proposal) => proposal.kind === "trip_registration" && proposal.evidenceId !== undefined) ??
-          false;
+        // Identity-bound consume, evaluated under the workspace advisory lock
+        // and before any append: a stale/absent version aborts the transaction
+        // so a concurrently replaced intent can never be posted unseen.
+        const proposals = resolveConsumableIntentProposals<EnrichmentProposal>(
+          reviewId,
+          intent,
+          input.consumeEnrichmentIntentVersion,
+          { kind: "noop" },
+        );
+        const needsPacketEvidence = proposals.some(
+          (proposal) => proposal.kind === "trip_registration" && proposal.evidenceId !== undefined,
+        );
         const packetEvidenceRows =
           needsPacketEvidence && action !== "reject"
             ? await tx<{ evidence_object_id: string }[]>`
@@ -1747,7 +1757,7 @@ export class PostgresLedgerStore implements LedgerStore {
               `
             : [];
         const plan =
-          proposals && action !== "reject"
+          action !== "reject"
             ? mergePrePostEnrichmentsIntoReviewDecisionPlan(
                 basePlan,
                 planPrePostEnrichment({
@@ -1838,20 +1848,25 @@ export class PostgresLedgerStore implements LedgerStore {
 
       const updatedAt = nowIso();
       const updatedBy = input.actorId ?? DEMO_ACTOR_ID;
+      // Fresh token per attach (parity with MemoryLedgerStore): the upsert
+      // replaces the row, so any consume assertion against the prior version
+      // now fails closed.
+      const version = createId("rei");
       await tx`
         INSERT INTO ledger.review_enrichment_intents (
           organization_id, workspace_id, review_id, voucher_id,
-          proposals, updated_at, updated_by
+          proposals, version, updated_at, updated_by
         ) VALUES (
           ${this.defaults.organizationId}, ${this.defaults.workspaceId},
           ${reviewRow.id}, ${voucherRow.id},
           ${tx.json(input.proposals as unknown as Parameters<typeof tx.json>[0])},
-          ${updatedAt}, ${updatedBy}
+          ${version}, ${updatedAt}, ${updatedBy}
         )
         ON CONFLICT (organization_id, workspace_id, review_id)
         DO UPDATE SET
           voucher_id = EXCLUDED.voucher_id,
           proposals = EXCLUDED.proposals,
+          version = EXCLUDED.version,
           updated_at = EXCLUDED.updated_at,
           updated_by = EXCLUDED.updated_by
       `;
@@ -1859,6 +1874,7 @@ export class PostgresLedgerStore implements LedgerStore {
         reviewId: reviewRow.id,
         voucherId: voucherRow.id,
         proposals: structuredClone(input.proposals),
+        version,
         updatedAt,
         updatedBy,
       };
@@ -1867,7 +1883,7 @@ export class PostgresLedgerStore implements LedgerStore {
 
   async getReviewEnrichmentIntent(reviewId: string): Promise<ReviewEnrichmentIntent | undefined> {
     const rows = await this.client<ReviewEnrichmentIntentRow[]>`
-      SELECT review_id, voucher_id, proposals, updated_at, updated_by
+      SELECT review_id, voucher_id, proposals, version, updated_at, updated_by
       FROM ledger.review_enrichment_intents
       WHERE organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
