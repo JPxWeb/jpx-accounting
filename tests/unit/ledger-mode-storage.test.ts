@@ -38,25 +38,26 @@ afterEach(() => {
 });
 
 describe("ledger-mode-storage", () => {
-  it("resolveLedgerMode prefers URL over stored preference", () => {
+  it("persists drawer mode while a valid URL mode takes precedence", () => {
     const store = installLocalStorage();
-    saveLedgerMode("inline");
-    assert.equal(store.getItem(LEDGER_MODE_STORAGE_KEY), "inline");
-    assert.equal(resolveLedgerMode("drawer"), "drawer");
-    assert.equal(loadLedgerMode(), "inline");
-    assert.equal(
-      (globalThis as { window: { localStorage: StorageShim } }).window.localStorage.getItem(LEDGER_MODE_STORAGE_KEY),
-      "inline",
-    );
+    assert.equal(saveLedgerMode("drawer"), "drawer");
+    assert.equal(store.getItem(LEDGER_MODE_STORAGE_KEY), "drawer");
+    assert.equal(loadLedgerMode(), "drawer");
+    assert.equal(resolveLedgerMode("inline"), "inline");
+    assert.equal(store.getItem(LEDGER_MODE_STORAGE_KEY), "drawer");
   });
 
-  it("resolveLedgerMode defaults to inline when unset", () => {
+  it("defaults to inline without a browser or stored preference", () => {
+    assert.equal(resolveLedgerMode(null), "inline");
+
     const store = installLocalStorage();
     assert.equal(resolveLedgerMode(null), "inline");
     assert.equal(store.getItem(LEDGER_MODE_STORAGE_KEY), null);
-    assert.equal(
-      (globalThis as { window: { localStorage: StorageShim } }).window.localStorage.getItem(LEDGER_MODE_STORAGE_KEY),
-      null,
-    );
+  });
+
+  it("ignores an unrecognized stored value", () => {
+    const store = installLocalStorage();
+    store.setItem(LEDGER_MODE_STORAGE_KEY, "side-panel");
+    assert.equal(loadLedgerMode(), "inline");
   });
 });

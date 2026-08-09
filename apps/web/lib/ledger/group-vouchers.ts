@@ -1,4 +1,3 @@
-// apps/web/lib/ledger/group-vouchers.ts
 import type { JournalEntryProjection } from "@jpx-accounting/contracts";
 
 export type VoucherJournalGroup = {
@@ -10,15 +9,15 @@ export type VoucherJournalGroup = {
 };
 
 export function groupJournalByVoucher(entries: JournalEntryProjection[]): VoucherJournalGroup[] {
-  const map = new Map<string, VoucherJournalGroup>();
+  const groupsByVoucherId = new Map<string, VoucherJournalGroup>();
   for (const entry of entries) {
-    const existing = map.get(entry.voucherId);
-    if (existing) {
-      existing.lines.push(entry);
-      existing.totalDebit += entry.debit;
-      existing.totalCredit += entry.credit;
+    const group = groupsByVoucherId.get(entry.voucherId);
+    if (group) {
+      group.lines.push(entry);
+      group.totalDebit += entry.debit;
+      group.totalCredit += entry.credit;
     } else {
-      map.set(entry.voucherId, {
+      groupsByVoucherId.set(entry.voucherId, {
         voucherId: entry.voucherId,
         bookedAt: entry.bookedAt,
         lines: [entry],
@@ -27,7 +26,7 @@ export function groupJournalByVoucher(entries: JournalEntryProjection[]): Vouche
       });
     }
   }
-  return [...map.values()].sort(
+  return [...groupsByVoucherId.values()].sort(
     (a, b) => a.bookedAt.localeCompare(b.bookedAt) || a.voucherId.localeCompare(b.voucherId),
   );
 }
