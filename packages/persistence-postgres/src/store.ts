@@ -11,9 +11,11 @@ import type {
   EvidenceModality,
   EvidenceObject,
   EvidencePacket,
+  EnrichmentWorkItem,
   ExtractedField,
   ExtractionResult,
   LedgerEvent,
+  ProposeEnrichmentWorkItemInput,
   ReportBundle,
   ReportPack,
   ReviewDecisionInput,
@@ -46,6 +48,7 @@ import {
   planComplianceMerge,
   planEvidenceCreate,
   planExtractionRefresh,
+  planPostPostEnrichmentConfirm,
   planReviewDecision,
   simulateApprovals,
   today,
@@ -56,6 +59,8 @@ import {
 } from "@jpx-accounting/domain";
 import {
   isDuplicateEvidence,
+  EnrichmentWorkItemConflictError,
+  EnrichmentWorkItemNotFoundError,
   planSieImport,
   ReviewNotFoundError,
   type LedgerStore,
@@ -219,6 +224,24 @@ type EventRow = {
   created_at: Date | string;
 };
 
+type EnrichmentWorkItemRow = {
+  id: string;
+  organization_id: string;
+  workspace_id: string;
+  target_kind: string;
+  target_id: string;
+  proposed_change: EnrichmentWorkItem["proposedChange"];
+  status: string;
+  source: string;
+  idempotency_key: string;
+  created_at: Date | string;
+  created_by: string;
+  confirmed_at: Date | string | null;
+  confirmed_by: string | null;
+  resulting_event_ids: string[] | null;
+  superseded_by_work_item_id: string | null;
+};
+
 function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
 }
@@ -304,6 +327,29 @@ function rowToEvent(row: EventRow): LedgerEvent {
     eventHash: row.event_hash,
     digestDate: toDateOnlyIso(row.digest_date),
   };
+}
+
+function rowToEnrichmentWorkItem(row: EnrichmentWorkItemRow): EnrichmentWorkItem {
+  const workItem: EnrichmentWorkItem = {
+    id: row.id,
+    organizationId: row.organization_id,
+    workspaceId: row.workspace_id,
+    targetKind: row.target_kind as EnrichmentWorkItem["targetKind"],
+    targetId: row.target_id,
+    proposedChange: row.proposed_change,
+    status: row.status as EnrichmentWorkItem["status"],
+    source: row.source as EnrichmentWorkItem["source"],
+    idempotencyKey: row.idempotency_key,
+    createdAt: toIso(row.created_at),
+    createdBy: row.created_by,
+  };
+  if (row.confirmed_at !== null) workItem.confirmedAt = toIso(row.confirmed_at);
+  if (row.confirmed_by !== null) workItem.confirmedBy = row.confirmed_by;
+  if (row.resulting_event_ids !== null) workItem.resultingEventIds = row.resulting_event_ids;
+  if (row.superseded_by_work_item_id !== null) {
+    workItem.supersededByWorkItemId = row.superseded_by_work_item_id;
+  }
+  return workItem;
 }
 
 type ComplianceAlertRow = {
@@ -1358,6 +1404,172 @@ export class PostgresLedgerStore implements LedgerStore {
         return plan.updatedReview;
       }),
     );
+  }
+
+  async proposeEnrichmentWorkItem(
+    input: ProposeEnrichmentWorkItemInput & ActorAttribution,
+  ): Promise<EnrichmentWorkItem> {
+    return this.client.begin(async (tx) => {
+      await this.lockWorkspaceTail(tx);
+      const id = createId("ewi");
+      const createdAt = nowIso();
+      const createdBy = input.actorId ?? DEMO_ACTOR_ID;
+      await tx`
+        INSERT INTO ledger.enrichment_work_items (
+          id, organization_id, workspace_id, target_kind, target_id,
+          proposed_change, status, source, idempotency_key, created_at, created_by
+        ) VALUES (
+          ${id}, ${this.defaults.organizationId}, ${this.defaults.workspaceId},
+          ${input.targetKind}, ${input.targetId},
+          ${tx.json(input.proposedChange as unknown as Parameters<typeof tx.json>[0])},
+          'pending_confirmation', ${input.source}, ${input.idempotencyKey},
+          ${createdAt}, ${createdBy}
+        )
+        ON CONFLICT (organization_id, workspace_id, idempotency_key) DO NOTHING
+      `;
+
+      const rows = await tx<EnrichmentWorkItemRow[]>`
+        SELECT id, organization_id, workspace_id, target_kind, target_id,
+               proposed_change, status, source, idempotency_key, created_at,
+               created_by, confirmed_at, confirmed_by, resulting_event_ids,
+               superseded_by_work_item_id
+        FROM ledger.enrichment_work_items
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+          AND idempotency_key = ${input.idempotencyKey}
+        LIMIT 1
+      `;
+      const row = rows[0];
+      if (!row) throw new Error("Enrichment work item insert did not return a row");
+      return rowToEnrichmentWorkItem(row);
+    });
+  }
+
+  async getEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem | undefined> {
+    const rows = await this.client<EnrichmentWorkItemRow[]>`
+      SELECT id, organization_id, workspace_id, target_kind, target_id,
+             proposed_change, status, source, idempotency_key, created_at,
+             created_by, confirmed_at, confirmed_by, resulting_event_ids,
+             superseded_by_work_item_id
+      FROM ledger.enrichment_work_items
+      WHERE id = ${id}
+        AND organization_id = ${this.defaults.organizationId}
+        AND workspace_id = ${this.defaults.workspaceId}
+      LIMIT 1
+    `;
+    return rows[0] ? rowToEnrichmentWorkItem(rows[0]) : undefined;
+  }
+
+  async confirmEnrichmentWorkItem(id: string, input: ActorAttribution): Promise<EnrichmentWorkItem> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        const rows = await tx<EnrichmentWorkItemRow[]>`
+          SELECT id, organization_id, workspace_id, target_kind, target_id,
+                 proposed_change, status, source, idempotency_key, created_at,
+                 created_by, confirmed_at, confirmed_by, resulting_event_ids,
+                 superseded_by_work_item_id
+          FROM ledger.enrichment_work_items
+          WHERE id = ${id}
+            AND organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+          FOR UPDATE
+        `;
+        const row = rows[0];
+        if (!row) throw new EnrichmentWorkItemNotFoundError(id);
+        const workItem = rowToEnrichmentWorkItem(row);
+        if (workItem.status === "confirmed") return workItem;
+        if (workItem.status !== "pending_confirmation") {
+          throw new EnrichmentWorkItemConflictError(id, workItem.status);
+        }
+
+        const postedRows = await tx<Array<{ aggregate_id: string; payload: Record<string, unknown> }>>`
+          SELECT aggregate_id, payload
+          FROM ledger.events
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND event_type IN ('PostedToLedger', 'VoucherImported')
+          ORDER BY seq ASC
+        `;
+        const postedVoucherIds = new Set(postedRows.map((posted) => posted.aggregate_id));
+        const postedLineIds = new Set(
+          postedRows.flatMap((posted) => {
+            const lines = Array.isArray(posted.payload.lines) ? posted.payload.lines : [];
+            return lines.flatMap((line) =>
+              typeof line === "object" && line !== null && typeof (line as { lineId?: unknown }).lineId === "string"
+                ? [(line as { lineId: string }).lineId]
+                : [],
+            );
+          }),
+        );
+        const actorId = input.actorId ?? DEMO_ACTOR_ID;
+        const plan = planPostPostEnrichmentConfirm({ workItem, actorId, postedVoucherIds, postedLineIds });
+
+        const resultingEventIds: string[] = [];
+        let previousHash = tailHash;
+        for (const event of plan.events) {
+          const appended = await this.appendEvent(
+            tx,
+            { ...event, payload: event.payload as unknown as Record<string, unknown> },
+            previousHash,
+          );
+          resultingEventIds.push(appended.id);
+          previousHash = appended.eventHash;
+        }
+
+        const confirmedAt = nowIso();
+        await tx`
+          UPDATE ledger.enrichment_work_items
+          SET status = 'confirmed',
+              confirmed_at = ${confirmedAt},
+              confirmed_by = ${actorId},
+              resulting_event_ids = ${tx.json(resultingEventIds)}
+          WHERE id = ${id}
+            AND organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+        `;
+        return {
+          ...workItem,
+          status: "confirmed",
+          confirmedAt,
+          confirmedBy: actorId,
+          resultingEventIds,
+        };
+      }),
+    );
+  }
+
+  async rejectEnrichmentWorkItem(id: string, _input: ActorAttribution): Promise<EnrichmentWorkItem> {
+    return this.client.begin(async (tx) => {
+      await this.lockWorkspaceTail(tx);
+      const rows = await tx<EnrichmentWorkItemRow[]>`
+        SELECT id, organization_id, workspace_id, target_kind, target_id,
+               proposed_change, status, source, idempotency_key, created_at,
+               created_by, confirmed_at, confirmed_by, resulting_event_ids,
+               superseded_by_work_item_id
+        FROM ledger.enrichment_work_items
+        WHERE id = ${id}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+        FOR UPDATE
+      `;
+      const row = rows[0];
+      if (!row) throw new EnrichmentWorkItemNotFoundError(id);
+      const workItem = rowToEnrichmentWorkItem(row);
+      if (workItem.status === "rejected") return workItem;
+      if (workItem.status !== "pending_confirmation") {
+        throw new EnrichmentWorkItemConflictError(id, workItem.status);
+      }
+
+      await tx`
+        UPDATE ledger.enrichment_work_items
+        SET status = 'rejected'
+        WHERE id = ${id}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+      `;
+      return { ...workItem, status: "rejected" };
+    });
   }
 
   async runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun> {

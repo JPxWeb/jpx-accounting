@@ -9,8 +9,10 @@ import type {
   EvidenceCreateResult,
   EvidenceObject,
   EvidencePacket,
+  EnrichmentWorkItem,
   ExtractionResult,
   LedgerEvent,
+  ProposeEnrichmentWorkItemInput,
   ReportBundle,
   ReportPack,
   ReviewDecisionInput,
@@ -48,6 +50,7 @@ import {
   planComplianceMerge,
   planEvidenceCreate,
   planExtractionRefresh,
+  planPostPostEnrichmentConfirm,
   planReviewDecision,
 } from "./store-planning";
 import {
@@ -107,6 +110,23 @@ export class ReviewNotFoundError extends Error {
   constructor(public readonly missingIds: string[]) {
     super(`Review(s) not found in this workspace: ${missingIds.join(", ")}`);
     this.name = "ReviewNotFoundError";
+  }
+}
+
+export class EnrichmentWorkItemNotFoundError extends Error {
+  constructor(public readonly workItemId: string) {
+    super(`Enrichment work item not found: ${workItemId}`);
+    this.name = "EnrichmentWorkItemNotFoundError";
+  }
+}
+
+export class EnrichmentWorkItemConflictError extends Error {
+  constructor(
+    public readonly workItemId: string,
+    public readonly status: EnrichmentWorkItem["status"],
+  ) {
+    super(`Enrichment work item ${workItemId} cannot be changed from status ${status}`);
+    this.name = "EnrichmentWorkItemConflictError";
   }
 }
 
@@ -299,6 +319,10 @@ export interface LedgerStore {
     action: ReviewAction,
     input: ReviewDecisionInput & ActorAttribution & ApprovalGate,
   ): Promise<ReviewTask | undefined>;
+  proposeEnrichmentWorkItem(input: ProposeEnrichmentWorkItemInput & ActorAttribution): Promise<EnrichmentWorkItem>;
+  getEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem | undefined>;
+  confirmEnrichmentWorkItem(id: string, input: ActorAttribution): Promise<EnrichmentWorkItem>;
+  rejectEnrichmentWorkItem(id: string, input: ActorAttribution): Promise<EnrichmentWorkItem>;
   runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun>;
   getCloseRun(): Promise<CloseRun>;
   refreshComplianceAlerts(): Promise<ComplianceAlert[]>;
@@ -319,6 +343,8 @@ export class MemoryLedgerStore implements LedgerStore {
   private readonly evidenceIdToPacketId = new Map<string, string>();
   private readonly packetIdToVoucherId = new Map<string, string>();
   private readonly voucherIdToReviewId = new Map<string, string>();
+  private readonly enrichmentWorkItems = new Map<string, EnrichmentWorkItem>();
+  private readonly enrichmentWorkItemIdsByIdempotencyKey = new Map<string, string>();
   private readonly events: LedgerEvent[] = [];
   /** Frozen demo seed — never mutated; reports replay event payloads on top. */
   private readonly seedLines: LedgerLine[] = assertBalancedPosting(initialLedgerLines(), "demo seed lines");
@@ -704,6 +730,88 @@ export class MemoryLedgerStore implements LedgerStore {
     }
 
     return { ...plan.updatedReview };
+  }
+
+  async proposeEnrichmentWorkItem(
+    input: ProposeEnrichmentWorkItemInput & ActorAttribution,
+  ): Promise<EnrichmentWorkItem> {
+    const existingId = this.enrichmentWorkItemIdsByIdempotencyKey.get(input.idempotencyKey);
+    const existing = existingId ? this.enrichmentWorkItems.get(existingId) : undefined;
+    if (existing) return { ...existing, resultingEventIds: existing.resultingEventIds?.slice() };
+
+    const workItem: EnrichmentWorkItem = {
+      id: createId("ewi"),
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+      targetKind: input.targetKind,
+      targetId: input.targetId,
+      proposedChange: input.proposedChange,
+      status: "pending_confirmation",
+      source: input.source,
+      idempotencyKey: input.idempotencyKey,
+      createdAt: nowIso(),
+      createdBy: input.actorId ?? DEMO_ACTOR_ID,
+    };
+    this.enrichmentWorkItems.set(workItem.id, workItem);
+    this.enrichmentWorkItemIdsByIdempotencyKey.set(workItem.idempotencyKey, workItem.id);
+    return { ...workItem };
+  }
+
+  async getEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem | undefined> {
+    const workItem = this.enrichmentWorkItems.get(id);
+    return workItem ? { ...workItem, resultingEventIds: workItem.resultingEventIds?.slice() } : undefined;
+  }
+
+  async confirmEnrichmentWorkItem(id: string, input: ActorAttribution): Promise<EnrichmentWorkItem> {
+    const workItem = this.enrichmentWorkItems.get(id);
+    if (!workItem) throw new EnrichmentWorkItemNotFoundError(id);
+    if (workItem.status === "confirmed") {
+      return { ...workItem, resultingEventIds: workItem.resultingEventIds?.slice() };
+    }
+    if (workItem.status !== "pending_confirmation") {
+      throw new EnrichmentWorkItemConflictError(id, workItem.status);
+    }
+
+    const postedVoucherIds = new Set(
+      this.events
+        .filter((event) => event.eventType === "PostedToLedger" || event.eventType === "VoucherImported")
+        .map((event) => event.aggregateId),
+    );
+    const postedLineIds = new Set(
+      this.events.flatMap((event) => {
+        const lines = Array.isArray(event.payload.lines) ? event.payload.lines : [];
+        return lines.flatMap((line) =>
+          typeof line === "object" && line !== null && typeof (line as { lineId?: unknown }).lineId === "string"
+            ? [(line as { lineId: string }).lineId]
+            : [],
+        );
+      }),
+    );
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
+    const plan = planPostPostEnrichmentConfirm({ workItem, actorId, postedVoucherIds, postedLineIds });
+    const resultingEventIds = plan.events.map((event) => this.appendEvent(event).id);
+    const confirmed: EnrichmentWorkItem = {
+      ...workItem,
+      status: "confirmed",
+      confirmedAt: nowIso(),
+      confirmedBy: actorId,
+      resultingEventIds,
+    };
+    this.enrichmentWorkItems.set(id, confirmed);
+    return { ...confirmed, resultingEventIds: resultingEventIds.slice() };
+  }
+
+  async rejectEnrichmentWorkItem(id: string, _input: ActorAttribution): Promise<EnrichmentWorkItem> {
+    const workItem = this.enrichmentWorkItems.get(id);
+    if (!workItem) throw new EnrichmentWorkItemNotFoundError(id);
+    if (workItem.status === "rejected") return { ...workItem };
+    if (workItem.status !== "pending_confirmation") {
+      throw new EnrichmentWorkItemConflictError(id, workItem.status);
+    }
+
+    const rejected: EnrichmentWorkItem = { ...workItem, status: "rejected" };
+    this.enrichmentWorkItems.set(id, rejected);
+    return { ...rejected };
   }
 
   async runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun> {

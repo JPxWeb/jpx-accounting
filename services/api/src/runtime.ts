@@ -118,6 +118,22 @@ export class UnavailableLedgerStore implements LedgerStore {
     return this.fail();
   }
 
+  async proposeEnrichmentWorkItem() {
+    return this.fail();
+  }
+
+  async getEnrichmentWorkItem() {
+    return this.fail();
+  }
+
+  async confirmEnrichmentWorkItem() {
+    return this.fail();
+  }
+
+  async rejectEnrichmentWorkItem() {
+    return this.fail();
+  }
+
   async runSimulation() {
     return this.fail();
   }
