@@ -10,6 +10,7 @@ import {
   type EvidenceCreateInput,
   type EvidenceObject,
   type EvidencePacket,
+  type EnrichmentProposal,
   type EnrichmentWorkItem,
   type ExternalReferenceProjection,
   type ExtractionResult,
@@ -86,6 +87,10 @@ export type PostPostEnrichmentConfirmPlan = {
   events: PlannedEvent[];
 };
 
+export type PrePostEnrichmentPlan = {
+  companionEvents: PlannedEvent[];
+};
+
 export type ExternalReferencePlan = {
   reference: ExternalReferenceProjection;
   event: PlannedEvent;
@@ -106,6 +111,20 @@ export class EnrichmentNotSupportedError extends Error {
   constructor(kind: string) {
     super(`Enrichment proposal kind is not supported: ${kind}`);
     this.name = "EnrichmentNotSupportedError";
+  }
+}
+
+export class EnrichmentIntentClosedError extends Error {
+  constructor(public readonly reviewId: string) {
+    super(`Review must remain open to attach enrichment intent: ${reviewId}`);
+    this.name = "EnrichmentIntentClosedError";
+  }
+}
+
+export class EnrichmentLineNotFoundError extends Error {
+  constructor(public readonly lineId: string) {
+    super(`Enrichment line is not in the posting batch: ${lineId}`);
+    this.name = "EnrichmentLineNotFoundError";
   }
 }
 
@@ -553,6 +572,63 @@ export function planReviewDecision(
     lines,
     events,
   };
+}
+
+export function planPrePostEnrichment(input: {
+  review: ReviewTask;
+  proposals: EnrichmentProposal[];
+  postingLines: readonly LedgerLine[];
+  actorId: string;
+  organizationId: string;
+  workspaceId: string;
+}): PrePostEnrichmentPlan {
+  if (input.review.status !== "needs-review") {
+    throw new EnrichmentIntentClosedError(input.review.id);
+  }
+
+  const companionEvents: PlannedEvent[] = [];
+  for (const proposal of input.proposals) {
+    if (proposal.kind === "noop") continue;
+    if (proposal.kind !== "line_enrichment_record") {
+      throw new EnrichmentNotSupportedError(proposal.kind);
+    }
+    if (!input.postingLines.some((line) => line.lineId === proposal.lineId)) {
+      throw new EnrichmentLineNotFoundError(proposal.lineId);
+    }
+
+    const payload = lineEnrichmentRecordedPayloadSchema.parse({
+      lineId: proposal.lineId,
+      enrichmentId: createId("le"),
+      enrichmentType: proposal.enrichmentType,
+      payload: proposal.payload,
+    });
+    companionEvents.push({
+      organizationId: input.organizationId,
+      workspaceId: input.workspaceId,
+      aggregateType: "ledger",
+      aggregateId: proposal.lineId,
+      eventType: "LineEnrichmentRecorded",
+      actorId: input.actorId,
+      occurredAt: nowIso(),
+      payload,
+    });
+  }
+  return { companionEvents };
+}
+
+export function mergePrePostEnrichmentsIntoReviewDecisionPlan(
+  plan: ReviewDecisionPlan,
+  companionEvents: PlannedEvent[],
+): ReviewDecisionPlan {
+  if (plan.kind !== "apply") return plan;
+  if (companionEvents.some((event) => event.eventType === "PostedToLedger")) {
+    throw new Error("Pre-post companion events must not include PostedToLedger");
+  }
+  if (companionEvents.length === 0) return plan;
+  if (plan.events.filter((event) => event.eventType === "PostedToLedger").length !== 1) {
+    throw new Error("Pre-post enrichments require exactly one PostedToLedger event");
+  }
+  return { ...plan, events: [...plan.events, ...companionEvents] };
 }
 
 /**
