@@ -1027,8 +1027,22 @@
     direct entrypoint startup without required environment failed closed.
   - Full `pnpm check` passed with 694/694 unit tests. Wave 8, PR creation, and
     `main` remain untouched.
+- Wave 7 Task 7.4 stdio entrypoint Sol re-review: **APPROVE**.
+  - The entrypoint registers exactly the 13 names pinned by `MCP_TOOL_NAMES`;
+    no approval, confirmation, posting, direct-tag, or direct-reference tool is
+    exposed.
+  - Missing API URL or bearer-token configuration throws before stdio
+    connection. All tools delegate through the authenticated API client.
+  - Review proposals preserve the exact opaque `intentVersion`; MCP cannot
+    consume it, approve the review, or confirm post-post work.
+  - The setup and repo-map documentation now match the callable stdio surface
+    and continue to defer Streamable HTTP to Wave 8.
+  - Fresh focused verification passed: MCP tests 11/11, MCP/API-client/tests
+    typechecks, direct fail-closed startup, and reviewed-range diff check. The
+    implementer full gate remains green at 694/694 unit tests.
+  - See `.superpowers/sdd/w7-entrypoint-sol-rereview.md`.
 
 ## Pending
 
-- Sol re-review of Task 7.4. Task 7.5 remains a sibling gate; keep Wave 8, PR
-  creation, and `main` deferred.
+- Task 7.5 centralized gates remain pending. Wave 7 is not COMPLETE until they
+  pass; keep Wave 8, PR creation, and `main` deferred.
