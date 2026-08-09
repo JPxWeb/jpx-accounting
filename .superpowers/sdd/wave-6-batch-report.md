@@ -274,3 +274,64 @@ Review the Wave 6c foundation for:
 3. continued work-item/human-review path and server-owned actor attribution;
 4. active-enrichment expense totals, supersession behavior, and rounding;
 5. generic list kind `trip` before route or UI work begins.
+
+# Wave 6d Sol-review foundation batch
+
+Date: 2026-08-09
+Branch: `feat/ledger-overview-enrichments-mcp`
+Base: `778afa7`
+Scope: Wave 6d Tasks 6d.1–6d.2
+Checkpoint: **READY FOR SOL REVIEW**
+
+## Completed tasks
+
+- Task 6d.1 — quantity inventory event and list contracts: `60351b0`
+  - Added append-only `SkuRegistered` and `InventoryMovementRecorded` event
+    vocabulary.
+  - Added the locked movement payload and SKU movement list schemas/types.
+  - Required `movementId`, `skuId`, positive quantity, UOM, direction, stable
+    `lineId`, and booking date.
+  - Used strict parsing so quantity inventory rejects `unitCost`, `currency`,
+    and other valued-only fields.
+- Task 6d.2 — pure SKU movement projection: `505ca24`
+  - Added `buildSkuMovementList` and registered `kind: "sku_movement"` on the
+    Wave 5 generic list seam.
+  - Derived deterministic running quantities independently per SKU.
+  - Kept the first event authoritative for a repeated `movementId`, preventing
+    duplicate history rows and quantity changes during replay.
+
+## TDD evidence
+
+- Task 6d.1 RED: 4/4 tests failed because event members and quantity schemas
+  were absent; GREEN: 4/4 passed.
+- Task 6d.2 RED: 4/4 tests failed because `buildSkuMovementList` was absent;
+  GREEN: combined quantity contract/projection suite passed 8/8.
+
+## Verification
+
+- Focused Wave 6d unit suite: PASS, 8/8.
+- Contracts package typecheck: PASS.
+- Domain package typecheck: PASS.
+- Tests typecheck: PASS.
+- Focused ESLint, Prettier, IDE diagnostics, and diff checks: PASS.
+- Full store/API/E2E/visual gates were intentionally not run because this
+  checkpoint stops before Tasks 6d.3+.
+
+## Pipeline and integration notes
+
+- Wave 6d was pipelined while Sol reviewed the Wave 6c foundation.
+- Concurrent Wave 6b UI and Wave 6c review files were not included in either
+  Wave 6d implementation commit.
+- The plan and spec separate optional valued inventory into Wave 6e; no valued
+  schema, projection, feature flag, route, store, or UI was started.
+- No PR was opened and `main` was not touched.
+
+## Sol review ask
+
+Review the Wave 6d foundation for:
+
+1. strict separation between quantity and valued inventory payloads;
+2. stable `movementId` / `lineId` identity and first-movement authority;
+3. deterministic per-SKU running quantities under interleaved events;
+4. append-only event vocabulary and absence of inferred inventory value;
+5. generic list kind `sku_movement` before store/API/UI work begins.
