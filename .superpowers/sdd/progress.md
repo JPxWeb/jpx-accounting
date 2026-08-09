@@ -1153,7 +1153,23 @@
     ESLint/Prettier, diagnostics, and diff checks passed.
   - Task 8.4+, PR creation, and `main` remain deferred. Wave 8 is NOT COMPLETE;
     stop here for Sol review.
+- Sol review requests changes on Wave 8 Task 8.3.
+  - The production change is sound: legacy `/mcp` is gone, guarded `/api/mcp`
+    remains under the JWT/rate-limit/Origin/Host boundary, and the fixed 13-tool
+    proposal/read-only inventory exposes no approval, confirmation, posting, or
+    direct-ledger mutation entrypoint.
+  - **P1:** `tests/e2e/api.spec.ts` still requires the deleted demo `/mcp`
+    response to return 200. The functional E2E gate will therefore fail
+    deterministically until that assertion is replaced with the retirement
+    expectation and guarded `/api/mcp` initialization coverage.
+  - Fresh focused API/MCP tests pass 50/50 and the reviewed diff passes
+    `git diff --check`.
+  - See `.superpowers/sdd/w8-legacy-mcp-sol-review.md`. Task 8.4 sibling work
+    may start in disjoint files; Task 8.3 remains unapproved, and Wave 8 is NOT
+    COMPLETE.
 
 ## Pending
 
-- Keep Tasks 8.4+, PR creation, and `main` deferred.
+- Repair and re-review the Task 8.3 functional E2E assertion.
+- Task 8.4 sibling work may proceed in disjoint files. Keep PR creation and
+  `main` deferred.
