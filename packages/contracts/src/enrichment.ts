@@ -30,6 +30,15 @@ export const externalReferenceRemovedPayloadSchema = z.object({
   voucherId: z.string().min(1),
 });
 
+const voucherTagsPayloadSchema = z.object({
+  voucherId: z.string().min(1),
+  tagIds: z.array(z.string().min(1)),
+  actorId: z.string().min(1),
+});
+
+export const voucherTagsAddedPayloadSchema = voucherTagsPayloadSchema;
+export const voucherTagsRemovedPayloadSchema = voucherTagsPayloadSchema;
+
 export const externalReferenceProjectionSchema = externalReferenceLinkedPayloadSchema.extend({
   linkedAt: z.string().min(1),
   linkedBy: z.string().min(1),
@@ -76,6 +85,8 @@ export type EnrichmentProposal = z.infer<typeof enrichmentProposalSchema>;
 export type ExternalReferenceLinkedPayload = z.infer<typeof externalReferenceLinkedPayloadSchema>;
 export type ExternalReferenceRemovedPayload = z.infer<typeof externalReferenceRemovedPayloadSchema>;
 export type ExternalReferenceProjection = z.infer<typeof externalReferenceProjectionSchema>;
+export type VoucherTagsAddedPayload = z.infer<typeof voucherTagsAddedPayloadSchema>;
+export type VoucherTagsRemovedPayload = z.infer<typeof voucherTagsRemovedPayloadSchema>;
 export type EnrichmentTargetKind = z.infer<typeof enrichmentTargetKindSchema>;
 export type EnrichmentWorkItemStatus = z.infer<typeof enrichmentWorkItemStatusSchema>;
 export type EnrichmentWorkItemSource = z.infer<typeof enrichmentWorkItemSourceSchema>;

@@ -52,6 +52,8 @@ export const eventTypeSchema = z.enum([
   "ExportGenerated", // Reserved: never emitted yet (exports don't append events).
   "ExternalReferenceLinked",
   "ExternalReferenceRemoved",
+  "VoucherTagsAdded",
+  "VoucherTagsRemoved",
 ]);
 export const ruleSeveritySchema = z.enum(["info", "warning", "blocking"]);
 export const assistantAnswerStatusSchema = z.enum(["grounded", "insufficient-basis"]);
