@@ -14,8 +14,10 @@ import type {
   EvidenceCreateInput,
   ExternalReferenceProjection,
   IntegritySummary,
+  InvoiceRegisteredPayload,
   JournalEntryProjection,
   OpenInvoiceListRow,
+  PaymentAllocatedPayload,
   PaymentHistoryListRow,
   ProjectProjection,
   ProjectsListRow,
@@ -46,8 +48,10 @@ import {
   externalReferenceLinkedPayloadSchema,
   externalReferenceProjectionSchema,
   integritySummarySchema,
+  invoiceRegisteredPayloadSchema,
   journalEntryProjectionSchema,
   openInvoiceListSchema,
+  paymentAllocatedPayloadSchema,
   paymentHistoryListSchema,
   projectProjectionSchema,
   projectsListSchema,
@@ -255,6 +259,30 @@ export class AccountingApiClient {
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/projects", projectsListSchema);
+  }
+
+  async registerInvoice(input: InvoiceRegisteredPayload): Promise<InvoiceRegisteredPayload> {
+    const parsedInput = invoiceRegisteredPayloadSchema.parse(input);
+    if (this.fallbackStore) {
+      return invoiceRegisteredPayloadSchema.parse(await this.fallbackStore.registerInvoice(parsedInput));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/invoices", invoiceRegisteredPayloadSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
+  }
+
+  async allocatePayment(input: PaymentAllocatedPayload): Promise<PaymentAllocatedPayload> {
+    const parsedInput = paymentAllocatedPayloadSchema.parse(input);
+    if (this.fallbackStore) {
+      return paymentAllocatedPayloadSchema.parse(await this.fallbackStore.allocatePayment(parsedInput));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/payments/allocations", paymentAllocatedPayloadSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
   }
 
   async getOpenInvoicesList(): Promise<OpenInvoiceListRow[]> {

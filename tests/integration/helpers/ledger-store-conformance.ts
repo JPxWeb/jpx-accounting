@@ -880,6 +880,83 @@ export async function scenarioProjectRegistration(h: ConformanceHarness): Promis
   };
 }
 
+export async function scenarioInvoicePayments(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const firstInvoice = await h.store.registerInvoice({
+    invoiceId: "inv_conformance",
+    direction: "ar",
+    counterparty: "Original customer",
+    dueDate: "2026-09-01",
+    currency: "SEK",
+    originalAmount: 100,
+    actorId: h.actorId,
+  });
+  const duplicateInvoice = await h.store.registerInvoice({
+    invoiceId: "inv_conformance",
+    direction: "ap",
+    counterparty: "Replacement supplier",
+    dueDate: "2026-10-01",
+    currency: "EUR",
+    originalAmount: 500,
+    actorId: "user:other",
+  });
+  const firstPayment = await h.store.allocatePayment({
+    paymentId: "pay_conformance",
+    invoiceId: "inv_conformance",
+    amount: 40,
+    currency: "SEK",
+    allocatedAt: "2026-08-15T10:00:00.000Z",
+    actorId: h.actorId,
+  });
+  const duplicatePayment = await h.store.allocatePayment({
+    paymentId: "pay_conformance",
+    invoiceId: "inv_conformance",
+    amount: 99,
+    currency: "SEK",
+    allocatedAt: "2026-08-16T10:00:00.000Z",
+    actorId: "user:other",
+  });
+  const beforeMismatch = (await h.store.getEvents()).length;
+  let mismatchError = "none";
+  try {
+    await h.store.allocatePayment({
+      paymentId: "pay_wrong_currency",
+      invoiceId: "inv_conformance",
+      amount: 10,
+      currency: "EUR",
+      allocatedAt: "2026-08-17T10:00:00.000Z",
+      actorId: h.actorId,
+    });
+  } catch (error) {
+    mismatchError = error instanceof Error ? error.name : "unknown";
+  }
+  const events = await h.store.getEvents();
+  const invoiceEvents = events.filter(
+    (event) => event.eventType === "InvoiceRegistered" && event.aggregateId === "inv_conformance",
+  );
+  const paymentEvents = events.filter(
+    (event) => event.eventType === "PaymentAllocated" && event.payload.paymentId === "pay_conformance",
+  );
+  assert.equal(duplicateInvoice.counterparty, firstInvoice.counterparty);
+  assert.equal(duplicatePayment.amount, firstPayment.amount);
+  assert.equal(invoiceEvents.length, 1);
+  assert.equal(paymentEvents.length, 1);
+  assert.equal(mismatchError, "InvoiceAllocationCurrencyError");
+  assert.equal(events.length - beforeMismatch, 0);
+
+  return {
+    firstCounterparty: firstInvoice.counterparty,
+    duplicateCounterparty: duplicateInvoice.counterparty,
+    firstPaymentAmount: firstPayment.amount,
+    duplicatePaymentAmount: duplicatePayment.amount,
+    invoiceEventCount: invoiceEvents.length,
+    paymentEventCount: paymentEvents.length,
+    registrationActor: invoiceEvents[0]?.actorId ?? null,
+    paymentActor: paymentEvents[0]?.actorId ?? null,
+    mismatchError,
+    mismatchEventDelta: events.length - beforeMismatch,
+  };
+}
+
 export const CONFORMANCE_SCENARIOS: Array<{
   name: string;
   run: (h: ConformanceHarness) => Promise<ConformanceOutcome>;
@@ -900,6 +977,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "external reference append-only paths", run: scenarioExternalReferences },
   { name: "voucher tag append-only paths", run: scenarioVoucherTags },
   { name: "project registration is immutable", run: scenarioProjectRegistration },
+  { name: "invoice and payment identity is immutable", run: scenarioInvoicePayments },
 ];
 
 export function assertConformanceParity(

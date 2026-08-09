@@ -36,6 +36,8 @@ import {
   encodePc8,
   InvalidPeriodTokenError,
   InvalidReviewEditError,
+  InvoiceAllocationCurrencyError,
+  InvoiceNotFoundError,
   nowIso,
   parseSie,
   ProjectAssignmentLineNotFoundError,
@@ -557,6 +559,14 @@ export function createApp({
 
     if (error instanceof VoucherTagsValidationError) {
       return jsonError(c, error.message, runtimeMode, 422, { code: "voucher_tags_invalid" });
+    }
+
+    if (error instanceof InvoiceNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 404, { code: "invoice_not_found" });
+    }
+
+    if (error instanceof InvoiceAllocationCurrencyError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "invoice_currency_mismatch" });
     }
 
     if (error instanceof EnrichmentWorkItemNotFoundError) {

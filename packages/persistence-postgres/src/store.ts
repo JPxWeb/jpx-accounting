@@ -17,6 +17,8 @@ import type {
   ExtractedField,
   ExtractionResult,
   LedgerEvent,
+  InvoiceRegisteredPayload,
+  PaymentAllocatedPayload,
   ProposeEnrichmentWorkItemInput,
   ProjectProjection,
   RegisterProjectInput,
@@ -43,6 +45,7 @@ import {
   buildExternalReferencesFromEvents,
   buildVoucherTagsFromEvents,
   buildJournal,
+  buildInvoiceRegistryFromEvents,
   buildProjectRegistryFromEvents,
   buildReportPack,
   buildVat,
@@ -55,9 +58,12 @@ import {
   EnrichmentIntentClosedError,
   evaluateVoucherRules,
   ExternalReferenceNotFoundError,
+  findPaymentAllocation,
   filterLedgerLines,
   findActiveExternalReference,
   LINE_CARRYING_EVENT_TYPES,
+  InvoiceAllocationCurrencyError,
+  InvoiceNotFoundError,
   nowIso,
   planComplianceMerge,
   planEvidenceCreate,
@@ -1473,6 +1479,88 @@ export class PostgresLedgerStore implements LedgerStore {
           tailHash,
         );
         return project;
+      }),
+    );
+  }
+
+  async registerInvoice(input: InvoiceRegisteredPayload & ActorAttribution): Promise<InvoiceRegisteredPayload> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        const rows = await tx<EventRow[]>`
+          SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+                 actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+          FROM ledger.events
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND event_type = 'InvoiceRegistered'
+          ORDER BY seq ASC
+        `;
+        const existing = buildInvoiceRegistryFromEvents(rows.map(rowToEvent)).find(
+          (invoice) => invoice.invoiceId === input.invoiceId,
+        );
+        if (existing) return existing;
+
+        const { actorId, ...invoice } = input;
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: invoice.invoiceId,
+            eventType: "InvoiceRegistered",
+            actorId: actorId ?? DEMO_ACTOR_ID,
+            occurredAt: nowIso(),
+            payload: invoice,
+          },
+          tailHash,
+        );
+        return invoice;
+      }),
+    );
+  }
+
+  async allocatePayment(input: PaymentAllocatedPayload & ActorAttribution): Promise<PaymentAllocatedPayload> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        const rows = await tx<EventRow[]>`
+          SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+                 actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+          FROM ledger.events
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND event_type IN ('InvoiceRegistered', 'PaymentAllocated')
+          ORDER BY seq ASC
+        `;
+        const events = rows.map(rowToEvent);
+        const existing = findPaymentAllocation(events, input.paymentId);
+        if (existing) return existing;
+        const invoice = buildInvoiceRegistryFromEvents(events).find(
+          (candidate) => candidate.invoiceId === input.invoiceId,
+        );
+        if (!invoice) throw new InvoiceNotFoundError(input.invoiceId);
+        if (invoice.currency !== input.currency) {
+          throw new InvoiceAllocationCurrencyError(input.invoiceId, invoice.currency, input.currency);
+        }
+
+        const { actorId, ...payment } = input;
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: payment.invoiceId,
+            eventType: "PaymentAllocated",
+            actorId: actorId ?? DEMO_ACTOR_ID,
+            occurredAt: nowIso(),
+            payload: payment,
+          },
+          tailHash,
+        );
+        return payment;
       }),
     );
   }

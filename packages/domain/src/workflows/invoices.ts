@@ -1,6 +1,7 @@
 import {
   invoiceRegisteredPayloadSchema,
   paymentAllocatedPayloadSchema,
+  type InvoiceRegisteredPayload,
   type LedgerEvent,
   type OpenInvoiceListRow,
   type PaymentAllocatedPayload,
@@ -10,6 +11,24 @@ import {
 import { round2 } from "../store-shared";
 
 export type { OpenInvoiceListRow, PaymentHistoryListRow } from "@jpx-accounting/contracts";
+
+export class InvoiceNotFoundError extends Error {
+  constructor(public readonly invoiceId: string) {
+    super(`Invoice not found: ${invoiceId}`);
+    this.name = "InvoiceNotFoundError";
+  }
+}
+
+export class InvoiceAllocationCurrencyError extends Error {
+  constructor(
+    public readonly invoiceId: string,
+    public readonly invoiceCurrency: string,
+    public readonly allocationCurrency: string,
+  ) {
+    super(`Payment currency ${allocationCurrency} does not match invoice ${invoiceId} currency ${invoiceCurrency}.`);
+    this.name = "InvoiceAllocationCurrencyError";
+  }
+}
 
 type InvoiceReplayState = {
   id: string;
@@ -63,6 +82,28 @@ function replayInvoices(events: readonly LedgerEvent[]): InvoiceReplayState[] {
   }
 
   return [...invoices.values()];
+}
+
+export function buildInvoiceRegistryFromEvents(events: readonly LedgerEvent[]): InvoiceRegisteredPayload[] {
+  const invoices = new Map<string, InvoiceRegisteredPayload>();
+  for (const event of events) {
+    if (event.eventType !== "InvoiceRegistered") continue;
+    const invoice = invoiceRegisteredPayloadSchema.parse(event.payload);
+    if (!invoices.has(invoice.invoiceId)) invoices.set(invoice.invoiceId, invoice);
+  }
+  return [...invoices.values()];
+}
+
+export function findPaymentAllocation(
+  events: readonly LedgerEvent[],
+  paymentId: string,
+): PaymentAllocatedPayload | undefined {
+  for (const event of events) {
+    if (event.eventType !== "PaymentAllocated") continue;
+    const allocation = paymentAllocatedPayloadSchema.parse(event.payload);
+    if (allocation.paymentId === paymentId) return allocation;
+  }
+  return undefined;
 }
 
 export function buildOpenInvoicesList(events: LedgerEvent[]): OpenInvoiceListRow[] {

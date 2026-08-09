@@ -114,6 +114,14 @@ export class UnavailableLedgerStore implements LedgerStore {
     return this.fail();
   }
 
+  async registerInvoice() {
+    return this.fail();
+  }
+
+  async allocatePayment() {
+    return this.fail();
+  }
+
   async suggestVoucher() {
     return this.fail();
   }

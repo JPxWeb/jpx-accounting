@@ -14,6 +14,8 @@ import type {
   ExternalReferenceProjection,
   ExtractionResult,
   LedgerEvent,
+  InvoiceRegisteredPayload,
+  PaymentAllocatedPayload,
   ProposeEnrichmentWorkItemInput,
   ProjectProjection,
   RegisterProjectInput,
@@ -55,6 +57,12 @@ import { currentMonthToken } from "./reports/period";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
+import {
+  buildInvoiceRegistryFromEvents,
+  findPaymentAllocation,
+  InvoiceAllocationCurrencyError,
+  InvoiceNotFoundError,
+} from "./workflows/invoices";
 import { buildProjectRegistryFromEvents } from "./workflows/projects";
 import type { ParsedSieFile } from "./sie/parse";
 import { simulateApprovals } from "./simulation";
@@ -349,6 +357,8 @@ export interface LedgerStore {
   getSnapshot(): Promise<WorkspaceSnapshot>;
   getEvents(): Promise<LedgerEvent[]>;
   registerProject(input: RegisterProjectInput & ActorAttribution): Promise<ProjectProjection>;
+  registerInvoice(input: InvoiceRegisteredPayload & ActorAttribution): Promise<InvoiceRegisteredPayload>;
+  allocatePayment(input: PaymentAllocatedPayload & ActorAttribution): Promise<PaymentAllocatedPayload>;
   suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined>;
   applyReviewDecision(
     reviewId: string,
@@ -758,6 +768,51 @@ export class MemoryLedgerStore implements LedgerStore {
       payload: project,
     });
     return { ...project };
+  }
+
+  async registerInvoice(input: InvoiceRegisteredPayload & ActorAttribution): Promise<InvoiceRegisteredPayload> {
+    const existing = buildInvoiceRegistryFromEvents(this.events).find(
+      (invoice) => invoice.invoiceId === input.invoiceId,
+    );
+    if (existing) return { ...existing };
+
+    const { actorId, ...invoice } = input;
+    this.appendEvent({
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+      aggregateType: "ledger",
+      aggregateId: invoice.invoiceId,
+      eventType: "InvoiceRegistered",
+      actorId: actorId ?? DEMO_ACTOR_ID,
+      occurredAt: nowIso(),
+      payload: invoice,
+    });
+    return { ...invoice };
+  }
+
+  async allocatePayment(input: PaymentAllocatedPayload & ActorAttribution): Promise<PaymentAllocatedPayload> {
+    const existing = findPaymentAllocation(this.events, input.paymentId);
+    if (existing) return { ...existing };
+    const invoice = buildInvoiceRegistryFromEvents(this.events).find(
+      (candidate) => candidate.invoiceId === input.invoiceId,
+    );
+    if (!invoice) throw new InvoiceNotFoundError(input.invoiceId);
+    if (invoice.currency !== input.currency) {
+      throw new InvoiceAllocationCurrencyError(input.invoiceId, invoice.currency, input.currency);
+    }
+
+    const { actorId, ...payment } = input;
+    this.appendEvent({
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+      aggregateType: "ledger",
+      aggregateId: payment.invoiceId,
+      eventType: "PaymentAllocated",
+      actorId: actorId ?? DEMO_ACTOR_ID,
+      occurredAt: nowIso(),
+      payload: payment,
+    });
+    return { ...payment };
   }
 
   async suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined> {

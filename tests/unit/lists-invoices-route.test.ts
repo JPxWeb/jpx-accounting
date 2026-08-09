@@ -36,3 +36,56 @@ test("invoice list routes return exact derived JSON without appending", async ()
   assert.deepEqual(await history.json(), []);
   assert.deepEqual(await store.getEvents(), []);
 });
+
+test("invoice and payment writers derive actors and reject currency mismatches", async () => {
+  const store = new MemoryLedgerStore();
+  const app = appWith(store);
+
+  const invoice = await app.request("http://localhost/api/invoices", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      invoiceId: "inv_route",
+      direction: "ap",
+      counterparty: "Acme AB",
+      dueDate: "2026-09-01",
+      currency: "SEK",
+      originalAmount: 100,
+      actorId: "user:forged",
+    }),
+  });
+  const payment = await app.request("http://localhost/api/payments/allocations", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      paymentId: "pay_route",
+      invoiceId: "inv_route",
+      amount: 40,
+      currency: "SEK",
+      allocatedAt: "2026-08-15T10:00:00.000Z",
+      actorId: "user:forged",
+    }),
+  });
+  const mismatch = await app.request("http://localhost/api/payments/allocations", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      paymentId: "pay_wrong_currency",
+      invoiceId: "inv_route",
+      amount: 10,
+      currency: "EUR",
+      allocatedAt: "2026-08-16T10:00:00.000Z",
+    }),
+  });
+
+  assert.equal(invoice.status, 201);
+  assert.equal(payment.status, 201);
+  assert.equal(mismatch.status, 422);
+  const written = (await store.getEvents()).filter(
+    (event) => event.eventType === "InvoiceRegistered" || event.eventType === "PaymentAllocated",
+  );
+  assert.deepEqual(
+    written.map((event) => event.actorId),
+    ["user_founder", "user_founder"],
+  );
+});
