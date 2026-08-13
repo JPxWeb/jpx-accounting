@@ -1,5 +1,6 @@
 import type {
   AccountingSuggestion,
+  AttachReviewEnrichmentIntentInput,
   CompanySettings,
   ComplianceAlert,
   CloseRun,
@@ -9,15 +10,26 @@ import type {
   EvidenceCreateResult,
   EvidenceObject,
   EvidencePacket,
+  EnrichmentProposal,
+  EnrichmentWorkItem,
+  ExternalReferenceProjection,
   ExtractionResult,
   LedgerEvent,
+  InvoiceRegisteredPayload,
+  PaymentAllocatedPayload,
+  ProposeEnrichmentWorkItemInput,
+  ProjectProjection,
+  RegisterProjectInput,
   ReportBundle,
   ReportPack,
+  ReviewEnrichmentIntent,
   ReviewDecisionInput,
   ReviewTask,
   SieImportResult,
   SimulationRequest,
   SimulationRun,
+  TripClosedPayload,
+  TripRegisteredPayload,
   Voucher,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
@@ -27,6 +39,13 @@ import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
 import { detectComplianceIssues } from "./compliance";
 import { initialLedgerLines } from "./evidence-defaults";
+import {
+  buildExternalReferencesFromEvents,
+  buildVoucherTagsFromEvents,
+  DEFAULT_TAG_DEFINITIONS,
+  findActiveExternalReference,
+  type VoucherTagsProjection,
+} from "./enrichment-projections";
 import { assertBalancedPosting, postingImbalanceOre } from "./posting-invariants";
 import {
   buildJournal,
@@ -41,17 +60,37 @@ import { currentMonthToken } from "./reports/period";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso, today } from "./ids";
+import {
+  buildInvoiceRegistryFromEvents,
+  findPaymentAllocation,
+  InvoiceAllocationCurrencyError,
+  InvoiceNotFoundError,
+} from "./workflows/invoices";
+import { buildProjectRegistryFromEvents } from "./workflows/projects";
+import { findTripRegistration, isTripClosed, TripNotFoundError } from "./workflows/trips";
 import type { ParsedSieFile } from "./sie/parse";
 import { simulateApprovals } from "./simulation";
 import {
   AUTO_DETECTED_ALERT_KINDS,
+  assertEnrichmentTargetPosted,
+  assertPrePostEnrichmentIntentSupported,
+  collectPostedEnrichmentTargets,
+  EnrichmentIntentClosedError,
+  ExternalReferenceNotFoundError,
   planComplianceMerge,
   planEvidenceCreate,
+  planExternalReferenceLink,
+  planExternalReferenceRemoval,
   planExtractionRefresh,
+  mergePrePostEnrichmentsIntoReviewDecisionPlan,
+  planPrePostEnrichment,
+  planPostPostEnrichmentConfirm,
   planReviewDecision,
+  planVoucherTagsAppend,
 } from "./store-planning";
 import {
   DEMO_ACTOR_ID,
+  EnrichmentIntentVersionMismatchError,
   InvalidReviewEditError,
   ReviewBlockedError,
   buildPostingLines,
@@ -60,6 +99,7 @@ import {
   localDayOfTimestamp,
   mergeExtractedFields,
   recomputeVoucherFields,
+  resolveConsumableIntentProposals,
   resolveReviewDecisionEdit,
   round2,
   validEditVatCodes,
@@ -75,6 +115,7 @@ import {
 // statically constructs MemoryLedgerStore for the demo fallback (P1 stretch).
 export {
   DEMO_ACTOR_ID,
+  EnrichmentIntentVersionMismatchError,
   InvalidReviewEditError,
   ReviewBlockedError,
   buildPostingLines,
@@ -83,6 +124,7 @@ export {
   localDayOfTimestamp,
   mergeExtractedFields,
   recomputeVoucherFields,
+  resolveConsumableIntentProposals,
   resolveReviewDecisionEdit,
   round2,
   validEditVatCodes,
@@ -108,6 +150,35 @@ export class ReviewNotFoundError extends Error {
     super(`Review(s) not found in this workspace: ${missingIds.join(", ")}`);
     this.name = "ReviewNotFoundError";
   }
+}
+
+export class EnrichmentWorkItemNotFoundError extends Error {
+  constructor(public readonly workItemId: string) {
+    super(`Enrichment work item not found: ${workItemId}`);
+    this.name = "EnrichmentWorkItemNotFoundError";
+  }
+}
+
+export class EnrichmentWorkItemConflictError extends Error {
+  constructor(
+    public readonly workItemId: string,
+    public readonly status: EnrichmentWorkItem["status"],
+  ) {
+    super(`Enrichment work item ${workItemId} cannot be changed from status ${status}`);
+    this.name = "EnrichmentWorkItemConflictError";
+  }
+}
+
+function snapshotEnrichmentWorkItem(workItem: EnrichmentWorkItem): EnrichmentWorkItem {
+  return {
+    ...workItem,
+    proposedChange: { ...workItem.proposedChange },
+    resultingEventIds: workItem.resultingEventIds?.slice(),
+  };
+}
+
+function snapshotReviewEnrichmentIntent(intent: ReviewEnrichmentIntent): ReviewEnrichmentIntent {
+  return structuredClone(intent);
 }
 
 /**
@@ -293,12 +364,38 @@ export interface LedgerStore {
   getReportPack(input: { period: string }): Promise<ReportPack>;
   getSnapshot(): Promise<WorkspaceSnapshot>;
   getEvents(): Promise<LedgerEvent[]>;
+  registerProject(input: RegisterProjectInput & ActorAttribution): Promise<ProjectProjection>;
+  registerInvoice(input: InvoiceRegisteredPayload & ActorAttribution): Promise<InvoiceRegisteredPayload>;
+  allocatePayment(input: PaymentAllocatedPayload & ActorAttribution): Promise<PaymentAllocatedPayload>;
+  registerTrip(input: TripRegisteredPayload & ActorAttribution): Promise<TripRegisteredPayload>;
+  closeTrip(input: TripClosedPayload & ActorAttribution): Promise<TripClosedPayload>;
   suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined>;
   applyReviewDecision(
     reviewId: string,
     action: ReviewAction,
     input: ReviewDecisionInput & ActorAttribution & ApprovalGate,
   ): Promise<ReviewTask | undefined>;
+  proposeEnrichmentWorkItem(input: ProposeEnrichmentWorkItemInput & ActorAttribution): Promise<EnrichmentWorkItem>;
+  getEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem | undefined>;
+  confirmEnrichmentWorkItem(id: string, input: ActorAttribution): Promise<EnrichmentWorkItem>;
+  rejectEnrichmentWorkItem(id: string, input: ActorAttribution): Promise<EnrichmentWorkItem>;
+  attachReviewEnrichmentIntent(
+    input: AttachReviewEnrichmentIntentInput & ActorAttribution,
+  ): Promise<ReviewEnrichmentIntent>;
+  getReviewEnrichmentIntent(reviewId: string): Promise<ReviewEnrichmentIntent | undefined>;
+  appendVoucherExternalReference(
+    voucherId: string,
+    input: { url: string; label?: string } & ActorAttribution,
+  ): Promise<ExternalReferenceProjection>;
+  removeVoucherExternalReference(
+    voucherId: string,
+    refId: string,
+    input: ActorAttribution,
+  ): Promise<ExternalReferenceProjection>;
+  appendVoucherTags(
+    voucherId: string,
+    input: { tagIds: string[]; mode: "add" | "remove" } & ActorAttribution,
+  ): Promise<VoucherTagsProjection>;
   runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun>;
   getCloseRun(): Promise<CloseRun>;
   refreshComplianceAlerts(): Promise<ComplianceAlert[]>;
@@ -319,6 +416,9 @@ export class MemoryLedgerStore implements LedgerStore {
   private readonly evidenceIdToPacketId = new Map<string, string>();
   private readonly packetIdToVoucherId = new Map<string, string>();
   private readonly voucherIdToReviewId = new Map<string, string>();
+  private readonly enrichmentWorkItems = new Map<string, EnrichmentWorkItem>();
+  private readonly enrichmentWorkItemIdsByIdempotencyKey = new Map<string, string>();
+  private readonly reviewEnrichmentIntents = new Map<string, ReviewEnrichmentIntent>();
   private readonly events: LedgerEvent[] = [];
   /** Frozen demo seed — never mutated; reports replay event payloads on top. */
   private readonly seedLines: LedgerLine[] = assertBalancedPosting(initialLedgerLines(), "demo seed lines");
@@ -647,11 +747,119 @@ export class MemoryLedgerStore implements LedgerStore {
       closeRun: await this.getCloseRun(),
       alerts: [...this.alerts],
       packets: [...this.evidencePackets.values()],
+      externalReferences: buildExternalReferencesFromEvents(this.events),
+      voucherTags: buildVoucherTagsFromEvents(this.events),
     };
   }
 
   async getEvents(): Promise<LedgerEvent[]> {
     return [...this.events];
+  }
+
+  async registerProject(input: RegisterProjectInput & ActorAttribution): Promise<ProjectProjection> {
+    const existing = buildProjectRegistryFromEvents(this.events).find(
+      (project) => project.projectId === input.projectId,
+    );
+    if (existing) return { ...existing };
+
+    const project: ProjectProjection = {
+      projectId: input.projectId,
+      name: input.name,
+      status: "active",
+    };
+    this.appendEvent({
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+      aggregateType: "ledger",
+      aggregateId: project.projectId,
+      eventType: "ProjectRegistered",
+      actorId: input.actorId ?? DEMO_ACTOR_ID,
+      occurredAt: nowIso(),
+      payload: project,
+    });
+    return { ...project };
+  }
+
+  async registerInvoice(input: InvoiceRegisteredPayload & ActorAttribution): Promise<InvoiceRegisteredPayload> {
+    const existing = buildInvoiceRegistryFromEvents(this.events).find(
+      (invoice) => invoice.invoiceId === input.invoiceId,
+    );
+    if (existing) return { ...existing };
+
+    const { actorId, ...invoice } = input;
+    this.appendEvent({
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+      aggregateType: "ledger",
+      aggregateId: invoice.invoiceId,
+      eventType: "InvoiceRegistered",
+      actorId: actorId ?? DEMO_ACTOR_ID,
+      occurredAt: nowIso(),
+      payload: invoice,
+    });
+    return { ...invoice };
+  }
+
+  async allocatePayment(input: PaymentAllocatedPayload & ActorAttribution): Promise<PaymentAllocatedPayload> {
+    const existing = findPaymentAllocation(this.events, input.paymentId);
+    if (existing) return { ...existing };
+    const invoice = buildInvoiceRegistryFromEvents(this.events).find(
+      (candidate) => candidate.invoiceId === input.invoiceId,
+    );
+    if (!invoice) throw new InvoiceNotFoundError(input.invoiceId);
+    if (invoice.currency !== input.currency) {
+      throw new InvoiceAllocationCurrencyError(input.invoiceId, invoice.currency, input.currency);
+    }
+
+    const { actorId, ...payment } = input;
+    this.appendEvent({
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+      aggregateType: "ledger",
+      aggregateId: payment.invoiceId,
+      eventType: "PaymentAllocated",
+      actorId: actorId ?? DEMO_ACTOR_ID,
+      occurredAt: nowIso(),
+      payload: payment,
+    });
+    return { ...payment };
+  }
+
+  async registerTrip(input: TripRegisteredPayload & ActorAttribution): Promise<TripRegisteredPayload> {
+    const existing = findTripRegistration(this.events, input.tripId);
+    if (existing) return { ...existing };
+
+    const { actorId, ...trip } = input;
+    this.appendEvent({
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+      aggregateType: "ledger",
+      aggregateId: trip.tripId,
+      eventType: "TripRegistered",
+      actorId: actorId ?? DEMO_ACTOR_ID,
+      occurredAt: nowIso(),
+      payload: trip,
+    });
+    return { ...trip };
+  }
+
+  async closeTrip(input: TripClosedPayload & ActorAttribution): Promise<TripClosedPayload> {
+    const trip = findTripRegistration(this.events, input.tripId);
+    if (!trip) throw new TripNotFoundError(input.tripId);
+    const closed = { tripId: trip.tripId };
+    if (isTripClosed(this.events, trip.tripId)) return closed;
+
+    this.appendEvent({
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+      aggregateType: "ledger",
+      aggregateId: trip.tripId,
+      eventType: "TripClosed",
+      actorId: input.actorId ?? DEMO_ACTOR_ID,
+      occurredAt: nowIso(),
+      payload: closed,
+    });
+    return closed;
   }
 
   async suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined> {
@@ -685,8 +893,34 @@ export class MemoryLedgerStore implements LedgerStore {
     const voucher = this.vouchers.get(review.voucherId);
     if (!voucher) return undefined;
 
-    const plan = planReviewDecision(review, voucher, action, input);
-    if (plan.kind === "replay") return plan.review;
+    const basePlan = planReviewDecision(review, voucher, action, input);
+    if (basePlan.kind === "replay") return basePlan.review;
+    const intent = this.reviewEnrichmentIntents.get(reviewId);
+    // Identity-bound consume: only the surface that echoes the exact attached
+    // version may append its proposals. Throws BEFORE any read model is
+    // replaced or event appended, so a stale consume leaves the review open.
+    const proposals = resolveConsumableIntentProposals<EnrichmentProposal>(
+      reviewId,
+      intent,
+      input.consumeEnrichmentIntentVersion,
+      { kind: "noop" },
+    );
+    const plan =
+      action !== "reject"
+        ? mergePrePostEnrichmentsIntoReviewDecisionPlan(
+            basePlan,
+            planPrePostEnrichment({
+              review,
+              proposals,
+              postingLines: basePlan.lines ?? [],
+              postingVoucher: basePlan.postingVoucher,
+              evidenceIds: this.evidencePackets.get(voucher.evidencePacketId)?.evidenceIds ?? [],
+              actorId: input.actorId ?? DEMO_ACTOR_ID,
+              organizationId: voucher.organizationId,
+              workspaceId: voucher.workspaceId,
+            }).companionEvents,
+          )
+        : basePlan;
 
     // Clone-before-mutate (Rule 17): review/voucher may have been returned by
     // getSnapshot() — replace read models instead of mutating shared objects.
@@ -702,8 +936,196 @@ export class MemoryLedgerStore implements LedgerStore {
     for (const event of plan.events) {
       this.appendEvent(event);
     }
+    this.reviewEnrichmentIntents.delete(reviewId);
 
     return { ...plan.updatedReview };
+  }
+
+  async attachReviewEnrichmentIntent(
+    input: AttachReviewEnrichmentIntentInput & ActorAttribution,
+  ): Promise<ReviewEnrichmentIntent> {
+    const review = this.reviews.get(input.reviewId);
+    if (!review || review.status !== "needs-review") {
+      throw new EnrichmentIntentClosedError(input.reviewId);
+    }
+    const voucher = this.vouchers.get(review.voucherId);
+    if (!voucher || voucher.status !== "needs-review") {
+      throw new EnrichmentIntentClosedError(input.reviewId);
+    }
+    assertPrePostEnrichmentIntentSupported(input.proposals);
+    const intent: ReviewEnrichmentIntent = {
+      reviewId: review.id,
+      voucherId: voucher.id,
+      proposals: structuredClone(input.proposals),
+      // Fresh token per attach: whoever replaces this intent invalidates the
+      // consume assertion of everyone who read the previous one.
+      version: createId("rei"),
+      updatedAt: nowIso(),
+      updatedBy: input.actorId ?? DEMO_ACTOR_ID,
+    };
+    this.reviewEnrichmentIntents.set(review.id, intent);
+    return snapshotReviewEnrichmentIntent(intent);
+  }
+
+  async getReviewEnrichmentIntent(reviewId: string): Promise<ReviewEnrichmentIntent | undefined> {
+    const intent = this.reviewEnrichmentIntents.get(reviewId);
+    return intent ? snapshotReviewEnrichmentIntent(intent) : undefined;
+  }
+
+  async proposeEnrichmentWorkItem(
+    input: ProposeEnrichmentWorkItemInput & ActorAttribution,
+  ): Promise<EnrichmentWorkItem> {
+    const existingId = this.enrichmentWorkItemIdsByIdempotencyKey.get(input.idempotencyKey);
+    const existing = existingId ? this.enrichmentWorkItems.get(existingId) : undefined;
+    if (existing) return snapshotEnrichmentWorkItem(existing);
+
+    assertEnrichmentTargetPosted(input, collectPostedEnrichmentTargets(this.events));
+
+    const workItem: EnrichmentWorkItem = {
+      id: createId("ewi"),
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+      targetKind: input.targetKind,
+      targetId: input.targetId,
+      proposedChange: { ...input.proposedChange },
+      status: "pending_confirmation",
+      source: input.source,
+      idempotencyKey: input.idempotencyKey,
+      createdAt: nowIso(),
+      createdBy: input.actorId ?? DEMO_ACTOR_ID,
+    };
+    this.enrichmentWorkItems.set(workItem.id, workItem);
+    this.enrichmentWorkItemIdsByIdempotencyKey.set(workItem.idempotencyKey, workItem.id);
+    return snapshotEnrichmentWorkItem(workItem);
+  }
+
+  async getEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem | undefined> {
+    const workItem = this.enrichmentWorkItems.get(id);
+    return workItem ? snapshotEnrichmentWorkItem(workItem) : undefined;
+  }
+
+  async confirmEnrichmentWorkItem(id: string, input: ActorAttribution): Promise<EnrichmentWorkItem> {
+    const workItem = this.enrichmentWorkItems.get(id);
+    if (!workItem) throw new EnrichmentWorkItemNotFoundError(id);
+    if (workItem.status === "confirmed") {
+      return snapshotEnrichmentWorkItem(workItem);
+    }
+    if (workItem.status !== "pending_confirmation") {
+      throw new EnrichmentWorkItemConflictError(id, workItem.status);
+    }
+
+    const { postedVoucherIds, postedLineIds } = collectPostedEnrichmentTargets(this.events);
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
+    const plan = planPostPostEnrichmentConfirm({
+      workItem,
+      actorId,
+      postedVoucherIds,
+      postedLineIds,
+      registeredTripIds: new Set(
+        this.events
+          .filter((event) => event.eventType === "TripRegistered")
+          .map((event) => event.payload.tripId)
+          .filter((tripId): tripId is string => typeof tripId === "string"),
+      ),
+      externalReferenceEvents: this.events,
+      lineEnrichmentEvents: this.events,
+      tagEvents: this.events,
+      tagDefinitions: DEFAULT_TAG_DEFINITIONS,
+    });
+    const resultingEventIds = plan.events.map((event) => this.appendEvent(event).id);
+    const confirmed: EnrichmentWorkItem = {
+      ...workItem,
+      status: "confirmed",
+      confirmedAt: nowIso(),
+      confirmedBy: actorId,
+      resultingEventIds,
+    };
+    this.enrichmentWorkItems.set(id, confirmed);
+    return snapshotEnrichmentWorkItem(confirmed);
+  }
+
+  async rejectEnrichmentWorkItem(id: string, _input: ActorAttribution): Promise<EnrichmentWorkItem> {
+    const workItem = this.enrichmentWorkItems.get(id);
+    if (!workItem) throw new EnrichmentWorkItemNotFoundError(id);
+    if (workItem.status === "rejected") return snapshotEnrichmentWorkItem(workItem);
+    if (workItem.status !== "pending_confirmation") {
+      throw new EnrichmentWorkItemConflictError(id, workItem.status);
+    }
+
+    const rejected: EnrichmentWorkItem = { ...workItem, status: "rejected" };
+    this.enrichmentWorkItems.set(id, rejected);
+    return snapshotEnrichmentWorkItem(rejected);
+  }
+
+  async appendVoucherExternalReference(
+    voucherId: string,
+    input: { url: string; label?: string } & ActorAttribution,
+  ): Promise<ExternalReferenceProjection> {
+    assertEnrichmentTargetPosted(
+      { targetKind: "voucher", targetId: voucherId },
+      collectPostedEnrichmentTargets(this.events),
+    );
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
+    const plan = planExternalReferenceLink(
+      voucherId,
+      {
+        url: input.url,
+        ...(input.label !== undefined ? { label: input.label } : {}),
+        actorId,
+      },
+      { organizationId: defaultOrganizationId, workspaceId: defaultWorkspaceId },
+    );
+    this.appendEvent(plan.event);
+    return { ...plan.reference };
+  }
+
+  async removeVoucherExternalReference(
+    voucherId: string,
+    refId: string,
+    input: ActorAttribution,
+  ): Promise<ExternalReferenceProjection> {
+    assertEnrichmentTargetPosted(
+      { targetKind: "voucher", targetId: voucherId },
+      collectPostedEnrichmentTargets(this.events),
+    );
+    const reference = findActiveExternalReference(this.events, voucherId, refId);
+    if (!reference) throw new ExternalReferenceNotFoundError(refId);
+    const plan = planExternalReferenceRemoval(reference, input.actorId ?? DEMO_ACTOR_ID, {
+      organizationId: defaultOrganizationId,
+      workspaceId: defaultWorkspaceId,
+    });
+    this.appendEvent(plan.event);
+    return { ...plan.reference };
+  }
+
+  async appendVoucherTags(
+    voucherId: string,
+    input: { tagIds: string[]; mode: "add" | "remove" } & ActorAttribution,
+  ): Promise<VoucherTagsProjection> {
+    assertEnrichmentTargetPosted(
+      { targetKind: "voucher", targetId: voucherId },
+      collectPostedEnrichmentTargets(this.events),
+    );
+    const existingActiveTagIds =
+      buildVoucherTagsFromEvents(this.events).find((projection) => projection.voucherId === voucherId)?.tagIds ?? [];
+    const plan = planVoucherTagsAppend(
+      {
+        voucherId,
+        tagIds: input.tagIds,
+        mode: input.mode,
+        existingActiveTagIds,
+        tagDefinitions: DEFAULT_TAG_DEFINITIONS,
+        actorId: input.actorId ?? DEMO_ACTOR_ID,
+      },
+      { organizationId: defaultOrganizationId, workspaceId: defaultWorkspaceId },
+    );
+    for (const event of plan.events) this.appendEvent(event);
+    return (
+      buildVoucherTagsFromEvents(this.events).find((projection) => projection.voucherId === voucherId) ?? {
+        voucherId,
+        tagIds: [],
+      }
+    );
   }
 
   async runSimulation(input: SimulationRequest & ActorAttribution): Promise<SimulationRun> {

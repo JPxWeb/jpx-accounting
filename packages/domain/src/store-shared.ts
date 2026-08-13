@@ -9,6 +9,7 @@ import type {
 import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
 import { deriveVoucherFields } from "./evidence-defaults";
+import { createId } from "./ids";
 import { assertBalancedPosting } from "./posting-invariants";
 import type { LedgerLine } from "./projections";
 import { getVatRegime, type VatRegime } from "./vat/regime";
@@ -172,7 +173,59 @@ export type ActorAttribution = { actorId?: string | undefined };
  * (blockedReason is advisory only). Normal mode threads
  * `enforceBlockedReason: true` from the API — never from a client payload.
  */
-export type ApprovalGate = { enforceBlockedReason?: boolean | undefined };
+export type ApprovalGate = {
+  enforceBlockedReason?: boolean | undefined;
+  /**
+   * The `ReviewEnrichmentIntent.version` the approving surface asserts it just
+   * presented. ABSENT IS FAIL-CLOSED: the attached intent is planned as noop
+   * and discarded, so a caller that forgets the field can never append
+   * enrichment nobody saw. A present-but-stale value is refused outright
+   * (`EnrichmentIntentVersionMismatchError`).
+   */
+  consumeEnrichmentIntentVersion?: string | undefined;
+};
+
+/**
+ * Thrown when an approval asks to consume an enrichment intent that is no
+ * longer the attached one — a concurrent producer (second tab, another
+ * reviewer, MCP, advisor) replaced or removed it between attach and approve.
+ * Mapped to HTTP 409 `{ code: "enrichment_intent_stale" }` in `app.onError`.
+ * Nothing is appended and the review stays open, so the reviewer can reload
+ * and decide against the current intent.
+ */
+export class EnrichmentIntentVersionMismatchError extends Error {
+  readonly code = "enrichment_intent_stale" as const;
+
+  constructor(
+    readonly reviewId: string,
+    readonly requestedVersion: string,
+    readonly attachedVersion: string | undefined,
+  ) {
+    super(
+      `Enrichment intent for review ${reviewId} changed since it was presented; approve again after reviewing the current proposal.`,
+    );
+    this.name = "EnrichmentIntentVersionMismatchError";
+  }
+}
+
+/**
+ * The ONE place both stores decide which proposals an approval may append.
+ * Runs inside the decision transaction (Postgres: under the workspace
+ * advisory lock, before any event append; Memory: before any read model is
+ * replaced), so a mismatch rolls back to zero events in both.
+ */
+export function resolveConsumableIntentProposals<TProposal>(
+  reviewId: string,
+  intent: { version: string; proposals: readonly TProposal[] } | undefined,
+  requestedVersion: string | undefined,
+  noopProposal: TProposal,
+): readonly TProposal[] {
+  if (requestedVersion === undefined) return [noopProposal];
+  if (!intent || intent.version !== requestedVersion) {
+    throw new EnrichmentIntentVersionMismatchError(reviewId, requestedVersion, intent?.version);
+  }
+  return intent.proposals;
+}
 
 /**
  * Thrown when normal mode refuses to approve a review that still carries
@@ -279,6 +332,7 @@ export function buildPostingLines(
 
   const lines: LedgerLine[] = [
     {
+      lineId: createId("ln"),
       voucherId: voucher.id,
       accountNumber: suggestion.accountNumber,
       accountName: suggestion.accountName,
@@ -293,6 +347,7 @@ export function buildPostingLines(
     // journal shows the explicit "no VAT claimed" decision. buildVat and box 48
     // read input VAT off this account's amounts, so 0 claims nothing.
     {
+      lineId: createId("ln"),
       voucherId: voucher.id,
       accountNumber: inputVatAccount,
       accountName: findCoaAccount(coa, inputVatAccount)?.name ?? inputVatAccount,
@@ -304,6 +359,7 @@ export function buildPostingLines(
       deductible: action !== "book-without-vat",
     },
     {
+      lineId: createId("ln"),
       voucherId: voucher.id,
       accountNumber: bankAccount,
       accountName: findCoaAccount(coa, bankAccount)?.name ?? bankAccount,

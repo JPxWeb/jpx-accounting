@@ -24,6 +24,13 @@ import { AiRuntimeUnavailableError, type AiRuntime, isAiRuntimeOperational } fro
 import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intelligence";
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import {
+  EnrichmentIntentClosedError,
+  EnrichmentIntentVersionMismatchError,
+  EnrichmentLineNotFoundError,
+  EnrichmentNotSupportedError,
+  EnrichmentProposalMultiplicityError,
+  EnrichmentTargetNotPostedError,
+  ExternalReferenceNotFoundError,
   buildSieExport,
   currentMonthToken,
   decodeSieBuffer,
@@ -31,20 +38,36 @@ import {
   encodePc8,
   InvalidPeriodTokenError,
   InvalidReviewEditError,
+  InventoryMovementLineNotFoundError,
+  InvoiceAllocationCurrencyError,
+  InvoiceNotFoundError,
+  InvoiceRegistrationAmountError,
+  InvoiceRegistrationLineNotFoundError,
   nowIso,
   parseSie,
+  ProjectAssignmentLineNotFoundError,
   ReviewBlockedError,
   summarizeEventIntegrity,
   today,
+  TripEvidenceNotInPacketError,
+  TripEnrichmentTripNotFoundError,
+  TripLineAlreadyAssignedError,
+  TripNotFoundError,
+  TripRegistrationLineNotFoundError,
+  LineEnrichmentNotActiveError,
   type ReviewAction,
+  VoucherTagsValidationError,
 } from "@jpx-accounting/domain";
 import {
+  EnrichmentWorkItemConflictError,
+  EnrichmentWorkItemNotFoundError,
   MemoryLedgerStore,
   ReviewNotFoundError,
   SieImportError,
   type LedgerStore,
   type ReportRange,
 } from "@jpx-accounting/domain/store";
+import type { McpHttpAdapter } from "@jpx-accounting/mcp-server/http-adapter";
 
 import { AdvisorDisabledError, AdvisorValidationError, createAdvisorChatHandler } from "./advisor/chat";
 import { createAdvisorModel, type AdvisorModelConfig } from "./advisor/model";
@@ -52,6 +75,18 @@ import type { BlobUploader } from "./blob";
 import { BlobUploaderUnavailableError, MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
 import { DEFAULT_SUPABASE_JWT_ALGS, type CorsRuntimePolicy, type SupabaseJwtAlgorithm } from "./config";
 import { queryKnowledge } from "./knowledge";
+import type { ApiRouteEnv } from "./route-types";
+import { registerEnrichmentWorkItemRoutes } from "./routes/enrichment-work-items";
+import { registerInvoiceListRoutes } from "./routes/lists-invoices";
+import { registerProjectListRoutes } from "./routes/lists-projects";
+import { registerSkuMovementListRoutes } from "./routes/lists-sku-movements";
+import { registerTripListRoutes } from "./routes/lists-trips";
+import { registerValuedMovementListRoutes } from "./routes/lists-valued-movements";
+import { registerMcpHttpRoutes } from "./routes/mcp-http";
+import { registerReviewEnrichmentIntentRoutes } from "./routes/review-enrichment-intents";
+import { registerReviewProposalRoutes } from "./routes/review-proposals";
+import { registerVoucherExternalReferenceRoutes } from "./routes/voucher-external-references";
+import { registerVoucherTagRoutes } from "./routes/voucher-tags";
 import type { AiRuntimeMetadata } from "./runtime";
 import { LedgerStoreUnavailableError, pingLedgerStore } from "./runtime";
 import { ApiValidationError, jsonValidated } from "./validation";
@@ -77,6 +112,7 @@ type CreateAppOptions = {
     streamTimeoutMs: number;
     azureOpenAi: AdvisorModelConfig;
   };
+  mcpHttp: McpHttpAdapter;
   /**
    * JWKS endpoint (typically `${SUPABASE_URL}/auth/v1/keys`). When provided, mutating routes
    * require a valid JWT. When absent, mutations stay open — current demo + pilot behavior.
@@ -88,8 +124,7 @@ type CreateAppOptions = {
 };
 
 /** `jwtPayload` is set by `hono/jwk` after successful verification (WS-C R5 consumes it). */
-type AppVariables = { requestId: string; jwtPayload?: Record<string, unknown> | undefined };
-type AppEnv = { Variables: AppVariables };
+type AppEnv = ApiRouteEnv;
 
 const DEFAULT_JSON_BODY_BYTES = 512 * 1024;
 const SIE_IMPORT_BODY_BYTES = 32 * 1024 * 1024;
@@ -279,6 +314,7 @@ export function createApp({
   documentIntelligence,
   aiMetadata,
   advisor,
+  mcpHttp,
   jwksUrl,
   jwtAlgs = DEFAULT_SUPABASE_JWT_ALGS,
   allowTestReset,
@@ -323,6 +359,13 @@ export function createApp({
     const review = await currentStore.applyReviewDecision(reviewId, outcome, {
       ...input,
       enforceBlockedReason: runtimeMode === "normal",
+      // Only a surface that presented THAT intent may consume it, proven by
+      // echoing the version its attach returned. Omitted or "clear" fails
+      // closed for queue, MCP, advisor, and future approve-with-edits callers;
+      // a stale version is refused with 409 inside the decision transaction.
+      ...(input.enrichmentIntent?.mode === "consume"
+        ? { consumeEnrichmentIntentVersion: input.enrichmentIntent.version }
+        : {}),
     });
     if (!review) throw new HTTPException(404, { message: "Review not found" });
     return review;
@@ -510,6 +553,94 @@ export function createApp({
       return jsonError(c, error.message, runtimeMode, 400, { code: error.code });
     }
 
+    if (error instanceof EnrichmentTargetNotPostedError) {
+      return jsonError(c, error.message, runtimeMode, 409, { code: "enrichment_target_not_posted" });
+    }
+
+    if (error instanceof EnrichmentIntentClosedError) {
+      return jsonError(c, error.message, runtimeMode, 409, { code: "review_not_open" });
+    }
+
+    if (error instanceof EnrichmentIntentVersionMismatchError) {
+      return jsonError(c, error.message, runtimeMode, 409, { code: error.code });
+    }
+
+    if (error instanceof EnrichmentNotSupportedError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "enrichment_not_supported" });
+    }
+
+    if (error instanceof EnrichmentLineNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "enrichment_line_not_found" });
+    }
+
+    if (error instanceof ProjectAssignmentLineNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "project_assignment_line_not_found" });
+    }
+
+    if (error instanceof InvoiceRegistrationLineNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "invoice_registration_line_not_found" });
+    }
+
+    if (error instanceof InvoiceRegistrationAmountError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "invoice_registration_amount_invalid" });
+    }
+
+    if (error instanceof InventoryMovementLineNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "inventory_movement_line_not_found" });
+    }
+
+    if (error instanceof TripRegistrationLineNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "trip_registration_line_not_found" });
+    }
+
+    if (error instanceof TripEvidenceNotInPacketError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "trip_evidence_not_in_packet" });
+    }
+
+    if (error instanceof TripEnrichmentTripNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "trip_enrichment_trip_not_found" });
+    }
+
+    if (error instanceof TripLineAlreadyAssignedError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "trip_line_already_assigned" });
+    }
+
+    if (error instanceof EnrichmentProposalMultiplicityError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "enrichment_proposal_multiplicity_invalid" });
+    }
+
+    if (error instanceof ExternalReferenceNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 404, { code: "external_reference_not_found" });
+    }
+
+    if (error instanceof LineEnrichmentNotActiveError) {
+      return jsonError(c, error.message, runtimeMode, 409, { code: "line_enrichment_not_active" });
+    }
+
+    if (error instanceof VoucherTagsValidationError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "voucher_tags_invalid" });
+    }
+
+    if (error instanceof InvoiceNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 404, { code: "invoice_not_found" });
+    }
+
+    if (error instanceof InvoiceAllocationCurrencyError) {
+      return jsonError(c, error.message, runtimeMode, 422, { code: "invoice_currency_mismatch" });
+    }
+
+    if (error instanceof TripNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 404, { code: "trip_not_found" });
+    }
+
+    if (error instanceof EnrichmentWorkItemNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 404, { code: "enrichment_work_item_not_found" });
+    }
+
+    if (error instanceof EnrichmentWorkItemConflictError) {
+      return jsonError(c, error.message, runtimeMode, 409, { code: "enrichment_work_item_conflict" });
+    }
+
     if (error instanceof HTTPException) {
       return jsonError(c, error.message, runtimeMode, error.status);
     }
@@ -600,6 +731,48 @@ export function createApp({
     );
 
     return jsonError(c, "Unexpected server error.", runtimeMode, 500);
+  });
+
+  registerMcpHttpRoutes(app, mcpHttp);
+  registerEnrichmentWorkItemRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerInvoiceListRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerProjectListRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerSkuMovementListRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerTripListRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerValuedMovementListRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerReviewEnrichmentIntentRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerReviewProposalRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerVoucherExternalReferenceRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
+  });
+  registerVoucherTagRoutes(app, {
+    getStore: () => currentStore,
+    deriveActorId,
   });
 
   app.get("/health", (context) => context.json({ ok: true, runtimeMode }));
@@ -918,24 +1091,6 @@ export function createApp({
     currentStore = new MemoryLedgerStore();
     return context.json({ ok: true });
   });
-
-  if (runtimeMode === "demo") {
-    app.use("/mcp", async (c, next) => {
-      if (c.req.method !== "POST") {
-        return next();
-      }
-      return defaultJsonBodyLimit(c, next);
-    });
-
-    app.post("/mcp", async (context) => {
-      const body = await context.req.json().catch(() => ({}));
-      return context.json({
-        server: "jpx-accounting",
-        tools: ["lookup_policy", "lookup_vat_rule", "lookup_supplier_history", "query_reports", "run_simulation"],
-        request: body,
-      });
-    });
-  }
 
   return app;
 }

@@ -1,8 +1,10 @@
 import { z } from "zod";
 
 import { countryCodeSchema, countryValidationRegistry } from "./countries";
+import { externalReferenceProjectionSchema, voucherTagsProjectionSchema } from "./enrichment";
 
 export * from "./countries";
+export * from "./enrichment";
 
 export const roleSchema = z.enum(["Preparer", "Approver", "Accountant", "Admin", "Auditor", "Advisor"]);
 
@@ -48,6 +50,20 @@ export const eventTypeSchema = z.enum([
   "SimulationExecuted",
   "CloseRunGenerated", // Reserved: never emitted yet (getCloseRun is an honest empty shell).
   "ExportGenerated", // Reserved: never emitted yet (exports don't append events).
+  "ExternalReferenceLinked",
+  "ExternalReferenceRemoved",
+  "VoucherTagsAdded",
+  "VoucherTagsRemoved",
+  "LineEnrichmentRecorded",
+  "LineEnrichmentSuperseded",
+  "ProjectRegistered",
+  "ProjectArchived",
+  "InvoiceRegistered",
+  "PaymentAllocated",
+  "TripRegistered",
+  "TripClosed",
+  "SkuRegistered",
+  "InventoryMovementRecorded",
 ]);
 export const ruleSeveritySchema = z.enum(["info", "warning", "blocking"]);
 export const assistantAnswerStatusSchema = z.enum(["grounded", "insufficient-basis"]);
@@ -188,6 +204,7 @@ export const ledgerEventSchema = z.object({
 
 export const journalEntryProjectionSchema = z.object({
   id: z.string(),
+  lineId: z.string().optional(),
   voucherId: z.string(),
   accountNumber: z.string(),
   accountName: z.string(),
@@ -195,6 +212,8 @@ export const journalEntryProjectionSchema = z.object({
   debit: z.number(),
   credit: z.number(),
   bookedAt: z.string(),
+  vatCode: z.string().optional(),
+  deductible: z.boolean().optional(),
 });
 
 export const accountBalanceProjectionSchema = z.object({
@@ -516,6 +535,22 @@ export type ReviewDecisionEdit = z.infer<typeof reviewDecisionEditSchema>;
 export const reviewDecisionInputSchema = z.object({
   notes: z.string().optional(),
   edited: reviewDecisionEditSchema.optional(),
+  /**
+   * Consuming an attached enrichment intent must be an explicit assertion by
+   * the reviewing surface that it presented THAT EXACT intent — hence the
+   * `version` echoed from the `attachReviewEnrichmentIntent` response. The
+   * stores compare it inside the advisory-locked decision transaction and
+   * refuse (409 `enrichment_intent_stale`) when a concurrent producer replaced
+   * the intent in the meantime, so an approval can never append enrichment
+   * data the human never saw. Omission is fail-closed: the intent is cleared
+   * (planned as noop) and discarded, never consumed.
+   */
+  enrichmentIntent: z
+    .discriminatedUnion("mode", [
+      z.object({ mode: z.literal("consume"), version: z.string().min(1) }),
+      z.object({ mode: z.literal("clear") }),
+    ])
+    .optional(),
 });
 
 export const knowledgeQuerySchema = z.object({
@@ -655,6 +690,16 @@ export const workspaceSnapshotSchema = z.object({
    * from the snapshot alone. Defaulted so pre-Phase-4 payloads keep parsing.
    */
   packets: z.array(evidencePacketSchema).default([]),
+  /**
+   * Event-replayed external references. Removed entries remain in this audit
+   * projection while consumers render only active references by default.
+   */
+  externalReferences: z.array(externalReferenceProjectionSchema).default([]),
+  /**
+   * Active voucher tags derived by replaying append-only add/remove events.
+   * Empty per-voucher rows remain valid after the final active tag is removed.
+   */
+  voucherTags: z.array(voucherTagsProjectionSchema).default([]),
 });
 
 /**

@@ -79,6 +79,13 @@ export type ApiRuntimeConfig = {
     /** Cost envelope: wall-clock ceiling for one normal-mode stream (ms). */
     streamTimeoutMs: number;
   };
+  mcp?: {
+    allowedHosts: string[];
+    resourceUrl: string;
+    authorizationServers: string[];
+    sessionTtlMs: number;
+    maxSessions?: number;
+  };
 };
 
 /** Demo fallback for ADVISOR_TOOL_APPROVAL_SECRET — not a production credential. */

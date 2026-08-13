@@ -123,6 +123,55 @@
       "description": "Correct the account, VAT code, or amounts — approving posts the corrected lines.",
       "closeAria": "Close the edit sheet",
       "accountLabel": "Account",
+      "workflowLabel": "Workflow",
+      "workflowNone": "No workflow assignment",
+      "workflowProject": "Project",
+      "workflowInvoice": "Invoice",
+      "workflowTrip": "Trip",
+      "workflowQuantityInventory": "Quantity inventory",
+      "project": {
+        "idLabel": "Project ID",
+        "required": "Choose a project.",
+        "activityCodeLabel": "Activity code (optional)",
+        "objectCodeLabel": "Object code (optional)"
+      },
+      "invoice": {
+        "directionLabel": "Invoice direction",
+        "directionPlaceholder": "Choose direction",
+        "directionAr": "Accounts receivable",
+        "directionAp": "Accounts payable",
+        "directionRequired": "Choose receivable or payable.",
+        "counterpartyLabel": "Counterparty",
+        "counterpartyRequired": "Enter a counterparty.",
+        "dueDateLabel": "Due date",
+        "dueDateRequired": "Enter a due date."
+      },
+      "trip": {
+        "purposeLabel": "Purpose",
+        "purposeRequired": "Enter a trip purpose.",
+        "travelerLabel": "Traveler",
+        "travelerRequired": "Enter a traveler.",
+        "startDateLabel": "Start date",
+        "startDateRequired": "Enter a valid start date.",
+        "endDateLabel": "End date",
+        "endDateRequired": "Enter an end date on or after the start date.",
+        "evidenceLabel": "Supporting evidence (optional)",
+        "evidenceNone": "No linked evidence",
+        "evidenceInvalid": "Choose evidence from this voucher's packet."
+      },
+      "inventory": {
+        "skuLabel": "SKU",
+        "skuRequired": "Enter a SKU.",
+        "quantityLabel": "Quantity",
+        "quantityRequired": "Enter a positive quantity.",
+        "uomLabel": "Unit of measure",
+        "uomRequired": "Enter a unit of measure.",
+        "directionLabel": "Direction",
+        "directionPlaceholder": "Choose direction",
+        "directionIn": "Stock in",
+        "directionOut": "Stock out",
+        "directionRequired": "Choose stock in or stock out."
+      },
       "vatCodeLabel": "VAT code",
       "grossLabel": "Gross amount",
       "netLabel": "Net amount",
@@ -369,6 +418,181 @@
       "empty": {
         "title": "Period close not available yet",
         "message": "Month-end checklists will appear here once period-close runs are implemented. The review queue remains the path to posted vouchers."
+      }
+    },
+    "lists": {
+      "projects": {
+        "title": "Projects",
+        "description": "Registered projects and their active posted-line assignments.",
+        "loading": "Loading projects…",
+        "error": "Projects could not be loaded.",
+        "empty": "No projects registered yet.",
+        "activityCount": "{count, plural, one {# activity} other {# activities}}"
+      },
+      "openInvoices": {
+        "title": "Open invoices",
+        "description": "Derived receivables and payables after recorded payment allocations.",
+        "loading": "Loading open invoices…",
+        "error": "Open invoices could not be loaded.",
+        "empty": "No open invoices.",
+        "direction": {
+          "ar": "Accounts receivable",
+          "ap": "Accounts payable"
+        },
+        "dueDate": "Due {date}",
+        "originalAmount": "Original: {amount}"
+      },
+      "paymentHistory": {
+        "title": "Payment history",
+        "description": "Append-only allocations recorded against invoice identities.",
+        "loading": "Loading payments…",
+        "error": "Payment history could not be loaded.",
+        "empty": "No payments recorded.",
+        "invoice": "Invoice {invoiceId}",
+        "allocatedAt": "Allocated {date}"
+      },
+      "trips": {
+        "title": "Trips",
+        "description": "Registered trips with expenses derived from confirmed posted-line enrichments.",
+        "loading": "Loading trips…",
+        "error": "Trips could not be loaded.",
+        "empty": "No trips registered yet.",
+        "traveler": "Traveler: {traveler}",
+        "dates": "{startDate}–{endDate}",
+        "status": {
+          "open": "Open",
+          "closed": "Closed"
+        }
+      },
+      "skuMovements": {
+        "title": "Inventory movements",
+        "description": "Append-only quantity movements. Inventory value is not inferred or displayed.",
+        "loading": "Loading inventory movements…",
+        "error": "Inventory movements could not be loaded.",
+        "empty": "No inventory movements.",
+        "sku": "SKU",
+        "directionLabel": "Direction",
+        "quantity": "Quantity",
+        "runningQuantity": "Running quantity",
+        "bookedAt": "Booking date",
+        "direction": {
+          "in": "Stock in",
+          "out": "Stock out"
+        }
+      },
+      "valuedMovements": {
+        "title": "Valued inventory movements",
+        "description": "Append-only movements with explicitly confirmed unit cost and currency. Values are never inferred from tags.",
+        "loading": "Loading valued inventory movements…",
+        "error": "Valued inventory movements could not be loaded.",
+        "empty": "No valued inventory movements.",
+        "sku": "SKU",
+        "directionLabel": "Direction",
+        "quantity": "Quantity",
+        "unitCost": "Unit cost",
+        "extendedAmount": "Total value",
+        "bookedAt": "Booking date",
+        "direction": {
+          "in": "Stock in",
+          "out": "Stock out"
+        }
+      }
+    },
+    "ledger": {
+      "drawerClose": "Close",
+      "searchPlaceholder": "Search vouchers…",
+      "modeInline": "Expand inline",
+      "modeDrawer": "Side drawer",
+      "modeSwitchAria": "Journal overview layout",
+      "emptySearch": "No vouchers match your search.",
+      "slots": {
+        "workItemConfirm": "Enrichment confirmation requests",
+        "workItemHint": "Open a secure work-item link to review and decide a proposed change.",
+        "externalRefs": "External references",
+        "tags": "Soft tags are not available yet.",
+        "lineId": "This row has no stable posted-line target.",
+        "lineIdHeader": "Line target",
+        "notTargetable": "Not targetable",
+        "vatDeductibility": "VAT code and deductibility are unavailable for this row.",
+        "vatCodeHeader": "VAT code",
+        "deductibilityHeader": "Deductibility",
+        "deductible": "Deductible",
+        "notDeductible": "Not deductible",
+        "workflows": "Workflow badges are not available yet.",
+        "workflowProject": "Project workflow",
+        "workflowProjectHint": "Opened from the project workflow list. Posted lines and evidence remain append-only."
+      },
+      "externalReferences": {
+        "title": "External references",
+        "description": "Links stay separate from uploaded evidence and never rewrite the posted voucher.",
+        "blobBadge": "Uploaded file",
+        "externalBadge": "External link",
+        "add": "Add link",
+        "empty": "No external links.",
+        "unlink": "Remove",
+        "linkTitle": "Add external reference",
+        "unlinkTitle": "Remove external reference",
+        "linkConfirmDescription": "Confirm this direct human metadata append. Only HTTPS links are accepted.",
+        "unlinkConfirmDescription": "Confirm removal. The original link remains in the append-only audit history.",
+        "urlLabel": "HTTPS URL",
+        "labelLabel": "Label (optional)",
+        "httpsOnly": "Enter a valid HTTPS URL.",
+        "confirmLink": "Confirm link",
+        "confirmUnlink": "Confirm removal",
+        "cancel": "Cancel",
+        "working": "Saving…",
+        "error": "The external reference could not be saved. Try again."
+      },
+      "tags": {
+        "title": "Soft tags",
+        "description": "Choose from the workspace registry. Tag changes append metadata and never rewrite the posted voucher.",
+        "add": "Add tag",
+        "empty": "No tags.",
+        "addTitle": "Add soft tag",
+        "removeTitle": "Remove soft tag",
+        "addConfirmDescription": "Choose a registered tag, then confirm this direct human metadata append.",
+        "removeConfirmDescription": "Confirm removal of “{tag}”. The original tag event remains in the append-only audit history.",
+        "registryAria": "Available registered tags",
+        "removeAria": "Remove tag {tag}",
+        "confirmAdd": "Confirm tag",
+        "confirmRemove": "Confirm removal",
+        "cancel": "Cancel",
+        "working": "Saving…",
+        "error": "The tag change could not be saved. Try again.",
+        "filterChip": "Tag {tag}",
+        "clearFilterAria": "Clear tag filter"
+      },
+      "enrichmentConfirm": {
+        "eyebrow": "Human confirmation",
+        "title": "Review proposed enrichment",
+        "description": "This proposal changes post-post metadata only after your explicit decision. It cannot post or rewrite a voucher.",
+        "close": "Close",
+        "closeAria": "Close enrichment confirmation",
+        "loading": "Loading proposal…",
+        "loadError": "The proposal could not be loaded. Check the API connection and try again.",
+        "notFound": "This enrichment proposal was not found.",
+        "advisorMarker": "AI-generated proposal · Article 50",
+        "externalMarker": "Externally proposed · human review required",
+        "target": "Target",
+        "proposal": "Proposed change",
+        "noopProposal": "No ledger event (foundation placeholder)",
+        "externalReferenceLink": "Add external link: {url}",
+        "externalReferenceLinkWithLabel": "Add external link “{label}”: {url}",
+        "externalReferenceUnlink": "Remove external reference: {refId}",
+        "voucherTagsAdd": "Add tags: {tags}",
+        "voucherTagsRemove": "Remove tags: {tags}",
+        "statusLabel": "Status",
+        "status": {
+          "pending": "Pending confirmation",
+          "confirmed": "Confirmed",
+          "rejected": "Rejected",
+          "superseded": "Superseded"
+        },
+        "appendOnlyNote": "Confirming uses the append-only enrichment gate. It never creates a second posting or rewrites the original voucher; the human decision remains in the audit history.",
+        "confirm": "Confirm proposal",
+        "reject": "Reject proposal",
+        "working": "Saving…",
+        "decisionError": "The decision could not be saved. Try again."
       }
     }
   },
@@ -1026,6 +1250,7 @@
           "assistantThreadsLegacy": "Legacy advisor history (v1) — migrated on first read, removed on sign-out.",
           "dashboardLayout": "Your Today-dashboard widget order and hidden widgets.",
           "onboarding": "Which onboarding tours you have completed or dismissed.",
+          "ledgerMode": "Ledger journal overview mode preference (inline disclosure vs drawer).",
           "theme": "Light/dark/system appearance choice.",
           "captureDraftsSession": "Tab-scoped fallback copy of capture drafts when IndexedDB is unavailable (metadata only).",
           "captureDraftsDb": "Local-first capture drafts including receipt files, plus a bounded preview cache of promoted evidence files.",

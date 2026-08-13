@@ -123,6 +123,55 @@
       "description": "Justera konto, momskod eller belopp — godkännandet bokför de korrigerade raderna.",
       "closeAria": "Stäng redigeringsarket",
       "accountLabel": "Konto",
+      "workflowLabel": "Arbetsflöde",
+      "workflowNone": "Ingen arbetsflödestilldelning",
+      "workflowProject": "Projekt",
+      "workflowInvoice": "Faktura",
+      "workflowTrip": "Resa",
+      "workflowQuantityInventory": "Kvantitetslager",
+      "project": {
+        "idLabel": "Projekt-ID",
+        "required": "Välj ett projekt.",
+        "activityCodeLabel": "Aktivitetskod (valfritt)",
+        "objectCodeLabel": "Objektkod (valfritt)"
+      },
+      "invoice": {
+        "directionLabel": "Fakturariktning",
+        "directionPlaceholder": "Välj riktning",
+        "directionAr": "Kundfordran",
+        "directionAp": "Leverantörsskuld",
+        "directionRequired": "Välj kundfordran eller leverantörsskuld.",
+        "counterpartyLabel": "Motpart",
+        "counterpartyRequired": "Ange en motpart.",
+        "dueDateLabel": "Förfallodatum",
+        "dueDateRequired": "Ange ett förfallodatum."
+      },
+      "trip": {
+        "purposeLabel": "Syfte",
+        "purposeRequired": "Ange resans syfte.",
+        "travelerLabel": "Resenär",
+        "travelerRequired": "Ange en resenär.",
+        "startDateLabel": "Startdatum",
+        "startDateRequired": "Ange ett giltigt startdatum.",
+        "endDateLabel": "Slutdatum",
+        "endDateRequired": "Ange ett slutdatum på eller efter startdatumet.",
+        "evidenceLabel": "Stödjande underlag (valfritt)",
+        "evidenceNone": "Inget länkat underlag",
+        "evidenceInvalid": "Välj ett underlag från verifikatets underlagspaket."
+      },
+      "inventory": {
+        "skuLabel": "Artikelnummer",
+        "skuRequired": "Ange ett artikelnummer.",
+        "quantityLabel": "Antal",
+        "quantityRequired": "Ange ett positivt antal.",
+        "uomLabel": "Måttenhet",
+        "uomRequired": "Ange en måttenhet.",
+        "directionLabel": "Riktning",
+        "directionPlaceholder": "Välj riktning",
+        "directionIn": "Inleverans",
+        "directionOut": "Uttag",
+        "directionRequired": "Välj inleverans eller uttag."
+      },
       "vatCodeLabel": "Momskod",
       "grossLabel": "Bruttobelopp",
       "netLabel": "Nettobelopp",
@@ -369,6 +418,181 @@
       "empty": {
         "title": "Periodavslut är inte tillgängligt ännu",
         "message": "Checklistor för månadsavslut visas här när periodavslut är implementerat. Granskningskön är fortfarande vägen till bokförda verifikat."
+      }
+    },
+    "lists": {
+      "projects": {
+        "title": "Projekt",
+        "description": "Registrerade projekt och deras aktiva tilldelningar till bokförda rader.",
+        "loading": "Läser in projekt…",
+        "error": "Projekten kunde inte läsas in.",
+        "empty": "Inga projekt har registrerats ännu.",
+        "activityCount": "{count, plural, one {# aktivitet} other {# aktiviteter}}"
+      },
+      "openInvoices": {
+        "title": "Öppna fakturor",
+        "description": "Härledda kundfordringar och leverantörsskulder efter registrerade betalningsallokeringar.",
+        "loading": "Läser in öppna fakturor…",
+        "error": "Öppna fakturor kunde inte läsas in.",
+        "empty": "Inga öppna fakturor.",
+        "direction": {
+          "ar": "Kundfordran",
+          "ap": "Leverantörsskuld"
+        },
+        "dueDate": "Förfaller {date}",
+        "originalAmount": "Ursprungligt: {amount}"
+      },
+      "paymentHistory": {
+        "title": "Betalningshistorik",
+        "description": "Append-only-allokeringar registrerade mot fakturaidentiteter.",
+        "loading": "Läser in betalningar…",
+        "error": "Betalningshistoriken kunde inte läsas in.",
+        "empty": "Inga betalningar har registrerats.",
+        "invoice": "Faktura {invoiceId}",
+        "allocatedAt": "Allokerad {date}"
+      },
+      "trips": {
+        "title": "Resor",
+        "description": "Registrerade resor med kostnader härledda från bekräftade berikningar av bokförda rader.",
+        "loading": "Läser in resor…",
+        "error": "Resorna kunde inte läsas in.",
+        "empty": "Inga resor har registrerats ännu.",
+        "traveler": "Resenär: {traveler}",
+        "dates": "{startDate}–{endDate}",
+        "status": {
+          "open": "Öppen",
+          "closed": "Stängd"
+        }
+      },
+      "skuMovements": {
+        "title": "Lagerrörelser",
+        "description": "Append-only kvantitetsrörelser. Lagervärde härleds eller visas inte.",
+        "loading": "Läser in lagerrörelser…",
+        "error": "Lagerrörelserna kunde inte läsas in.",
+        "empty": "Inga lagerrörelser.",
+        "sku": "Artikelnummer",
+        "directionLabel": "Riktning",
+        "quantity": "Antal",
+        "runningQuantity": "Löpande antal",
+        "bookedAt": "Bokföringsdatum",
+        "direction": {
+          "in": "Inleverans",
+          "out": "Uttag"
+        }
+      },
+      "valuedMovements": {
+        "title": "Värderade lagerrörelser",
+        "description": "Append-only-rörelser med uttryckligen bekräftat enhetspris och valuta. Värden härleds aldrig från taggar.",
+        "loading": "Läser in värderade lagerrörelser…",
+        "error": "De värderade lagerrörelserna kunde inte läsas in.",
+        "empty": "Inga värderade lagerrörelser.",
+        "sku": "Artikelnummer",
+        "directionLabel": "Riktning",
+        "quantity": "Antal",
+        "unitCost": "Enhetspris",
+        "extendedAmount": "Totalt värde",
+        "bookedAt": "Bokföringsdatum",
+        "direction": {
+          "in": "Inleverans",
+          "out": "Uttag"
+        }
+      }
+    },
+    "ledger": {
+      "drawerClose": "Stäng",
+      "searchPlaceholder": "Sök verifikat…",
+      "modeInline": "Expandera inline",
+      "modeDrawer": "Sidopanel",
+      "modeSwitchAria": "Layout för journalöversikt",
+      "emptySearch": "Inga verifikat matchar sökningen.",
+      "slots": {
+        "workItemConfirm": "Bekräftelse av berikningsförslag",
+        "workItemHint": "Öppna en säker arbetsobjektslänk för att granska och besluta om en föreslagen ändring.",
+        "externalRefs": "Externa referenser",
+        "tags": "Mjuka taggar är inte tillgängliga ännu.",
+        "lineId": "Raden saknar ett stabilt mål för en bokförd rad.",
+        "lineIdHeader": "Radmål",
+        "notTargetable": "Kan inte berikas",
+        "vatDeductibility": "Momskod och avdragsrätt saknas för raden.",
+        "vatCodeHeader": "Momskod",
+        "deductibilityHeader": "Avdragsrätt",
+        "deductible": "Avdragsgill",
+        "notDeductible": "Inte avdragsgill",
+        "workflows": "Arbetsflödesmärken är inte tillgängliga ännu.",
+        "workflowProject": "Projektarbetsflöde",
+        "workflowProjectHint": "Öppnat från projektlistan. Bokförda rader och underlag förblir append-only."
+      },
+      "externalReferences": {
+        "title": "Externa referenser",
+        "description": "Länkar hålls åtskilda från uppladdade underlag och skriver aldrig om det bokförda verifikatet.",
+        "blobBadge": "Uppladdad fil",
+        "externalBadge": "Extern länk",
+        "add": "Lägg till länk",
+        "empty": "Inga externa länkar.",
+        "unlink": "Ta bort",
+        "linkTitle": "Lägg till extern referens",
+        "unlinkTitle": "Ta bort extern referens",
+        "linkConfirmDescription": "Bekräfta detta direkta mänskliga metadatatillägg. Endast HTTPS-länkar godtas.",
+        "unlinkConfirmDescription": "Bekräfta borttagning. Ursprungslänken finns kvar i den append-only-förda revisionshistoriken.",
+        "urlLabel": "HTTPS-URL",
+        "labelLabel": "Etikett (valfri)",
+        "httpsOnly": "Ange en giltig HTTPS-URL.",
+        "confirmLink": "Bekräfta länk",
+        "confirmUnlink": "Bekräfta borttagning",
+        "cancel": "Avbryt",
+        "working": "Sparar…",
+        "error": "Den externa referensen kunde inte sparas. Försök igen."
+      },
+      "tags": {
+        "title": "Mjuka taggar",
+        "description": "Välj från arbetsytans register. Taggändringar lägger till metadata och skriver aldrig om det bokförda verifikatet.",
+        "add": "Lägg till tagg",
+        "empty": "Inga taggar.",
+        "addTitle": "Lägg till mjuk tagg",
+        "removeTitle": "Ta bort mjuk tagg",
+        "addConfirmDescription": "Välj en registrerad tagg och bekräfta sedan detta direkta mänskliga metadatatillägg.",
+        "removeConfirmDescription": "Bekräfta borttagning av ”{tag}”. Den ursprungliga tagghändelsen finns kvar i den append-only-förda revisionshistoriken.",
+        "registryAria": "Tillgängliga registrerade taggar",
+        "removeAria": "Ta bort taggen {tag}",
+        "confirmAdd": "Bekräfta tagg",
+        "confirmRemove": "Bekräfta borttagning",
+        "cancel": "Avbryt",
+        "working": "Sparar…",
+        "error": "Taggändringen kunde inte sparas. Försök igen.",
+        "filterChip": "Tagg {tag}",
+        "clearFilterAria": "Rensa taggfiltret"
+      },
+      "enrichmentConfirm": {
+        "eyebrow": "Mänsklig bekräftelse",
+        "title": "Granska föreslagen berikning",
+        "description": "Förslaget ändrar metadata efter bokföring först efter ditt uttryckliga beslut. Det kan varken bokföra eller skriva om ett verifikat.",
+        "close": "Stäng",
+        "closeAria": "Stäng bekräftelse av berikning",
+        "loading": "Läser in förslaget…",
+        "loadError": "Förslaget kunde inte läsas in. Kontrollera API-anslutningen och försök igen.",
+        "notFound": "Det här berikningsförslaget hittades inte.",
+        "advisorMarker": "AI-genererat förslag · artikel 50",
+        "externalMarker": "Externt föreslaget · mänsklig granskning krävs",
+        "target": "Mål",
+        "proposal": "Föreslagen ändring",
+        "noopProposal": "Ingen huvudbokshändelse (grundplatshållare)",
+        "externalReferenceLink": "Lägg till extern länk: {url}",
+        "externalReferenceLinkWithLabel": "Lägg till den externa länken ”{label}”: {url}",
+        "externalReferenceUnlink": "Ta bort extern referens: {refId}",
+        "voucherTagsAdd": "Lägg till taggar: {tags}",
+        "voucherTagsRemove": "Ta bort taggar: {tags}",
+        "statusLabel": "Status",
+        "status": {
+          "pending": "Väntar på bekräftelse",
+          "confirmed": "Bekräftad",
+          "rejected": "Avvisad",
+          "superseded": "Ersatt"
+        },
+        "appendOnlyNote": "Bekräftelse använder den append-only-förda berikningsgrinden. Den skapar aldrig en andra bokföring eller skriver om originalverifikatet; det mänskliga beslutet finns kvar i revisionshistoriken.",
+        "confirm": "Bekräfta förslag",
+        "reject": "Avvisa förslag",
+        "working": "Sparar…",
+        "decisionError": "Beslutet kunde inte sparas. Försök igen."
       }
     }
   },
@@ -1026,6 +1250,7 @@
           "assistantThreadsLegacy": "Äldre rådgivarhistorik (v1) — migreras vid första läsningen, tas bort vid utloggning.",
           "dashboardLayout": "Din widgetordning och dolda widgets på Idag-panelen.",
           "onboarding": "Vilka introduktionsturer du har slutfört eller avfärdat.",
+          "ledgerMode": "Läge för journalöversikt i Bokföring (inline vs låda).",
           "theme": "Val av ljust/mörkt/systemtema.",
           "captureDraftsSession": "Flikbunden reservkopia av utkast när IndexedDB inte är tillgängligt (endast metadata).",
           "captureDraftsDb": "Lokala utkast inklusive kvittofiler, samt en begränsad förhandsvisningscache för uppladdade underlag.",

@@ -1,0 +1,27 @@
+import type { LedgerEvent } from "@jpx-accounting/contracts";
+
+import { buildSkuMovementList } from "./workflows/inventory-quantity";
+import { buildValuedMovementList } from "./workflows/inventory-valued";
+import { buildOpenInvoicesList, buildPaymentHistoryList } from "./workflows/invoices";
+import { buildProjectsList } from "./workflows/projects";
+import { buildTripsList } from "./workflows/trips";
+
+export type ListProjectionRow = {
+  id: string;
+  kind: string;
+  [key: string]: unknown;
+};
+
+/**
+ * Wave 5 framework seam. Workflow verticals register concrete builders in
+ * Waves 6a–6e; unknown kinds stay honest and return no rows.
+ */
+export function buildListProjection(kind: string, events: LedgerEvent[]): ListProjectionRow[] {
+  if (kind === "project") return buildProjectsList(events);
+  if (kind === "open_invoice") return buildOpenInvoicesList(events);
+  if (kind === "payment") return buildPaymentHistoryList(events);
+  if (kind === "trip") return buildTripsList(events);
+  if (kind === "sku_movement") return buildSkuMovementList(events);
+  if (kind === "valued_movement") return buildValuedMovementList(events);
+  return [];
+}

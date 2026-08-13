@@ -36,7 +36,10 @@ export function ReviewQueueWidget({ data }: { data: DashboardData }) {
 
   // No actorId in the payload (WS-C R5): attribution is server-derived.
   const approveReview = useMutation({
-    mutationFn: (id: string) => apiClient.approveReview(id),
+    mutationFn: async (id: string) => {
+      await apiClient.attachReviewEnrichmentIntent({ reviewId: id, proposals: [{ kind: "noop" }] });
+      return apiClient.approveReview(id);
+    },
     onSuccess: (review) => {
       applyReviewSnapshotUpdate(queryClient, review);
       invalidateLedgerDerived(queryClient);
@@ -62,6 +65,7 @@ export function ReviewQueueWidget({ data }: { data: DashboardData }) {
       for (const review of targets) {
         // Sequential on purpose: each approval is an ordinary review decision
         // appended to the hash chain — no bulk mutation exists, by design.
+        await apiClient.attachReviewEnrichmentIntent({ reviewId: review.id, proposals: [{ kind: "noop" }] });
         const updated = await apiClient.approveReview(review.id);
         applyReviewSnapshotUpdate(queryClient, updated);
         approved += 1;

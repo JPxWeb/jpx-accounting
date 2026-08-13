@@ -11,6 +11,7 @@ import {
 import { DASHBOARD_LAYOUT_STORAGE_KEY } from "../../apps/web/lib/dashboard-layout-storage";
 import { DRAFT_QUEUE_DB_NAME, DRAFT_QUEUE_SESSION_STORAGE_KEY } from "../../apps/web/lib/draft-queue";
 import { clearAllLocalData, LOCAL_DATA_REGISTRY } from "../../apps/web/lib/local-data";
+import { LEDGER_MODE_STORAGE_KEY } from "../../apps/web/lib/ledger/ledger-mode-storage.ts";
 import { ONBOARDING_STORAGE_KEY } from "../../apps/web/lib/onboarding/onboarding-storage";
 import { STATIC_ASSET_CACHE_PREFIX, staticAssetCacheName } from "../../apps/web/lib/service-worker-cache";
 
@@ -35,6 +36,7 @@ test("registry keys match the owning modules' exported storage constants", () =>
   assert.equal(entry("assistantThreadsLegacy").key, ASSISTANT_THREADS_LEGACY_STORAGE_KEY);
   assert.equal(entry("dashboardLayout").key, DASHBOARD_LAYOUT_STORAGE_KEY);
   assert.equal(entry("onboarding").key, ONBOARDING_STORAGE_KEY);
+  assert.equal(entry("ledgerMode").key, LEDGER_MODE_STORAGE_KEY);
   assert.equal(entry("captureDraftsSession").key, DRAFT_QUEUE_SESSION_STORAGE_KEY);
   assert.equal(entry("captureDraftsDb").key, DRAFT_QUEUE_DB_NAME);
   assert.equal(entry("staticAssetCache").key, STATIC_ASSET_CACHE_PREFIX);
@@ -55,6 +57,7 @@ test("registry pins the complete disclosed list — additions/removals must be c
       "localStorage|jpx.accounting.assistantThreads.v1|exact|cleared",
       "localStorage|jpx.accounting.dashboardLayout.v1|exact|cleared",
       "localStorage|jpx.accounting.onboarding.v1|exact|cleared",
+      "localStorage|jpx.accounting.ledgerMode.v1|exact|cleared",
       "localStorage|theme|exact|kept",
       "sessionStorage|jpx-accounting-drafts:session|exact|cleared",
       "indexedDB|jpx-accounting-drafts|exact|cleared",

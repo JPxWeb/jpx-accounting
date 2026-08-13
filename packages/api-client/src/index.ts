@@ -6,40 +6,91 @@ import { z } from "zod";
 
 import type {
   AccountBalanceProjection,
+  AttachReviewEnrichmentIntentInput,
   CompanySettings,
   ComplianceAlert,
+  EnrichmentWorkItem,
   EvidenceContext,
   EvidenceCreateInput,
+  EvidencePacket,
+  ExternalReferenceProjection,
   IntegritySummary,
+  InvoiceRegisteredPayload,
   JournalEntryProjection,
+  KnowledgeQueryResult,
+  OpenInvoiceListRow,
+  PaymentAllocatedPayload,
+  PaymentHistoryListRow,
+  ProjectProjection,
+  ProjectsListRow,
+  ProposeEnrichmentWorkItemInput,
+  RegisterProjectInput,
   ReportPack,
   ReviewDecisionInput,
+  ReviewEnrichmentIntent,
   ReviewTask,
   RuntimeInfo,
   RuntimeMode,
   SieImportResult,
   SimulationRequest,
   SimulationRun,
+  SkuMovementListRow,
+  SubmitReviewProposalInput,
+  SubmitReviewProposalResult,
+  TripClosedPayload,
+  TripRegisteredPayload,
+  TripsListRow,
   UploadInit,
   UploadInitResult,
+  ValuedMovementListRow,
 } from "@jpx-accounting/contracts";
 import {
   accountBalanceProjectionSchema,
+  attachReviewEnrichmentIntentInputSchema,
+  appendVoucherTagsInputSchema,
   complianceAlertSchema,
+  enrichmentWorkItemSchema,
   evidenceContextSchema,
   evidenceCreateResultSchema,
+  evidencePacketSchema,
+  externalReferenceLinkedPayloadSchema,
+  externalReferenceProjectionSchema,
   integritySummarySchema,
+  invoiceRegisteredPayloadSchema,
   journalEntryProjectionSchema,
+  knowledgeQueryResultSchema,
+  openInvoiceListSchema,
+  paymentAllocatedPayloadSchema,
+  paymentHistoryListSchema,
+  projectProjectionSchema,
+  projectsListSchema,
+  proposeEnrichmentWorkItemInputSchema,
+  registerProjectInputSchema,
   reportPackSchema,
+  reviewEnrichmentIntentSchema,
   reviewTaskSchema,
   runtimeInfoSchema,
   sieImportResultSchema,
   simulationRunSchema,
+  skuMovementListSchema,
+  submitReviewProposalInputSchema,
+  submitReviewProposalResultSchema,
+  tripClosedPayloadSchema,
+  tripRegisteredPayloadSchema,
+  tripsListSchema,
   uploadInitResultSchema,
+  valuedMovementListSchema,
+  voucherTagsProjectionSchema,
   workspaceSnapshotSchema,
 } from "@jpx-accounting/contracts";
 import {
   buildSieExport,
+  buildOpenInvoicesList,
+  buildPaymentHistoryList,
+  buildProjectsList,
+  buildSkuMovementList,
+  buildTripsList,
+  buildValuedMovementList,
   decodeSieBuffer,
   deriveDeterministicExtraction,
   encodePc8,
@@ -47,6 +98,7 @@ import {
   parseSie,
   summarizeEventIntegrity,
   today,
+  type ApprovalGate,
 } from "@jpx-accounting/domain";
 // Demo fallback still statically constructs MemoryLedgerStore — keep off
 // `server-only` on domain/store until this path is dynamic-imported (P1).
@@ -105,6 +157,10 @@ async function parseJsonBody<T>(response: Response, schema: ZodType<T>): Promise
 const journalProjectionListSchema = z.array(journalEntryProjectionSchema);
 const accountBalanceListSchema = z.array(accountBalanceProjectionSchema);
 const complianceAlertListSchema = z.array(complianceAlertSchema);
+const linkExternalReferenceInputSchema = externalReferenceLinkedPayloadSchema.pick({
+  url: true,
+  label: true,
+});
 
 /** Serialize an optional report window into `?from=&to=` (empty when unscoped). */
 function reportRangeQuery(range?: ReportRange): string {
@@ -150,6 +206,18 @@ async function requestJson<T>(
   }
 
   return parseJsonBody(response, schema);
+}
+
+/**
+ * The offline fallback store is reached WITHOUT going through the API, so it
+ * has to translate the wire field into the server-side approval gate itself —
+ * otherwise the demo path would fail open and consume whatever intent happened
+ * to be attached. Mirrors `postReviewDecision` in `services/api/src/app.ts`.
+ */
+function toEnrichmentIntentGate(input: ReviewDecisionInput): ApprovalGate {
+  return input.enrichmentIntent?.mode === "consume"
+    ? { consumeEnrichmentIntentVersion: input.enrichmentIntent.version }
+    : {};
 }
 
 export class AccountingApiClient {
@@ -198,9 +266,117 @@ export class AccountingApiClient {
   };
 
   async getSnapshot() {
-    if (this.fallbackStore) return this.fallbackStore.getSnapshot();
+    if (this.fallbackStore) return workspaceSnapshotSchema.parse(await this.fallbackStore.getSnapshot());
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/workspace", workspaceSnapshotSchema);
+  }
+
+  async registerProject(input: RegisterProjectInput): Promise<ProjectProjection> {
+    const parsedInput = registerProjectInputSchema.parse(input);
+    if (this.fallbackStore) {
+      return projectProjectionSchema.parse(await this.fallbackStore.registerProject(parsedInput));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/projects", projectProjectionSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
+  }
+
+  async getProjectsList(): Promise<ProjectsListRow[]> {
+    if (this.fallbackStore) {
+      return projectsListSchema.parse(buildProjectsList(await this.fallbackStore.getEvents()));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/projects", projectsListSchema);
+  }
+
+  async registerInvoice(input: InvoiceRegisteredPayload): Promise<InvoiceRegisteredPayload> {
+    const parsedInput = invoiceRegisteredPayloadSchema.parse(input);
+    if (this.fallbackStore) {
+      return invoiceRegisteredPayloadSchema.parse(await this.fallbackStore.registerInvoice(parsedInput));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/invoices", invoiceRegisteredPayloadSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
+  }
+
+  async allocatePayment(input: PaymentAllocatedPayload): Promise<PaymentAllocatedPayload> {
+    const parsedInput = paymentAllocatedPayloadSchema.parse(input);
+    if (this.fallbackStore) {
+      return paymentAllocatedPayloadSchema.parse(await this.fallbackStore.allocatePayment(parsedInput));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/payments/allocations", paymentAllocatedPayloadSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
+  }
+
+  async getOpenInvoicesList(): Promise<OpenInvoiceListRow[]> {
+    if (this.fallbackStore) {
+      return openInvoiceListSchema.parse(buildOpenInvoicesList(await this.fallbackStore.getEvents()));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/open-invoices", openInvoiceListSchema);
+  }
+
+  async getPaymentHistoryList(): Promise<PaymentHistoryListRow[]> {
+    if (this.fallbackStore) {
+      return paymentHistoryListSchema.parse(buildPaymentHistoryList(await this.fallbackStore.getEvents()));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/payment-history", paymentHistoryListSchema);
+  }
+
+  async getSkuMovementsList(): Promise<SkuMovementListRow[]> {
+    if (this.fallbackStore) {
+      return skuMovementListSchema.parse(buildSkuMovementList(await this.fallbackStore.getEvents()));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/sku-movements", skuMovementListSchema);
+  }
+
+  async getValuedMovementsList(): Promise<ValuedMovementListRow[]> {
+    if (this.fallbackStore) {
+      return valuedMovementListSchema.parse(buildValuedMovementList(await this.fallbackStore.getEvents()));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/valued-movements", valuedMovementListSchema);
+  }
+
+  async registerTrip(input: TripRegisteredPayload): Promise<TripRegisteredPayload> {
+    const parsedInput = tripRegisteredPayloadSchema.parse(input);
+    if (this.fallbackStore) {
+      return tripRegisteredPayloadSchema.parse(await this.fallbackStore.registerTrip(parsedInput));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/trips", tripRegisteredPayloadSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
+  }
+
+  async closeTrip(input: TripClosedPayload): Promise<TripClosedPayload> {
+    const parsedInput = tripClosedPayloadSchema.parse(input);
+    if (this.fallbackStore) {
+      return tripClosedPayloadSchema.parse(await this.fallbackStore.closeTrip(parsedInput));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/trips/close", tripClosedPayloadSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
+  }
+
+  async getTripsList(): Promise<TripsListRow[]> {
+    if (this.fallbackStore) {
+      return tripsListSchema.parse(buildTripsList(await this.fallbackStore.getEvents()));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/lists/trips", tripsListSchema);
   }
 
   /**
@@ -256,12 +432,184 @@ export class AccountingApiClient {
     });
   }
 
+  async composeEvidence(input: {
+    evidenceIds: string[];
+    note?: string;
+    voiceTranscript?: string;
+  }): Promise<EvidencePacket> {
+    if (this.fallbackStore) return this.fallbackStore.composeEvidence(input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/evidence/compose", evidencePacketSchema, {
+      method: "POST",
+      json: input,
+    });
+  }
+
+  async proposeEnrichmentWorkItem(input: ProposeEnrichmentWorkItemInput): Promise<EnrichmentWorkItem> {
+    // Parse at the client boundary so unknown fields such as a runtime
+    // `actorId` are stripped in both HTTP and offline-demo modes.
+    const parsedInput = proposeEnrichmentWorkItemInputSchema.parse(input);
+    if (this.fallbackStore) return this.fallbackStore.proposeEnrichmentWorkItem(parsedInput);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/enrichment-work-items", enrichmentWorkItemSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
+  }
+
+  async getEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem | undefined> {
+    if (this.fallbackStore) return this.fallbackStore.getEnrichmentWorkItem(id);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const response = await this.authorizedFetch(`${this.baseUrl}/api/enrichment-work-items/${encodeURIComponent(id)}`, {
+      headers: { accept: "application/json" },
+    });
+    if (response.status === 404) return undefined;
+    if (!response.ok) {
+      throw new AccountingApiError(response.status, `getEnrichmentWorkItem failed: ${response.status}`);
+    }
+    return parseJsonBody(response, enrichmentWorkItemSchema);
+  }
+
+  async attachReviewEnrichmentIntent(input: AttachReviewEnrichmentIntentInput): Promise<ReviewEnrichmentIntent> {
+    const parsedInput = attachReviewEnrichmentIntentInputSchema.parse(input);
+    if (this.fallbackStore) return this.fallbackStore.attachReviewEnrichmentIntent(parsedInput);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/reviews/${encodeURIComponent(parsedInput.reviewId)}/enrichment-intents`,
+      reviewEnrichmentIntentSchema,
+      { method: "POST", json: parsedInput },
+    );
+  }
+
+  async getReviewEnrichmentIntent(reviewId: string): Promise<ReviewEnrichmentIntent | undefined> {
+    if (this.fallbackStore) return this.fallbackStore.getReviewEnrichmentIntent(reviewId);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    const response = await this.authorizedFetch(
+      `${this.baseUrl}/api/reviews/${encodeURIComponent(reviewId)}/enrichment-intents`,
+      { headers: { accept: "application/json" } },
+    );
+    if (response.status === 404) return undefined;
+    if (!response.ok) {
+      throw new AccountingApiError(response.status, `getReviewEnrichmentIntent failed: ${response.status}`);
+    }
+    return parseJsonBody(response, reviewEnrichmentIntentSchema);
+  }
+
+  async submitReviewProposal(input: SubmitReviewProposalInput): Promise<SubmitReviewProposalResult> {
+    const parsedInput = submitReviewProposalInputSchema.parse(input);
+    if (this.fallbackStore) {
+      const review = await this.fallbackStore.findReviewByVoucher(parsedInput.voucherId);
+      if (!review || review.id !== parsedInput.reviewId || review.status !== "needs-review") {
+        throw new AccountingApiError(review ? 409 : 404, review ? "Review must remain open." : "Review not found.");
+      }
+      const intent = await this.fallbackStore.attachReviewEnrichmentIntent({
+        reviewId: parsedInput.reviewId,
+        proposals: parsedInput.proposals,
+      });
+      return submitReviewProposalResultSchema.parse({
+        reviewId: parsedInput.reviewId,
+        deepLink: `/today?view=queue&review=${encodeURIComponent(parsedInput.reviewId)}`,
+        status: "pending_review",
+        intentVersion: intent.version,
+      });
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/review-proposals", submitReviewProposalResultSchema, {
+      method: "POST",
+      json: parsedInput,
+    });
+  }
+
+  async getReviewFeed(): Promise<ReviewTask[]> {
+    if (this.fallbackStore) return this.fallbackStore.getReviewFeed();
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/reviews/feed", z.array(reviewTaskSchema));
+  }
+
+  async confirmEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem> {
+    if (this.fallbackStore) return this.fallbackStore.confirmEnrichmentWorkItem(id, {});
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/enrichment-work-items/${encodeURIComponent(id)}/confirm`,
+      enrichmentWorkItemSchema,
+      { method: "POST" },
+    );
+  }
+
+  async rejectEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem> {
+    if (this.fallbackStore) return this.fallbackStore.rejectEnrichmentWorkItem(id, {});
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/enrichment-work-items/${encodeURIComponent(id)}/reject`,
+      enrichmentWorkItemSchema,
+      { method: "POST" },
+    );
+  }
+
+  async linkVoucherExternalReference(
+    voucherId: string,
+    input: { url: string; label?: string },
+  ): Promise<ExternalReferenceProjection> {
+    const parsedInput = linkExternalReferenceInputSchema.parse(input);
+    const storeInput = {
+      url: parsedInput.url,
+      ...(parsedInput.label !== undefined ? { label: parsedInput.label } : {}),
+    };
+    if (this.fallbackStore) return this.fallbackStore.appendVoucherExternalReference(voucherId, storeInput);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/vouchers/${encodeURIComponent(voucherId)}/external-references`,
+      externalReferenceProjectionSchema,
+      { method: "POST", json: parsedInput },
+    );
+  }
+
+  async unlinkVoucherExternalReference(voucherId: string, refId: string): Promise<ExternalReferenceProjection> {
+    if (this.fallbackStore) return this.fallbackStore.removeVoucherExternalReference(voucherId, refId, {});
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/vouchers/${encodeURIComponent(voucherId)}/external-references/${encodeURIComponent(refId)}/unlink`,
+      externalReferenceProjectionSchema,
+      { method: "POST" },
+    );
+  }
+
+  async appendVoucherTags(voucherId: string, input: { tagIds: string[]; mode: "add" | "remove" }) {
+    const parsedInput = appendVoucherTagsInputSchema.parse(input);
+    if (this.fallbackStore) {
+      return voucherTagsProjectionSchema.parse(await this.fallbackStore.appendVoucherTags(voucherId, parsedInput));
+    }
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(
+      this.authorizedFetch,
+      this.baseUrl,
+      `/api/vouchers/${encodeURIComponent(voucherId)}/tags`,
+      voucherTagsProjectionSchema,
+      { method: "POST", json: parsedInput },
+    );
+  }
+
   // Review decisions carry no actor (WS-C R5): attribution is derived
   // server-side from the verified JWT subject, or the demo sentinel — both in
   // the API and in the offline fallback store. `input` defaults to `{}` since
   // notes/edited are the only remaining fields and most decisions send neither.
   async approveReview(reviewId: string, input: ReviewDecisionInput = {}): Promise<ReviewTask | undefined> {
-    if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "approve", input);
+    if (this.fallbackStore) {
+      return this.fallbackStore.applyReviewDecision(reviewId, "approve", {
+        ...input,
+        ...toEnrichmentIntentGate(input),
+      });
+    }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, `/api/reviews/${reviewId}/approve`, reviewTaskSchema, {
       method: "POST",
@@ -270,7 +618,12 @@ export class AccountingApiClient {
   }
 
   async rejectReview(reviewId: string, input: ReviewDecisionInput = {}): Promise<ReviewTask | undefined> {
-    if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "reject", input);
+    if (this.fallbackStore) {
+      return this.fallbackStore.applyReviewDecision(reviewId, "reject", {
+        ...input,
+        ...toEnrichmentIntentGate(input),
+      });
+    }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, `/api/reviews/${reviewId}/reject`, reviewTaskSchema, {
       method: "POST",
@@ -279,7 +632,12 @@ export class AccountingApiClient {
   }
 
   async bookWithoutVatReview(reviewId: string, input: ReviewDecisionInput = {}): Promise<ReviewTask | undefined> {
-    if (this.fallbackStore) return this.fallbackStore.applyReviewDecision(reviewId, "book-without-vat", input);
+    if (this.fallbackStore) {
+      return this.fallbackStore.applyReviewDecision(reviewId, "book-without-vat", {
+        ...input,
+        ...toEnrichmentIntentGate(input),
+      });
+    }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(
       this.authorizedFetch,
@@ -472,6 +830,14 @@ export class AccountingApiClient {
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/integrity", integritySummarySchema);
+  }
+
+  async queryKnowledge(query: string): Promise<KnowledgeQueryResult> {
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/knowledge/query", knowledgeQueryResultSchema, {
+      method: "POST",
+      json: { query },
+    });
   }
 
   /**

@@ -4008,6 +4008,12 @@ Depends on Wave 5 foundation; **merge after Wave 6a**. Distinct from soft tags â
 - lists: `GET /api/lists/open-invoices`, `GET /api/lists/payment-history`
 - client: `getOpenInvoicesList()`, `getPaymentHistoryList()`
 
+**Known Wave 6b limitation:** the shared posting builder still credits the bank
+account at invoice approval, while the invoice projection remains open until a
+`PaymentAllocated` event. A true AR/AP posting shape (1510/2440 with the bank
+leg deferred to payment allocation) is outside this wave; the Books list must
+not be presented as balance-sheet reconciliation until that follow-up lands.
+
 ### Task 6b.1: Contracts â€” invoice/payment registry events + payloads
 
 **Files:**

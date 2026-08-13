@@ -337,6 +337,11 @@ export async function executeReviewApproval(
   }
 
   try {
+    await store.attachReviewEnrichmentIntent({
+      reviewId: proposal.reviewId,
+      proposals: [{ kind: "noop" }],
+      actorId,
+    });
     const review = await store.applyReviewDecision(proposal.reviewId, "approve", {
       actorId,
       notes: ADVISOR_APPROVAL_NOTES,

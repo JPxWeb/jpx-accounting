@@ -5,6 +5,16 @@ import test from "node:test";
 import { createAdvisorChatHandler, type AdvisorChatHandlerOptions } from "../../services/api/src/advisor/chat";
 import { createApp } from "../../services/api/src/app";
 import { createApiRuntimeDependencies } from "../../services/api/src/runtime";
+import {
+  EnrichmentProposalMultiplicityError,
+  InventoryMovementLineNotFoundError,
+  InvoiceRegistrationAmountError,
+  InvoiceRegistrationLineNotFoundError,
+  TripEvidenceNotInPacketError,
+  TripEnrichmentTripNotFoundError,
+  TripLineAlreadyAssignedError,
+  TripRegistrationLineNotFoundError,
+} from "@jpx-accounting/domain";
 import { MemoryLedgerStore, type LedgerStore } from "@jpx-accounting/domain/store";
 
 type TestAppOverrides = {
@@ -30,6 +40,12 @@ function createTestApiApp(runtimeMode: "demo" | "normal", overrides: TestAppOver
     azureDocumentIntelligence: {},
     auth: { jwksUrl: overrides.jwksUrl },
     advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
+    mcp: {
+      allowedHosts: ["localhost"],
+      resourceUrl: "http://localhost/api/mcp",
+      authorizationServers: [],
+      sessionTtlMs: 60_000,
+    },
   });
 
   return createApp({
@@ -92,6 +108,110 @@ test("createApiRuntimeDependencies exposes closeDatabase in both modes", () => {
 
   const normal = createApiRuntimeDependencies({ ...baseConfig, runtimeMode: "normal" });
   assert.equal(typeof normal.closeDatabase, "function");
+});
+
+test("vertical pre-post planner failures return typed 422 codes", async () => {
+  const cases = [
+    [new InvoiceRegistrationLineNotFoundError(), "invoice_registration_line_not_found"],
+    [new InvoiceRegistrationAmountError("voucher_1"), "invoice_registration_amount_invalid"],
+    [new InventoryMovementLineNotFoundError(), "inventory_movement_line_not_found"],
+    [new TripRegistrationLineNotFoundError(), "trip_registration_line_not_found"],
+    [new TripEvidenceNotInPacketError("evidence_1"), "trip_evidence_not_in_packet"],
+    [new TripEnrichmentTripNotFoundError("trip_missing"), "trip_enrichment_trip_not_found"],
+    [new TripLineAlreadyAssignedError("ln_1", "trip_a"), "trip_line_already_assigned"],
+    [new EnrichmentProposalMultiplicityError("invoice_registration"), "enrichment_proposal_multiplicity_invalid"],
+  ] as const;
+
+  for (const [error, code] of cases) {
+    const store = new MemoryLedgerStore();
+    store.applyReviewDecision = async () => {
+      throw error;
+    };
+    const response = await createTestApiApp("demo", { store }).request(
+      "http://localhost/api/reviews/review_1/approve",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      },
+    );
+    assert.equal(response.status, 422);
+    assert.equal((await response.json()).code, code);
+  }
+});
+
+test("plain API approval atomically clears an unseen pre-post intent", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await store.createEvidence({
+    title: "Unseen intent",
+    originalFilename: "unseen-intent.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await store.attachReviewEnrichmentIntent({
+    reviewId: created.review.id,
+    proposals: [
+      {
+        kind: "invoice_registration",
+        direction: "ap",
+        counterparty: "Unseen supplier",
+        dueDate: "2026-09-01",
+      },
+    ],
+  });
+
+  const response = await createTestApiApp("demo", { store }).request(
+    `http://localhost/api/reviews/${created.review.id}/approve`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    },
+  );
+  assert.equal(response.status, 200);
+  const events = await store.getEvents();
+  assert.equal(events.filter((event) => event.eventType === "PostedToLedger").length, 1);
+  assert.equal(events.filter((event) => event.eventType === "InvoiceRegistered").length, 0);
+  assert.equal(await store.getReviewEnrichmentIntent(created.review.id), undefined);
+});
+
+test("approve-with-edits clears unseen intent unless consumption is explicit", async () => {
+  const store = new MemoryLedgerStore();
+  const created = await store.createEvidence({
+    title: "Unseen edited intent",
+    originalFilename: "unseen-edited-intent.pdf",
+    mimeType: "application/pdf",
+    modalities: ["upload"],
+  });
+  await store.attachReviewEnrichmentIntent({
+    reviewId: created.review.id,
+    proposals: [
+      {
+        kind: "invoice_registration",
+        direction: "ap",
+        counterparty: "Unseen supplier",
+        dueDate: "2026-09-01",
+      },
+    ],
+  });
+
+  const response = await createTestApiApp("demo", { store }).request(
+    `http://localhost/api/reviews/${created.review.id}/approve`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        edited: {
+          accountNumber: "6540",
+          vatCode: "VAT25",
+        },
+      }),
+    },
+  );
+  assert.equal(response.status, 200);
+  const events = await store.getEvents();
+  assert.equal(events.filter((event) => event.eventType === "PostedToLedger").length, 1);
+  assert.equal(events.filter((event) => event.eventType === "InvoiceRegistered").length, 0);
 });
 
 test("demo runtime exposes the seeded workspace", async () => {
@@ -619,4 +739,36 @@ test("normal mode rejects wrong-secret forged tool approval before executeReview
 
   const after = await store.getSnapshot();
   assert.equal(after.reviews.find((item) => item.id === reviewId)?.status, "needs-review");
+});
+
+test("demo POST /mcp is removed; POST /api/mcp exists", async () => {
+  const app = createTestApiApp("demo");
+  const legacy = await app.request("http://localhost/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(legacy.status, 404);
+
+  const current = await app.request("http://localhost/api/mcp", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      origin: "http://localhost:3002",
+      host: "localhost",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "test", version: "1.0.0" },
+      },
+    }),
+  });
+  assert.equal(current.status, 200);
+  assert.ok(current.headers.get("Mcp-Session-Id"));
 });

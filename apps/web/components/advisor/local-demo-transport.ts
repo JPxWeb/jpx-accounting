@@ -200,6 +200,10 @@ async function buildTurnParts(messages: AdvisorUIMessage[]): Promise<DemoTurnPar
       const rejection = rejectReviewProposal(snapshot, approvalResponse.proposal);
       if (!rejection) {
         // No actorId (WS-C R5): the fallback store attributes to the demo sentinel.
+        await apiClient.attachReviewEnrichmentIntent({
+          reviewId: approvalResponse.proposal.reviewId,
+          proposals: [{ kind: "noop" }],
+        });
         const review = await apiClient.approveReview(approvalResponse.proposal.reviewId, {
           notes: ADVISOR_APPROVAL_NOTES,
           edited: approvalResponse.proposal.edited,

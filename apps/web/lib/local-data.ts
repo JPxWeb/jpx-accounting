@@ -70,6 +70,14 @@ export const LOCAL_DATA_REGISTRY: readonly LocalDataEntry[] = [
     sources: ["apps/web/lib/onboarding/onboarding-storage.ts"],
   },
   {
+    id: "ledgerMode",
+    storage: "localStorage",
+    key: "jpx.accounting.ledgerMode.v1",
+    match: "exact",
+    clearedOnSignOut: true,
+    sources: ["apps/web/lib/ledger/ledger-mode-storage.ts"],
+  },
+  {
     // next-themes' default storage key — apps/web/app/layout.tsx mounts
     // ThemeProvider without a custom storageKey (pinned by the registry test).
     id: "theme",

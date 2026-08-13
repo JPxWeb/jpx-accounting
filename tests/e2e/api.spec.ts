@@ -8,7 +8,7 @@ test.beforeEach(async ({ request }) => {
   await resetApiState(request);
 });
 
-test("workspace, reporting, export, compliance, and MCP endpoints respond", async ({ request }) => {
+test("workspace, reporting, export, compliance, and guarded MCP endpoints respond", async ({ request }) => {
   const health = await request.get(`${apiBaseUrl}/health`);
   expect(health.ok()).toBeTruthy();
   expect((await health.json()).ok).toBe(true);
@@ -40,13 +40,31 @@ test("workspace, reporting, export, compliance, and MCP endpoints respond", asyn
   expect(exportResponse.ok()).toBeTruthy();
   expect(await exportResponse.text()).toContain('#PROGRAM "JPX Accounting" "0.1.0"');
 
-  const mcp = await request.post(`${apiBaseUrl}/mcp`, {
-    data: { tool: "query_reports" },
+  const legacyMcp = await request.post(`${apiBaseUrl}/mcp`, {
+    data: {},
+  });
+  expect(legacyMcp.status()).toBe(404);
+
+  const mcp = await request.post(`${apiBaseUrl}/api/mcp`, {
+    headers: {
+      accept: "application/json, text/event-stream",
+      "content-type": "application/json",
+      host: "localhost:3201",
+      origin: "http://localhost:3002",
+    },
+    data: {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "playwright", version: "1.0.0" },
+      },
+    },
   });
   expect(mcp.ok()).toBeTruthy();
-  expect(await mcp.json()).toMatchObject({
-    server: "jpx-accounting",
-  });
+  expect(mcp.headers()["mcp-session-id"]).toBeTruthy();
 });
 
 test("evidence, extraction, suggestion, and review endpoints stay coherent and idempotent", async ({ request }) => {

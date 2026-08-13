@@ -1,6 +1,7 @@
 import type {
   AccountingMethod,
   AccountingSuggestion,
+  AttachReviewEnrichmentIntentInput,
   CloseRun,
   CompanySettings,
   ComplianceAlert,
@@ -11,16 +12,27 @@ import type {
   EvidenceModality,
   EvidenceObject,
   EvidencePacket,
+  EnrichmentProposal,
+  EnrichmentWorkItem,
+  ExternalReferenceProjection,
   ExtractedField,
   ExtractionResult,
   LedgerEvent,
+  InvoiceRegisteredPayload,
+  PaymentAllocatedPayload,
+  ProposeEnrichmentWorkItemInput,
+  ProjectProjection,
+  RegisterProjectInput,
   ReportBundle,
   ReportPack,
+  ReviewEnrichmentIntent,
   ReviewDecisionInput,
   ReviewTask,
   SieImportResult,
   SimulationRequest,
   SimulationRun,
+  TripClosedPayload,
+  TripRegisteredPayload,
   Voucher,
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
@@ -28,34 +40,64 @@ import { companySettingsSchema } from "@jpx-accounting/contracts";
 
 import {
   AUTO_DETECTED_ALERT_KINDS,
+  assertEnrichmentTargetPosted,
+  assertPrePostEnrichmentIntentSupported,
   buildBalances,
   buildDeterministicSuggestion,
   buildEventHash,
+  buildExternalReferencesFromEvents,
+  buildVoucherTagsFromEvents,
   buildJournal,
+  buildInvoiceRegistryFromEvents,
+  buildProjectRegistryFromEvents,
   buildReportPack,
   buildVat,
   collectLedgerLinesFromEvents,
+  collectPostedEnrichmentTargets,
   createId,
   currentMonthToken,
   DEMO_ACTOR_ID,
   detectComplianceIssues,
+  EnrichmentIntentClosedError,
   evaluateVoucherRules,
+  ExternalReferenceNotFoundError,
+  findPaymentAllocation,
+  findTripRegistration,
   filterLedgerLines,
+  findActiveExternalReference,
   LINE_CARRYING_EVENT_TYPES,
+  InvoiceAllocationCurrencyError,
+  InvoiceNotFoundError,
+  isTripClosed,
   nowIso,
   planComplianceMerge,
   planEvidenceCreate,
+  planExternalReferenceLink,
+  planExternalReferenceRemoval,
   planExtractionRefresh,
+  mergePrePostEnrichmentsIntoReviewDecisionPlan,
+  planPrePostEnrichment,
+  planPostPostEnrichmentConfirm,
   planReviewDecision,
+  planVoucherTagsAppend,
+  resolveConsumableIntentProposals,
   simulateApprovals,
   today,
+  TripNotFoundError,
   type ActorAttribution,
   type ApprovalGate,
+  type ExternalReferenceEvent,
   type LedgerLine,
+  type LineEnrichmentEvent,
   type ReviewAction,
+  type TagDefinition,
+  type VoucherTagEvent,
+  type VoucherTagsProjection,
 } from "@jpx-accounting/domain";
 import {
   isDuplicateEvidence,
+  EnrichmentWorkItemConflictError,
+  EnrichmentWorkItemNotFoundError,
   planSieImport,
   ReviewNotFoundError,
   type LedgerStore,
@@ -219,6 +261,33 @@ type EventRow = {
   created_at: Date | string;
 };
 
+type EnrichmentWorkItemRow = {
+  id: string;
+  organization_id: string;
+  workspace_id: string;
+  target_kind: string;
+  target_id: string;
+  proposed_change: EnrichmentWorkItem["proposedChange"];
+  status: string;
+  source: string;
+  idempotency_key: string;
+  created_at: Date | string;
+  created_by: string;
+  confirmed_at: Date | string | null;
+  confirmed_by: string | null;
+  resulting_event_ids: string[] | null;
+  superseded_by_work_item_id: string | null;
+};
+
+type ReviewEnrichmentIntentRow = {
+  review_id: string;
+  voucher_id: string;
+  proposals: ReviewEnrichmentIntent["proposals"];
+  version: string;
+  updated_at: Date | string;
+  updated_by: string;
+};
+
 function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
 }
@@ -304,6 +373,136 @@ function rowToEvent(row: EventRow): LedgerEvent {
     eventHash: row.event_hash,
     digestDate: toDateOnlyIso(row.digest_date),
   };
+}
+
+function rowToEnrichmentWorkItem(row: EnrichmentWorkItemRow): EnrichmentWorkItem {
+  const workItem: EnrichmentWorkItem = {
+    id: row.id,
+    organizationId: row.organization_id,
+    workspaceId: row.workspace_id,
+    targetKind: row.target_kind as EnrichmentWorkItem["targetKind"],
+    targetId: row.target_id,
+    proposedChange: row.proposed_change,
+    status: row.status as EnrichmentWorkItem["status"],
+    source: row.source as EnrichmentWorkItem["source"],
+    idempotencyKey: row.idempotency_key,
+    createdAt: toIso(row.created_at),
+    createdBy: row.created_by,
+  };
+  if (row.confirmed_at !== null) workItem.confirmedAt = toIso(row.confirmed_at);
+  if (row.confirmed_by !== null) workItem.confirmedBy = row.confirmed_by;
+  if (row.resulting_event_ids !== null) workItem.resultingEventIds = row.resulting_event_ids;
+  if (row.superseded_by_work_item_id !== null) {
+    workItem.supersededByWorkItemId = row.superseded_by_work_item_id;
+  }
+  return workItem;
+}
+
+function rowToReviewEnrichmentIntent(row: ReviewEnrichmentIntentRow): ReviewEnrichmentIntent {
+  return {
+    reviewId: row.review_id,
+    voucherId: row.voucher_id,
+    proposals: structuredClone(row.proposals),
+    version: row.version,
+    updatedAt: toIso(row.updated_at),
+    updatedBy: row.updated_by,
+  };
+}
+
+type PostedEnrichmentTargetRow = {
+  id: string;
+  aggregate_id: string;
+  event_type: LedgerEvent["eventType"];
+  payload: Record<string, unknown>;
+};
+
+async function loadPostedEnrichmentTargets(
+  runner: PostgresClient,
+  scope: { organizationId: string; workspaceId: string },
+) {
+  const rows = await runner<PostedEnrichmentTargetRow[]>`
+    SELECT id, aggregate_id, event_type, payload
+    FROM ledger.events
+    WHERE organization_id = ${scope.organizationId}
+      AND workspace_id = ${scope.workspaceId}
+      AND event_type IN ('PostedToLedger', 'VoucherImported')
+    ORDER BY seq ASC
+  `;
+  return collectPostedEnrichmentTargets(
+    rows.map((row) => ({
+      id: row.id,
+      aggregateId: row.aggregate_id,
+      eventType: row.event_type,
+      payload: row.payload,
+    })),
+  );
+}
+
+async function loadExternalReferenceEvents(
+  runner: PostgresClient,
+  scope: { organizationId: string; workspaceId: string },
+  voucherId: string,
+): Promise<ExternalReferenceEvent[]> {
+  const rows = await runner<EventRow[]>`
+    SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+           actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+    FROM ledger.events
+    WHERE organization_id = ${scope.organizationId}
+      AND workspace_id = ${scope.workspaceId}
+      AND aggregate_id = ${voucherId}
+      AND event_type IN ('ExternalReferenceLinked', 'ExternalReferenceRemoved')
+    ORDER BY seq ASC
+  `;
+  return rows.map(rowToEvent);
+}
+
+async function loadVoucherTagEvents(
+  runner: PostgresClient,
+  scope: { organizationId: string; workspaceId: string },
+  voucherId: string,
+): Promise<VoucherTagEvent[]> {
+  const rows = await runner<EventRow[]>`
+    SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+           actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+    FROM ledger.events
+    WHERE organization_id = ${scope.organizationId}
+      AND workspace_id = ${scope.workspaceId}
+      AND aggregate_id = ${voucherId}
+      AND event_type IN ('VoucherTagsAdded', 'VoucherTagsRemoved')
+    ORDER BY seq ASC
+  `;
+  return rows.map(rowToEvent);
+}
+
+async function loadLineEnrichmentEvents(
+  runner: PostgresClient,
+  scope: { organizationId: string; workspaceId: string },
+  lineId: string,
+): Promise<LineEnrichmentEvent[]> {
+  const rows = await runner<EventRow[]>`
+    SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+           actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+    FROM ledger.events
+    WHERE organization_id = ${scope.organizationId}
+      AND workspace_id = ${scope.workspaceId}
+      AND aggregate_id = ${lineId}
+      AND event_type IN ('LineEnrichmentRecorded', 'LineEnrichmentSuperseded')
+    ORDER BY seq ASC
+  `;
+  return rows.map(rowToEvent);
+}
+
+async function loadTagDefinitions(
+  runner: PostgresClient,
+  scope: { organizationId: string; workspaceId: string },
+): Promise<TagDefinition[]> {
+  return runner<TagDefinition[]>`
+    SELECT id, name, color
+    FROM ledger.tag_definitions
+    WHERE organization_id = ${scope.organizationId}
+      AND workspace_id = ${scope.workspaceId}
+    ORDER BY id ASC
+  `;
 }
 
 type ComplianceAlertRow = {
@@ -1132,8 +1331,8 @@ export class PostgresLedgerStore implements LedgerStore {
    * and `getReportPack` so the two read paths can never diverge.
    */
   private async collectLedgerLines(): Promise<LedgerLine[]> {
-    const rows = await this.client<{ event_type: string; payload: Record<string, unknown> }[]>`
-      SELECT event_type, payload
+    const rows = await this.client<{ id: string; event_type: string; payload: Record<string, unknown> }[]>`
+      SELECT id, event_type, payload
       FROM ledger.events
       WHERE event_type = ANY(${[...LINE_CARRYING_EVENT_TYPES]})
         AND organization_id = ${this.defaults.organizationId}
@@ -1143,6 +1342,7 @@ export class PostgresLedgerStore implements LedgerStore {
 
     return collectLedgerLinesFromEvents(
       rows.map((r) => ({
+        id: r.id,
         eventType: r.event_type as LedgerEvent["eventType"],
         payload: r.payload,
       })),
@@ -1202,7 +1402,7 @@ export class PostgresLedgerStore implements LedgerStore {
       ORDER BY p.created_at ASC
     `;
 
-    const [reviews, reports, closeRun, alertRows] = await Promise.all([
+    const [reviews, reports, closeRun, alertRows, events] = await Promise.all([
       this.getReviewFeed(),
       this.getReports(),
       this.getCloseRun(),
@@ -1214,6 +1414,7 @@ export class PostgresLedgerStore implements LedgerStore {
           AND workspace_id = ${this.defaults.workspaceId}
         ORDER BY detected_at DESC
       `,
+      this.getEvents(),
     ]);
 
     return {
@@ -1227,6 +1428,8 @@ export class PostgresLedgerStore implements LedgerStore {
       closeRun,
       alerts: alertRows.map(rowToComplianceAlert),
       packets: packetRows.map((row) => rowToPacket(row, row.evidence_object_ids)),
+      externalReferences: buildExternalReferencesFromEvents(events),
+      voucherTags: buildVoucherTagsFromEvents(events),
     };
   }
 
@@ -1245,6 +1448,204 @@ export class PostgresLedgerStore implements LedgerStore {
       ORDER BY seq ASC
     `;
     return rows.map(rowToEvent);
+  }
+
+  async registerProject(input: RegisterProjectInput & ActorAttribution): Promise<ProjectProjection> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        const rows = await tx<EventRow[]>`
+          SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+                 actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+          FROM ledger.events
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND event_type IN ('ProjectRegistered', 'ProjectArchived')
+          ORDER BY seq ASC
+        `;
+        const existing = buildProjectRegistryFromEvents(rows.map(rowToEvent)).find(
+          (project) => project.projectId === input.projectId,
+        );
+        if (existing) return existing;
+
+        const project: ProjectProjection = {
+          projectId: input.projectId,
+          name: input.name,
+          status: "active",
+        };
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: project.projectId,
+            eventType: "ProjectRegistered",
+            actorId: input.actorId ?? DEMO_ACTOR_ID,
+            occurredAt: nowIso(),
+            payload: project,
+          },
+          tailHash,
+        );
+        return project;
+      }),
+    );
+  }
+
+  async registerInvoice(input: InvoiceRegisteredPayload & ActorAttribution): Promise<InvoiceRegisteredPayload> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        const rows = await tx<EventRow[]>`
+          SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+                 actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+          FROM ledger.events
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND event_type = 'InvoiceRegistered'
+          ORDER BY seq ASC
+        `;
+        const existing = buildInvoiceRegistryFromEvents(rows.map(rowToEvent)).find(
+          (invoice) => invoice.invoiceId === input.invoiceId,
+        );
+        if (existing) return existing;
+
+        const { actorId, ...invoice } = input;
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: invoice.invoiceId,
+            eventType: "InvoiceRegistered",
+            actorId: actorId ?? DEMO_ACTOR_ID,
+            occurredAt: nowIso(),
+            payload: invoice,
+          },
+          tailHash,
+        );
+        return invoice;
+      }),
+    );
+  }
+
+  async allocatePayment(input: PaymentAllocatedPayload & ActorAttribution): Promise<PaymentAllocatedPayload> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        const rows = await tx<EventRow[]>`
+          SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+                 actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+          FROM ledger.events
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND event_type IN ('InvoiceRegistered', 'PaymentAllocated')
+          ORDER BY seq ASC
+        `;
+        const events = rows.map(rowToEvent);
+        const existing = findPaymentAllocation(events, input.paymentId);
+        if (existing) return existing;
+        const invoice = buildInvoiceRegistryFromEvents(events).find(
+          (candidate) => candidate.invoiceId === input.invoiceId,
+        );
+        if (!invoice) throw new InvoiceNotFoundError(input.invoiceId);
+        if (invoice.currency !== input.currency) {
+          throw new InvoiceAllocationCurrencyError(input.invoiceId, invoice.currency, input.currency);
+        }
+
+        const { actorId, ...payment } = input;
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: payment.invoiceId,
+            eventType: "PaymentAllocated",
+            actorId: actorId ?? DEMO_ACTOR_ID,
+            occurredAt: nowIso(),
+            payload: payment,
+          },
+          tailHash,
+        );
+        return payment;
+      }),
+    );
+  }
+
+  async registerTrip(input: TripRegisteredPayload & ActorAttribution): Promise<TripRegisteredPayload> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        const rows = await tx<EventRow[]>`
+          SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+                 actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+          FROM ledger.events
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND event_type = 'TripRegistered'
+          ORDER BY seq ASC
+        `;
+        const existing = findTripRegistration(rows.map(rowToEvent), input.tripId);
+        if (existing) return existing;
+
+        const { actorId, ...trip } = input;
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: trip.tripId,
+            eventType: "TripRegistered",
+            actorId: actorId ?? DEMO_ACTOR_ID,
+            occurredAt: nowIso(),
+            payload: trip,
+          },
+          tailHash,
+        );
+        return trip;
+      }),
+    );
+  }
+
+  async closeTrip(input: TripClosedPayload & ActorAttribution): Promise<TripClosedPayload> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        const rows = await tx<EventRow[]>`
+          SELECT id, organization_id, workspace_id, aggregate_type, aggregate_id, event_type,
+                 actor_id, occurred_at, payload, previous_hash, event_hash, digest_date, created_at
+          FROM ledger.events
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND event_type IN ('TripRegistered', 'TripClosed')
+          ORDER BY seq ASC
+        `;
+        const events = rows.map(rowToEvent);
+        const trip = findTripRegistration(events, input.tripId);
+        if (!trip) throw new TripNotFoundError(input.tripId);
+        const closed = { tripId: trip.tripId };
+        if (isTripClosed(events, trip.tripId)) return closed;
+
+        await this.appendEvent(
+          tx,
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+            aggregateType: "ledger",
+            aggregateId: trip.tripId,
+            eventType: "TripClosed",
+            actorId: input.actorId ?? DEMO_ACTOR_ID,
+            occurredAt: nowIso(),
+            payload: closed,
+          },
+          tailHash,
+        );
+        return closed;
+      }),
+    );
   }
 
   async suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined> {
@@ -1323,8 +1724,54 @@ export class PostgresLedgerStore implements LedgerStore {
 
         // Planner validates edits (InvalidReviewEditError) before any write and
         // is re-entered on every chain-fork retry.
-        const plan = planReviewDecision(review, voucher, action, input);
-        if (plan.kind === "replay") return plan.review;
+        const basePlan = planReviewDecision(review, voucher, action, input);
+        if (basePlan.kind === "replay") return basePlan.review;
+        const intentRows = await tx<ReviewEnrichmentIntentRow[]>`
+          SELECT review_id, voucher_id, proposals, version, updated_at, updated_by
+          FROM ledger.review_enrichment_intents
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND review_id = ${reviewId}
+          LIMIT 1
+        `;
+        const intent = intentRows[0] ? rowToReviewEnrichmentIntent(intentRows[0]) : undefined;
+        // Identity-bound consume, evaluated under the workspace advisory lock
+        // and before any append: a stale/absent version aborts the transaction
+        // so a concurrently replaced intent can never be posted unseen.
+        const proposals = resolveConsumableIntentProposals<EnrichmentProposal>(
+          reviewId,
+          intent,
+          input.consumeEnrichmentIntentVersion,
+          { kind: "noop" },
+        );
+        const needsPacketEvidence = proposals.some(
+          (proposal) => proposal.kind === "trip_registration" && proposal.evidenceId !== undefined,
+        );
+        const packetEvidenceRows =
+          needsPacketEvidence && action !== "reject"
+            ? await tx<{ evidence_object_id: string }[]>`
+                SELECT evidence_object_id
+                FROM ledger.evidence_packet_items
+                WHERE evidence_packet_id = ${voucher.evidencePacketId}
+                ORDER BY evidence_object_id ASC
+              `
+            : [];
+        const plan =
+          action !== "reject"
+            ? mergePrePostEnrichmentsIntoReviewDecisionPlan(
+                basePlan,
+                planPrePostEnrichment({
+                  review,
+                  proposals,
+                  postingLines: basePlan.lines ?? [],
+                  postingVoucher: basePlan.postingVoucher,
+                  evidenceIds: packetEvidenceRows.map((row) => row.evidence_object_id),
+                  actorId: input.actorId ?? DEMO_ACTOR_ID,
+                  organizationId: voucher.organizationId,
+                  workspaceId: voucher.workspaceId,
+                }).companionEvents,
+              )
+            : basePlan;
 
         await tx`
         UPDATE ledger.review_tasks
@@ -1355,7 +1802,410 @@ export class PostgresLedgerStore implements LedgerStore {
           prev = appended.eventHash;
         }
 
+        await tx`
+          DELETE FROM ledger.review_enrichment_intents
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+            AND review_id = ${reviewId}
+        `;
+
         return plan.updatedReview;
+      }),
+    );
+  }
+
+  async attachReviewEnrichmentIntent(
+    input: AttachReviewEnrichmentIntentInput & ActorAttribution,
+  ): Promise<ReviewEnrichmentIntent> {
+    return this.client.begin(async (tx) => {
+      await this.lockWorkspaceTail(tx);
+      const reviewRows = await tx<ReviewRow[]>`
+        SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
+               suggested_action, suggestion, provenance_timeline, title, created_at
+        FROM ledger.review_tasks
+        WHERE id = ${input.reviewId}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+        LIMIT 1
+      `;
+      const reviewRow = reviewRows[0];
+      if (!reviewRow || reviewRow.status !== "needs-review") {
+        throw new EnrichmentIntentClosedError(input.reviewId);
+      }
+      const voucherRows = await tx<{ id: string; status: string }[]>`
+        SELECT id, status
+        FROM ledger.vouchers
+        WHERE id = ${reviewRow.voucher_id}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+        LIMIT 1
+      `;
+      const voucherRow = voucherRows[0];
+      if (!voucherRow || voucherRow.status !== "needs-review") {
+        throw new EnrichmentIntentClosedError(input.reviewId);
+      }
+      assertPrePostEnrichmentIntentSupported(input.proposals);
+
+      const updatedAt = nowIso();
+      const updatedBy = input.actorId ?? DEMO_ACTOR_ID;
+      // Fresh token per attach (parity with MemoryLedgerStore): the upsert
+      // replaces the row, so any consume assertion against the prior version
+      // now fails closed.
+      const version = createId("rei");
+      await tx`
+        INSERT INTO ledger.review_enrichment_intents (
+          organization_id, workspace_id, review_id, voucher_id,
+          proposals, version, updated_at, updated_by
+        ) VALUES (
+          ${this.defaults.organizationId}, ${this.defaults.workspaceId},
+          ${reviewRow.id}, ${voucherRow.id},
+          ${tx.json(input.proposals as unknown as Parameters<typeof tx.json>[0])},
+          ${version}, ${updatedAt}, ${updatedBy}
+        )
+        ON CONFLICT (organization_id, workspace_id, review_id)
+        DO UPDATE SET
+          voucher_id = EXCLUDED.voucher_id,
+          proposals = EXCLUDED.proposals,
+          version = EXCLUDED.version,
+          updated_at = EXCLUDED.updated_at,
+          updated_by = EXCLUDED.updated_by
+      `;
+      return {
+        reviewId: reviewRow.id,
+        voucherId: voucherRow.id,
+        proposals: structuredClone(input.proposals),
+        version,
+        updatedAt,
+        updatedBy,
+      };
+    });
+  }
+
+  async getReviewEnrichmentIntent(reviewId: string): Promise<ReviewEnrichmentIntent | undefined> {
+    const rows = await this.client<ReviewEnrichmentIntentRow[]>`
+      SELECT review_id, voucher_id, proposals, version, updated_at, updated_by
+      FROM ledger.review_enrichment_intents
+      WHERE organization_id = ${this.defaults.organizationId}
+        AND workspace_id = ${this.defaults.workspaceId}
+        AND review_id = ${reviewId}
+      LIMIT 1
+    `;
+    return rows[0] ? rowToReviewEnrichmentIntent(rows[0]) : undefined;
+  }
+
+  async proposeEnrichmentWorkItem(
+    input: ProposeEnrichmentWorkItemInput & ActorAttribution,
+  ): Promise<EnrichmentWorkItem> {
+    return this.client.begin(async (tx) => {
+      await this.lockWorkspaceTail(tx);
+      const existingRows = await tx<EnrichmentWorkItemRow[]>`
+        SELECT id, organization_id, workspace_id, target_kind, target_id,
+               proposed_change, status, source, idempotency_key, created_at,
+               created_by, confirmed_at, confirmed_by, resulting_event_ids,
+               superseded_by_work_item_id
+        FROM ledger.enrichment_work_items
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+          AND idempotency_key = ${input.idempotencyKey}
+        LIMIT 1
+      `;
+      const existing = existingRows[0];
+      if (existing) return rowToEnrichmentWorkItem(existing);
+
+      const postedTargets = await loadPostedEnrichmentTargets(tx, this.defaults);
+      assertEnrichmentTargetPosted(input, postedTargets);
+
+      const id = createId("ewi");
+      const createdAt = nowIso();
+      const createdBy = input.actorId ?? DEMO_ACTOR_ID;
+      await tx`
+        INSERT INTO ledger.enrichment_work_items (
+          id, organization_id, workspace_id, target_kind, target_id,
+          proposed_change, status, source, idempotency_key, created_at, created_by
+        ) VALUES (
+          ${id}, ${this.defaults.organizationId}, ${this.defaults.workspaceId},
+          ${input.targetKind}, ${input.targetId},
+          ${tx.json(input.proposedChange as unknown as Parameters<typeof tx.json>[0])},
+          'pending_confirmation', ${input.source}, ${input.idempotencyKey},
+          ${createdAt}, ${createdBy}
+        )
+        ON CONFLICT (organization_id, workspace_id, idempotency_key) DO NOTHING
+      `;
+
+      const rows = await tx<EnrichmentWorkItemRow[]>`
+        SELECT id, organization_id, workspace_id, target_kind, target_id,
+               proposed_change, status, source, idempotency_key, created_at,
+               created_by, confirmed_at, confirmed_by, resulting_event_ids,
+               superseded_by_work_item_id
+        FROM ledger.enrichment_work_items
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+          AND idempotency_key = ${input.idempotencyKey}
+        LIMIT 1
+      `;
+      const row = rows[0];
+      if (!row) throw new Error("Enrichment work item insert did not return a row");
+      return rowToEnrichmentWorkItem(row);
+    });
+  }
+
+  async getEnrichmentWorkItem(id: string): Promise<EnrichmentWorkItem | undefined> {
+    const rows = await this.client<EnrichmentWorkItemRow[]>`
+      SELECT id, organization_id, workspace_id, target_kind, target_id,
+             proposed_change, status, source, idempotency_key, created_at,
+             created_by, confirmed_at, confirmed_by, resulting_event_ids,
+             superseded_by_work_item_id
+      FROM ledger.enrichment_work_items
+      WHERE id = ${id}
+        AND organization_id = ${this.defaults.organizationId}
+        AND workspace_id = ${this.defaults.workspaceId}
+      LIMIT 1
+    `;
+    return rows[0] ? rowToEnrichmentWorkItem(rows[0]) : undefined;
+  }
+
+  async confirmEnrichmentWorkItem(id: string, input: ActorAttribution): Promise<EnrichmentWorkItem> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        const rows = await tx<EnrichmentWorkItemRow[]>`
+          SELECT id, organization_id, workspace_id, target_kind, target_id,
+                 proposed_change, status, source, idempotency_key, created_at,
+                 created_by, confirmed_at, confirmed_by, resulting_event_ids,
+                 superseded_by_work_item_id
+          FROM ledger.enrichment_work_items
+          WHERE id = ${id}
+            AND organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+          FOR UPDATE
+        `;
+        const row = rows[0];
+        if (!row) throw new EnrichmentWorkItemNotFoundError(id);
+        const workItem = rowToEnrichmentWorkItem(row);
+        if (workItem.status === "confirmed") return workItem;
+        if (workItem.status !== "pending_confirmation") {
+          throw new EnrichmentWorkItemConflictError(id, workItem.status);
+        }
+
+        const { postedVoucherIds, postedLineIds } = await loadPostedEnrichmentTargets(tx, this.defaults);
+        const actorId = input.actorId ?? DEMO_ACTOR_ID;
+        const externalReferenceEvents =
+          workItem.proposedChange.kind === "external_reference_unlink"
+            ? await loadExternalReferenceEvents(tx, this.defaults, workItem.targetId)
+            : undefined;
+        const isVoucherTagsProposal =
+          workItem.proposedChange.kind === "voucher_tags_add" || workItem.proposedChange.kind === "voucher_tags_remove";
+        const tagEvents = isVoucherTagsProposal
+          ? await loadVoucherTagEvents(tx, this.defaults, workItem.targetId)
+          : undefined;
+        const tagDefinitions = isVoucherTagsProposal ? await loadTagDefinitions(tx, this.defaults) : undefined;
+        const isTripRecord =
+          workItem.proposedChange.kind === "line_enrichment_record" &&
+          workItem.proposedChange.enrichmentType === "trip";
+        const lineEnrichmentEvents =
+          workItem.proposedChange.kind === "line_enrichment_supersede" || isTripRecord
+            ? await loadLineEnrichmentEvents(tx, this.defaults, workItem.targetId)
+            : undefined;
+        const proposedTripId =
+          workItem.proposedChange.kind === "line_enrichment_record" &&
+          workItem.proposedChange.enrichmentType === "trip" &&
+          typeof workItem.proposedChange.payload.tripId === "string"
+            ? workItem.proposedChange.payload.tripId
+            : workItem.proposedChange.kind === "line_enrichment_supersede" &&
+                workItem.proposedChange.replacement.enrichmentType === "trip" &&
+                typeof workItem.proposedChange.replacement.payload.tripId === "string"
+              ? workItem.proposedChange.replacement.payload.tripId
+              : undefined;
+        const registeredTripRows =
+          proposedTripId === undefined
+            ? []
+            : await tx<{ trip_id: string }[]>`
+                SELECT payload->>'tripId' AS trip_id
+                FROM ledger.events
+                WHERE organization_id = ${this.defaults.organizationId}
+                  AND workspace_id = ${this.defaults.workspaceId}
+                  AND event_type = 'TripRegistered'
+                  AND payload->>'tripId' = ${proposedTripId}
+                LIMIT 1
+              `;
+        const plan = planPostPostEnrichmentConfirm({
+          workItem,
+          actorId,
+          postedVoucherIds,
+          postedLineIds,
+          registeredTripIds: new Set(registeredTripRows.map((row) => row.trip_id)),
+          ...(externalReferenceEvents !== undefined ? { externalReferenceEvents } : {}),
+          ...(lineEnrichmentEvents !== undefined ? { lineEnrichmentEvents } : {}),
+          ...(tagEvents !== undefined ? { tagEvents } : {}),
+          ...(tagDefinitions !== undefined ? { tagDefinitions } : {}),
+        });
+
+        const resultingEventIds: string[] = [];
+        let previousHash = tailHash;
+        for (const event of plan.events) {
+          const appended = await this.appendEvent(
+            tx,
+            { ...event, payload: event.payload as unknown as Record<string, unknown> },
+            previousHash,
+          );
+          resultingEventIds.push(appended.id);
+          previousHash = appended.eventHash;
+        }
+
+        const confirmedAt = nowIso();
+        await tx`
+          UPDATE ledger.enrichment_work_items
+          SET status = 'confirmed',
+              confirmed_at = ${confirmedAt},
+              confirmed_by = ${actorId},
+              resulting_event_ids = ${tx.json(resultingEventIds)}
+          WHERE id = ${id}
+            AND organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+        `;
+        return {
+          ...workItem,
+          status: "confirmed",
+          confirmedAt,
+          confirmedBy: actorId,
+          resultingEventIds,
+        };
+      }),
+    );
+  }
+
+  async rejectEnrichmentWorkItem(id: string, _input: ActorAttribution): Promise<EnrichmentWorkItem> {
+    return this.client.begin(async (tx) => {
+      await this.lockWorkspaceTail(tx);
+      const rows = await tx<EnrichmentWorkItemRow[]>`
+        SELECT id, organization_id, workspace_id, target_kind, target_id,
+               proposed_change, status, source, idempotency_key, created_at,
+               created_by, confirmed_at, confirmed_by, resulting_event_ids,
+               superseded_by_work_item_id
+        FROM ledger.enrichment_work_items
+        WHERE id = ${id}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+        FOR UPDATE
+      `;
+      const row = rows[0];
+      if (!row) throw new EnrichmentWorkItemNotFoundError(id);
+      const workItem = rowToEnrichmentWorkItem(row);
+      if (workItem.status === "rejected") return workItem;
+      if (workItem.status !== "pending_confirmation") {
+        throw new EnrichmentWorkItemConflictError(id, workItem.status);
+      }
+
+      await tx`
+        UPDATE ledger.enrichment_work_items
+        SET status = 'rejected'
+        WHERE id = ${id}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+      `;
+      return { ...workItem, status: "rejected" };
+    });
+  }
+
+  async appendVoucherExternalReference(
+    voucherId: string,
+    input: { url: string; label?: string } & ActorAttribution,
+  ): Promise<ExternalReferenceProjection> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        assertEnrichmentTargetPosted(
+          { targetKind: "voucher", targetId: voucherId },
+          await loadPostedEnrichmentTargets(tx, this.defaults),
+        );
+        const plan = planExternalReferenceLink(
+          voucherId,
+          {
+            url: input.url,
+            ...(input.label !== undefined ? { label: input.label } : {}),
+            actorId: input.actorId ?? DEMO_ACTOR_ID,
+          },
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+          },
+        );
+        await this.appendEvent(tx, plan.event, tailHash);
+        return plan.reference;
+      }),
+    );
+  }
+
+  async removeVoucherExternalReference(
+    voucherId: string,
+    refId: string,
+    input: ActorAttribution,
+  ): Promise<ExternalReferenceProjection> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        assertEnrichmentTargetPosted(
+          { targetKind: "voucher", targetId: voucherId },
+          await loadPostedEnrichmentTargets(tx, this.defaults),
+        );
+        const reference = findActiveExternalReference(
+          await loadExternalReferenceEvents(tx, this.defaults, voucherId),
+          voucherId,
+          refId,
+        );
+        if (!reference) throw new ExternalReferenceNotFoundError(refId);
+        const plan = planExternalReferenceRemoval(reference, input.actorId ?? DEMO_ACTOR_ID, {
+          organizationId: this.defaults.organizationId,
+          workspaceId: this.defaults.workspaceId,
+        });
+        await this.appendEvent(tx, plan.event, tailHash);
+        return plan.reference;
+      }),
+    );
+  }
+
+  async appendVoucherTags(
+    voucherId: string,
+    input: { tagIds: string[]; mode: "add" | "remove" } & ActorAttribution,
+  ): Promise<VoucherTagsProjection> {
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+        assertEnrichmentTargetPosted(
+          { targetKind: "voucher", targetId: voucherId },
+          await loadPostedEnrichmentTargets(tx, this.defaults),
+        );
+        const tagEvents = await loadVoucherTagEvents(tx, this.defaults, voucherId);
+        const existingActiveTagIds =
+          buildVoucherTagsFromEvents(tagEvents).find((projection) => projection.voucherId === voucherId)?.tagIds ?? [];
+        const plan = planVoucherTagsAppend(
+          {
+            voucherId,
+            tagIds: input.tagIds,
+            mode: input.mode,
+            existingActiveTagIds,
+            tagDefinitions: await loadTagDefinitions(tx, this.defaults),
+            actorId: input.actorId ?? DEMO_ACTOR_ID,
+          },
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+          },
+        );
+        let previousHash = tailHash;
+        for (const event of plan.events) {
+          const appended = await this.appendEvent(
+            tx,
+            { ...event, payload: event.payload as unknown as Record<string, unknown> },
+            previousHash,
+          );
+          previousHash = appended.eventHash;
+        }
+        return (
+          buildVoucherTagsFromEvents([...tagEvents, ...plan.events]).find(
+            (projection) => projection.voucherId === voucherId,
+          ) ?? { voucherId, tagIds: [] }
+        );
       }),
     );
   }

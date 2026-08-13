@@ -1,48 +1,221 @@
 "use client";
 
+import type { ProjectsListRow } from "@jpx-accounting/contracts";
 import { useQuery } from "@tanstack/react-query";
+import { DEFAULT_TAG_DEFINITIONS } from "@jpx-accounting/domain";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
-import { parseAsString, useQueryState } from "nuqs";
+import { parseAsString, parseAsStringEnum, useQueryState } from "nuqs";
+import { useCallback, useSyncExternalStore } from "react";
+
 import { usePeriodScope } from "../../hooks/use-period-scope";
 import { apiClient } from "../../lib/client";
-import { buildVoucherLookup, VoucherLink } from "../reports/voucher-link";
-import { Money } from "../ui/money";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
+import { groupJournalByVoucher } from "../../lib/ledger/group-vouchers";
+import { loadLedgerMode, saveLedgerMode, type LedgerMode } from "../../lib/ledger/ledger-mode-storage";
+import { buildLedgerVoucherViewModel, type LedgerVoucherViewModel } from "../../lib/ledger/ledger-voucher-view-model";
+import { valuedInventoryEnabled } from "../../lib/runtime-config";
+import { buildVoucherLookup } from "../reports/voucher-link";
+import { EnrichmentConfirmShell } from "./enrichment-confirm-shell";
+import { LedgerVoucherDrawer } from "./ledger-voucher-drawer";
+import { LedgerVoucherOverview } from "./ledger-voucher-overview";
+import { OpenInvoicesPanel } from "./open-invoices-panel";
+import { PaymentHistoryPanel } from "./payment-history-panel";
+import { ProjectsListPanel } from "./projects-list-panel";
+import { SkuMovementsPanel } from "./sku-movements-panel";
+import { TripsListPanel } from "./trips-list-panel";
+import { ValuedMovementsPanel } from "./valued-movements-panel";
+
+const ledgerModes = ["inline", "drawer"] as const;
+const registryTagIds = DEFAULT_TAG_DEFINITIONS.map((definition) => definition.id);
+
+function subscribeToLedgerMode() {
+  return () => undefined;
+}
+
+function getServerLedgerMode(): LedgerMode {
+  return "inline";
+}
+
+function matchesQuery(vm: LedgerVoucherViewModel, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  if (vm.voucherNumber.toLowerCase().includes(needle)) return true;
+  if (vm.supplierName.toLowerCase().includes(needle)) return true;
+  if (
+    vm.tagIds.some((tagId) => {
+      const definition = DEFAULT_TAG_DEFINITIONS.find((tag) => tag.id === tagId);
+      return tagId.toLowerCase().includes(needle) || definition?.name.toLowerCase().includes(needle);
+    })
+  ) {
+    return true;
+  }
+  return vm.lines.some((line) => line.description.toLowerCase().includes(needle));
+}
 
 export function JournalView() {
   const t = useTranslations("books.journal");
+  const tLedger = useTranslations("books.ledger");
   const tBooks = useTranslations("books");
   const { from, to } = usePeriodScope();
   const [supplier, setSupplier] = useQueryState("supplier", parseAsString);
+  const [ledgerModeParam, setLedgerModeParam] = useQueryState("ledgerMode", parseAsStringEnum([...ledgerModes]));
+  const [voucher, setVoucher] = useQueryState("voucher", parseAsString);
+  const [q, setQ] = useQueryState("q", parseAsString);
+  const [tag, setTag] = useQueryState("tag", parseAsStringEnum(registryTagIds));
+  const [workflow] = useQueryState(
+    "workflow",
+    parseAsStringEnum(["project", "invoice", "trip", "quantity_inventory", "valued_inventory"]),
+  );
 
-  // Server-filtered (Phase 4): the journal is fetched for the resolved period
-  // window instead of slicing the snapshot client-side.
+  const storedLedgerMode = useSyncExternalStore(subscribeToLedgerMode, loadLedgerMode, getServerLedgerMode);
+  const ledgerMode = ledgerModeParam ?? storedLedgerMode;
+
   const journalQuery = useQuery({
     queryKey: ["reports", "journal", from, to],
     queryFn: () => apiClient.getJournal({ from, to }),
   });
-  // The snapshot still supplies voucher numbers and supplier names; the
-  // supplier filter stays client-side against snapshot vouchers (plan 4.5).
   const { data: workspace } = useQuery({
     queryKey: ["workspace"],
     queryFn: () => apiClient.getSnapshot(),
   });
+  const projectsQuery = useQuery({
+    queryKey: ["lists", "projects"],
+    queryFn: () => apiClient.getProjectsList(),
+    enabled: workflow === "project",
+  });
+  const openInvoicesQuery = useQuery({
+    queryKey: ["lists", "open-invoices"],
+    queryFn: () => apiClient.getOpenInvoicesList(),
+    enabled: workflow === "invoice",
+  });
+  const paymentHistoryQuery = useQuery({
+    queryKey: ["lists", "payment-history"],
+    queryFn: () => apiClient.getPaymentHistoryList(),
+    enabled: workflow === "invoice",
+  });
+  const tripsQuery = useQuery({
+    queryKey: ["lists", "trips"],
+    queryFn: () => apiClient.getTripsList(),
+    enabled: workflow === "trip",
+  });
+  const skuMovementsQuery = useQuery({
+    queryKey: ["lists", "sku-movements"],
+    queryFn: () => apiClient.getSkuMovementsList(),
+    enabled: workflow === "quantity_inventory",
+  });
+  const valuedMovementsQuery = useQuery({
+    queryKey: ["lists", "valued-movements"],
+    queryFn: () => apiClient.getValuedMovementsList(),
+    enabled: valuedInventoryEnabled && workflow === "valued_inventory",
+  });
+  const projectVoucherIds = new Set((projectsQuery.data ?? []).flatMap((project) => project.voucherIds));
 
-  // One lookup for both the supplier filter and the VoucherLink cells (Task
-  // 4.8): voucher→packet→evidence resolves from the snapshot alone.
   const lookup = buildVoucherLookup(workspace);
   const vouchersById = lookup.vouchersById;
 
   const entries = (journalQuery.data ?? []).filter((entry) => {
     if (!supplier) return true;
-    const voucher = vouchersById.get(entry.voucherId);
-    const supplierName = voucher ? (voucher.voucherFields.supplierName ?? tBooks("unknownSupplier")) : "";
+    const voucherRecord = vouchersById.get(entry.voucherId);
+    const supplierName = voucherRecord ? (voucherRecord.voucherFields.supplierName ?? tBooks("unknownSupplier")) : "";
     return supplierName.toLowerCase() === supplier.toLowerCase();
   });
 
+  const voucherViewModels = groupJournalByVoucher(entries).map((group) =>
+    buildLedgerVoucherViewModel(group, workspace, lookup, {
+      activateExternalRefs: true,
+      activateTags: true,
+      activateWorkflows: workflow === "project" && projectVoucherIds.has(group.voucherId),
+    }),
+  );
+  const workflowFilteredVoucherViewModels =
+    workflow === "project" && projectsQuery.data !== undefined
+      ? voucherViewModels.filter((viewModel) => projectVoucherIds.has(viewModel.voucherId))
+      : voucherViewModels;
+  const tagFilteredVoucherViewModels = tag
+    ? workflowFilteredVoucherViewModels.filter((viewModel) => viewModel.tagIds.includes(tag))
+    : workflowFilteredVoucherViewModels;
+  const filteredVoucherViewModels = q
+    ? tagFilteredVoucherViewModels.filter((viewModel) => matchesQuery(viewModel, q))
+    : tagFilteredVoucherViewModels;
+  const availableVoucherIds = new Set(voucherViewModels.map((viewModel) => viewModel.voucherId));
+  const visibleProjects = (projectsQuery.data ?? []).map((project) => ({
+    ...project,
+    voucherIds: project.voucherIds.filter((voucherId) => availableVoucherIds.has(voucherId)),
+  }));
+
+  const handleToggle = useCallback(
+    (voucherId: string) => {
+      void setVoucher(voucher === voucherId ? null : voucherId);
+    },
+    [setVoucher, voucher],
+  );
+
+  const handleDrawerClose = useCallback(() => {
+    void setVoucher(null);
+  }, [setVoucher]);
+
+  const handleProjectOpen = useCallback(
+    (project: ProjectsListRow) => {
+      const voucherId = project.voucherIds[0];
+      if (!voucherId) return;
+      void setQ(null);
+      void setTag(null);
+      void setVoucher(voucherId);
+    },
+    [setQ, setTag, setVoucher],
+  );
+
+  function handleModeChange(mode: LedgerMode) {
+    saveLedgerMode(mode);
+    void setLedgerModeParam(mode);
+    void setVoucher(null);
+  }
+
+  const selectedViewModel = filteredVoucherViewModels.find((vm) => vm.voucherId === voucher) ?? null;
+  const drawerOpen = ledgerMode === "drawer" && selectedViewModel !== null;
+  const hasJournalEntries = voucherViewModels.length > 0;
+
   return (
     <div className="space-y-3" data-testid="journal-view" data-tour="books-journal">
+      {workflow === "project" ? (
+        <ProjectsListPanel
+          rows={visibleProjects}
+          onOpen={handleProjectOpen}
+          loading={projectsQuery.isLoading}
+          hasError={projectsQuery.isError}
+        />
+      ) : null}
+      {workflow === "invoice" ? (
+        <div className="grid gap-3 xl:grid-cols-2">
+          <OpenInvoicesPanel
+            rows={openInvoicesQuery.data ?? []}
+            loading={openInvoicesQuery.isLoading}
+            hasError={openInvoicesQuery.isError}
+          />
+          <PaymentHistoryPanel
+            rows={paymentHistoryQuery.data ?? []}
+            loading={paymentHistoryQuery.isLoading}
+            hasError={paymentHistoryQuery.isError}
+          />
+        </div>
+      ) : null}
+      {workflow === "trip" ? (
+        <TripsListPanel rows={tripsQuery.data ?? []} loading={tripsQuery.isLoading} hasError={tripsQuery.isError} />
+      ) : null}
+      {workflow === "quantity_inventory" ? (
+        <SkuMovementsPanel
+          rows={skuMovementsQuery.data ?? []}
+          loading={skuMovementsQuery.isLoading}
+          hasError={skuMovementsQuery.isError}
+        />
+      ) : null}
+      {valuedInventoryEnabled && workflow === "valued_inventory" ? (
+        <ValuedMovementsPanel
+          rows={valuedMovementsQuery.data ?? []}
+          loading={valuedMovementsQuery.isLoading}
+          hasError={valuedMovementsQuery.isError}
+        />
+      ) : null}
       {supplier ? (
         <div className="flex items-center gap-2">
           <span
@@ -62,14 +235,76 @@ export function JournalView() {
           </span>
         </div>
       ) : null}
-      {entries.length === 0 ? (
+      {tag ? (
+        <div className="flex items-center gap-2">
+          <span
+            data-testid="tag-filter-chip"
+            className="inline-flex items-center gap-2 rounded-full bg-primary-soft px-3 py-1 text-xs font-medium text-primary"
+          >
+            {tLedger("tags.filterChip", {
+              tag: DEFAULT_TAG_DEFINITIONS.find((definition) => definition.id === tag)?.name ?? tag,
+            })}
+            <button
+              type="button"
+              aria-label={tLedger("tags.clearFilterAria")}
+              className="rounded-full leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              onClick={() => void setTag(null)}
+            >
+              ×
+            </button>
+          </span>
+        </div>
+      ) : null}
+      {hasJournalEntries ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <label className="block flex-1">
+            <span className="sr-only">{tLedger("searchPlaceholder")}</span>
+            <input
+              type="search"
+              data-testid="journal-search"
+              value={q ?? ""}
+              placeholder={tLedger("searchPlaceholder")}
+              onChange={(event) => void setQ(event.target.value || null)}
+              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            />
+          </label>
+          <div
+            role="group"
+            aria-label={tLedger("modeSwitchAria")}
+            data-testid="ledger-mode-switch"
+            className="inline-flex rounded-lg border border-border bg-surface p-1"
+          >
+            <button
+              type="button"
+              data-testid="ledger-mode-inline"
+              aria-pressed={ledgerMode === "inline"}
+              onClick={() => handleModeChange("inline")}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                ledgerMode === "inline" ? "bg-primary text-white shadow-sm" : "text-muted-foreground"
+              }`}
+            >
+              {tLedger("modeInline")}
+            </button>
+            <button
+              type="button"
+              data-testid="ledger-mode-drawer"
+              aria-pressed={ledgerMode === "drawer"}
+              onClick={() => handleModeChange("drawer")}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                ledgerMode === "drawer" ? "bg-primary text-white shadow-sm" : "text-muted-foreground"
+              }`}
+            >
+              {tLedger("modeDrawer")}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {!hasJournalEntries ? (
         supplier ? (
           <div className="glass-panel rounded-xl p-8 text-center">
             <p className="text-sm text-muted-foreground">{t("emptyForSupplier", { supplier })}</p>
           </div>
         ) : (
-          // Empty preview (Task 6.1): say what WILL appear here and link the two
-          // ways to get there — both live on /capture (quick-add + SIE import).
           <div className="glass-panel rounded-xl p-8 text-center" data-testid="journal-empty">
             <p className="text-sm font-semibold text-foreground">{t("empty")}</p>
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{t("emptyPreview")}</p>
@@ -91,45 +326,20 @@ export function JournalView() {
             </div>
           </div>
         )
-      ) : (
-        <div className="glass-panel rounded-xl p-5">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("headerDate")}</TableHead>
-                <TableHead>{t("headerVoucher")}</TableHead>
-                <TableHead>{t("headerAccount")}</TableHead>
-                <TableHead>{t("headerDescription")}</TableHead>
-                <TableHead className="text-right">{t("headerDebit")}</TableHead>
-                <TableHead className="text-right">{t("headerCredit")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entries.map((entry) => (
-                <TableRow key={`${entry.voucherId}-${entry.accountNumber}`}>
-                  {/* Demo-seed bookings are dated "now"; masked so visual baselines stay date-stable. */}
-                  <TableCell data-visual-mask>{entry.bookedAt.slice(0, 10)}</TableCell>
-                  {/* Same TEXT as before (voucherNumber ?? voucherId) — VoucherLink only
-                      adds the evidence link / imported badge around it (Task 4.8). */}
-                  <TableCell className="text-mono">
-                    <VoucherLink voucherId={entry.voucherId} lookup={lookup} />
-                  </TableCell>
-                  <TableCell>
-                    {entry.accountNumber} {entry.accountName}
-                  </TableCell>
-                  <TableCell>{entry.description}</TableCell>
-                  <TableCell className="text-right">
-                    <Money value={entry.debit} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Money value={entry.credit} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+      ) : filteredVoucherViewModels.length === 0 ? (
+        <div className="glass-panel rounded-xl p-8 text-center" data-testid="journal-search-empty">
+          <p className="text-sm text-muted-foreground">{tLedger("emptySearch")}</p>
         </div>
+      ) : (
+        <LedgerVoucherOverview
+          mode={ledgerMode}
+          vouchers={filteredVoucherViewModels}
+          expandedVoucherId={voucher}
+          onToggle={handleToggle}
+        />
       )}
+      <EnrichmentConfirmShell />
+      <LedgerVoucherDrawer open={drawerOpen} viewModel={selectedViewModel} onClose={handleDrawerClose} />
     </div>
   );
 }

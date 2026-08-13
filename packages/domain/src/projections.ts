@@ -9,6 +9,7 @@ import type { VatRegime } from "./vat/regime";
 import { swedishVatRegime } from "./vat/regime";
 
 export type LedgerLine = {
+  lineId?: string;
   voucherId: string;
   accountNumber: string;
   accountName: string;
@@ -20,6 +21,18 @@ export type LedgerLine = {
   deductible: boolean;
 };
 
+/**
+ * Projection-only legacy identity. Attached during event replay and read back
+ * by `buildJournal`; it is never part of a payload and never serialized.
+ * `collectLedgerLinesFromEvents` is the ONLY producer — the suffix must stay
+ * the event-local line index, because `collectPostedEnrichmentTargets` derives
+ * the same string from posting payloads to decide what a line enrichment may
+ * target. A second derivation keyed on the journal-wide index would hand a row
+ * the identity of a different line in the same event.
+ */
+const LEGACY_PROJECTION_LINE_ID: unique symbol = Symbol("legacyProjectionLineId");
+type ProjectableLedgerLine = LedgerLine & { [LEGACY_PROJECTION_LINE_ID]?: string };
+
 /** Event types whose payloads carry journal `lines` for report replay. */
 export const LINE_CARRYING_EVENT_TYPES = ["PostedToLedger", "VoucherImported"] as const;
 
@@ -30,13 +43,25 @@ const LINE_CARRYING_EVENT_TYPE_SET: ReadonlySet<string> = new Set(LINE_CARRYING_
  * VoucherImported). Memory prepends frozen demo seed separately; Postgres
  * does not.
  */
-export function collectLedgerLinesFromEvents(events: Array<Pick<LedgerEvent, "eventType" | "payload">>): LedgerLine[] {
+export function collectLedgerLinesFromEvents(
+  events: Array<Pick<LedgerEvent, "eventType" | "payload"> & Partial<Pick<LedgerEvent, "id">>>,
+): LedgerLine[] {
   const lines: LedgerLine[] = [];
   for (const event of events) {
     if (!LINE_CARRYING_EVENT_TYPE_SET.has(event.eventType)) continue;
     const payloadLines = (event.payload as { lines?: unknown }).lines;
     if (Array.isArray(payloadLines)) {
-      for (const line of payloadLines as LedgerLine[]) lines.push(line);
+      for (const [index, line] of (payloadLines as LedgerLine[]).entries()) {
+        if (line.lineId !== undefined || event.id === undefined) {
+          lines.push(line);
+        } else {
+          const projectableLine: ProjectableLedgerLine = {
+            ...line,
+            [LEGACY_PROJECTION_LINE_ID]: `legacy_${event.id}_${index}`,
+          };
+          lines.push(projectableLine);
+        }
+      }
     }
   }
   return lines;
@@ -58,17 +83,30 @@ export function filterLedgerLines(lines: LedgerLine[], range?: { from?: string; 
   });
 }
 
+/**
+ * ONE identity rule: `id` is the positional `journal_${n}` row key and never
+ * carries ledger identity; `lineId` is the stable line identity — the payload
+ * `ln_` id when present, otherwise the replay-supplied legacy id, otherwise
+ * absent (demo seed lines have no posting event, so they stay unenrichable).
+ */
 export function buildJournal(lines: LedgerLine[]): JournalEntryProjection[] {
-  return lines.map((line, index) => ({
-    id: `journal_${index + 1}`,
-    voucherId: line.voucherId,
-    accountNumber: line.accountNumber,
-    accountName: line.accountName,
-    description: line.description,
-    debit: line.debit,
-    credit: line.credit,
-    bookedAt: line.bookedAt,
-  }));
+  return lines.map((line, index) => {
+    const lineId = line.lineId ?? (line as ProjectableLedgerLine)[LEGACY_PROJECTION_LINE_ID];
+
+    return {
+      id: `journal_${index + 1}`,
+      ...(lineId !== undefined ? { lineId } : {}),
+      voucherId: line.voucherId,
+      accountNumber: line.accountNumber,
+      accountName: line.accountName,
+      description: line.description,
+      debit: line.debit,
+      credit: line.credit,
+      bookedAt: line.bookedAt,
+      vatCode: line.vatCode,
+      deductible: line.deductible,
+    };
+  });
 }
 
 export function buildBalances(lines: LedgerLine[]): AccountBalanceProjection[] {

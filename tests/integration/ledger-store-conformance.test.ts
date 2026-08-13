@@ -55,6 +55,29 @@ function memoryHarness(): ConformanceHarness {
   };
 }
 
+test("conformance registry includes enrichment confirmation safety", () => {
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "enrichment confirm never posts twice"));
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "pre-post enrichment single posting"));
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "line-target work item never posts"));
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "external reference append-only paths"));
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "voucher tag append-only paths"));
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "project registration is immutable"));
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "invoice and payment identity is immutable"));
+  assert.ok(
+    CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "invoice review approval registers once atomically"),
+  );
+  assert.ok(
+    CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "trip review approval registers once atomically"),
+  );
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "trip supersession guards"));
+  assert.ok(CONFORMANCE_SCENARIOS.some((scenario) => scenario.name === "trip registration and close are immutable"));
+  assert.ok(
+    CONFORMANCE_SCENARIOS.some(
+      (scenario) => scenario.name === "quantity inventory review approval records once atomically",
+    ),
+  );
+});
+
 async function withPostgresHarness(label: string, run: (h: ConformanceHarness) => Promise<void>): Promise<void> {
   const ns = requireCtx().createNamespace(label);
   const store = new PostgresLedgerStore(requireCtx().client, {
@@ -68,6 +91,17 @@ async function withPostgresHarness(label: string, run: (h: ConformanceHarness) =
       organizationId: ns.organizationId,
       workspaceId: ns.workspaceId,
       actorId: "user_conformance",
+      seedTagDefinition: async (definition) => {
+        await requireCtx().client`
+          INSERT INTO ledger.tag_definitions (
+            id, organization_id, workspace_id, name, color
+          ) VALUES (
+            ${definition.id}, ${ns.organizationId}, ${ns.workspaceId},
+            ${definition.name}, ${definition.color ?? null}
+          )
+          ON CONFLICT (organization_id, workspace_id, id) DO NOTHING
+        `;
+      },
     });
   } finally {
     await requireCtx().cleanupOrganization(ns.organizationId);
