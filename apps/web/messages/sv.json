@@ -124,6 +124,9 @@
       "closeAria": "Stäng redigeringsarket",
       "accountLabel": "Konto",
       "vatCodeLabel": "Momskod",
+      "rc25Hint": "Omvänd skattskyldighet: ange fakturans totalbelopp som netto — 25 % moms räknas fram och läggs på ovanpå. Momsen redovisas både som utgående och ingående, så betalningen påverkas inte.",
+      "settlementAccountLabel": "Motkonto (betalning)",
+      "settlementAccountHint": "Kontot som krediteras för betalningen. Standard är företagskontot.",
       "grossLabel": "Bruttobelopp",
       "netLabel": "Nettobelopp",
       "vatAmountLabel": "Momsbelopp",
@@ -134,7 +137,11 @@
       "submit": "Godkänn med ändringar",
       "submitting": "Godkänner…",
       "cancel": "Avbryt",
+      "close": "Stäng",
       "submitError": "Det redigerade godkännandet kunde inte genomföras.",
+      "manualOriginTitle": "Manuell verifikation",
+      "manualOriginDescription": "Verifikationen registrerades manuellt och kan inte redigeras här.",
+      "manualOriginNotice": "Raderna bokförs exakt som de registrerades — verifikationen godkänns eller avslås som den är. Behöver något ändras: avslå den och registrera en ny verifikation.",
       "appendOnlyNote": "Godkännandet bokför nya huvudboksrader med dina korrigeringar — ursprungligt underlag, förslag och händelsehistorik är append-only och skrivs aldrig om."
     },
     "card": {

@@ -124,6 +124,9 @@
       "closeAria": "Close the edit sheet",
       "accountLabel": "Account",
       "vatCodeLabel": "VAT code",
+      "rc25Hint": "Reverse charge: enter the invoice total as the net amount — 25% VAT is calculated and added on top. It is reported as both output and input VAT, so the payment is unaffected.",
+      "settlementAccountLabel": "Settlement account",
+      "settlementAccountHint": "The account credited for the payment. Defaults to the business bank account.",
       "grossLabel": "Gross amount",
       "netLabel": "Net amount",
       "vatAmountLabel": "VAT amount",
@@ -134,7 +137,11 @@
       "submit": "Approve with edits",
       "submitting": "Approving…",
       "cancel": "Cancel",
+      "close": "Close",
       "submitError": "The edited approval could not be completed.",
+      "manualOriginTitle": "Manual journal entry",
+      "manualOriginDescription": "This verification was entered manually and cannot be edited here.",
+      "manualOriginNotice": "The lines post exactly as they were entered — the verification is approved or rejected as-is. If something needs changing, reject it and enter a new verification.",
       "appendOnlyNote": "Approving posts new ledger lines with your corrections — the original evidence, suggestion, and event history stay append-only and are never rewritten."
     },
     "card": {

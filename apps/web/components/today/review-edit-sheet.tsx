@@ -2,7 +2,7 @@
 
 import type { ReviewDecisionEdit, ReviewTask, Voucher } from "@jpx-accounting/contracts";
 import { defaultCoaTemplate, findCoaAccount, localTodayIso } from "@jpx-accounting/domain";
-import { deriveBookedAt, isValidCalendarDay } from "@jpx-accounting/domain/store-shared";
+import { deriveBookedAt, isValidCalendarDay, round2 } from "@jpx-accounting/domain/store-shared";
 import { useMutation } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { useTranslations } from "next-intl";
@@ -14,13 +14,34 @@ import { getErrorMessage } from "../../lib/request-errors";
 import { registerGlobalTourBlocker } from "../onboarding/onboarding-shell";
 import { Button } from "../ui/button";
 
-const VAT_CODES = ["VAT25", "VAT12", "VAT6", "VAT0", "NA"] as const;
+const VAT_CODES = ["VAT25", "VAT12", "VAT6", "VAT0", "RC25", "NA"] as const;
+
+/**
+ * Settlement (credit) accounts a reviewer may pick (KFR D3). Bank is the
+ * default that `buildPostingLines` uses when the field is omitted; 2899 covers
+ * an owner out-of-pocket utlägg and 1630 a payment off the skattekonto.
+ * Role-derived where a role exists so the default always has a matching option.
+ */
+const SETTLEMENT_ACCOUNTS: readonly string[] = [
+  defaultCoaTemplate.roles.bank,
+  defaultCoaTemplate.roles.ownerSettlement,
+  "1630",
+];
+
+/** KFR D3: EU reverse charge self-assesses 25 % Swedish VAT on top of the foreign net price. */
+const RC25_RATE = 0.25;
 
 /** Mirrors the domain tolerance in `resolveReviewDecisionEdit` (net + VAT = gross ± 0.01). */
 const AMOUNT_TOLERANCE = 0.01;
 
 function toInputValue(value: number | undefined): string {
   return value === undefined ? "" : String(value);
+}
+
+/** "NNNN — name" (Task 3 ruling): 2890/2899 share a display name, so bare names are ambiguous. */
+function accountOptionLabel(accountNumber: string): string {
+  const name = findCoaAccount(defaultCoaTemplate, accountNumber)?.name;
+  return name ? `${accountNumber} — ${name}` : accountNumber;
 }
 
 /** "" → undefined (field cleared); non-numeric → NaN (invalid); otherwise the number. */
@@ -33,6 +54,21 @@ function parseAmount(raw: string): number | undefined {
 /** NaN never equals itself, so an unparsable input always counts as changed (and later invalid). */
 function amountsDiffer(parsed: number | undefined, original: number | undefined): boolean {
   return parsed !== original;
+}
+
+/**
+ * RC25 amount derivation. Under omvänd skattskyldighet the foreign supplier
+ * charges no VAT, so the invoice total the company actually pays IS the net —
+ * the 25 % is self-assessed ON TOP of it. `buildPostingLines`'s rc25 shape
+ * reads `grossAmount` as that synthetic net + VAT total and credits the
+ * settlement leg with `gross - vat` (the real payment). Returns null when the
+ * net field is empty or unparsable, leaving the reviewer's input untouched.
+ */
+function deriveRc25Amounts(netRaw: string): { vatInput: string; grossInput: string } | null {
+  const net = parseAmount(netRaw);
+  if (net === undefined || !Number.isFinite(net) || net < 0) return null;
+  const vat = round2(net * RC25_RATE);
+  return { vatInput: String(vat), grossInput: String(round2(net + vat)) };
 }
 
 type ReviewEditSheetProps = {
@@ -62,6 +98,10 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
     const suggested = review.suggestion?.vatCode;
     return suggested && (VAT_CODES as readonly string[]).includes(suggested) ? suggested : "VAT25";
   });
+  // KFR D3 settlement override. Default = the same `coa.roles.bank` credit
+  // `buildPostingLines` uses when the field is omitted, so an untouched sheet
+  // never sends it and approvals stay byte-identical.
+  const [settlementAccountNumber, setSettlementAccountNumber] = useState<string>(() => defaultCoaTemplate.roles.bank);
   const [grossInput, setGrossInput] = useState(() => toInputValue(voucher?.voucherFields.grossAmount));
   const [netInput, setNetInput] = useState(() => toInputValue(voucher?.voucherFields.netAmount));
   const [vatInput, setVatInput] = useState(() => toInputValue(voucher?.voucherFields.vatAmount));
@@ -112,6 +152,10 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
   const bookedAtValid = bookedAtInput === "" || (isValidCalendarDay(bookedAtInput) && bookedAtInput <= localToday);
 
   const accountName = findCoaAccount(defaultCoaTemplate, accountNumber)?.name ?? accountNumber;
+  // KFR D2: a manual-origin voucher's approval posts its authored lines
+  // verbatim and `planReviewDecision` silently drops any `edited` payload, so
+  // showing edit controls here would promise a correction the server discards.
+  const isManualOrigin = voucher?.origin === "manual";
   const submitDisabled = !amountsValid || !bookedAtValid || approveWithEdits.isPending;
   const submitError = approveWithEdits.error ? getErrorMessage(approveWithEdits.error, t("submitError")) : null;
 
@@ -119,6 +163,26 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
     registerGlobalTourBlocker("review-edit-sheet", true);
     return () => registerGlobalTourBlocker("review-edit-sheet", false);
   }, []);
+
+  // RC25 keeps VAT and gross derived from the net the reviewer typed; both
+  // fields stay editable afterwards (the backend revalidates net + VAT = gross).
+  function handleVatCodeChange(next: string) {
+    setVatCode(next);
+    if (next !== "RC25") return;
+    const derived = deriveRc25Amounts(netInput);
+    if (!derived) return;
+    setVatInput(derived.vatInput);
+    setGrossInput(derived.grossInput);
+  }
+
+  function handleNetChange(next: string) {
+    setNetInput(next);
+    if (vatCode !== "RC25") return;
+    const derived = deriveRc25Amounts(next);
+    if (!derived) return;
+    setVatInput(derived.vatInput);
+    setGrossInput(derived.grossInput);
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -135,6 +199,8 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
       // Accounting date rides along only when it differs from the shared
       // derivation default — the stores derive the same day when omitted.
       ...(bookedAtChanged ? { bookedAt: bookedAtInput } : {}),
+      // Same rule for the settlement credit: absent = `coa.roles.bank`.
+      ...(settlementAccountNumber !== defaultCoaTemplate.roles.bank ? { settlementAccountNumber } : {}),
     };
     approveWithEdits.mutate(edited);
   }
@@ -164,7 +230,7 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
           <div>
             <p className="text-eyebrow">{t("eyebrow")}</p>
             <h2 id="review-edit-title" className="mt-2 text-2xl font-semibold">
-              {t("title")}
+              {isManualOrigin ? t("manualOriginTitle") : t("title")}
             </h2>
           </div>
           <button
@@ -177,136 +243,184 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
           </button>
         </div>
         <p id="review-edit-description" className="mt-2 text-sm text-muted-foreground">
-          {t("description")}
+          {isManualOrigin ? t("manualOriginDescription") : t("description")}
         </p>
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <label htmlFor="review-edit-account" className="text-eyebrow block">
-                {t("accountLabel")}
-              </label>
-              <select
-                ref={accountSelectRef}
-                id="review-edit-account"
-                data-testid="edit-account"
-                value={accountNumber}
-                onChange={(event) => setAccountNumber(event.target.value)}
-                className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
-              >
-                {defaultCoaTemplate.accounts.map((account) => (
-                  <option key={account.number} value={account.number}>
-                    {account.number} — {account.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="review-edit-booked-at" className="text-eyebrow block">
-                {t("bookedAtLabel")}
-              </label>
-              <input
-                id="review-edit-booked-at"
-                data-testid="edit-booked-at"
-                data-visual-mask
-                type="date"
-                max={localToday}
-                value={bookedAtInput}
-                onChange={(event) => setBookedAtInput(event.target.value)}
-                className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
-              />
-              <p className="mt-1 text-xs leading-4 text-muted-foreground">{t("bookedAtHint")}</p>
-            </div>
-            <div>
-              <label htmlFor="review-edit-vat-code" className="text-eyebrow block">
-                {t("vatCodeLabel")}
-              </label>
-              <select
-                id="review-edit-vat-code"
-                data-testid="edit-vat-code"
-                value={vatCode}
-                onChange={(event) => setVatCode(event.target.value)}
-                className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
-              >
-                {VAT_CODES.map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="review-edit-gross" className="text-eyebrow block">
-                {t("grossLabel")}
-              </label>
-              <input
-                id="review-edit-gross"
-                data-testid="edit-gross"
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                value={grossInput}
-                onChange={(event) => setGrossInput(event.target.value)}
-                className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
-              />
-            </div>
-            <div>
-              <label htmlFor="review-edit-net" className="text-eyebrow block">
-                {t("netLabel")}
-              </label>
-              <input
-                id="review-edit-net"
-                data-testid="edit-net"
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                value={netInput}
-                onChange={(event) => setNetInput(event.target.value)}
-                className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
-              />
-            </div>
-            <div>
-              <label htmlFor="review-edit-vat" className="text-eyebrow block">
-                {t("vatAmountLabel")}
-              </label>
-              <input
-                id="review-edit-vat"
-                data-testid="edit-vat"
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                value={vatInput}
-                onChange={(event) => setVatInput(event.target.value)}
-                className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
-              />
+        {isManualOrigin ? (
+          <div className="mt-5 space-y-4">
+            <p
+              data-testid="review-edit-manual-notice"
+              className="rounded-lg bg-surface px-4 py-3 text-sm leading-5 text-muted-foreground"
+            >
+              {t("manualOriginNotice")}
+            </p>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button type="button" data-testid="review-edit-manual-close" onClick={onClose}>
+                {t("close")}
+              </Button>
             </div>
           </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label htmlFor="review-edit-account" className="text-eyebrow block">
+                  {t("accountLabel")}
+                </label>
+                <select
+                  ref={accountSelectRef}
+                  id="review-edit-account"
+                  data-testid="edit-account"
+                  value={accountNumber}
+                  onChange={(event) => setAccountNumber(event.target.value)}
+                  className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                >
+                  {defaultCoaTemplate.accounts.map((account) => (
+                    <option key={account.number} value={account.number}>
+                      {accountOptionLabel(account.number)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="review-edit-booked-at" className="text-eyebrow block">
+                  {t("bookedAtLabel")}
+                </label>
+                <input
+                  id="review-edit-booked-at"
+                  data-testid="edit-booked-at"
+                  data-visual-mask
+                  type="date"
+                  max={localToday}
+                  value={bookedAtInput}
+                  onChange={(event) => setBookedAtInput(event.target.value)}
+                  className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
+                />
+                <p className="mt-1 text-xs leading-4 text-muted-foreground">{t("bookedAtHint")}</p>
+              </div>
+              <div>
+                <label htmlFor="review-edit-vat-code" className="text-eyebrow block">
+                  {t("vatCodeLabel")}
+                </label>
+                <select
+                  id="review-edit-vat-code"
+                  data-testid="edit-vat-code"
+                  aria-describedby={vatCode === "RC25" ? "review-edit-rc25-hint" : undefined}
+                  value={vatCode}
+                  onChange={(event) => handleVatCodeChange(event.target.value)}
+                  className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                >
+                  {VAT_CODES.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+                {vatCode === "RC25" ? (
+                  <p
+                    id="review-edit-rc25-hint"
+                    data-testid="edit-rc25-hint"
+                    className="mt-1 text-xs leading-4 text-muted-foreground"
+                  >
+                    {t("rc25Hint")}
+                  </p>
+                ) : null}
+              </div>
+              <div>
+                <label htmlFor="review-edit-settlement" className="text-eyebrow block">
+                  {t("settlementAccountLabel")}
+                </label>
+                <select
+                  id="review-edit-settlement"
+                  data-testid="edit-settlement-account"
+                  aria-describedby="review-edit-settlement-hint"
+                  value={settlementAccountNumber}
+                  onChange={(event) => setSettlementAccountNumber(event.target.value)}
+                  className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                >
+                  {SETTLEMENT_ACCOUNTS.map((number) => (
+                    <option key={number} value={number}>
+                      {accountOptionLabel(number)}
+                    </option>
+                  ))}
+                </select>
+                <p id="review-edit-settlement-hint" className="mt-1 text-xs leading-4 text-muted-foreground">
+                  {t("settlementAccountHint")}
+                </p>
+              </div>
+              <div>
+                <label htmlFor="review-edit-gross" className="text-eyebrow block">
+                  {t("grossLabel")}
+                </label>
+                <input
+                  id="review-edit-gross"
+                  data-testid="edit-gross"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  value={grossInput}
+                  onChange={(event) => setGrossInput(event.target.value)}
+                  className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="review-edit-net" className="text-eyebrow block">
+                  {t("netLabel")}
+                </label>
+                <input
+                  id="review-edit-net"
+                  data-testid="edit-net"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  value={netInput}
+                  onChange={(event) => handleNetChange(event.target.value)}
+                  className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="review-edit-vat" className="text-eyebrow block">
+                  {t("vatAmountLabel")}
+                </label>
+                <input
+                  id="review-edit-vat"
+                  data-testid="edit-vat"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  value={vatInput}
+                  onChange={(event) => setVatInput(event.target.value)}
+                  className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
+                />
+              </div>
+            </div>
 
-          {!amountsValid ? (
-            <p data-testid="edit-amount-error" className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">
-              {t("amountError")}
-            </p>
-          ) : null}
-          {!bookedAtValid ? (
-            <p data-testid="edit-booked-at-error" className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">
-              {t("bookedAtError")}
-            </p>
-          ) : null}
-          {submitError ? (
-            <p className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">{submitError}</p>
-          ) : null}
+            {!amountsValid ? (
+              <p data-testid="edit-amount-error" className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">
+                {t("amountError")}
+              </p>
+            ) : null}
+            {!bookedAtValid ? (
+              <p data-testid="edit-booked-at-error" className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">
+                {t("bookedAtError")}
+              </p>
+            ) : null}
+            {submitError ? (
+              <p className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">{submitError}</p>
+            ) : null}
 
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={onClose}>
-              {t("cancel")}
-            </Button>
-            <Button type="submit" data-testid="edit-submit" disabled={submitDisabled}>
-              {approveWithEdits.isPending ? t("submitting") : t("submit")}
-            </Button>
-          </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={onClose}>
+                {t("cancel")}
+              </Button>
+              <Button type="submit" data-testid="edit-submit" disabled={submitDisabled}>
+                {approveWithEdits.isPending ? t("submitting") : t("submit")}
+              </Button>
+            </div>
 
-          <p className="border-t border-border pt-3 text-xs leading-5 text-muted-foreground">{t("appendOnlyNote")}</p>
-        </form>
+            <p className="border-t border-border pt-3 text-xs leading-5 text-muted-foreground">{t("appendOnlyNote")}</p>
+          </form>
+        )}
       </motion.div>
     </div>
   );
