@@ -62,6 +62,7 @@ import {
   isDuplicateEvidence,
   planSieImport,
   ReviewNotFoundError,
+  VoucherNotFoundError,
   type LedgerStore,
   type ReportRange,
   type SieImportInput,
@@ -784,6 +785,28 @@ export class PostgresLedgerStore implements LedgerStore {
       this.client.begin(async (tx) => {
         const tailHash = await this.lockWorkspaceTail(tx);
 
+        // KFR Phase D / Task 2: resolve the explicit target up front — its
+        // existence, and its current packet for the audit payload's
+        // `previousPacketId`. Throwing here rolls the whole transaction back
+        // (nothing is written yet either way) and `withChainForkRetry`
+        // re-throws non-fork errors immediately, so the caller sees
+        // `VoucherNotFoundError` un-retried.
+        let voucherIdToRelink: string | undefined = input.targetVoucherId;
+        let previousPacketId: string | undefined;
+        if (input.targetVoucherId !== undefined) {
+          const targetRows = await tx<Array<{ evidence_packet_id: string | null }>>`
+          SELECT evidence_packet_id FROM ledger.vouchers
+          WHERE id = ${input.targetVoucherId}
+            AND organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+          LIMIT 1
+        `;
+          if (targetRows.length === 0) {
+            throw new VoucherNotFoundError(input.targetVoucherId);
+          }
+          previousPacketId = targetRows[0]!.evidence_packet_id ?? undefined;
+        }
+
         const packet: EvidencePacket = {
           id: createId("packet"),
           evidenceIds: input.evidenceIds,
@@ -820,22 +843,23 @@ export class PostgresLedgerStore implements LedgerStore {
         // Voucher relink read-model fix (Memory parity §A N9): when evidence is
         // re-bundled into a new packet, repoint vouchers.evidence_packet_id so
         // getEvidenceContext (newest packet) and getSnapshot (voucher link) agree.
-        let voucherIdToRelink: string | undefined;
-        let previousPacketId: string | undefined;
-        for (const evidenceId of input.evidenceIds) {
-          const linkedRows = await tx<Array<{ voucher_id: string; evidence_packet_id: string }>>`
-          SELECT v.id AS voucher_id, v.evidence_packet_id
-          FROM ledger.vouchers v
-          JOIN ledger.evidence_packet_items i ON i.evidence_packet_id = v.evidence_packet_id
-          WHERE i.evidence_object_id = ${evidenceId}
-            AND i.evidence_packet_id != ${packet.id}
-            AND v.organization_id = ${this.defaults.organizationId}
-            AND v.workspace_id = ${this.defaults.workspaceId}
-          LIMIT 1
-        `;
-          if (linkedRows[0]?.voucher_id && !voucherIdToRelink) {
-            voucherIdToRelink = linkedRows[0].voucher_id;
-            previousPacketId = linkedRows[0].evidence_packet_id;
+        // Auto-detect only runs when no explicit target was given (Task 2).
+        if (voucherIdToRelink === undefined) {
+          for (const evidenceId of input.evidenceIds) {
+            const linkedRows = await tx<Array<{ voucher_id: string; evidence_packet_id: string }>>`
+            SELECT v.id AS voucher_id, v.evidence_packet_id
+            FROM ledger.vouchers v
+            JOIN ledger.evidence_packet_items i ON i.evidence_packet_id = v.evidence_packet_id
+            WHERE i.evidence_object_id = ${evidenceId}
+              AND i.evidence_packet_id != ${packet.id}
+              AND v.organization_id = ${this.defaults.organizationId}
+              AND v.workspace_id = ${this.defaults.workspaceId}
+            LIMIT 1
+          `;
+            if (linkedRows[0]?.voucher_id && !voucherIdToRelink) {
+              voucherIdToRelink = linkedRows[0].voucher_id;
+              previousPacketId = linkedRows[0].evidence_packet_id;
+            }
           }
         }
 

@@ -259,6 +259,144 @@ export async function scenarioSieImportIdempotency(h: ConformanceHarness): Promi
   };
 }
 
+/**
+ * KFR Phase D / Task 2: `composeEvidence({ targetVoucherId })` attaches the
+ * composed packet to an explicitly named voucher — imported OR native —
+ * instead of inferring one from evidence packet history. Imported vouchers
+ * start with `evidencePacketId: null` and no prior packet, so auto-detect can
+ * never reach them; the explicit target is the only attach path for migrated
+ * history. An unknown target throws before any mutation.
+ */
+export async function scenarioComposeEvidenceTargetVoucher(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const file = parseSie(
+    [
+      "#SIETYP 4",
+      '#KONTO 6110 "Kontorsmateriel"',
+      '#VER B 7 20260410 "Inkopta pennor"',
+      "{",
+      "#TRANS 6110 {} 50.00",
+      "#TRANS 1930 {} -50.00",
+      "}",
+    ].join("\n"),
+  );
+  await h.store.importSie({ actorId: h.actorId, file });
+  const importedVoucherId = "sie_B_7";
+
+  const receipt = await h.store.createEvidence({
+    actorId: h.actorId,
+    title: "Receipt for imported voucher",
+    originalFilename: "receipt-b7.jpg",
+    mimeType: "image/jpeg",
+    modalities: ["camera"],
+  });
+  const nativeVoucherId = receipt.voucher.id;
+  const nativePacketId = receipt.packet.id;
+
+  // --- attach to the imported (never-linked) voucher -----------------------
+  const eventsBeforeCompose = (await h.store.getEvents()).length;
+  const composed = await h.store.composeEvidence({
+    actorId: h.actorId,
+    evidenceIds: [receipt.evidence.id],
+    targetVoucherId: importedVoucherId,
+  });
+  const eventsAfterCompose = await h.store.getEvents();
+  const relink = eventsAfterCompose.at(-1);
+  const context = await h.store.getEvidenceContext(receipt.evidence.id);
+  const snapshotAfterAttach = await h.store.getSnapshot();
+  const nativeVoucherAfterAttach = snapshotAfterAttach.vouchers.find((voucher) => voucher.id === nativeVoucherId);
+
+  assert.equal(
+    context?.voucher?.id,
+    importedVoucherId,
+    `${h.label}: explicit targetVoucherId must attach the packet to the imported voucher`,
+  );
+  assert.equal(
+    context?.voucher?.evidencePacketId,
+    composed.id,
+    `${h.label}: the imported voucher must point at the freshly composed packet`,
+  );
+  assert.equal(relink?.eventType, "EvidenceRelinked", `${h.label}: the attach must append an EvidenceRelinked event`);
+  assert.equal(relink?.aggregateId, importedVoucherId, `${h.label}: relink event aggregate is the target voucher`);
+
+  // --- unknown target: throws, and changes nothing -------------------------
+  const eventsBeforeMiss = (await h.store.getEvents()).length;
+  let notFoundError = "none";
+  try {
+    await h.store.composeEvidence({
+      actorId: h.actorId,
+      evidenceIds: [receipt.evidence.id],
+      targetVoucherId: "sie_does_not_exist",
+    });
+  } catch (error) {
+    // Cross-boundary error identity travels by `name`, never `instanceof`
+    // (the Postgres store re-throws through its own module graph).
+    notFoundError = error instanceof Error ? error.name : "unknown";
+  }
+  const eventsAfterMiss = (await h.store.getEvents()).length;
+  const contextAfterMiss = await h.store.getEvidenceContext(receipt.evidence.id);
+
+  assert.equal(notFoundError, "VoucherNotFoundError", `${h.label}: unknown targetVoucherId must throw`);
+  assert.equal(eventsAfterMiss, eventsBeforeMiss, `${h.label}: the 404 path must append no events`);
+
+  // --- attach to a NATIVE voucher: its review linkage must survive ---------
+  const secondCompose = await h.store.composeEvidence({
+    actorId: h.actorId,
+    evidenceIds: [receipt.evidence.id],
+    targetVoucherId: nativeVoucherId,
+  });
+  const eventsAfterSecond = await h.store.getEvents();
+  const secondRelink = eventsAfterSecond.at(-1);
+  const contextAfterSecond = await h.store.getEvidenceContext(receipt.evidence.id);
+  const feed = await h.store.getReviewFeed();
+  const snapshotFinal = await h.store.getSnapshot();
+  const importedVoucherFinal = snapshotFinal.vouchers.find((voucher) => voucher.id === importedVoucherId);
+  const nativeVoucherFinal = snapshotFinal.vouchers.find((voucher) => voucher.id === nativeVoucherId);
+
+  assert.equal(
+    contextAfterSecond?.voucher?.id,
+    nativeVoucherId,
+    `${h.label}: an explicit attach to a native voucher wins over the previous link`,
+  );
+  assert.ok(
+    feed.some((review) => review.voucherId === nativeVoucherId),
+    `${h.label}: re-pointing a native voucher's packet must not disturb its review linkage`,
+  );
+
+  return {
+    // Generated packet ids differ per store — compare linkage, not identity.
+    attachedVoucherId: context?.voucher?.id ?? null,
+    attachedVoucherOrigin: context?.voucher?.origin ?? null,
+    attachedVoucherStatus: context?.voucher?.status ?? null,
+    voucherLinkMatchesComposedPacket: context?.voucher?.evidencePacketId === composed.id,
+    contextPacketIsComposedPacket: context?.packet?.id === composed.id,
+    composeEventDelta: eventsAfterCompose.length - eventsBeforeCompose,
+    relinkEventType: relink?.eventType ?? null,
+    relinkAggregateId: relink?.aggregateId ?? null,
+    relinkActorId: relink?.actorId ?? null,
+    relinkVoucherIdInPayload: relink?.payload.voucherId ?? null,
+    relinkPacketIsComposedPacket: relink?.payload.packetId === composed.id,
+    // First-ever attach to an imported voucher: no previous packet to record.
+    relinkPreviousPacketId: relink?.payload.previousPacketId === undefined ? "none" : "present",
+    // The receipt's own native voucher is untouched by an attach elsewhere.
+    nativeVoucherPacketUnchangedAfterAttach: nativeVoucherAfterAttach?.evidencePacketId === nativePacketId,
+
+    notFoundError,
+    notFoundEventDelta: eventsAfterMiss - eventsBeforeMiss,
+    notFoundLeavesAttachIntact:
+      contextAfterMiss?.voucher?.id === importedVoucherId && contextAfterMiss?.packet?.id === composed.id,
+
+    secondAttachVoucherId: contextAfterSecond?.voucher?.id === nativeVoucherId ? "native" : "other",
+    secondRelinkAggregateIsNative: secondRelink?.aggregateId === nativeVoucherId,
+    secondRelinkPreviousPacketId: secondRelink?.payload.previousPacketId === nativePacketId ? "native" : "other",
+    nativeVoucherLinkedToSecondPacket: nativeVoucherFinal?.evidencePacketId === secondCompose.id,
+    // Re-pointing a native voucher's packet never rewrites its review linkage.
+    nativeReviewStillLinked: feed.some((review) => review.voucherId === nativeVoucherId),
+    // The imported voucher keeps the packet it was attached to.
+    importedVoucherKeepsFirstPacket: importedVoucherFinal?.evidencePacketId === composed.id,
+    importedVoucherInReviewFeed: feed.some((review) => review.voucherId === importedVoucherId),
+  };
+}
+
 export async function scenarioSettingsAlertsSimulation(h: ConformanceHarness): Promise<ConformanceOutcome> {
   assert.equal(await h.store.getCompanySettings(), null);
 
@@ -611,6 +749,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "compose + extraction refresh", run: scenarioComposeAndExtraction },
   { name: "review ordering + suggestions", run: scenarioReviewOrderingAndSuggestion },
   { name: "SIE import idempotency + reports window", run: scenarioSieImportIdempotency },
+  { name: "compose evidence with explicit targetVoucherId", run: scenarioComposeEvidenceTargetVoucher },
   { name: "settings / alerts / simulation / unknown ids", run: scenarioSettingsAlertsSimulation },
   { name: "append-only event vocabulary", run: scenarioAppendOnlyEventVocabulary },
   { name: "review reject", run: scenarioReviewReject },

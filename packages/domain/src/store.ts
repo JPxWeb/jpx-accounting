@@ -114,6 +114,20 @@ export class ReviewNotFoundError extends Error {
 }
 
 /**
+ * Thrown when `composeEvidence` is given a `targetVoucherId` that doesn't
+ * exist in scope. Distinguished from generic Error so the HTTP layer maps to
+ * 404 instead of catch-all 500 (CONVENTIONS Rule 16) — same pattern as
+ * `ReviewNotFoundError`. Thrown BEFORE any mutation, so a miss leaves zero
+ * state behind in either store.
+ */
+export class VoucherNotFoundError extends Error {
+  constructor(public readonly voucherId: string) {
+    super(`Voucher not found in this workspace: ${voucherId}`);
+    this.name = "VoucherNotFoundError";
+  }
+}
+
+/**
  * Content-dedupe predicate for idempotent `createEvidence` (WS-D R19). A create
  * is a duplicate of an EXISTING evidence row only when the caller supplied BOTH
  * `sha256` and `sizeBytes` (legacy/metadata-only callers never dedupe) and the
@@ -301,6 +315,24 @@ export function buildImportedVoucher(
 
 export interface LedgerStore {
   createEvidence(input: EvidenceCreateInput & ActorAttribution): Promise<EvidenceCreateResult>;
+  /**
+   * Bundle evidence into a NEW packet (packets are never edited in place) and
+   * link it to a voucher. Link resolution, in order:
+   *
+   * 1. `input.targetVoucherId` when given (KFR Phase D / Task 2) — the only
+   *    way to reach an imported or manual voucher, which starts with
+   *    `evidencePacketId: null` and so leaves no packet breadcrumb. An id
+   *    naming no voucher in this workspace throws `VoucherNotFoundError`
+   *    BEFORE any mutation (→ HTTP 404 `voucher_not_found`).
+   * 2. Otherwise auto-detect: the voucher currently linked to the first
+   *    prior packet any of `evidenceIds` belonged to.
+   *
+   * A resolved link repoints `voucher.evidencePacketId` and appends one
+   * `EvidenceRelinked` event (WS-B B6b) — the relink is chain-visible, never a
+   * silent read-model repoint. It touches no ReviewTask: a voucher's review
+   * linkage survives an attach untouched. With no link resolved, only the
+   * packet is created and NO event is appended.
+   */
   composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket>;
   getEvidenceContext(
     evidenceId: string,
@@ -501,6 +533,13 @@ export class MemoryLedgerStore implements LedgerStore {
 
   async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket> {
     const actorId = input.actorId ?? DEMO_ACTOR_ID;
+    // KFR Phase D / Task 2: validate the explicit target BEFORE anything is
+    // written, so an unknown id leaves zero state behind (no packet row, no
+    // event) rather than a dangling packet.
+    if (input.targetVoucherId !== undefined && !this.vouchers.has(input.targetVoucherId)) {
+      throw new VoucherNotFoundError(input.targetVoucherId);
+    }
+
     const packet: EvidencePacket = {
       id: createId("packet"),
       evidenceIds: input.evidenceIds,
@@ -509,12 +548,16 @@ export class MemoryLedgerStore implements LedgerStore {
     };
     this.evidencePackets.set(packet.id, packet);
 
-    let voucherIdToRelink: string | undefined;
+    // An explicit targetVoucherId overrides auto-detection entirely — this is
+    // how a packet attaches to a voucher that never had one (imported vouchers
+    // start with `evidencePacketId: null`, so there is no packet-history
+    // breadcrumb for the auto-detect loop below to follow).
+    let voucherIdToRelink = input.targetVoucherId;
     for (const eid of input.evidenceIds) {
       const previousPacketId = this.evidenceIdToPacketId.get(eid);
-      if (previousPacketId) {
+      if (previousPacketId && voucherIdToRelink === undefined) {
         const linkedVoucherId = this.packetIdToVoucherId.get(previousPacketId);
-        if (linkedVoucherId && !voucherIdToRelink) {
+        if (linkedVoucherId) {
           voucherIdToRelink = linkedVoucherId;
         }
       }
@@ -524,7 +567,10 @@ export class MemoryLedgerStore implements LedgerStore {
     if (voucherIdToRelink) {
       this.packetIdToVoucherId.set(packet.id, voucherIdToRelink);
       const voucher = this.vouchers.get(voucherIdToRelink);
-      const previousPacketId = voucher?.evidencePacketId;
+      // `?? undefined` normalizes an imported voucher's NULL packet to an
+      // absent payload key, keeping the event hash identical to Postgres
+      // (canonicalJson drops undefined, jsonb never stores it).
+      const previousPacketId = voucher?.evidencePacketId ?? undefined;
       if (voucher && voucher.evidencePacketId !== packet.id) {
         this.vouchers.set(voucherIdToRelink, { ...voucher, evidencePacketId: packet.id });
       }

@@ -44,6 +44,7 @@ import {
   MemoryLedgerStore,
   ReviewNotFoundError,
   SieImportError,
+  VoucherNotFoundError,
   type LedgerStore,
   type ReportRange,
 } from "@jpx-accounting/domain/store";
@@ -568,6 +569,12 @@ export function createApp({
 
     if (error instanceof ReviewNotFoundError) {
       return jsonError(c, error.message, runtimeMode, 404, { code: "review_not_found" });
+    }
+
+    if (error instanceof VoucherNotFoundError) {
+      // POST /api/evidence/compose with a targetVoucherId that names no
+      // voucher in scope (KFR Phase D / Task 2) → 404, not catch-all 500.
+      return jsonError(c, error.message, runtimeMode, 404, { code: "voucher_not_found" });
     }
 
     if (error instanceof InvalidReviewEditError) {

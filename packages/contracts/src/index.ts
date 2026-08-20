@@ -510,6 +510,15 @@ export const evidenceComposeInputSchema = z.object({
   evidenceIds: z.array(z.string()).min(1),
   note: z.string().optional(),
   voiceTranscript: z.string().optional(),
+  /**
+   * Explicit attach target (KFR Phase D, Task 2): links the composed packet to
+   * this voucher (imported OR native) instead of relying on evidence-level
+   * packet history to infer one. Needed for imported vouchers, which start
+   * with `evidencePacketId: null` and no prior packet to auto-detect from.
+   * An id that names no voucher in scope throws `VoucherNotFoundError`
+   * (→ HTTP 404 `voucher_not_found`) before any mutation.
+   */
+  targetVoucherId: z.string().optional(),
 });
 
 /**
@@ -590,11 +599,11 @@ export const manualVoucherInputSchema = z
     bookedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     lines: z.array(manualVoucherLineSchema).min(2).max(100),
     /**
-     * Forward-compat only in this phase: accepted but NOT yet attached.
+     * Forward-compat only: accepted but NOT attached by this route.
      * `createManualVoucher` always creates the voucher with
-     * `evidencePacketId: null` (see interface contract) — Phase D's
-     * `evidenceComposeInputSchema.targetVoucherId` attach flow is the
-     * mechanism that will consume this field.
+     * `evidencePacketId: null` (see interface contract). Attaching is a
+     * separate call — `POST /api/evidence/compose` with
+     * `targetVoucherId` set to the returned voucher id (KFR Phase D / Task 2).
      */
     evidenceIds: z.array(z.string()).optional(),
   })
