@@ -41,7 +41,10 @@ function toWholeKronor(amount: number): number {
  *  - 49 net = (10+11+12) + (30+31+32) − 48, computed FROM the truncated
  *    component boxes — not truncated from the öre-exact net — matching
  *    how Skatteverket derives it.
- *  - 39/40 (account-based EU/export service revenue) land in Task C3.
+ *  - 39/40 EU/export SERVICE revenue: account-based (each box's own
+ *    `accounts` list, credit − debit) and vatCode-INDEPENDENT, so an
+ *    SIE-imported line with vatCode "NA" on 3308/3305 still counts.
+ *    Informational turnover boxes — deliberately NOT part of box 49.
  *
  * All box amounts are whole kronor (see `toWholeKronor`); internal ledger
  * lines and other projections (`buildVat`) stay öre-exact.
@@ -68,6 +71,7 @@ export function buildVatReturnBoxes(
   let inputVat = 0;
   const outputVatByRate = new Map<VatRateId, number>();
   const rcOutputVatByRate = new Map<VatRateId, number>();
+  const accountRevenueTotals = new Map<string, number>();
 
   for (const line of lines) {
     if (regime.accounts.input.includes(line.accountNumber)) {
@@ -82,6 +86,18 @@ export function buildVatReturnBoxes(
     for (const [rate, accountNumber] of rcAccountByRate) {
       if (line.accountNumber === accountNumber) {
         rcOutputVatByRate.set(rate, (rcOutputVatByRate.get(rate) ?? 0) + line.credit - line.debit);
+      }
+    }
+    // Boxes 39/40: purely ACCOUNT-based turnover, vatCode-independent — an
+    // SIE-imported line carrying vatCode "NA" on 3308/3305 counts exactly
+    // like a natively booked VAT0 one. credit − debit, so a credit note /
+    // reversal reduces the declared turnover.
+    for (const def of regime.boxes) {
+      if (def.kind === "account-revenue" && def.accounts?.includes(line.accountNumber)) {
+        accountRevenueTotals.set(
+          line.accountNumber,
+          (accountRevenueTotals.get(line.accountNumber) ?? 0) + line.credit - line.debit,
+        );
       }
     }
     // Box 05: the line's actual vatCode decides ratedness (readiness gap
@@ -134,8 +150,14 @@ export function buildVatReturnBoxes(
       case "net":
         amount = totalOutputVat + totalRcOutputVat - wholeInputVat;
         break;
-      // "account-revenue" (boxes 39/40) has no case yet — falls through
-      // with amount 0. Task C3 adds it.
+      case "account-revenue":
+        // Truncated per box, before any summing — same declaration-boundary
+        // discipline as every other box. These are informational turnover
+        // boxes: they are NOT part of the box 49 identity.
+        amount = toWholeKronor(
+          (def.accounts ?? []).reduce((sum, accountNumber) => sum + (accountRevenueTotals.get(accountNumber) ?? 0), 0),
+        );
+        break;
     }
     return { box: def.box, label: def.label, amount };
   });

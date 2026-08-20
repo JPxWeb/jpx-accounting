@@ -230,6 +230,24 @@ test("box 21 sums every modeled reverse-charge rate; 30-32 each keep their own r
   assert.equal(amount("49"), 0, "49 = (250 + 12) − 262");
 });
 
+test("boxes 39/40 accumulate EU-service and export-service revenue account-based, independent of vatCode", () => {
+  const boxes = buildVatReturnBoxes([
+    // Box 39: EU B2B service revenue (3308), VAT0 — öre amount to also
+    // exercise whole-kronor truncation on this box.
+    line({ voucherId: "eu1", accountNumber: "1930", debit: 2500.45, credit: 0, vatCode: "NA", deductible: false }),
+    line({ voucherId: "eu1", accountNumber: "3308", debit: 0, credit: 2500.45, vatCode: "VAT0", deductible: false }),
+    // Box 40: non-EU export service revenue (3305), VAT0.
+    line({ voucherId: "exp1", accountNumber: "1930", debit: 4000, credit: 0, vatCode: "NA", deductible: false }),
+    line({ voucherId: "exp1", accountNumber: "3305", debit: 0, credit: 4000, vatCode: "VAT0", deductible: false }),
+  ]);
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  assert.equal(amount("39"), 2500, "2500.45 truncates to whole kronor");
+  assert.equal(amount("40"), 4000);
+  // Neither box's revenue leaks into box 05 (VAT0, and — pre-Task-C4 —
+  // box 05 is purely vatCode-gated anyway).
+  assert.equal(amount("05"), 0);
+});
+
 test("box 05 attributes by the LINE's vatCode: off-template revenue counts, momsfri line on a rated account does not", () => {
   assert.equal(findCoaAccount(bas2026, "3011"), undefined, "precondition: 3011 must be off-template");
   const boxes = buildVatReturnBoxes([
