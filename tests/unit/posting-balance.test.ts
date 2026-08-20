@@ -5,10 +5,13 @@ import type { AccountingSuggestion, Voucher } from "@jpx-accounting/contracts";
 import type { LedgerLine } from "@jpx-accounting/domain";
 import {
   assertBalancedPosting,
+  assertOreExactLines,
   buildPostingLines,
   buildVat,
   buildVatReturnBoxes,
   InvalidReviewEditError,
+  isOreExact,
+  NonOreExactPostingError,
   postingImbalanceOre,
   resolveReviewDecisionEdit,
   UnbalancedPostingError,
@@ -117,6 +120,38 @@ test("buildPostingLines book-without-vat debits the full gross to the cost accou
   assert.equal(vat.deductible, false);
   assert.equal(bank.credit, 1249);
   assert.equal(postingImbalanceOre(lines), 0);
+});
+
+test("isOreExact separates whole-öre amounts from sub-öre precision and non-finite values", () => {
+  for (const value of [0, 100, 100.1, 100.12, -100.12, 999.2, 249.8]) {
+    assert.equal(isOreExact(value), true, `${value} is öre-exact`);
+  }
+  for (const value of [100.003, 0.001, 1 / 3, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(isOreExact(value), false, `${value} is not öre-exact`);
+  }
+});
+
+test("assertOreExactLines catches the sub-öre amounts postingImbalanceOre reports as balanced", () => {
+  const subOre = [
+    { accountNumber: "6110", debit: 100.003, credit: 0 },
+    { accountNumber: "2899", debit: 0, credit: 100 },
+  ];
+  // The two invariants are independent: this entry BALANCES in integer öre.
+  assert.equal(postingImbalanceOre(subOre), 0);
+  assert.doesNotThrow(() => assertBalancedPosting(subOre, "sub-öre fixture"));
+  assert.throws(
+    () => assertOreExactLines(subOre, "sub-öre fixture"),
+    (error: unknown) =>
+      error instanceof NonOreExactPostingError &&
+      error.message.includes("6110") &&
+      error.message.includes("sub-öre fixture"),
+  );
+  // Returns the same array so it composes with assertBalancedPosting.
+  const clean = [
+    { accountNumber: "6110", debit: 100, credit: 0 },
+    { accountNumber: "2899", debit: 0, credit: 100 },
+  ];
+  assert.equal(assertOreExactLines(clean, "clean"), clean);
 });
 
 test("buildPostingLines approve keeps the net + VAT split for a consistent triple", () => {

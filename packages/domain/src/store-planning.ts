@@ -17,7 +17,7 @@ import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import { buildExtractedFields, deriveVoucherFields, guessAccountingMethod } from "./evidence-defaults";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso } from "./ids";
-import { postingImbalanceOre } from "./posting-invariants";
+import { isOreExact, postingImbalanceOre } from "./posting-invariants";
 import type { LedgerLine } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import {
@@ -260,18 +260,17 @@ export function planManualVoucher(
   // Exact-öre gate BEFORE any id/event is derived: the wire schema only
   // enforces ±0.005 (float noise tolerance), not the real invariant.
   //
-  // Per-line precision first. `postingImbalanceOre` compares INTEGER öre, so a
-  // sub-öre amount (100.003 against a 100 credit) rounds away and reports a
-  // balanced entry — while `buildManualPostingLines` copies the line amounts
-  // VERBATIM, landing 100.003 in the ledger for every projection to re-sum as
-  // raw floats. Same guard, same rationale as `resolveReviewDecisionEdit`'s
-  // öre-exactness check on edited amounts.
+  // Per-line precision first, via the shared `isOreExact` predicate: a sub-öre
+  // amount (100.003 against a 100 credit) rounds away in `postingImbalanceOre`
+  // and reports a balanced entry, so balance alone would let it through. Caught
+  // again at the posting boundary by `buildManualPostingLines`; here it is a
+  // client-correctable 422 rather than an invariant violation.
   for (const line of input.lines) {
     for (const [name, value] of [
       ["debit", line.debit],
       ["credit", line.credit],
     ] as const) {
-      if (!Number.isFinite(value) || Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) {
+      if (!isOreExact(value)) {
         throw new InvalidManualVoucherError(
           `Manual voucher line on account ${line.accountNumber} has a ${name} (${value}) that is not öre-exact (at most two decimals).`,
         );
@@ -323,7 +322,9 @@ export function planManualVoucher(
     kind: "recommendation",
     citations: [],
     ruleHits: [],
-    lines: input.lines,
+    // Defensive copy: the suggestion is stored and later posted VERBATIM, so it
+    // must not alias an array the caller can still mutate after planning.
+    lines: [...input.lines],
   };
 
   const review: ReviewTask = {

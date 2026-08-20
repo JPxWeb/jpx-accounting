@@ -10,7 +10,7 @@ import type {
 import { classifyAccountNumber, defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
 import { deriveVoucherFields } from "./evidence-defaults";
-import { assertBalancedPosting } from "./posting-invariants";
+import { assertBalancedPosting, assertOreExactLines, isOreExact } from "./posting-invariants";
 import type { LedgerLine } from "./projections";
 import { getVatRegime, type VatRegime } from "./vat/regime";
 
@@ -123,7 +123,7 @@ export function resolveReviewDecisionEdit(
         ["netAmount", edited.netAmount],
         ["vatAmount", edited.vatAmount],
       ] as const) {
-        if (!Number.isFinite(value) || Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) {
+        if (!isOreExact(value)) {
           issues.push(`Edited ${name} (${value}) must be öre-exact (at most two decimals).`);
         }
       }
@@ -481,6 +481,14 @@ export function buildPostingLines(
  * amount derivation. `deductible` is uniformly `false`: Phase B does not
  * infer per-line VAT deductibility for hand-entered lines (same documented
  * limitation `planSieImport` already carries for imported lines).
+ *
+ * Because the amounts are copied rather than derived, BOTH posting invariants
+ * are asserted here: öre-exactness per line and Σdebit === Σcredit. Balance
+ * alone is not enough — `postingImbalanceOre` compares integer öre, so a
+ * sub-öre amount reads as balanced and would then be stored verbatim.
+ * `planManualVoucher` already rejects such input at creation time (as a 422),
+ * but this is the posting boundary: any other writer that ever reaches
+ * `suggestion.lines` is caught here too.
  */
 export function buildManualPostingLines(
   voucher: Voucher,
@@ -490,20 +498,19 @@ export function buildManualPostingLines(
 ): LedgerLine[] {
   const bookedAt = deriveBookedAt(voucher.voucherFields, occurredAt);
   const description = voucher.voucherFields.description ?? "Manual entry";
-  return assertBalancedPosting(
-    lines.map((line) => ({
-      voucherId: voucher.id,
-      accountNumber: line.accountNumber,
-      accountName: findCoaAccount(coa, line.accountNumber)?.name ?? `Konto ${line.accountNumber}`,
-      description,
-      debit: line.debit,
-      credit: line.credit,
-      vatCode: line.vatCode,
-      bookedAt,
-      deductible: false,
-    })),
-    `manual voucher ${voucher.id}`,
-  );
+  const context = `manual voucher ${voucher.id}`;
+  const posted: LedgerLine[] = lines.map((line) => ({
+    voucherId: voucher.id,
+    accountNumber: line.accountNumber,
+    accountName: findCoaAccount(coa, line.accountNumber)?.name ?? `Konto ${line.accountNumber}`,
+    description,
+    debit: line.debit,
+    credit: line.credit,
+    vatCode: line.vatCode,
+    bookedAt,
+    deductible: false,
+  }));
+  return assertBalancedPosting(assertOreExactLines(posted, context), context);
 }
 
 /**

@@ -9,7 +9,7 @@ import {
   planManualVoucher,
   planReviewDecision,
 } from "../../packages/domain/src/store-planning.ts";
-import { InvalidManualVoucherError } from "@jpx-accounting/domain";
+import { InvalidManualVoucherError, NonOreExactPostingError, postingImbalanceOre } from "@jpx-accounting/domain";
 
 const BLOCKED_REASON = "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
 const BLOCKED_ACTION = "Request more evidence or post without VAT deduction.";
@@ -544,6 +544,60 @@ describe("planReviewDecision", () => {
       provenanceTimeline: [],
     } as ReviewTask;
     assert.throws(() => planReviewDecision(review, voucher, "approve", { actorId: "user:x" }));
+  });
+
+  it("refuses to post manual lines carrying a sub-öre amount that sums to a balanced öre total", () => {
+    const voucher = {
+      id: "v1",
+      organizationId: "org_jpx",
+      workspaceId: "workspace_main",
+      evidencePacketId: null,
+      voucherNumber: "V-1001",
+      status: "needs-review",
+      accountingMethod: "invoice",
+      extractedFields: [],
+      voucherFields: { currency: "SEK", description: "Utlägg", transactionDate: "2026-03-20" },
+      createdAt: "2026-03-20T09:00:00.000Z",
+      createdBy: "user:x",
+      origin: "manual",
+    } as Voucher;
+    // Constructed directly at the planner level, bypassing planManualVoucher's
+    // 422 gate — the shape any OTHER future writer (edit endpoint, migration,
+    // store bug) could put on the suggestion. 100.003 vs 100 is BALANCED in
+    // integer öre, so assertBalancedPosting alone would happily post it.
+    const review = {
+      id: "r1",
+      voucherId: "v1",
+      title: "Review V-1001",
+      status: "needs-review",
+      suggestedAction: "Approve the manual entry.",
+      suggestion: {
+        id: "s1",
+        voucherId: "v1",
+        accountNumber: "6110",
+        accountName: "Kontorsmateriel",
+        vatCode: "NA",
+        confidence: 1,
+        reasoning: "manual",
+        kind: "recommendation",
+        citations: [],
+        ruleHits: [],
+        lines: [
+          { accountNumber: "6110", debit: 100.003, credit: 0, vatCode: "NA" },
+          { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" },
+        ],
+      },
+      provenanceTimeline: [],
+    } as ReviewTask;
+    assert.equal(
+      postingImbalanceOre(review.suggestion!.lines!),
+      0,
+      "precondition: the balance invariant alone does NOT catch this",
+    );
+    assert.throws(
+      () => planReviewDecision(review, voucher, "approve", { actorId: "user:x" }),
+      (error: unknown) => error instanceof NonOreExactPostingError,
+    );
   });
 });
 

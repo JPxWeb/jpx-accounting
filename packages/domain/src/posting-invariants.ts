@@ -31,6 +31,69 @@ export class UnbalancedPostingError extends Error {
   }
 }
 
+/**
+ * Thrown when journal lines about to be posted carry an amount finer than one
+ * öre. Same class as `UnbalancedPostingError` — a server-side invariant
+ * violation surfacing as the catch-all 500, never a client-correctable input
+ * error (client input is rejected earlier as `InvalidManualVoucherError` /
+ * `InvalidReviewEditError` → 422) — so it deliberately has no dedicated
+ * `app.onError` branch, and nothing is appended to the ledger.
+ */
+export class NonOreExactPostingError extends Error {
+  readonly amount: number;
+
+  constructor(amount: number, side: "debit" | "credit", accountNumber: string | undefined, context?: string) {
+    super(
+      `Non-öre-exact posting${context ? ` for ${context}` : ""}: ${side} ${amount}${
+        accountNumber ? ` on account ${accountNumber}` : ""
+      } has more precision than one öre.`,
+    );
+    this.name = "NonOreExactPostingError";
+    this.amount = amount;
+  }
+}
+
+/**
+ * True when `value` is a finite amount expressible in whole öre (at most two
+ * decimals).
+ *
+ * This is the blind spot `postingImbalanceOre` cannot cover: it compares
+ * INTEGER öre, so a 100.003 debit against a 100.00 credit rounds to a
+ * PERFECTLY BALANCED entry — while the raw 100.003 is what actually gets
+ * stored and re-summed as a float by every projection. Balance and precision
+ * are two separate invariants; check both.
+ */
+export function isOreExact(value: number): boolean {
+  return Number.isFinite(value) && Math.abs(value * 100 - Math.round(value * 100)) <= 1e-6;
+}
+
+/**
+ * Assert every line amount is öre-exact. Returns the same array so producers
+ * can compose it with `assertBalancedPosting`; throws
+ * `NonOreExactPostingError` otherwise.
+ *
+ * Belongs on any path that posts amounts VERBATIM (manual vouchers), where no
+ * derivation rounds the inputs on the way in. Derived shapes in
+ * `buildPostingLines` compute their legs from extracted voucher fields and are
+ * covered by `assertBalancedPosting` alone.
+ */
+export function assertOreExactLines<T extends PostingAmounts & { accountNumber?: string }>(
+  lines: T[],
+  context?: string,
+): T[] {
+  for (const line of lines) {
+    for (const [side, value] of [
+      ["debit", line.debit],
+      ["credit", line.credit],
+    ] as const) {
+      if (!isOreExact(value)) {
+        throw new NonOreExactPostingError(value, side, line.accountNumber, context);
+      }
+    }
+  }
+  return lines;
+}
+
 function toOre(value: number): number {
   return Math.round(value * 100);
 }
