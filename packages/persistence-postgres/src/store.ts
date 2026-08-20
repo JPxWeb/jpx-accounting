@@ -1098,6 +1098,20 @@ export class PostgresLedgerStore implements LedgerStore {
     );
   }
 
+  /**
+   * NOT YET IMPLEMENTED (KFR Phase B, Task 9). The real transactional write is
+   * blocked on migration `0009_manual_vouchers.sql` (Task 8), which is what
+   * makes `ledger.vouchers.evidence_packet_id` nullable and adds the `origin`
+   * column a manual voucher needs. Present only so `PostgresLedgerStore` keeps
+   * satisfying the `LedgerStore` interface between tasks; nothing routes here
+   * yet (`POST /api/vouchers/manual` lands in Task 10, after Task 9).
+   */
+  async createManualVoucher(): Promise<never> {
+    throw new Error(
+      "PostgresLedgerStore.createManualVoucher is not implemented yet (KFR Phase B Task 9 — needs migration 0009).",
+    );
+  }
+
   async findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined> {
     const rows = await this.client<ReviewRow[]>`
       SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,

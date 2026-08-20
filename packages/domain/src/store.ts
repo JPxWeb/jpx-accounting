@@ -11,6 +11,8 @@ import type {
   EvidencePacket,
   ExtractionResult,
   LedgerEvent,
+  ManualVoucherInput,
+  ManualVoucherResult,
   ReportBundle,
   ReportPack,
   ReviewDecisionInput,
@@ -48,6 +50,7 @@ import {
   planComplianceMerge,
   planEvidenceCreate,
   planExtractionRefresh,
+  planManualVoucher,
   planReviewDecision,
 } from "./store-planning";
 import {
@@ -281,6 +284,25 @@ export interface LedgerStore {
    * created (documented v1 scope). Bounds violations throw `SieImportError`.
    */
   importSie(input: SieImportInput): Promise<SieImportResult>;
+  /**
+   * Create a manual N-line journal entry (KFR Phase B / D2): a Voucher
+   * (`origin: "manual"`, `evidencePacketId: null`) plus a ReviewTask
+   * (`needs-review`) whose suggestion carries the verbatim lines. Approval
+   * posts those lines unchanged — the review queue stays the only path to a
+   * posted voucher, same invariant as every other posting route. Throws
+   * `InvalidManualVoucherError` (→ HTTP 422) before any mutation when the
+   * lines don't balance to the exact öre.
+   *
+   * Not idempotent by design (unlike `createEvidence`'s content dedupe): a
+   * hand-typed entry carries no content hash to dedupe on, and two identical
+   * entries are a legitimate double booking the reviewer may intend. Repeat
+   * submissions are the caller's problem to gate.
+   *
+   * `actorId` is optional server-derived attribution (`ActorAttribution`) —
+   * absent means "no authenticated subject" and the store resolves
+   * `DEMO_ACTOR_ID`, exactly like `createEvidence`.
+   */
+  createManualVoucher(input: ManualVoucherInput & ActorAttribution): Promise<ManualVoucherResult>;
   findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined>;
   getReviewFeed(): Promise<ReviewTask[]>;
   getReports(range?: ReportRange): Promise<ReportBundle>;
@@ -594,6 +616,40 @@ export class MemoryLedgerStore implements LedgerStore {
     return result;
   }
 
+  async createManualVoucher(input: ManualVoucherInput & ActorAttribution): Promise<ManualVoucherResult> {
+    // `planManualVoucher` requires a resolved actor (it stamps `createdBy` and
+    // both event `actorId`s); the sentinel fallback is the store's job, same
+    // as `planEvidenceCreate` does internally for createEvidence.
+    const plan = planManualVoucher(
+      { ...input, actorId: input.actorId ?? DEMO_ACTOR_ID },
+      {
+        voucherIndex: this.vouchers.size,
+        organizationId: defaultOrganizationId,
+        workspaceId: defaultWorkspaceId,
+      },
+    );
+
+    // The planner throws (öre gate) before returning, so nothing below runs on
+    // a rejected entry — no read model, no event, no chain movement.
+    this.vouchers.set(plan.voucher.id, plan.voucher);
+    this.reviews.set(plan.review.id, plan.review);
+    // A manual plan's review ALWAYS carries the verbatim-line suggestion
+    // (planManualVoucher builds it unconditionally); assert rather than
+    // silently skip the suggestions index, which approval reads back.
+    const suggestion = plan.review.suggestion;
+    if (!suggestion) {
+      throw new Error(`Manual voucher plan for ${plan.voucher.id} produced no suggestion (invariant violation).`);
+    }
+    this.suggestions.set(plan.voucher.id, suggestion);
+    this.voucherIdToReviewId.set(plan.voucher.id, plan.review.id);
+
+    for (const event of plan.events) {
+      this.appendEvent(event);
+    }
+
+    return { voucherId: plan.voucher.id, reviewId: plan.review.id };
+  }
+
   async findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined> {
     const reviewId = this.voucherIdToReviewId.get(voucherId);
     return reviewId ? this.reviews.get(reviewId) : undefined;
@@ -657,6 +713,12 @@ export class MemoryLedgerStore implements LedgerStore {
   async suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined> {
     const voucher = this.vouchers.get(voucherId);
     if (!voucher) return undefined;
+
+    // KFR D2: a manual voucher's suggestion IS the reviewer's verbatim lines —
+    // there is nothing to re-derive from extracted fields, and regenerating
+    // would drop `suggestion.lines` and turn the next approval into a
+    // "no verbatim lines" invariant 500. Return what was authored, unchanged.
+    if (voucher.origin === "manual") return this.suggestions.get(voucherId);
 
     const ruleHits = evaluateVoucherRules(voucher);
     const suggestion = buildDeterministicSuggestion(voucher, ruleHits);

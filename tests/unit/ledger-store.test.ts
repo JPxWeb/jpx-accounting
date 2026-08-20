@@ -10,9 +10,16 @@ import {
   InvalidPeriodTokenError,
   InvalidReviewEditError,
   parseSie,
+  summarizeEventIntegrity,
   today,
 } from "@jpx-accounting/domain";
-import { MemoryLedgerStore, ReviewNotFoundError, SieImportError, type LedgerStore } from "@jpx-accounting/domain/store";
+import {
+  DEMO_ACTOR_ID,
+  MemoryLedgerStore,
+  ReviewNotFoundError,
+  SieImportError,
+  type LedgerStore,
+} from "@jpx-accounting/domain/store";
 
 /**
  * March 2026 SIE fixture: seed lines are booked "now", so a voucher pinned to
@@ -1000,4 +1007,157 @@ test("MemoryLedgerStore.getCloseRun returns the honest empty shell: close_unavai
   const now = new Date();
   const expectedPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   assert.equal(closeRun.period, expectedPeriod);
+});
+
+test("MemoryLedgerStore.createManualVoucher creates a review, then approve posts the verbatim lines", async () => {
+  const store = new MemoryLedgerStore();
+  const journalBefore = (await store.getReports()).journal.length;
+  const feedBefore = (await store.getReviewFeed()).length;
+
+  const result = await store.createManualVoucher({
+    actorId: "user_founder",
+    description: "Utlägg för kontorsmaterial",
+    bookedAt: "2026-03-20",
+    lines: [
+      { accountNumber: "6110", debit: 250, credit: 0, vatCode: "NA" },
+      { accountNumber: "2899", debit: 0, credit: 250, vatCode: "NA" },
+    ],
+  });
+
+  const feed = await store.getReviewFeed();
+  assert.equal(feed.length, feedBefore + 1);
+  const review = feed.find((r) => r.id === result.reviewId);
+  assert.ok(review);
+  assert.equal(review.status, "needs-review");
+  assert.deepEqual(
+    review.suggestion?.lines?.map((l) => l.accountNumber),
+    ["6110", "2899"],
+  );
+
+  const snapshot = await store.getSnapshot();
+  const voucher = snapshot.vouchers.find((v) => v.id === result.voucherId);
+  assert.ok(voucher);
+  assert.equal(voucher.origin, "manual");
+  assert.equal(voucher.evidencePacketId, null);
+
+  const decided = await store.applyReviewDecision(result.reviewId, "approve", { actorId: "user_founder" });
+  assert.equal(decided?.status, "approved");
+
+  const journal = (await store.getReports()).journal;
+  assert.equal(journal.length, journalBefore + 2, "verbatim 2-line manual entry, not a fabricated 3-line expense");
+  const [cost, settlement] = journal.slice(-2);
+  assert.ok(cost && settlement);
+  assert.equal(cost.accountNumber, "6110");
+  assert.equal(cost.debit, 250);
+  assert.equal(settlement.accountNumber, "2899");
+  assert.equal(settlement.credit, 250);
+  assert.equal(cost.bookedAt.slice(0, 10), "2026-03-20");
+});
+
+test("MemoryLedgerStore.createManualVoucher rejects an exact-öre-unbalanced entry before any mutation", async () => {
+  const store = new MemoryLedgerStore();
+  const eventsBefore = (await store.getEvents()).length;
+  const vouchersBefore = (await store.getSnapshot()).vouchers.length;
+  await assert.rejects(
+    () =>
+      store.createManualVoucher({
+        actorId: "user_founder",
+        description: "Bad entry",
+        bookedAt: "2026-03-20",
+        lines: [
+          { accountNumber: "6110", debit: 100.01, credit: 0, vatCode: "NA" },
+          { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" },
+        ],
+      }),
+    // Cross-module-boundary error identity: name, never instanceof (tsx keeps
+    // a dual module cache, so the class identity can differ per import path).
+    (error: unknown) => (error as Error).name === "InvalidManualVoucherError",
+  );
+  assert.equal((await store.getEvents()).length, eventsBefore, "no events appended on rejection");
+  assert.equal((await store.getSnapshot()).vouchers.length, vouchersBefore, "no voucher read model written");
+});
+
+test("MemoryLedgerStore.createManualVoucher falls back to the demo actor sentinel when attribution is absent", async () => {
+  const store = new MemoryLedgerStore();
+  const result = await store.createManualVoucher({
+    description: "Ingen inloggad användare",
+    bookedAt: "2026-03-21",
+    lines: [
+      { accountNumber: "6110", debit: 100, credit: 0, vatCode: "NA" },
+      { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" },
+    ],
+  });
+
+  const voucher = (await store.getSnapshot()).vouchers.find((v) => v.id === result.voucherId);
+  assert.equal(voucher?.createdBy, DEMO_ACTOR_ID);
+  const created = (await store.getEvents()).filter((event) => event.aggregateId === result.voucherId);
+  assert.deepEqual(
+    created.map((event) => event.actorId),
+    [DEMO_ACTOR_ID],
+  );
+});
+
+test("MemoryLedgerStore.createManualVoucher appends a hash-linked VoucherCreated + SuggestionGenerated pair", async () => {
+  const store = new MemoryLedgerStore();
+  const eventsBefore = await store.getEvents();
+  const result = await store.createManualVoucher({
+    actorId: "user:sub-1",
+    description: "Kedjekontroll",
+    bookedAt: "2026-03-22",
+    lines: [
+      { accountNumber: "6110", debit: 40, credit: 0, vatCode: "NA" },
+      { accountNumber: "2899", debit: 0, credit: 40, vatCode: "NA" },
+    ],
+  });
+
+  const events = await store.getEvents();
+  const appended = events.slice(eventsBefore.length);
+  assert.deepEqual(
+    appended.map((event) => event.eventType),
+    ["VoucherCreated", "SuggestionGenerated"],
+  );
+  assert.equal(appended[0]?.aggregateId, result.voucherId);
+  assert.equal(appended[1]?.aggregateId, result.reviewId);
+  // Chain linkage: each appended event links to its predecessor's hash — the
+  // store's own appendEvent derived it, no hand-crafted previousHash.
+  assert.equal(appended[0]?.previousHash, eventsBefore.at(-1)?.eventHash);
+  assert.equal(appended[1]?.previousHash, appended[0]?.eventHash);
+  const integrity = summarizeEventIntegrity(events, { verifiedAt: "2026-03-22T00:00:00.000Z", verifyPayloads: true });
+  assert.equal(integrity.chainLinked, true, "manual-voucher events keep the chain linked");
+  assert.equal(integrity.payloadMismatchCount, 0, "payloads recompute to their stored hashes");
+
+  // Read APIs resolve the pair both ways.
+  const byVoucher = await store.findReviewByVoucher(result.voucherId);
+  assert.equal(byVoucher?.id, result.reviewId);
+  assert.equal((await store.suggestVoucher(result.voucherId))?.voucherId, result.voucherId);
+});
+
+test("MemoryLedgerStore.suggestVoucher never regenerates over a manual voucher's verbatim lines", async () => {
+  const store = new MemoryLedgerStore();
+  const result = await store.createManualVoucher({
+    actorId: "user_founder",
+    description: "Verbatim bevarande",
+    bookedAt: "2026-03-23",
+    lines: [
+      { accountNumber: "6110", debit: 75, credit: 0, vatCode: "NA" },
+      { accountNumber: "2899", debit: 0, credit: 75, vatCode: "NA" },
+    ],
+  });
+
+  // POST /api/vouchers/:id/suggest is reachable for ANY voucher id. Rebuilding
+  // a deterministic single-account suggestion here would strip `lines` from
+  // the review and make approval throw the manual-origin invariant.
+  const regenerated = await store.suggestVoucher(result.voucherId);
+  assert.deepEqual(
+    regenerated?.lines?.map((line) => line.accountNumber),
+    ["6110", "2899"],
+  );
+  const review = await store.findReviewByVoucher(result.voucherId);
+  assert.deepEqual(
+    review?.suggestion?.lines?.map((line) => line.accountNumber),
+    ["6110", "2899"],
+  );
+
+  const decided = await store.applyReviewDecision(result.reviewId, "approve", { actorId: "user_founder" });
+  assert.equal(decided?.status, "approved");
 });
