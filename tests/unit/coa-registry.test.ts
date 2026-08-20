@@ -20,8 +20,40 @@ test("bas-2026 account numbers are unique", () => {
   assert.equal(new Set(numbers).size, numbers.length);
 });
 
-test("bas-2026 contains exactly the 68-account SMB subset", () => {
-  assert.equal(bas2026.accounts.length, 68);
+test("bas-2026 contains exactly the 78-account SMB subset (68 + 10 KFR Phase B additions)", () => {
+  assert.equal(bas2026.accounts.length, 78);
+});
+
+test("KFR Phase B accounts exist with the correct BAS names and classes", () => {
+  const expected: Array<[string, string, CoaAccountClass]> = [
+    ["1229", "Ackumulerade avskrivningar på inventarier och verktyg", "asset"],
+    ["1259", "Ackumulerade avskrivningar på datorer", "asset"],
+    ["2126", "Periodiseringsfond 2026", "equity-liability"],
+    ["2518", "Betald F-skatt", "equity-liability"],
+    ["2614", "Utgående moms omvänd skattskyldighet, 25 %", "equity-liability"],
+    ["2645", "Beräknad ingående moms på förvärv från utlandet", "equity-liability"],
+    ["2647", "Ingående moms omvänd skattskyldighet varor och tjänster i Sverige", "equity-liability"],
+    ["2899", "Övriga kortfristiga skulder", "equity-liability"],
+    ["3305", "Försäljning tjänster till land utanför EU", "revenue"],
+    ["8811", "Avsättning till periodiseringsfond", "financial"],
+  ];
+  for (const [number, name, accountClass] of expected) {
+    const account = findCoaAccount(bas2026, number);
+    assert.ok(account, `account ${number} missing`);
+    assert.equal(account?.name, name);
+    assert.equal(account?.accountClass, accountClass);
+  }
+  // 8910 already existed before this phase — must not be duplicated.
+  assert.equal(bas2026.accounts.filter((account) => account.number === "8910").length, 1);
+});
+
+test("reverseChargeOutput/reverseChargeInput/ownerSettlement roles resolve", () => {
+  assert.ok(findCoaAccount(bas2026, bas2026.roles.reverseChargeOutput));
+  assert.ok(findCoaAccount(bas2026, bas2026.roles.reverseChargeInput));
+  assert.ok(findCoaAccount(bas2026, bas2026.roles.ownerSettlement));
+  assert.equal(bas2026.roles.reverseChargeOutput, "2614");
+  assert.equal(bas2026.roles.reverseChargeInput, "2645");
+  assert.equal(bas2026.roles.ownerSettlement, "2899");
 });
 
 test("every role account resolves via findCoaAccount", () => {
@@ -35,6 +67,9 @@ test("every role account resolves via findCoaAccount", () => {
     bas2026.roles.vatSettlement,
     bas2026.roles.fallbackExpense,
     bas2026.roles.rounding,
+    bas2026.roles.reverseChargeOutput,
+    bas2026.roles.reverseChargeInput,
+    bas2026.roles.ownerSettlement,
   ];
   for (const number of roleAccounts) {
     assert.ok(findCoaAccount(bas2026, number), `role account ${number} missing from bas-2026`);

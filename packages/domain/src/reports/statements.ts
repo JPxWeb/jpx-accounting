@@ -21,7 +21,7 @@ import { filterLedgerLines } from "../projections";
  * - Balance-sheet equity/liabilities: credit − debit.
  *
  * Note: `personnel` includes 78xx depreciation because that's how the
- * bas-2026 68-account subset classes 7832/7835 — a documented limitation.
+ * bas-2026 subset classes 7832/7835 — a documented limitation.
  */
 
 /** Account classes that make up the period result (everything not on the balance sheet). */
