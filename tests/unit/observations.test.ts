@@ -72,17 +72,18 @@ function makeSnapshot(partial: Partial<WorkspaceSnapshot> = {}): WorkspaceSnapsh
 
 function makeVoucher(input: {
   id: string;
-  packetId: string;
+  packetId: string | null;
   supplier?: string;
   gross?: number;
   month?: string;
+  origin?: Voucher["origin"];
 }): Voucher {
   return {
     id: input.id,
     organizationId: "org_jpx",
     workspaceId: "workspace_main",
     evidencePacketId: input.packetId,
-    origin: "capture",
+    origin: input.origin ?? "capture",
     voucherNumber: `V-${input.id}`,
     status: "needs-review",
     accountingMethod: "invoice",
@@ -316,6 +317,32 @@ test("missing-evidence: vouchers without packet evidence aggregate into one warn
   assert.equal(obs.provenance.length, 3);
   assert.deepEqual(obs.provenance[0], { kind: "voucher", target: "v_gone" });
   assert.equal(obs.action?.href, "/capture");
+});
+
+test("missing-evidence: manual- and import-origin vouchers are excluded; capture-origin still flags", () => {
+  // A hand-typed journal entry legitimately has no captured evidence — the
+  // detector must not manufacture a warning the user can never clear (same
+  // design precedent as the documented SIE exclusion).
+  const manualOnly = makeSnapshot({
+    vouchers: [
+      makeVoucher({ id: "v_manual", packetId: null, origin: "manual" }),
+      makeVoucher({ id: "v_import", packetId: null, origin: "import" }),
+    ],
+    packets: [],
+  });
+  assert.deepEqual(detectMissingEvidence(manualOnly), []);
+
+  const mixed = makeSnapshot({
+    vouchers: [
+      makeVoucher({ id: "v_manual", packetId: null, origin: "manual" }),
+      makeVoucher({ id: "v_capture", packetId: "p_gone" }),
+    ],
+    packets: [],
+  });
+  const observations = detectMissingEvidence(mixed);
+  assert.equal(observations.length, 1);
+  assert.deepEqual(observations[0]?.params, { count: 1 }, "only the capture-origin voucher counts");
+  assert.deepEqual(observations[0]?.provenance, [{ kind: "voucher", target: "v_capture" }]);
 });
 
 test("missing-evidence: fully evidenced workspaces stay silent", () => {

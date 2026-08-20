@@ -11,8 +11,10 @@ import type { Observation, ReportPack, TaxDeadline, Voucher, WorkspaceSnapshot }
  * `titleKey`/`labelKey` resolve in the web's `observations` message namespace
  * via `t(titleKey, params)` — the engine ships keys, never prose.
  *
- * Documented caveat (plan finding 5): SIE-imported vouchers create no voucher
- * rows, so `detectMissingEvidence` covers captured vouchers only.
+ * Documented caveat (plan finding 5): `detectMissingEvidence` covers
+ * capture-origin vouchers only — SIE-imported vouchers create no voucher rows
+ * at all, and manual/import-origin rows are filtered out explicitly (KFR
+ * Phase B).
  */
 
 export const CASH_RUNWAY_CRITICAL_MONTHS = 1.5;
@@ -238,12 +240,19 @@ export function detectDeadlineProximity(deadlines: TaxDeadline[], today: string)
 /**
  * Vouchers whose evidence packet is missing or empty (Bokföringslagen wants a
  * verification behind every posting). One aggregate warning; the first ≤3
- * vouchers land in provenance as drill targets. SIE-imported vouchers have no
- * voucher rows → captured vouchers only (documented).
+ * vouchers land in provenance as drill targets.
+ *
+ * Capture-origin vouchers ONLY (KFR Phase B). A manual journal entry is its own
+ * verification — the reviewer typed the lines — and an imported voucher's
+ * verification lives in the source system, so neither can ever produce the
+ * captured evidence this detector asks for. Flagging them would emit a warning
+ * the user cannot clear. This is the same exclusion the SIE path already got
+ * structurally: `importSie` creates no voucher rows at all (documented).
  */
 export function detectMissingEvidence(snapshot: WorkspaceSnapshot): Observation[] {
   const packetsById = new Map(snapshot.packets.map((packet) => [packet.id, packet]));
   const missing = snapshot.vouchers.filter((voucher) => {
+    if (voucher.origin !== "capture") return false;
     const packet = voucher.evidencePacketId ? packetsById.get(voucher.evidencePacketId) : undefined;
     return !packet || packet.evidenceIds.length === 0;
   });
