@@ -401,6 +401,58 @@ describe("planReviewDecision", () => {
     assert.equal(plan.updatedReview.provenanceTimeline.at(-1)?.label, "Review approved", "not 'Approved with edits'");
   });
 
+  it("carries each manual line's own vatCode into the posted ledger line", () => {
+    const voucher = {
+      id: "v1",
+      organizationId: "org_jpx",
+      workspaceId: "workspace_main",
+      evidencePacketId: null,
+      voucherNumber: "V-1001",
+      status: "needs-review",
+      accountingMethod: "invoice",
+      extractedFields: [],
+      voucherFields: { currency: "SEK", description: "Inköp", transactionDate: "2026-03-20" },
+      createdAt: "2026-03-20T09:00:00.000Z",
+      createdBy: "user:x",
+      origin: "manual",
+    } as Voucher;
+    const review = {
+      id: "r1",
+      voucherId: "v1",
+      title: "Review V-1001",
+      status: "needs-review",
+      suggestedAction: "Approve the manual entry.",
+      suggestion: {
+        id: "s1",
+        voucherId: "v1",
+        accountNumber: "6110",
+        accountName: "Kontorsmateriel",
+        vatCode: "VAT25",
+        confidence: 1,
+        reasoning: "manual",
+        kind: "recommendation",
+        citations: [],
+        ruleHits: [],
+        // Per-line VAT codes differ — the bypass must not flatten them.
+        lines: [
+          { accountNumber: "6110", debit: 100, credit: 0, vatCode: "VAT25" },
+          { accountNumber: "2641", debit: 25, credit: 0, vatCode: "VAT25" },
+          { accountNumber: "1930", debit: 0, credit: 125, vatCode: "NA" },
+        ],
+      },
+      provenanceTimeline: [],
+    } as ReviewTask;
+    const plan = planReviewDecision(review, voucher, "approve", { actorId: "user:x" }, "2026-03-20T10:00:00.000Z");
+    assert.equal(plan.kind, "apply");
+    if (plan.kind !== "apply") throw new Error("unreachable");
+    assert.deepEqual(
+      plan.lines?.map((line) => line.vatCode),
+      ["VAT25", "VAT25", "NA"],
+    );
+    // The accounting date comes from the business event, never the decision click.
+    assert.deepEqual(new Set(plan.lines?.map((line) => line.bookedAt)), new Set(["2026-03-20"]));
+  });
+
   it("never posts a rejected manual-origin voucher", () => {
     const voucher = {
       id: "v1",
