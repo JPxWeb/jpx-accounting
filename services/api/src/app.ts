@@ -378,10 +378,18 @@ export function createApp({
   // limit below, matching MAX_UPLOAD_BYTES, instead of the 512 KiB JSON ceiling.
   const isStubUploadPut = (c: Context<AppEnv>) => c.req.method === "PUT" && /^\/api\/uploads\/[^/]+$/.test(c.req.path);
 
-  // Local-disk blob byte-transfer routes (D1): path pattern shared by the body-limit gate below
+  // Local-disk blob byte-transfer routes (D1): ONE predicate shared by the body-limit gate below
   // and the JWKS-auth exemption further down — both must agree on exactly which requests these are.
+  // Deliberately narrow on all three axes: the local backend must actually be wired, the method
+  // must be one of the two the handlers below register, and the path must be a single token
+  // segment. Anything else keeps the normal auth + body-limit treatment.
   const LOCAL_BLOB_ROUTE_PATTERN = /^\/api\/blobs\/local\/[^/]+$/;
-  const isLocalBlobPut = (c: Context<AppEnv>) => c.req.method === "PUT" && LOCAL_BLOB_ROUTE_PATTERN.test(c.req.path);
+  const localBlobStorageActive = blobUploader instanceof LocalDiskBlobUploader;
+  const isLocalBlobByteTransfer = (c: Context<AppEnv>) =>
+    localBlobStorageActive &&
+    (c.req.method === "PUT" || c.req.method === "GET") &&
+    LOCAL_BLOB_ROUTE_PATTERN.test(c.req.path);
+  const isLocalBlobPut = (c: Context<AppEnv>) => c.req.method === "PUT" && isLocalBlobByteTransfer(c);
 
   app.use("/api/*", async (c, next) => {
     if (!["POST", "PUT", "PATCH"].includes(c.req.method)) {
@@ -448,11 +456,14 @@ export function createApp({
       if (c.req.method === "GET" && c.req.path === "/api/runtime-info") {
         return next();
       }
-      // Local-disk blob byte-transfer routes (D1) are guarded by their own short-lived HMAC
-      // token embedded in the URL, mirroring how an Azure SAS URL carries its own credential and
-      // never reaches this app's JWT gate either (it's not even routed through this app). A
-      // browser <img>/fetch reading an evidence preview cannot attach an Authorization header.
-      if (LOCAL_BLOB_ROUTE_PATTERN.test(c.req.path)) {
+      // Exactly the two local-disk byte-transfer combinations (D1) — PUT and GET on a single
+      // token segment, and only while the local backend is wired — are guarded by their own
+      // short-lived HMAC token embedded in the URL, mirroring how an Azure SAS URL carries its
+      // own credential and never reaches this app's JWT gate either (it's not even routed
+      // through this app). A browser <img>/fetch reading an evidence preview cannot attach an
+      // Authorization header. Every other method on that path keeps the JWT gate, so a future
+      // handler mounted there can never inherit an accidental bypass.
+      if (isLocalBlobByteTransfer(c)) {
         return next();
       }
       // /api/testing/reset is route-gated on allowTestReset already, but layering JWT defense in

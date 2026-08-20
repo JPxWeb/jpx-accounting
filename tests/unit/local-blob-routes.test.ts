@@ -37,6 +37,27 @@ function createLocalBlobTestApp(rootDir: string) {
   return { app: createApp({ ...dependencies, allowTestReset: false }), uploader: dependencies.blobUploader };
 }
 
+/** Normal mode with a JWKS URL configured — the auth gate is live on every non-exempt /api/* route. */
+function createJwksGatedLocalBlobApp(rootDir: string) {
+  const dependencies = createApiRuntimeDependencies({
+    port: 0,
+    runtimeMode: "normal",
+    allowTestReset: false,
+    corsPolicy: { kind: "allowlist", origins: ["http://localhost:3002"] },
+    azureOpenAi: {},
+    database: { poolMode: "direct", poolMax: 10 },
+    azureStorage: {},
+    azureDocumentIntelligence: {},
+    // Never actually fetched: the exemption must short-circuit BEFORE hono/jwk calls out to it,
+    // and a request without a bearer token is rejected before key resolution either way.
+    auth: { jwksUrl: "https://jwks.invalid.test/keys" },
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
+    localBlobDir: rootDir,
+  });
+  if (dependencies.blobUploader.kind !== "local") throw new Error("expected the local uploader for this test");
+  return { app: createApp({ ...dependencies, allowTestReset: false }), uploader: dependencies.blobUploader };
+}
+
 async function initLocalUpload(app: ReturnType<typeof createApp>, filename: string, mimeType: string) {
   const response = await app.request("http://localhost/api/uploads/init", {
     method: "POST",
@@ -113,24 +134,7 @@ test("PUT rejects a body over the 16 MiB cap with 413", async (t) => {
 });
 
 test("local blob byte-transfer routes bypass the JWKS auth gate while other /api/* routes still require it", async (t) => {
-  const rootDir = withTempBlobDir(t);
-  const dependencies = createApiRuntimeDependencies({
-    port: 0,
-    runtimeMode: "normal",
-    allowTestReset: false,
-    corsPolicy: { kind: "allowlist", origins: ["http://localhost:3002"] },
-    azureOpenAi: {},
-    database: { poolMode: "direct", poolMax: 10 },
-    azureStorage: {},
-    azureDocumentIntelligence: {},
-    // Never actually fetched: the exemption must short-circuit BEFORE hono/jwk calls out to it.
-    auth: { jwksUrl: "https://jwks.invalid.test/keys" },
-    advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
-    localBlobDir: rootDir,
-  });
-  const app = createApp({ ...dependencies, allowTestReset: false });
-  if (dependencies.blobUploader.kind !== "local") throw new Error("expected the local uploader for this test");
-  const uploader = dependencies.blobUploader;
+  const { app, uploader } = createJwksGatedLocalBlobApp(withTempBlobDir(t));
 
   const unauthenticatedWorkspace = await app.request("http://localhost/api/workspace");
   assert.equal(unauthenticatedWorkspace.status, 401);
@@ -148,4 +152,18 @@ test("local blob byte-transfer routes bypass the JWKS auth gate while other /api
   const sas = await uploader.mintReadSas(init.blobPath);
   const get = await app.request(`http://localhost${sas.url}`);
   assert.equal(get.status, 200);
+});
+
+test("the auth exemption covers ONLY PUT/GET: another method on the same path still hits the JWT gate", async (t) => {
+  const { app, uploader } = createJwksGatedLocalBlobApp(withTempBlobDir(t));
+  const init = await uploader.initUpload({ filename: "kvitto.jpg", mimeType: "image/jpeg", size: 1024 });
+
+  // Same path, same real token — only the method differs. No handler is mounted for DELETE, but
+  // the answer must come from the auth gate (JSON 401), never a bare unauthenticated 404: an
+  // exemption keyed on the path alone would hand any future handler here a silent bypass.
+  const deleted = await app.request(`http://localhost${init.uploadUrl}`, { method: "DELETE" });
+  assert.equal(deleted.status, 401);
+  const body = (await deleted.json()) as { runtimeMode?: string; requestId?: string };
+  assert.equal(body.runtimeMode, "normal");
+  assert.equal(typeof body.requestId, "string");
 });
