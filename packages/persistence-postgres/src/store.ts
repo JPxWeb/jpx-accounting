@@ -58,6 +58,7 @@ import {
   type ReviewAction,
 } from "@jpx-accounting/domain";
 import {
+  buildImportedVoucher,
   isDuplicateEvidence,
   planSieImport,
   ReviewNotFoundError,
@@ -958,6 +959,8 @@ export class PostgresLedgerStore implements LedgerStore {
         SET extracted_fields = ${tx.json(plan.updatedVoucher.extractedFields as unknown as Parameters<typeof tx.json>[0])},
             voucher_fields = ${tx.json(plan.updatedVoucher.voucherFields as Parameters<typeof tx.json>[0])}
         WHERE id = ${plan.updatedVoucher.id}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
       `;
 
         // 6. Persist regenerated suggestion / blocked copy on the review read model.
@@ -1040,6 +1043,9 @@ export class PostgresLedgerStore implements LedgerStore {
           eventHash: string;
         };
         const batch: PlannedEventRow[] = [];
+        // KFR Phase D / Task 1: the already-posted Voucher rows materialized
+        // alongside the events, batched the same way for the same reason.
+        const voucherBatch: Voucher[] = [];
         let prev = tailHash;
         for (const planned of vouchers) {
           if (alreadyImported.has(planned.aggregateId)) {
@@ -1058,6 +1064,15 @@ export class PostgresLedgerStore implements LedgerStore {
           const eventHash = buildEventHash(prev, payload);
           batch.push({ id: createId("evt"), aggregateId: planned.aggregateId, payload, previousHash: prev, eventHash });
           prev = eventHash;
+
+          voucherBatch.push(
+            buildImportedVoucher(planned, {
+              organizationId: this.defaults.organizationId,
+              workspaceId: this.defaults.workspaceId,
+              actorId,
+              createdAt: occurredAt,
+            }),
+          );
 
           result.importedVouchers += 1;
           result.importedTransactions += planned.lines.length;
@@ -1093,6 +1108,36 @@ export class PostgresLedgerStore implements LedgerStore {
           FROM jsonb_array_elements(${tx.json(batch as unknown as Parameters<typeof tx.json>[0])}::jsonb)
             WITH ORDINALITY AS e(doc, ord)
           ORDER BY e.ord
+        `;
+        }
+
+        if (voucherBatch.length > 0) {
+          // Same one-round-trip bulk-insert shape as the events batch above,
+          // for the same reason: never one INSERT per SIE voucher under the
+          // workspace chain lock. `evidence_packet_id` is always NULL for a
+          // freshly-imported voucher — only the compose/attach path ever sets
+          // it. Casts are explicit so the text values coming out of jsonb land
+          // in the timestamptz column without relying on assignment coercion.
+          await tx`
+          INSERT INTO ledger.vouchers (
+            id, organization_id, workspace_id, evidence_packet_id, voucher_number,
+            accounting_method, status, origin, voucher_fields, extracted_fields,
+            created_by, created_at
+          )
+          SELECT
+            v->>'id',
+            v->>'organizationId',
+            v->>'workspaceId',
+            NULL,
+            v->>'voucherNumber',
+            v->>'accountingMethod',
+            v->>'status',
+            v->>'origin',
+            v->'voucherFields',
+            v->'extractedFields',
+            v->>'createdBy',
+            (v->>'createdAt')::timestamptz
+          FROM jsonb_array_elements(${tx.json(voucherBatch as unknown as Parameters<typeof tx.json>[0])}::jsonb) AS v
         `;
         }
 
@@ -1504,6 +1549,8 @@ export class PostgresLedgerStore implements LedgerStore {
         UPDATE ledger.vouchers
         SET status = ${plan.updatedVoucher.status}
         WHERE id = ${plan.updatedVoucher.id}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
       `;
 
         // Honest decision vocabulary (WS-B B6a) + optional PostedToLedger with

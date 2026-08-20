@@ -223,6 +223,20 @@ export async function scenarioSieImportIdempotency(h: ConformanceHarness): Promi
     entry.bookedAt,
   ]);
 
+  // KFR Phase D / Task 1 (readiness G3): the import materializes an
+  // already-posted Voucher row so migrated history is attachable and displays
+  // its real series+number. Re-import must NOT duplicate or rewrite the row.
+  const snapshot = await h.store.getSnapshot();
+  const importedVoucher = snapshot.vouchers.find((voucher) => voucher.id === "sie_A_42");
+  assert.equal(
+    importedVoucher?.voucherNumber,
+    "A 42",
+    `${h.label}: imported voucher row must exist with its reference`,
+  );
+  assert.equal(importedVoucher?.origin, "import", `${h.label}: imported voucher origin`);
+  assert.equal(importedVoucher?.status, "posted", `${h.label}: imported voucher status`);
+  assert.equal(importedVoucher?.evidencePacketId, null, `${h.label}: imported voucher carries no evidence packet`);
+
   return {
     importedVouchers: result.importedVouchers,
     importedTransactions: result.importedTransactions,
@@ -233,6 +247,15 @@ export async function scenarioSieImportIdempotency(h: ConformanceHarness): Promi
     journalReplayDelta: journalReplay - journalAfter,
     eventReplayDelta: eventsReplay - eventsAfter,
     marchLines,
+    importedVoucherCount: snapshot.vouchers.filter((voucher) => voucher.origin === "import").length,
+    importedVoucherNumber: importedVoucher?.voucherNumber ?? null,
+    importedVoucherOrigin: importedVoucher?.origin ?? null,
+    importedVoucherStatus: importedVoucher?.status ?? null,
+    importedVoucherEvidencePacketId: importedVoucher?.evidencePacketId ?? null,
+    importedVoucherDescription: importedVoucher?.voucherFields.description ?? null,
+    importedVoucherTransactionDate: importedVoucher?.voucherFields.transactionDate ?? null,
+    // The imported voucher has no ReviewTask — it never passed a review decision.
+    importedVoucherInReviewFeed: (await h.store.getReviewFeed()).some((review) => review.voucherId === "sie_A_42"),
   };
 }
 

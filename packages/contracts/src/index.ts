@@ -32,7 +32,13 @@ export const evidenceModalitySchema = z.enum([
   "email-forward",
 ]);
 export const suggestionKindSchema = z.enum(["explanation", "recommendation", "automation-request"]);
-export const reviewStatusSchema = z.enum(["needs-review", "approved", "rejected", "booked-without-vat"]);
+/**
+ * `posted` (KFR Phase D / Task 1) is distinct from `approved`: an imported
+ * voucher arrives already booked and never passed through a review decision,
+ * so it has no ReviewTask and no approval attribution. It never appears on a
+ * ReviewTask — only on a `origin: "import"` Voucher row.
+ */
+export const reviewStatusSchema = z.enum(["needs-review", "approved", "rejected", "booked-without-vat", "posted"]);
 export const trustLevelSchema = z.enum(["official", "internal", "user-upload"]);
 /**
  * Append-only event vocabulary (WS-B B6). ADDITIVE ONLY: members are never

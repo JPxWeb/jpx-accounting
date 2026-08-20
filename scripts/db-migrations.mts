@@ -581,6 +581,21 @@ export async function runCapabilityAssertions(sql: PostgresClient | ReservedSql)
   );
 
   results.push(
+    await safeCheck("vouchers-tenant-pk", async () => {
+      const columns = await primaryKeyColumns(sql, "ledger", "vouchers");
+      const pkPass = JSON.stringify(columns) === JSON.stringify(["organization_id", "workspace_id", "id"]);
+      const fkPass = await constraintExists(sql, "ledger", "review_tasks", "ledger_review_tasks_voucher_fk", "f");
+      const pass = pkPass && fkPass;
+      return {
+        name: "vouchers-tenant-pk",
+        pass,
+        detail: `ledger.vouchers primary key columns: (${columns.join(", ") || "none"}); composite review-task FK ${fkPass ? "present" : "missing"}.`,
+        ...(pass ? {} : { remediation: "Apply migration 0010_voucher_tenant_pk.sql." }),
+      };
+    }),
+  );
+
+  results.push(
     await safeCheck("evidence-dedupe-index", async () => {
       const pass = await indexExists(sql, "ledger", "evidence_objects", "ledger_evidence_objects_dedupe_idx");
       return {

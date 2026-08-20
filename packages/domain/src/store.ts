@@ -92,7 +92,7 @@ export {
 };
 export type { ActorAttribution, ApprovalGate, ReviewAction };
 
-import { DEFAULT_TENANT_SCOPE } from "./tenant";
+import { DEFAULT_TENANT_SCOPE, type TenantScope } from "./tenant";
 
 /**
  * Inclusive local-calendar day window (`YYYY-MM-DD` strings) for scoping the
@@ -261,6 +261,44 @@ export function planSieImport(
   return { vouchers, skipped };
 }
 
+/**
+ * Build the lightweight, already-posted Voucher row materialized for a SIE
+ * import (KFR Phase D / Task 1, readiness G3 — imported history was previously
+ * invisible to evidence attach). Shared by MemoryLedgerStore and
+ * PostgresLedgerStore so the shape can't drift (CONVENTIONS Rule 11 store
+ * parity). `voucherNumber` reuses `planned.reference` ("<series> <number>")
+ * verbatim — the same string the journal/reports already display for `sie_*`
+ * ids, and unique per workspace because `aggregateId` is derived from the same
+ * series+number pair (`ledger_vouchers_number_idx`).
+ *
+ * `status: "posted"` — NOT "approved": the entry arrived already booked and
+ * never passed a review decision, so it carries no ReviewTask. It stays out of
+ * the review feed for exactly that reason.
+ */
+export function buildImportedVoucher(
+  planned: SiePlannedVoucher,
+  ctx: TenantScope & { actorId: string; createdAt: string },
+): Voucher {
+  return {
+    id: planned.aggregateId,
+    organizationId: ctx.organizationId,
+    workspaceId: ctx.workspaceId,
+    evidencePacketId: null,
+    voucherNumber: planned.reference,
+    status: "posted",
+    origin: "import",
+    accountingMethod: "invoice",
+    extractedFields: [],
+    voucherFields: {
+      description: planned.text ?? planned.reference,
+      transactionDate: planned.date,
+      currency: "SEK",
+    },
+    createdAt: ctx.createdAt,
+    createdBy: ctx.actorId,
+  };
+}
+
 export interface LedgerStore {
   createEvidence(input: EvidenceCreateInput & ActorAttribution): Promise<EvidenceCreateResult>;
   composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket>;
@@ -280,8 +318,12 @@ export interface LedgerStore {
    * Import a parsed SIE 4 file. Append-only: one `VoucherImported` event per
    * accepted voucher (payload carries the derived `lines` — replay truth);
    * re-imports skip duplicates via the `sie_<series>_<number>` aggregate id.
-   * Imported vouchers are already booked, so no voucher/review rows are
-   * created (documented v1 scope). Bounds violations throw `SieImportError`.
+   * Each accepted voucher also materializes an already-posted Voucher row
+   * (`buildImportedVoucher` — `origin: "import"`, `status: "posted"`,
+   * `evidencePacketId: null`) keyed by that same aggregate id, so migrated
+   * history is attachable and displays its real series+number (KFR Phase D /
+   * Task 1). No ReviewTask is created — the entry is already booked.
+   * Bounds violations throw `SieImportError`.
    */
   importSie(input: SieImportInput): Promise<SieImportResult>;
   /**
@@ -585,6 +627,7 @@ export class MemoryLedgerStore implements LedgerStore {
     );
 
     const occurredAt = nowIso();
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     for (const planned of vouchers) {
       if (alreadyImported.has(planned.aggregateId)) {
         result.skipped.push({ reference: planned.reference, reason: "duplicate" });
@@ -597,7 +640,7 @@ export class MemoryLedgerStore implements LedgerStore {
         aggregateType: "ledger",
         aggregateId: planned.aggregateId,
         eventType: "VoucherImported",
-        actorId: input.actorId ?? DEMO_ACTOR_ID,
+        actorId,
         occurredAt,
         payload: {
           source: "sie",
@@ -608,6 +651,19 @@ export class MemoryLedgerStore implements LedgerStore {
           lines: planned.lines,
         },
       });
+
+      // KFR Phase D / Task 1: materialize the already-posted Voucher row so
+      // migrated history is attachable (Task 2) and displays its real
+      // series+number (Task 5) instead of the raw `sie_*` aggregate id. The
+      // `VoucherImported` event stays the source of truth — this row is a
+      // projection-side record, never a second source.
+      const voucher = buildImportedVoucher(planned, {
+        organizationId: defaultOrganizationId,
+        workspaceId: defaultWorkspaceId,
+        actorId,
+        createdAt: occurredAt,
+      });
+      this.vouchers.set(voucher.id, voucher);
 
       result.importedVouchers += 1;
       result.importedTransactions += planned.lines.length;

@@ -12,9 +12,9 @@ import type { Observation, ReportPack, TaxDeadline, Voucher, WorkspaceSnapshot }
  * via `t(titleKey, params)` — the engine ships keys, never prose.
  *
  * Documented caveat (plan finding 5): `detectMissingEvidence` covers
- * capture-origin vouchers only — SIE-imported vouchers create no voucher rows
- * at all, and manual/import-origin rows are filtered out explicitly (KFR
- * Phase B).
+ * capture-origin vouchers only — manual/import-origin rows are filtered out
+ * explicitly (KFR Phase B; the `origin` filter is what carries the exclusion
+ * now that KFR Phase D / Task 1 materializes Voucher rows for SIE imports).
  */
 
 export const CASH_RUNWAY_CRITICAL_MONTHS = 1.5;
@@ -246,8 +246,9 @@ export function detectDeadlineProximity(deadlines: TaxDeadline[], today: string)
  * verification — the reviewer typed the lines — and an imported voucher's
  * verification lives in the source system, so neither can ever produce the
  * captured evidence this detector asks for. Flagging them would emit a warning
- * the user cannot clear. This is the same exclusion the SIE path already got
- * structurally: `importSie` creates no voucher rows at all (documented).
+ * the user cannot clear. The `origin` filter is load-bearing, not defensive:
+ * since KFR Phase D / Task 1 `importSie` DOES materialize `origin: "import"`
+ * voucher rows, and every one of them has `evidencePacketId: null`.
  */
 export function detectMissingEvidence(snapshot: WorkspaceSnapshot): Observation[] {
   const packetsById = new Map(snapshot.packets.map((packet) => [packet.id, packet]));

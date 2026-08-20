@@ -62,7 +62,7 @@ test("migration history records every checked-in migration with matching checksu
 });
 
 test(
-  "capability assertions match db-migrations verify (PG 15–17, pgvector, chain, knowledge PK, dedupe)",
+  "capability assertions match db-migrations verify (PG 15–17, pgvector, chain, tenant PKs, dedupe)",
   { skip },
   async () => {
     const client = requireCtx().client;
@@ -81,6 +81,7 @@ test(
       "ledger-events-seq-identity",
       "chain-fork-constraint",
       "knowledge-documents-tenant-pk",
+      "vouchers-tenant-pk",
       "evidence-dedupe-index",
       "manual-vouchers-schema",
     ]) {

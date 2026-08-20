@@ -196,6 +196,23 @@ test("full round-trip: export → parse → importSie reproduces the journal eco
     journalAfter.slice(-5).map((entry) => [entry.accountNumber, entry.debit, entry.credit]),
     goldenJournal.map((entry) => [entry.accountNumber, entry.debit, entry.credit]),
   );
+
+  // KFR Phase D / Task 1 (readiness G3): every accepted voucher materializes an
+  // already-posted Voucher row keyed by its `sie_<series>_<number>` aggregate id,
+  // so imported history is attachable and shows its real series+number.
+  const snapshot = await store.getSnapshot();
+  const firstImportedVoucher = snapshot.vouchers.find((voucher) => voucher.id === "sie_A_1");
+  assert.equal(firstImportedVoucher?.voucherNumber, "A 1");
+  assert.equal(firstImportedVoucher?.origin, "import");
+  assert.equal(firstImportedVoucher?.status, "posted");
+  assert.equal(firstImportedVoucher?.evidencePacketId, null);
+  assert.equal(snapshot.vouchers.filter((voucher) => voucher.origin === "import").length, 2);
+
+  // Re-import is idempotent on the ROW too: no duplicate/updated voucher rows.
+  const replay = await store.importSie({ actorId: "user_test", file: parseSie(text) });
+  assert.equal(replay.importedVouchers, 0);
+  const replaySnapshot = await store.getSnapshot();
+  assert.deepEqual(replaySnapshot.vouchers, snapshot.vouchers);
 });
 
 test("per-voucher isolation: unbalanced voucher skipped, balanced one imported (minimal fixture)", async () => {
