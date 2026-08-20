@@ -288,7 +288,7 @@ async function snapshotHistory(sql: PostgresClient | ReservedSql): Promise<Histo
 /**
  * `ledger.events` existing while `jpx_meta.schema_migrations` is empty means this is a
  * pre-tooling database (bootstrap case), not a fresh one — purely informational for the log
- * line below. The APPLY LOGIC itself needs no separate branch: 0001-0008 are all written
+ * line below. The APPLY LOGIC itself needs no separate branch: 0001-0009 are all written
  * idempotently (`IF NOT EXISTS` / exception-guarded `DO` blocks — verified by reading them),
  * so "pending = every discovered file" safely replays the full set on an existing schema
  * exactly as it would create one from scratch, and each file's checksum is then baselined
@@ -428,7 +428,7 @@ async function indexExists(
 /**
  * Capability assertions run after `migrate` (and on demand via `verify`/`replay`). Each
  * check queries information_schema/pg_catalog for the exact names introduced by migrations
- * 0005-0008 (read from the actual SQL files, not recalled) rather than probing behavior, so
+ * 0005-0009 (read from the actual SQL files, not recalled) rather than probing behavior, so
  * a failure names precisely which migration is missing or which provider capability is
  * absent.
  */
@@ -590,6 +590,27 @@ export async function runCapabilityAssertions(sql: PostgresClient | ReservedSql)
           ? "Index ledger_evidence_objects_dedupe_idx is present on ledger.evidence_objects."
           : "ledger_evidence_objects_dedupe_idx not found on ledger.evidence_objects.",
         ...(pass ? {} : { remediation: "Apply migration 0008_evidence_dedupe_index.sql." }),
+      };
+    }),
+  );
+
+  results.push(
+    await safeCheck("manual-vouchers-schema", async () => {
+      const originColumn = await getColumnInfo(sql, "ledger", "vouchers", "origin");
+      const nullableRows = await sql<{ is_nullable: string }[]>`
+        select is_nullable from information_schema.columns
+        where table_schema = 'ledger' and table_name = 'vouchers' and column_name = 'evidence_packet_id'
+      `;
+      const packetNullable = nullableRows[0]?.is_nullable === "YES";
+      const hasOriginCheck = await constraintExists(sql, "ledger", "vouchers", "ledger_vouchers_origin_check", "c");
+      const pass = Boolean(originColumn) && packetNullable && hasOriginCheck;
+      return {
+        name: "manual-vouchers-schema",
+        pass,
+        detail: pass
+          ? "ledger.vouchers.evidence_packet_id is nullable and origin + its CHECK constraint are present."
+          : `ledger.vouchers evidence_packet_id nullable=${packetNullable}, origin column=${Boolean(originColumn)}, origin check=${hasOriginCheck}.`,
+        ...(pass ? {} : { remediation: "Apply migration 0009_manual_vouchers.sql." }),
       };
     }),
   );

@@ -4,7 +4,7 @@
  *
  * Mirrors `scripts/db-migrations.mts` `verify` assertions as node:test checks
  * so `pnpm db:test` / `pnpm test:integration` fail closed when the catalog
- * drifts from migrations 0001–0008.
+ * drifts from migrations 0001–0009.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -42,7 +42,7 @@ function requireCtx(): PostgresTestContext {
 test("migration history records every checked-in migration with matching checksums", { skip }, async () => {
   const client = requireCtx().client;
   const files = discoverMigrationFiles(MIGRATIONS_DIR);
-  assert.ok(files.length >= 8, "expected migrations 0001–0008 (or more) on disk");
+  assert.ok(files.length >= 9, "expected migrations 0001–0009 (or more) on disk");
 
   const rows = await client<Array<{ filename: string; sha256: string }>>`
     SELECT filename, sha256
@@ -82,6 +82,7 @@ test(
       "chain-fork-constraint",
       "knowledge-documents-tenant-pk",
       "evidence-dedupe-index",
+      "manual-vouchers-schema",
     ]) {
       assert.ok(names.has(required), `capability assertion "${required}" must run`);
     }
