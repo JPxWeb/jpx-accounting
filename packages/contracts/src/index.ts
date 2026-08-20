@@ -7,6 +7,19 @@ export * from "./countries";
 export const roleSchema = z.enum(["Preparer", "Approver", "Accountant", "Admin", "Auditor", "Advisor"]);
 
 export const accountingMethodSchema = z.enum(["invoice", "cash"]);
+
+/**
+ * VAT code vocabulary for CLIENT-SELECTABLE postings (KFR Phase B / D3):
+ * reviewer edits and manual voucher lines. Deliberately narrower than every
+ * value the system can carry — "VAT-REVIEW" is the system's blocked-marker
+ * assigned by `buildDeterministicSuggestion` when a voucher is rule-blocked
+ * (packages/domain/src/rules.ts) and is NEVER a posting choice, so it is
+ * excluded here on purpose. `accountingSuggestionSchema.vatCode` stays
+ * `z.string()` for that reason — do not tighten it to this schema.
+ */
+export const vatCodeSchema = z.enum(["VAT25", "VAT12", "VAT6", "VAT0", "NA", "RC25"]);
+export type VatCode = z.infer<typeof vatCodeSchema>;
+
 export const runtimeModeSchema = z.enum(["normal", "demo"]);
 export const evidenceModalitySchema = z.enum([
   "camera",
@@ -120,7 +133,7 @@ export const voucherSchema = z.object({
   id: z.string(),
   organizationId: z.string(),
   workspaceId: z.string(),
-  evidencePacketId: z.string(),
+  evidencePacketId: z.string().nullable(),
   voucherNumber: z.string(),
   status: reviewStatusSchema,
   accountingMethod: accountingMethodSchema,
@@ -128,7 +141,26 @@ export const voucherSchema = z.object({
   voucherFields: voucherFieldSchema,
   createdAt: z.string(),
   createdBy: z.string(),
+  /** capture = evidence-driven (default, existing rows backfill via this default); manual = KFR D2; import = SIE (reserved, KFR Phase D). */
+  origin: z.enum(["capture", "manual", "import"]).default("capture"),
 });
+
+/**
+ * One line of a manual N-line journal entry (KFR Phase B / D2). Exactly one
+ * of debit/credit must be positive — never both, never neither.
+ */
+export const manualVoucherLineSchema = z
+  .object({
+    accountNumber: z.string().regex(/^\d{4}$/),
+    debit: z.number().nonnegative(),
+    credit: z.number().nonnegative(),
+    vatCode: vatCodeSchema.default("NA"),
+  })
+  .refine((line) => line.debit > 0 !== line.credit > 0, {
+    message: "Exactly one of debit or credit must be greater than 0.",
+    path: ["debit"],
+  });
+export type ManualVoucherLine = z.infer<typeof manualVoucherLineSchema>;
 
 export const accountingSuggestionSchema = z.object({
   id: z.string(),
@@ -141,6 +173,16 @@ export const accountingSuggestionSchema = z.object({
   kind: suggestionKindSchema.default("recommendation"),
   citations: z.array(citationSchema),
   ruleHits: z.array(ruleHitSchema),
+  /** Absent = expense (KFR D3). Explicit "revenue" wins over account-class inference in buildPostingLines. */
+  direction: z.enum(["expense", "revenue"]).optional(),
+  /**
+   * Verbatim posting lines for a manual-origin voucher's suggestion (KFR
+   * Phase B / D2). Present ONLY when the owning voucher's `origin` is
+   * "manual" — approval posts these lines unchanged, bypassing
+   * `buildPostingLines` (see `planReviewDecision`). Absent for every
+   * capture/import-origin suggestion.
+   */
+  lines: z.array(manualVoucherLineSchema).optional(),
 });
 
 export const reviewTaskSchema = z.object({
@@ -510,6 +552,17 @@ export const reviewDecisionEditSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /**
+   * Settlement account override (KFR D3): replaces the hardcoded bank credit
+   * in `buildPostingLines` — e.g. 2899 (utlägg) or 1630 (skattekonto)
+   * instead of the default 1930. Must exist in the CoA (validated in
+   * `resolveReviewDecisionEdit`, same rigor as `accountNumber`). Absent =
+   * `coa.roles.bank`.
+   */
+  settlementAccountNumber: z
+    .string()
+    .regex(/^\d{4}$/)
+    .optional(),
 });
 export type ReviewDecisionEdit = z.infer<typeof reviewDecisionEditSchema>;
 
@@ -517,6 +570,46 @@ export const reviewDecisionInputSchema = z.object({
   notes: z.string().optional(),
   edited: reviewDecisionEditSchema.optional(),
 });
+
+/**
+ * `POST /api/vouchers/manual` request body (KFR Phase B / D2). Balanced to
+ * within 0.005 at the wire boundary; `LedgerStore.createManualVoucher`
+ * additionally requires exact-öre balance (`postingImbalanceOre`) before any
+ * mutation — the ±0.005 tolerance here only lets legitimate float noise
+ * through, not real imbalances.
+ */
+export const manualVoucherInputSchema = z
+  .object({
+    description: z.string().min(1).max(200),
+    bookedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    lines: z.array(manualVoucherLineSchema).min(2).max(100),
+    /**
+     * Forward-compat only in this phase: accepted but NOT yet attached.
+     * `createManualVoucher` always creates the voucher with
+     * `evidencePacketId: null` (see interface contract) — Phase D's
+     * `evidenceComposeInputSchema.targetVoucherId` attach flow is the
+     * mechanism that will consume this field.
+     */
+    evidenceIds: z.array(z.string()).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const debit = value.lines.reduce((sum, line) => sum + line.debit, 0);
+    const credit = value.lines.reduce((sum, line) => sum + line.credit, 0);
+    if (Math.abs(debit - credit) > 0.005) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Manual voucher lines do not balance: Σdebit (${debit}) must equal Σcredit (${credit}) within 0.005.`,
+        path: ["lines"],
+      });
+    }
+  });
+export type ManualVoucherInput = z.infer<typeof manualVoucherInputSchema>;
+
+export const manualVoucherResultSchema = z.object({
+  voucherId: z.string(),
+  reviewId: z.string(),
+});
+export type ManualVoucherResult = z.infer<typeof manualVoucherResultSchema>;
 
 export const knowledgeQuerySchema = z.object({
   query: z.string(),
