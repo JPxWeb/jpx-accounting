@@ -167,6 +167,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
   const blobUploader = createBlobUploader({
     accountName: config.azureStorage.accountName,
     containerName: config.azureStorage.containerName,
+    blobDir: config.localBlobDir,
     failClosed,
   });
   const documentIntelligence = createDocumentIntelligenceClient({

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign as signBytes } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { createAdvisorChatHandler, type AdvisorChatHandlerOptions } from "../../services/api/src/advisor/chat";
@@ -92,6 +95,30 @@ test("createApiRuntimeDependencies exposes closeDatabase in both modes", () => {
 
   const normal = createApiRuntimeDependencies({ ...baseConfig, runtimeMode: "normal" });
   assert.equal(typeof normal.closeDatabase, "function");
+});
+
+test("createApiRuntimeDependencies wires a LocalDiskBlobUploader when localBlobDir is set and Azure Storage env is absent", (t) => {
+  const rootDir = mkdtempSync(path.join(tmpdir(), "jpx-blob-runtime-test-"));
+  t.after(() => rmSync(rootDir, { recursive: true, force: true }));
+  const corsPolicy = { kind: "wildcard" } as const;
+  const baseConfig = {
+    port: 0,
+    allowTestReset: false,
+    corsPolicy,
+    azureOpenAi: {},
+    database: { poolMode: "direct" as const, poolMax: 10 },
+    azureStorage: {},
+    azureDocumentIntelligence: {},
+    auth: { jwksUrl: undefined },
+    advisor: { toolApprovalSecret: "test-advisor-approval-secret", maxOutputTokens: 2048, streamTimeoutMs: 90_000 },
+    localBlobDir: rootDir,
+  };
+
+  const demo = createApiRuntimeDependencies({ ...baseConfig, runtimeMode: "demo" });
+  assert.equal(demo.blobUploader.kind, "local");
+
+  const normal = createApiRuntimeDependencies({ ...baseConfig, runtimeMode: "normal" });
+  assert.equal(normal.blobUploader.kind, "local");
 });
 
 test("demo runtime exposes the seeded workspace", async () => {
