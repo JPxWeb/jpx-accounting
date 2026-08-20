@@ -51,12 +51,14 @@ export class InvalidManualVoucherError extends Error {
 }
 /**
  * VAT codes a reviewer may select on an edited decision (WS-B B5): the
- * regime's rate vocabulary (VAT25/VAT12/VAT6/VAT0 for Sweden) plus the
- * VAT-neutral "NA". "VAT-REVIEW" is deliberately NOT selectable — it is the
- * system's blocked-marker, never a posting choice.
+ * regime's rate vocabulary (VAT25/VAT12/VAT6/VAT0 for Sweden), the
+ * VAT-neutral "NA", and "RC25" (KFR D3 EU reverse charge — the code that
+ * selects `buildPostingLines`' 4-line rc25 shape). "VAT-REVIEW" is
+ * deliberately NOT selectable — it is the system's blocked-marker, never a
+ * posting choice.
  */
 export function validEditVatCodes(regime: VatRegime): ReadonlySet<string> {
-  return new Set([...Object.keys(regime.rates), "NA"]);
+  return new Set([...Object.keys(regime.rates), "NA", "RC25"]);
 }
 
 /**

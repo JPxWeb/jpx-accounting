@@ -6,8 +6,10 @@ import {
   planComplianceMerge,
   planEvidenceCreate,
   planExtractionRefresh,
+  planManualVoucher,
   planReviewDecision,
 } from "../../packages/domain/src/store-planning.ts";
+import { InvalidManualVoucherError } from "@jpx-accounting/domain";
 
 const BLOCKED_REASON = "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
 const BLOCKED_ACTION = "Request more evidence or post without VAT deduction.";
@@ -230,6 +232,323 @@ describe("planReviewDecision", () => {
     const postedLines = plan.events[1]?.payload.lines as Array<{ accountNumber: string; debit: number }>;
     assert.equal(postedLines[0]?.accountNumber, "6110");
     assert.equal(postedLines[0]?.debit, 400);
+  });
+
+  it("threads an edited settlementAccountNumber through to the credit leg", () => {
+    const voucher = {
+      id: "v1",
+      organizationId: "org_jpx",
+      workspaceId: "workspace_main",
+      evidencePacketId: "p1",
+      voucherNumber: "V-1001",
+      status: "needs-review",
+      accountingMethod: "cash",
+      extractedFields: [],
+      voucherFields: {
+        currency: "SEK",
+        description: "Office supplies",
+        grossAmount: 500,
+        netAmount: 400,
+        vatAmount: 100,
+        receiptDate: "2026-03-01",
+      },
+      createdAt: "2026-03-15T12:00:00.000Z",
+      createdBy: "user:x",
+      origin: "capture",
+    } as Voucher;
+    const review = {
+      id: "r1",
+      voucherId: "v1",
+      title: "Review V-1001",
+      status: "needs-review",
+      suggestedAction: "Approve the proposed posting.",
+      suggestion: {
+        id: "sug1",
+        voucherId: "v1",
+        accountNumber: "6110",
+        accountName: "Kontorsmateriel",
+        vatCode: "VAT25",
+        confidence: 0.9,
+        reasoning: "test",
+        kind: "recommendation",
+        citations: [],
+        ruleHits: [],
+      } as AccountingSuggestion,
+      provenanceTimeline: [],
+    } as ReviewTask;
+    const plan = planReviewDecision(
+      review,
+      voucher,
+      "approve",
+      { actorId: "user:x", edited: { accountNumber: "6110", vatCode: "VAT25", settlementAccountNumber: "2899" } },
+      "2026-03-15T13:00:00.000Z",
+    );
+    assert.equal(plan.kind, "apply");
+    if (plan.kind !== "apply") throw new Error("unreachable");
+    assert.equal(plan.lines?.length, 3);
+    const creditLeg = plan.lines?.at(-1);
+    assert.equal(creditLeg?.accountNumber, "2899", "settlement override must replace the default 1930 bank leg");
+    assert.equal(creditLeg?.credit, 500);
+  });
+
+  it("accepts an edit carrying vatCode RC25 and posts the reverse-charge shape", () => {
+    const voucher = {
+      id: "v1",
+      organizationId: "org_jpx",
+      workspaceId: "workspace_main",
+      evidencePacketId: "p1",
+      voucherNumber: "V-1001",
+      status: "needs-review",
+      accountingMethod: "invoice",
+      extractedFields: [],
+      voucherFields: {
+        currency: "SEK",
+        description: "EU-tjänst",
+        grossAmount: 1000,
+        netAmount: 1000,
+        vatAmount: 250,
+        receiptDate: "2026-03-01",
+      },
+      createdAt: "2026-03-15T12:00:00.000Z",
+      createdBy: "user:x",
+      origin: "capture",
+    } as Voucher;
+    const review = {
+      id: "r1",
+      voucherId: "v1",
+      title: "Review V-1001",
+      status: "needs-review",
+      suggestedAction: "Approve the proposed posting.",
+      suggestion: {
+        id: "sug1",
+        voucherId: "v1",
+        accountNumber: "6540",
+        accountName: "IT-tjänster",
+        vatCode: "VAT25",
+        confidence: 0.9,
+        reasoning: "test",
+        kind: "recommendation",
+        citations: [],
+        ruleHits: [],
+      } as AccountingSuggestion,
+      provenanceTimeline: [],
+    } as ReviewTask;
+    const plan = planReviewDecision(
+      review,
+      voucher,
+      "approve",
+      { actorId: "user:x", edited: { accountNumber: "6540", vatCode: "RC25" } },
+      "2026-03-15T13:00:00.000Z",
+    );
+    assert.equal(plan.kind, "apply");
+    if (plan.kind !== "apply") throw new Error("unreachable");
+    assert.equal(plan.updatedReview.suggestion?.vatCode, "RC25");
+    assert.equal(plan.lines?.length, 4, "RC25 posts the 4-line reverse-charge entry");
+    assert.equal(plan.lines?.[2]?.accountNumber, "2614");
+  });
+
+  it("bypasses buildPostingLines for a manual-origin voucher and posts its lines verbatim", () => {
+    const voucher = {
+      id: "v1",
+      organizationId: "org_jpx",
+      workspaceId: "workspace_main",
+      evidencePacketId: null,
+      voucherNumber: "V-1001",
+      status: "needs-review",
+      accountingMethod: "invoice",
+      extractedFields: [],
+      voucherFields: { currency: "SEK", description: "Utlägg", transactionDate: "2026-03-20" },
+      createdAt: "2026-03-20T09:00:00.000Z",
+      createdBy: "user:x",
+      origin: "manual",
+    } as Voucher;
+    const review = {
+      id: "r1",
+      voucherId: "v1",
+      title: "Review V-1001",
+      status: "needs-review",
+      suggestedAction: "Approve the manual entry.",
+      suggestion: {
+        id: "s1",
+        voucherId: "v1",
+        accountNumber: "6110",
+        accountName: "Kontorsmateriel",
+        vatCode: "NA",
+        confidence: 1,
+        reasoning: "manual",
+        kind: "recommendation",
+        citations: [],
+        ruleHits: [],
+        lines: [
+          { accountNumber: "6110", debit: 100, credit: 0, vatCode: "NA" },
+          { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" },
+        ],
+      },
+      provenanceTimeline: [],
+    } as ReviewTask;
+
+    // A client-supplied edit must be ignored, not applied or rejected.
+    const plan = planReviewDecision(review, voucher, "approve", {
+      actorId: "user:x",
+      edited: { accountNumber: "9999", vatCode: "VAT25" },
+    });
+    assert.equal(plan.kind, "apply");
+    if (plan.kind !== "apply") throw new Error("unreachable");
+    assert.equal(plan.lines?.length, 2);
+    assert.equal(plan.lines?.[0]?.accountNumber, "6110");
+    assert.equal(plan.lines?.[0]?.debit, 100);
+    assert.equal(plan.lines?.[1]?.accountNumber, "2899");
+    assert.equal(plan.updatedReview.provenanceTimeline.at(-1)?.label, "Review approved", "not 'Approved with edits'");
+  });
+
+  it("never posts a rejected manual-origin voucher", () => {
+    const voucher = {
+      id: "v1",
+      organizationId: "org_jpx",
+      workspaceId: "workspace_main",
+      evidencePacketId: null,
+      voucherNumber: "V-1001",
+      status: "needs-review",
+      accountingMethod: "invoice",
+      extractedFields: [],
+      voucherFields: { currency: "SEK", description: "Utlägg", transactionDate: "2026-03-20" },
+      createdAt: "2026-03-20T09:00:00.000Z",
+      createdBy: "user:x",
+      origin: "manual",
+    } as Voucher;
+    const review = {
+      id: "r1",
+      voucherId: "v1",
+      title: "Review V-1001",
+      status: "needs-review",
+      suggestedAction: "Approve the manual entry.",
+      suggestion: {
+        id: "s1",
+        voucherId: "v1",
+        accountNumber: "6110",
+        accountName: "Kontorsmateriel",
+        vatCode: "NA",
+        confidence: 1,
+        reasoning: "manual",
+        kind: "recommendation",
+        citations: [],
+        ruleHits: [],
+        lines: [
+          { accountNumber: "6110", debit: 100, credit: 0, vatCode: "NA" },
+          { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" },
+        ],
+      },
+      provenanceTimeline: [],
+    } as ReviewTask;
+    const plan = planReviewDecision(review, voucher, "reject", { actorId: "user:x" }, "2026-03-20T10:00:00.000Z");
+    assert.equal(plan.kind, "apply");
+    if (plan.kind !== "apply") throw new Error("unreachable");
+    assert.equal(plan.lines, undefined);
+    assert.deepEqual(
+      plan.events.map((e) => e.eventType),
+      ["ReviewRejected"],
+    );
+  });
+
+  it("re-validates the öre balance of manual lines at approval time, not only at creation", () => {
+    const voucher = {
+      id: "v1",
+      organizationId: "org_jpx",
+      workspaceId: "workspace_main",
+      evidencePacketId: null,
+      voucherNumber: "V-1001",
+      status: "needs-review",
+      accountingMethod: "invoice",
+      extractedFields: [],
+      voucherFields: { currency: "SEK", description: "Utlägg", transactionDate: "2026-03-20" },
+      createdAt: "2026-03-20T09:00:00.000Z",
+      createdBy: "user:x",
+      origin: "manual",
+    } as Voucher;
+    // A tampered/corrupted stored suggestion must not slip an unbalanced entry
+    // into the ledger — buildManualPostingLines re-asserts the invariant.
+    const review = {
+      id: "r1",
+      voucherId: "v1",
+      title: "Review V-1001",
+      status: "needs-review",
+      suggestedAction: "Approve the manual entry.",
+      suggestion: {
+        id: "s1",
+        voucherId: "v1",
+        accountNumber: "6110",
+        accountName: "Kontorsmateriel",
+        vatCode: "NA",
+        confidence: 1,
+        reasoning: "manual",
+        kind: "recommendation",
+        citations: [],
+        ruleHits: [],
+        lines: [
+          { accountNumber: "6110", debit: 101, credit: 0, vatCode: "NA" },
+          { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" },
+        ],
+      },
+      provenanceTimeline: [],
+    } as ReviewTask;
+    assert.throws(() => planReviewDecision(review, voucher, "approve", { actorId: "user:x" }));
+  });
+});
+
+describe("planManualVoucher", () => {
+  const input = {
+    actorId: "user:x",
+    description: "Utlägg för kontorsmaterial",
+    bookedAt: "2026-03-20",
+    lines: [
+      { accountNumber: "6110", debit: 100, credit: 0, vatCode: "NA" as const },
+      { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" as const },
+    ],
+  };
+  const ctx = {
+    voucherIndex: 3,
+    organizationId: "org_jpx",
+    workspaceId: "workspace_main",
+    now: "2026-03-20T09:00:00.000Z",
+  };
+
+  it("creates a needs-review voucher with origin manual, no evidence packet, and verbatim lines on the suggestion", () => {
+    const plan = planManualVoucher(input, ctx);
+    assert.equal(plan.voucher.origin, "manual");
+    assert.equal(plan.voucher.evidencePacketId, null);
+    assert.equal(plan.voucher.status, "needs-review");
+    assert.equal(plan.voucher.voucherNumber, "V-1004");
+    assert.equal(plan.review.status, "needs-review");
+    assert.deepEqual(plan.review.suggestion?.lines, input.lines);
+    assert.equal(plan.events.map((e) => e.eventType).join(","), "VoucherCreated,SuggestionGenerated");
+  });
+
+  it("rejects lines that fail the exact-öre balance check", () => {
+    const skewed = {
+      ...input,
+      lines: [
+        { accountNumber: "6110", debit: 100.003, credit: 0, vatCode: "NA" as const },
+        { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" as const },
+      ],
+    };
+    assert.throws(
+      () => planManualVoucher(skewed, ctx),
+      (error: unknown) => error instanceof InvalidManualVoucherError,
+    );
+  });
+
+  it("rejects a genuine öre-level imbalance", () => {
+    const unbalanced = {
+      ...input,
+      lines: [
+        { accountNumber: "6110", debit: 100.01, credit: 0, vatCode: "NA" as const },
+        { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" as const },
+      ],
+    };
+    assert.throws(
+      () => planManualVoucher(unbalanced, ctx),
+      (error: unknown) => error instanceof InvalidManualVoucherError && /do not balance to the öre/.test(error.message),
+    );
   });
 });
 

@@ -7,19 +7,24 @@ import type {
   EvidencePacket,
   ExtractionResult,
   LedgerEvent,
+  ManualVoucherInput,
   ReviewDecisionInput,
   ReviewTask,
   Voucher,
 } from "@jpx-accounting/contracts";
 
+import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import { buildExtractedFields, deriveVoucherFields, guessAccountingMethod } from "./evidence-defaults";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso } from "./ids";
+import { postingImbalanceOre } from "./posting-invariants";
 import type { LedgerLine } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import {
+  buildManualPostingLines,
   buildPostingLines,
   DEMO_ACTOR_ID,
+  InvalidManualVoucherError,
   mergeExtractedFields,
   recomputeVoucherFields,
   resolveReviewDecisionEdit,
@@ -238,6 +243,125 @@ export function planEvidenceCreate(
   return { evidence, packet, voucher, review, suggestion, events };
 }
 
+export type ManualVoucherPlan = { voucher: Voucher; review: ReviewTask; events: PlannedEvent[] };
+
+/**
+ * Pure re-entrant planner for `createManualVoucher` (KFR Phase B / D2).
+ * Mirrors `planEvidenceCreate`'s shape but skips evidence/packet entirely:
+ * the voucher is `origin: "manual"` with `evidencePacketId: null`, and its
+ * review's suggestion carries the verbatim lines the reviewer typed —
+ * `planReviewDecision` detects `voucher.origin === "manual"` and posts
+ * them unchanged at approval time (buildManualPostingLines).
+ */
+export function planManualVoucher(
+  input: ManualVoucherInput & { actorId: string },
+  ctx: { voucherIndex: number; now?: string; organizationId: string; workspaceId: string },
+): ManualVoucherPlan {
+  // Exact-öre gate BEFORE any id/event is derived: the wire schema only
+  // enforces ±0.005 (float noise tolerance), not the real invariant.
+  //
+  // Per-line precision first. `postingImbalanceOre` compares INTEGER öre, so a
+  // sub-öre amount (100.003 against a 100 credit) rounds away and reports a
+  // balanced entry — while `buildManualPostingLines` copies the line amounts
+  // VERBATIM, landing 100.003 in the ledger for every projection to re-sum as
+  // raw floats. Same guard, same rationale as `resolveReviewDecisionEdit`'s
+  // öre-exactness check on edited amounts.
+  for (const line of input.lines) {
+    for (const [name, value] of [
+      ["debit", line.debit],
+      ["credit", line.credit],
+    ] as const) {
+      if (!Number.isFinite(value) || Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) {
+        throw new InvalidManualVoucherError(
+          `Manual voucher line on account ${line.accountNumber} has a ${name} (${value}) that is not öre-exact (at most two decimals).`,
+        );
+      }
+    }
+  }
+  const imbalance = postingImbalanceOre(input.lines);
+  if (imbalance !== 0) {
+    throw new InvalidManualVoucherError(
+      `Manual voucher lines do not balance to the öre (Σdebit − Σcredit = ${(imbalance / 100).toFixed(2)} kr).`,
+    );
+  }
+
+  const actorId = input.actorId;
+  const createdAt = ctx.now ?? nowIso();
+  const voucherId = createId("voucher");
+  const firstLine = input.lines[0]!;
+  const firstAccount = findCoaAccount(defaultCoaTemplate, firstLine.accountNumber);
+
+  const voucher: Voucher = {
+    id: voucherId,
+    organizationId: ctx.organizationId,
+    workspaceId: ctx.workspaceId,
+    evidencePacketId: null,
+    voucherNumber: `V-${ctx.voucherIndex + 1001}`,
+    status: "needs-review",
+    // Manual entries carry no cash/invoice distinction — "invoice" is a
+    // fixed, documented default (the schema requires a value).
+    accountingMethod: "invoice",
+    extractedFields: [],
+    voucherFields: {
+      description: input.description,
+      transactionDate: input.bookedAt,
+      currency: "SEK",
+    },
+    createdAt,
+    createdBy: actorId,
+    origin: "manual",
+  };
+
+  const suggestion: AccountingSuggestion = {
+    id: createId("sug"),
+    voucherId,
+    accountNumber: firstLine.accountNumber,
+    accountName: firstAccount?.name ?? `Konto ${firstLine.accountNumber}`,
+    vatCode: firstLine.vatCode,
+    confidence: 1,
+    reasoning: "Manual journal entry — lines entered directly by a reviewer.",
+    kind: "recommendation",
+    citations: [],
+    ruleHits: [],
+    lines: input.lines,
+  };
+
+  const review: ReviewTask = {
+    id: createId("review"),
+    voucherId,
+    title: `Review ${voucher.voucherNumber}`,
+    status: "needs-review",
+    suggestedAction: "Approve the manual entry.",
+    suggestion,
+    provenanceTimeline: [{ id: createId("step"), label: "Manual entry created", timestamp: createdAt, actor: actorId }],
+  };
+
+  const events: PlannedEvent[] = [
+    {
+      organizationId: ctx.organizationId,
+      workspaceId: ctx.workspaceId,
+      aggregateType: "voucher",
+      aggregateId: voucherId,
+      eventType: "VoucherCreated",
+      actorId,
+      occurredAt: createdAt,
+      payload: voucher as unknown as Record<string, unknown>,
+    },
+    {
+      organizationId: ctx.organizationId,
+      workspaceId: ctx.workspaceId,
+      aggregateType: "review",
+      aggregateId: review.id,
+      eventType: "SuggestionGenerated",
+      actorId,
+      occurredAt: createdAt,
+      payload: suggestion as unknown as Record<string, unknown>,
+    },
+  ];
+
+  return { voucher, review, events };
+}
+
 /**
  * Pure re-entrant planner for review decisions. Replay when already decided;
  * otherwise derive edit/posting inputs and planned events without mutating args.
@@ -261,13 +385,21 @@ export function planReviewDecision(
   }
 
   const actorId = input.actorId ?? DEMO_ACTOR_ID;
-  const edited = action !== "reject" ? input.edited : undefined;
+  // KFR D2: manual-origin vouchers bypass edit resolution and
+  // buildPostingLines entirely — approval always posts the lines exactly as
+  // authored. A client-supplied `edited` payload is silently ignored (not
+  // an error — just inapplicable) rather than validated against a
+  // single-account suggestion shape that doesn't describe a manual entry.
+  const isManual = voucher.origin === "manual";
+  const edited = action !== "reject" && !isManual ? input.edited : undefined;
   let postingSuggestion = review.suggestion;
   let postingVoucher = voucher;
+  let settlementAccountNumber: string | undefined;
   if (edited) {
     const resolved = resolveReviewDecisionEdit(voucher, review.suggestion, edited);
     postingSuggestion = resolved.effectiveSuggestion;
     postingVoucher = resolved.effectiveVoucher;
+    settlementAccountNumber = resolved.effectiveSettlementAccountNumber;
   }
 
   const occurredAt = now ?? nowIso();
@@ -307,8 +439,24 @@ export function planReviewDecision(
   ];
 
   let lines: LedgerLine[] | undefined;
-  if (action !== "reject" && postingSuggestion) {
-    lines = buildPostingLines(postingVoucher, postingSuggestion, action, occurredAt);
+  if (action !== "reject") {
+    if (isManual) {
+      const manualLines = postingSuggestion?.lines;
+      if (!manualLines) {
+        throw new Error(
+          `Manual-origin voucher ${voucher.id} has a review with no verbatim lines (invariant violation).`,
+        );
+      }
+      lines = buildManualPostingLines(voucher, manualLines, occurredAt);
+    } else if (postingSuggestion) {
+      lines = buildPostingLines(postingVoucher, postingSuggestion, action, occurredAt, undefined, {
+        // exactOptionalPropertyTypes: an absent override must be an absent key,
+        // not an explicit `undefined`.
+        ...(settlementAccountNumber !== undefined ? { settlementAccountNumber } : {}),
+      });
+    }
+  }
+  if (lines) {
     events.push({
       organizationId: updatedVoucher.organizationId,
       workspaceId: updatedVoucher.workspaceId,
