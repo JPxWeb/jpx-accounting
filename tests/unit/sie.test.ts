@@ -294,6 +294,57 @@ test("period-scoped SIE export: #IB/#UB/#RES computed from the full ledger, #VER
   assert.equal(text, expected);
 });
 
+// The FULL-HISTORY path (no `range`) is the ONLY caller of the serializer's
+// internal `fiscalYearWindow`, so the Phase D firstFiscalYearStart clamp and
+// its `floor <= to` guard are unreachable from a period-scoped export. These
+// two tests cover that branch directly — the route-level fy-2025 test passes
+// `resolved.from/to` straight through and never reaches this code.
+const settingsWithFiscalYear = (firstFiscalYearStart?: string): CompanySettings => ({
+  ...goldenSettings,
+  profile: {
+    ...goldenSettings.profile,
+    fiscalYearStart: "09-01",
+    ...(firstFiscalYearStart !== undefined ? { firstFiscalYearStart } : {}),
+  },
+});
+
+const rarLine = (text: string): string | undefined => text.split("\n").find((line) => line.startsWith("#RAR "));
+
+test("full-history #RAR 0 floors to firstFiscalYearStart when it falls inside the fiscal-year window", () => {
+  // Anchor 09-01, generated 2026-07-04 → the window containing it is
+  // 2025-09-01…2026-08-31. A company incorporated 2025-10-15 shortens FY1's
+  // start, exactly as resolvePeriodToken's fy-/ytd clamp does.
+  const text = buildSieExport({
+    journal: goldenJournal,
+    settings: settingsWithFiscalYear("2025-10-15"),
+    generatedAt: goldenGeneratedAt,
+  });
+  assert.equal(rarLine(text), "#RAR 0 20251015 20260831");
+
+  // Without the floor the same profile reports the full anchor-derived year.
+  const unclamped = buildSieExport({
+    journal: goldenJournal,
+    settings: settingsWithFiscalYear(),
+    generatedAt: goldenGeneratedAt,
+  });
+  assert.equal(rarLine(unclamped), "#RAR 0 20250901 20260831");
+});
+
+test("full-history #RAR 0 leaves the window alone when firstFiscalYearStart is past its end (never inverted)", () => {
+  // Floor 2027-01-15 is AFTER the 2025-09-01…2026-08-31 window's end. Clamping
+  // it in would emit `#RAR 0 20270115 20260831` — a from > to window no SIE
+  // reader accepts. The `floor <= to` guard must leave the window untouched.
+  const text = buildSieExport({
+    journal: goldenJournal,
+    settings: settingsWithFiscalYear("2027-01-15"),
+    generatedAt: goldenGeneratedAt,
+  });
+  assert.equal(rarLine(text), "#RAR 0 20250901 20260831");
+
+  const [, from, to] = rarLine(text)!.split(" ").slice(1) as [string, string, string];
+  assert.ok(from <= to, "#RAR 0 must never be an inverted window");
+});
+
 test("escaping: quotes and backslashes survive serialize → parse", () => {
   const description = 'Text med "citat" och \\bakstreck\\';
   const journal: JournalEntryProjection[] = [
