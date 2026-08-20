@@ -2,7 +2,7 @@ import type { AccountingSuggestion, ReviewTask, SimulationRun, Voucher } from "@
 
 import { defaultCoaTemplate } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
-import { buildPostingLines, type ReviewAction } from "./store-shared";
+import { buildManualPostingLines, buildPostingLines, type ReviewAction } from "./store-shared";
 import type { VatRegime } from "./vat/regime";
 import { swedishVatRegime } from "./vat/regime";
 
@@ -32,7 +32,16 @@ export function simulateApprovals(
     const suggestion = suggestionsByVoucher.get(review.voucherId) ?? review.suggestion;
     if (!voucher || !suggestion) continue;
     const effectiveAction: "approve" | "book-without-vat" = action === "reject" ? "approve" : action;
-    const lines = buildPostingLines(voucher, suggestion, effectiveAction, voucher.createdAt, coa);
+    // KFR D2: a manual-origin voucher is posted from its verbatim lines
+    // (`planReviewDecision` → `buildManualPostingLines`). `buildPostingLines`
+    // cannot describe an N-line entry — it takes a single `accountNumber` —
+    // so simulating one through it fabricates a 3-line expense posting that
+    // does not match what approval will actually append. Mirror the decision
+    // path instead so the preview is the truth.
+    const lines =
+      voucher.origin === "manual" && suggestion.lines
+        ? buildManualPostingLines(voucher, suggestion.lines, voucher.createdAt, coa)
+        : buildPostingLines(voucher, suggestion, effectiveAction, voucher.createdAt, coa);
     for (const line of lines) {
       const entry = balanceAcc.get(line.accountNumber) ?? { name: line.accountName, debit: 0, credit: 0 };
       entry.debit += line.debit;

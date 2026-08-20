@@ -79,6 +79,35 @@ test("skips reviews whose voucher is missing", () => {
   assert.equal(result.balanceDelta.length, 3);
 });
 
+test("simulateApprovals uses a manual-origin review's verbatim lines instead of buildPostingLines", () => {
+  const voucher = { ...voucherFixture("m1"), origin: "manual" as const, evidencePacketId: null };
+  const manualSuggestion: AccountingSuggestion = {
+    ...suggestionFixture("m1"),
+    accountNumber: "6110",
+    vatCode: "NA",
+    lines: [
+      { accountNumber: "6110", debit: 250, credit: 0, vatCode: "NA" },
+      { accountNumber: "2899", debit: 0, credit: 250, vatCode: "NA" },
+    ],
+  };
+  const review = {
+    id: "rm1",
+    voucherId: "m1",
+    title: "t",
+    status: "needs-review" as const,
+    suggestedAction: "a",
+    suggestion: manualSuggestion,
+    provenanceTimeline: [],
+  };
+  const { balanceDelta } = simulateApprovals([review], [manualSuggestion], [voucher], "approve");
+  const byAccount = new Map(balanceDelta.map((d) => [d.accountNumber, d]));
+  assert.equal(byAccount.get("6110")?.deltaDebit, 250);
+  assert.equal(byAccount.get("2899")?.deltaCredit, 250);
+  // The old behavior would have fabricated a 3-line expense posting against
+  // whatever voucherFields carries (1249/999.2/249.8 in this fixture) — assert it's gone.
+  assert.equal(byAccount.get("1930"), undefined, "no fabricated bank leg for a manual-origin review");
+});
+
 test("aggregates across multiple reviews on the same account", () => {
   const result = simulateApprovals(
     [reviewFixture("v1"), reviewFixture("v2")],
