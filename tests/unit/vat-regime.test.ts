@@ -47,14 +47,42 @@ test("getVatRegime('SE') returns the Swedish regime", () => {
 });
 
 test("every regime account exists in bas-2026 (cross-registry integrity)", () => {
+  const boxAccounts = swedishVatRegime.boxes.flatMap((def) => def.accounts ?? []);
   const regimeAccounts = [
     ...swedishVatRegime.accounts.input,
     ...Object.values(swedishVatRegime.accounts.outputByRate),
+    ...Object.values(swedishVatRegime.accounts.reverseChargeOutputByRate),
     swedishVatRegime.accounts.settlement,
+    ...boxAccounts,
   ];
   for (const number of regimeAccounts) {
     assert.ok(findCoaAccount(bas2026, number), `regime account ${number} missing from bas-2026`);
   }
+});
+
+test("regime models a rate-keyed reverse-charge output map, extended input accounts, and boxes 39/40", () => {
+  assert.deepEqual(swedishVatRegime.accounts.input, ["2641", "2640", "2645", "2647"]);
+  assert.deepEqual(swedishVatRegime.accounts.reverseChargeOutputByRate, { VAT25: "2614" });
+
+  const byBox = new Map(swedishVatRegime.boxes.map((def) => [def.box, def]));
+  assert.equal(byBox.get("30")?.reverseCharge, true);
+  assert.equal(byBox.get("31")?.reverseCharge, true);
+  assert.equal(byBox.get("32")?.reverseCharge, true);
+  assert.equal(byBox.get("21")?.reverseCharge, true);
+  assert.equal(byBox.get("20")?.reverseCharge, undefined, "box 20 (EU goods) is not modeled — stays plain");
+
+  assert.deepEqual(byBox.get("39"), {
+    box: "39",
+    label: "Försäljning av tjänster till näringsidkare i annat EU-land",
+    kind: "account-revenue",
+    accounts: ["3308"],
+  });
+  assert.deepEqual(byBox.get("40"), {
+    box: "40",
+    label: "Övrig försäljning av tjänster omsatta utom landet",
+    kind: "account-revenue",
+    accounts: ["3305"],
+  });
 });
 
 test("buildVat purchase-side output is byte-identical to the pre-regime behavior (regression pin)", () => {
@@ -79,14 +107,18 @@ test("buildVatReturnBoxes golden case: one 25 % purchase + one 25 % sale", () =>
   assert.equal(amount("49"), 0);
 });
 
-test("buildVatReturnBoxes emits every regime box, reverse-charge boxes stay 0", () => {
+test("buildVatReturnBoxes emits every regime box; unmodeled-for-this-fixture boxes stay 0", () => {
   const boxes = buildVatReturnBoxes([...purchaseLines(), ...saleLines()]);
   assert.deepEqual(
     boxes.map((entry) => entry.box),
     swedishVatRegime.boxes.map((def) => def.box),
   );
-  for (const box of ["20", "21", "30", "31", "32"]) {
-    assert.equal(boxes.find((entry) => entry.box === box)?.amount, 0, `modeled-only box ${box} must stay 0 in Phase 2`);
+  for (const box of ["20", "21", "30", "31", "32", "39", "40"]) {
+    assert.equal(
+      boxes.find((entry) => entry.box === box)?.amount,
+      0,
+      `box ${box} must stay 0 without a matching posting`,
+    );
   }
 });
 
