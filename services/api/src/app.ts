@@ -679,10 +679,10 @@ export function createApp({
       ledgerOk = false;
     }
     const aiOk = isAiRuntimeOperational(aiRuntime);
-    // Wave G′ / P1-4: peripherals report live Azure only (explicit `kind === "azure"`).
-    // Demo stubs keep overall ready true (labeled intentional backends); unavailable
-    // fail-closed peripherals take the process out of ready.
-    const blobOk = blobUploader.kind === "azure";
+    // Wave G′ / P1-4 + D1: peripherals report live Azure OR the local-disk self-host backend —
+    // both are real (non-discarding) storage. Demo stubs keep overall ready true (labeled
+    // intentional backends); unavailable fail-closed peripherals take the process out of ready.
+    const blobOk = blobUploader.kind === "azure" || blobUploader.kind === "local";
     const docintelOk = documentIntelligence.kind === "azure";
     const peripheralsOk = blobUploader.kind !== "unavailable" && documentIntelligence.kind !== "unavailable";
     const ready = ledgerOk && aiOk && peripheralsOk;
@@ -874,14 +874,15 @@ export function createApp({
     });
   });
 
-  // Short-lived read SAS for previews. Only real Azure blobs qualify: the stub uploader discards
-  // bytes (previews come from the client-side blob cache) and legacy/seed evidence has a synthetic
-  // blobPath, so both answer 404 preview_unavailable.
+  // Short-lived read URL for previews. Azure and the local-disk self-host backend both qualify:
+  // the stub uploader discards bytes (previews come from the client-side blob cache) and
+  // legacy/seed evidence has a synthetic blobPath, so both answer 404 preview_unavailable.
   app.get("/api/evidence/:id/file-url", async (context) => {
     const evidenceContext = await currentStore.getEvidenceContext(context.req.param("id"));
     if (!evidenceContext) throw new HTTPException(404, { message: "Evidence not found" });
     const { blobPath } = evidenceContext.evidence;
-    if (blobUploader.kind !== "azure" || !blobPath.startsWith("evidence-uploads/")) {
+    const uploaderSupportsPreview = blobUploader.kind === "azure" || blobUploader.kind === "local";
+    if (!uploaderSupportsPreview || !blobPath.startsWith("evidence-uploads/")) {
       return jsonError(context, "No file preview is available for this evidence.", runtimeMode, 404, {
         code: "preview_unavailable",
       });

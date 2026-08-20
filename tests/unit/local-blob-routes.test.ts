@@ -167,3 +167,37 @@ test("the auth exemption covers ONLY PUT/GET: another method on the same path st
   assert.equal(body.runtimeMode, "normal");
   assert.equal(typeof body.requestId, "string");
 });
+
+test("GET /api/evidence/:id/file-url returns a local read URL when the local disk uploader is active", async (t) => {
+  const { app } = createLocalBlobTestApp(withTempBlobDir(t));
+
+  const created = await app.request("http://localhost/api/evidence", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      title: "Kvitto",
+      originalFilename: "kvitto.jpg",
+      mimeType: "image/jpeg",
+      modalities: ["upload"],
+      // Contract-shaped upload path (`evidenceCreateInputSchema` pins
+      // `evidence-uploads/<id>/<file>` with an id of [A-Za-z0-9-] only).
+      blobPath: "evidence-uploads/upload-1/kvitto.jpg",
+    }),
+  });
+  assert.equal(created.status, 201);
+  const createdBody = (await created.json()) as { evidence: { id: string } };
+
+  const fileUrl = await app.request(`http://localhost/api/evidence/${createdBody.evidence.id}/file-url`);
+  assert.equal(fileUrl.status, 200);
+  const body = (await fileUrl.json()) as { url: string; expiresInSeconds: number };
+  assert.match(body.url, /^\/api\/blobs\/local\//);
+  assert.equal(body.expiresInSeconds, 600);
+});
+
+test("GET /ready reports checks.blob = true when the local disk uploader is active", async (t) => {
+  const { app } = createLocalBlobTestApp(withTempBlobDir(t));
+  const ready = await app.request("http://localhost/ready");
+  assert.equal(ready.status, 200);
+  const body = (await ready.json()) as { checks: { blob: boolean } };
+  assert.equal(body.checks.blob, true);
+});
