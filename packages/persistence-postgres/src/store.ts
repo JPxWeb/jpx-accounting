@@ -14,6 +14,8 @@ import type {
   ExtractedField,
   ExtractionResult,
   LedgerEvent,
+  ManualVoucherInput,
+  ManualVoucherResult,
   ReportBundle,
   ReportPack,
   ReviewDecisionInput,
@@ -46,6 +48,7 @@ import {
   planComplianceMerge,
   planEvidenceCreate,
   planExtractionRefresh,
+  planManualVoucher,
   planReviewDecision,
   simulateApprovals,
   today,
@@ -1099,16 +1102,140 @@ export class PostgresLedgerStore implements LedgerStore {
   }
 
   /**
-   * NOT YET IMPLEMENTED (KFR Phase B, Task 9). The real transactional write is
-   * blocked on migration `0009_manual_vouchers.sql` (Task 8), which is what
-   * makes `ledger.vouchers.evidence_packet_id` nullable and adds the `origin`
-   * column a manual voucher needs. Present only so `PostgresLedgerStore` keeps
-   * satisfying the `LedgerStore` interface between tasks; nothing routes here
-   * yet (`POST /api/vouchers/manual` lands in Task 10, after Task 9).
+   * Manual N-line journal entry through the review gate (KFR Phase B / D2).
+   * Store parity with `MemoryLedgerStore.createManualVoucher` (Rule 11): the
+   * SAME `planManualVoucher` plan, written inside the standard advisory-lock +
+   * chain-fork-retry transaction every other appender uses, so the voucher, its
+   * review, and the VoucherCreated + SuggestionGenerated chain pair all land or
+   * none of them do.
+   *
+   * Enabled by migration 0009: `evidence_packet_id` is nullable (a manual
+   * voucher has no evidence packet) and `origin` carries 'manual', which is
+   * what `planReviewDecision` reads at approval time to post the reviewer's
+   * lines VERBATIM instead of re-deriving a single-account expense shape.
+   *
+   * Rejection ordering: `planManualVoucher`'s exact-öre gate runs INSIDE the
+   * transaction (it needs the under-lock voucher COUNT for the voucher number,
+   * and every `withChainForkRetry` closure must re-derive its state on retry).
+   * An `InvalidManualVoucherError` therefore rolls the transaction back before
+   * anything is visible — no rows, no events, no chain movement, matching
+   * Memory's "throws before any mutation" behavior from the caller's side.
    */
-  async createManualVoucher(): Promise<never> {
-    throw new Error(
-      "PostgresLedgerStore.createManualVoucher is not implemented yet (KFR Phase B Task 9 — needs migration 0009).",
+  async createManualVoucher(input: ManualVoucherInput & ActorAttribution): Promise<ManualVoucherResult> {
+    // Server-derived attribution or the demo sentinel — never a client value
+    // (R5). `planManualVoucher` requires a RESOLVED actor (it stamps
+    // `createdBy` and both event `actorId`s), exactly as Memory resolves it.
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
+
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+
+        // Voucher-number sequencing: COUNT(*) inside the workspace under the
+        // advisory lock, identical to createEvidence (and to Memory's
+        // `this.vouchers.size`). Planner runs INSIDE the retry closure so a
+        // fork retry re-derives every id and hash.
+        const voucherCountRows = await tx<{ count: string }[]>`
+          SELECT COUNT(*)::text AS count
+          FROM ledger.vouchers
+          WHERE organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+        `;
+        const voucherCount = Number(voucherCountRows[0]?.count ?? "0");
+        const plan = planManualVoucher(
+          { ...input, actorId },
+          {
+            voucherIndex: voucherCount,
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+          },
+        );
+        const { voucher, review } = plan;
+        // A manual plan's review ALWAYS carries the verbatim-line suggestion
+        // (planManualVoucher builds it unconditionally); assert rather than
+        // persist a null suggestion the approval path then reads back as the
+        // manual-origin invariant throw. Same guard as Memory.
+        const suggestion = review.suggestion;
+        if (!suggestion) {
+          throw new Error(`Manual voucher plan for ${voucher.id} produced no suggestion (invariant violation).`);
+        }
+
+        await tx`
+          INSERT INTO ledger.vouchers (
+            id,
+            organization_id,
+            workspace_id,
+            evidence_packet_id,
+            voucher_number,
+            accounting_method,
+            status,
+            voucher_fields,
+            extracted_fields,
+            created_by,
+            created_at,
+            origin
+          ) VALUES (
+            ${voucher.id},
+            ${voucher.organizationId},
+            ${voucher.workspaceId},
+            ${voucher.evidencePacketId},
+            ${voucher.voucherNumber},
+            ${voucher.accountingMethod},
+            ${voucher.status},
+            ${tx.json(voucher.voucherFields as Parameters<typeof tx.json>[0])},
+            ${tx.json(voucher.extractedFields as unknown as Parameters<typeof tx.json>[0])},
+            ${voucher.createdBy},
+            ${voucher.createdAt},
+            ${voucher.origin}
+          )
+        `;
+
+        await tx`
+          INSERT INTO ledger.review_tasks (
+            id,
+            organization_id,
+            workspace_id,
+            voucher_id,
+            status,
+            blocked_reason,
+            suggested_action,
+            suggestion,
+            provenance_timeline,
+            title,
+            created_at
+          ) VALUES (
+            ${review.id},
+            ${this.defaults.organizationId},
+            ${this.defaults.workspaceId},
+            ${review.voucherId},
+            ${review.status},
+            ${review.blockedReason ?? null},
+            ${review.suggestedAction},
+            ${tx.json(suggestion as unknown as Parameters<typeof tx.json>[0])},
+            ${tx.json(review.provenanceTimeline as unknown as Parameters<typeof tx.json>[0])},
+            ${review.title},
+            ${voucher.createdAt}
+          )
+        `;
+
+        // Append the planned VoucherCreated + SuggestionGenerated pair, threading
+        // previous_hash forward — never hand-crafted, always the store's own
+        // appendEvent chained off the locked tail.
+        let prev = tailHash;
+        for (const event of plan.events) {
+          const appended = await this.appendEvent(
+            tx,
+            {
+              ...event,
+              payload: event.payload as unknown as Record<string, unknown>,
+            },
+            prev,
+          );
+          prev = appended.eventHash;
+        }
+
+        return { voucherId: voucher.id, reviewId: review.id };
+      }),
     );
   }
 
@@ -1280,6 +1407,27 @@ export class PostgresLedgerStore implements LedgerStore {
       if (!voucherRow) return undefined;
 
       const voucher = rowToVoucher(voucherRow);
+
+      // KFR D2 (store parity, Rule 11 — MemoryLedgerStore applies the identical
+      // guard): a manual voucher's suggestion IS the reviewer's verbatim lines.
+      // There is nothing to re-derive from extracted fields (a manual entry has
+      // none), and regenerating would write a deterministic single-account
+      // suggestion — with no `lines` — over the review below, turning the next
+      // approval into the manual-origin invariant throw. `POST
+      // /api/vouchers/:id/suggest` is reachable for ANY voucher id, so this is
+      // a live path, not a theoretical one. Return what was authored, unchanged.
+      if (voucher.origin === "manual") {
+        const storedRows = await tx<{ suggestion: AccountingSuggestion | null }[]>`
+          SELECT suggestion
+          FROM ledger.review_tasks
+          WHERE voucher_id = ${voucherId}
+            AND organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+          LIMIT 1
+        `;
+        return storedRows[0]?.suggestion ?? undefined;
+      }
+
       const ruleHits = evaluateVoucherRules(voucher);
       const suggestion = buildDeterministicSuggestion(voucher, ruleHits);
 

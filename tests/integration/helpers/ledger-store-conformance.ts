@@ -457,6 +457,128 @@ export async function scenarioReviewApproveEdited(h: ConformanceHarness): Promis
   };
 }
 
+/**
+ * Manual N-line journal entry through the review gate (KFR Phase B, Tasks 7/9).
+ *
+ * Covers the whole lifecycle in one scenario so Memory and Postgres are pinned
+ * to the same behavior end to end: create → visible in the review feed →
+ * `suggestVoucher` does NOT regenerate over the verbatim lines → approve posts
+ * those exact lines to the journal → a second entry's reject path posts
+ * nothing. The `suggestVoucher` step is load-bearing, not incidental:
+ * `POST /api/vouchers/:id/suggest` is reachable for ANY voucher id, and a
+ * store that rebuilds a deterministic single-account suggestion there strips
+ * `suggestion.lines` and turns the next approval into the manual-origin
+ * invariant throw.
+ */
+export async function scenarioManualVoucherLifecycle(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const journalBefore = (await h.store.getReports()).journal.length;
+  const feedBefore = (await h.store.getReviewFeed()).length;
+  const eventsBefore = (await h.store.getEvents()).length;
+
+  const result = await h.store.createManualVoucher({
+    actorId: h.actorId,
+    description: "Manual conformance entry",
+    bookedAt: "2026-03-20",
+    lines: [
+      { accountNumber: "6991", debit: 100, credit: 0, vatCode: "NA" },
+      { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" },
+    ],
+  });
+
+  const feedAfterCreate = await h.store.getReviewFeed();
+  const feedIncludesReview = feedAfterCreate.some((review) => review.id === result.reviewId);
+  const snapshot = await h.store.getSnapshot();
+  const voucher = snapshot.vouchers.find((v) => v.id === result.voucherId);
+
+  const createEvents = (await h.store.getEvents())
+    .slice(eventsBefore)
+    .filter((event) => event.aggregateId === result.voucherId || event.aggregateId === result.reviewId);
+
+  // Verbatim-line preservation: regeneration must be refused for manual origin
+  // in BOTH stores, and it must not clobber the stored review suggestion.
+  const regenerated = await h.store.suggestVoucher(result.voucherId);
+  const reviewAfterSuggest = await h.store.findReviewByVoucher(result.voucherId);
+
+  const decided = await h.store.applyReviewDecision(result.reviewId, "approve", { actorId: h.actorId });
+  const journalAfter = (await h.store.getReports()).journal.length;
+  const postedLines = (await h.store.getReports({ from: "2026-03-20", to: "2026-03-20" })).journal.filter(
+    (entry) => entry.voucherId === result.voucherId,
+  );
+
+  // Reject path on a second manual entry: decided, but nothing posted.
+  const rejectedEntry = await h.store.createManualVoucher({
+    actorId: h.actorId,
+    description: "Manual conformance reject",
+    bookedAt: "2026-03-21",
+    lines: [
+      { accountNumber: "6991", debit: 40, credit: 0, vatCode: "NA" },
+      { accountNumber: "2899", debit: 0, credit: 40, vatCode: "NA" },
+    ],
+  });
+  const journalBeforeReject = (await h.store.getReports()).journal.length;
+  const rejectedReview = await h.store.applyReviewDecision(rejectedEntry.reviewId, "reject", { actorId: h.actorId });
+  const journalAfterReject = (await h.store.getReports()).journal.length;
+  const eventsAfterReject = await h.store.getEvents();
+  const rejectPosted = eventsAfterReject.some(
+    (event) => event.eventType === "PostedToLedger" && event.aggregateId === rejectedEntry.voucherId,
+  );
+  const rejectRecorded = eventsAfterReject.some(
+    (event) => event.eventType === "ReviewRejected" && event.aggregateId === rejectedEntry.reviewId,
+  );
+
+  // An unbalanced entry is refused before anything becomes visible. Memory's
+  // planner throws before it touches a Map; Postgres runs the same gate INSIDE
+  // the transaction, so it is the rollback that makes "no rows, no events"
+  // true — worth pinning on both stores rather than assuming.
+  const eventsBeforeInvalid = (await h.store.getEvents()).length;
+  const vouchersBeforeInvalid = (await h.store.getSnapshot()).vouchers.length;
+  let invalidError = "none";
+  try {
+    await h.store.createManualVoucher({
+      actorId: h.actorId,
+      description: "Unbalanced conformance entry",
+      bookedAt: "2026-03-22",
+      lines: [
+        { accountNumber: "6991", debit: 100.01, credit: 0, vatCode: "NA" },
+        { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" },
+      ],
+    });
+  } catch (error) {
+    // Cross-boundary error identity: name, never instanceof (tsx keeps a dual
+    // module cache, so class identity can differ per import path).
+    invalidError = error instanceof Error ? error.name : "unknown";
+  }
+  const invalidEventDelta = (await h.store.getEvents()).length - eventsBeforeInvalid;
+  const invalidVoucherDelta = (await h.store.getSnapshot()).vouchers.length - vouchersBeforeInvalid;
+
+  return {
+    feedDelta: feedAfterCreate.length - feedBefore,
+    feedIncludesReview,
+    createEventTypes: createEvents.map((event) => event.eventType),
+    voucherOrigin: voucher?.origin ?? null,
+    voucherEvidencePacketId: voucher ? voucher.evidencePacketId : "voucher-missing",
+    voucherStatus: voucher?.status ?? null,
+    regeneratedAccounts: regenerated?.lines?.map((line) => line.accountNumber) ?? null,
+    reviewSuggestionAccounts: reviewAfterSuggest?.suggestion?.lines?.map((line) => line.accountNumber) ?? null,
+    decidedStatus: decided?.status ?? null,
+    journalDelta: journalAfter - journalBefore,
+    postedLineCount: postedLines.length,
+    postedAccounts: postedLines.map((line) => [
+      line.accountNumber,
+      normalizeNumber(line.debit),
+      normalizeNumber(line.credit),
+    ]),
+    postedBookedAt: postedLines[0]?.bookedAt.slice(0, 10) ?? null,
+    rejectedStatus: rejectedReview?.status ?? null,
+    rejectJournalDelta: journalAfterReject - journalBeforeReject,
+    rejectPosted,
+    rejectRecorded,
+    invalidError,
+    invalidEventDelta,
+    invalidVoucherDelta,
+  };
+}
+
 export const CONFORMANCE_SCENARIOS: Array<{
   name: string;
   run: (h: ConformanceHarness) => Promise<ConformanceOutcome>;
@@ -470,6 +592,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "append-only event vocabulary", run: scenarioAppendOnlyEventVocabulary },
   { name: "review reject", run: scenarioReviewReject },
   { name: "review approve with edits", run: scenarioReviewApproveEdited },
+  { name: "manual voucher lifecycle", run: scenarioManualVoucherLifecycle },
 ];
 
 export function assertConformanceParity(
