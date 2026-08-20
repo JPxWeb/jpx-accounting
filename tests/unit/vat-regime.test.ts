@@ -299,19 +299,58 @@ test("an account-revenue box's total is per box: an account shared by two boxes 
 test("box 05 attributes by the LINE's vatCode: off-template revenue counts, momsfri line on a rated account does not", () => {
   assert.equal(findCoaAccount(bas2026, "3011"), undefined, "precondition: 3011 must be off-template");
   const boxes = buildVatReturnBoxes([
-    // Off-template revenue account (SIE import / manual edit) with a rated
-    // vatCode on the line — must land in box 05 via the BAS 3xxx fallback.
-    line({ accountNumber: "3011", debit: 0, credit: 500, vatCode: "VAT12", deductible: false }),
-    line({ accountNumber: "2620", debit: 0, credit: 60, vatCode: "VAT12", deductible: false }),
-    line({ accountNumber: "1930", debit: 560, credit: 0, vatCode: "NA", deductible: false }),
-    // Momsfri sale booked on the normally-rated 3001: the line's own vatCode
-    // wins over the template default (VAT25), so it stays OUT of box 05.
-    line({ accountNumber: "3001", debit: 0, credit: 200, vatCode: "VAT0", deductible: false }),
-    line({ accountNumber: "1930", debit: 200, credit: 0, vatCode: "NA", deductible: false }),
+    // Voucher 1: off-template revenue account (SIE import / manual edit)
+    // with a rated vatCode on the line — must land in box 05 via the BAS
+    // 3xxx fallback.
+    line({ voucherId: "v1", accountNumber: "3011", debit: 0, credit: 500, vatCode: "VAT12", deductible: false }),
+    line({ voucherId: "v1", accountNumber: "2620", debit: 0, credit: 60, vatCode: "VAT12", deductible: false }),
+    line({ voucherId: "v1", accountNumber: "1930", debit: 560, credit: 0, vatCode: "NA", deductible: false }),
+    // Voucher 2 (its OWN voucher, no output-VAT account line anywhere in
+    // it): momsfri sale booked on the normally-rated 3001 — the line's own
+    // vatCode wins over the template default (VAT25), and there is no
+    // co-voucher output-VAT evidence either, so it stays OUT of box 05.
+    line({ voucherId: "v2", accountNumber: "3001", debit: 0, credit: 200, vatCode: "VAT0", deductible: false }),
+    line({ voucherId: "v2", accountNumber: "1930", debit: 200, credit: 0, vatCode: "NA", deductible: false }),
   ]);
   const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
   assert.equal(amount("05"), 500);
   assert.equal(amount("11"), 60);
+});
+
+test("box 05 also counts an imported (vatCode NA) domestic sale via its voucher's output-VAT account line (G5 regression)", () => {
+  // SIE-imported voucher: `planSieImport` (store.ts) forces EVERY line to
+  // vatCode:"NA". Before this fix, box 05 (vatCode-gated) missed the sale
+  // base entirely while box 10 (already account-gated) still picked up
+  // the VAT — an internally contradictory return. The 2610 line in the
+  // SAME voucher is now sufficient account evidence.
+  const boxes = buildVatReturnBoxes([
+    line({ voucherId: "sie_A_1", accountNumber: "3001", debit: 0, credit: 1000, vatCode: "NA", deductible: false }),
+    line({ voucherId: "sie_A_1", accountNumber: "2610", debit: 0, credit: 250, vatCode: "NA", deductible: false }),
+    line({ voucherId: "sie_A_1", accountNumber: "1930", debit: 1250, credit: 0, vatCode: "NA", deductible: false }),
+  ]);
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  assert.equal(amount("05"), 1000, "account-classification basis must catch the imported sale despite vatCode NA");
+  assert.equal(amount("10"), 250, "output VAT was already account-based and is unaffected by this fix");
+});
+
+test("the account-inferred box-05 arm excludes account-revenue (39/40) accounts inside a mixed voucher", () => {
+  // One imported voucher bundling a domestic rated sale (3001) with an EU
+  // B2B service sale (3308), every line at vatCode "NA". The 2610 line is
+  // co-voucher evidence for the DOMESTIC leg only: boxes 39/40 turnover is
+  // by definition not momspliktig försäljning, so letting the new arm pull
+  // 3308 into box 05 would double-declare it (and would relax the C3 pin
+  // "the account-based arm must not bleed into box 05" the moment such a
+  // voucher exists). Deviation from the C4 brief — see vat/boxes.ts.
+  const boxes = buildVatReturnBoxes([
+    line({ voucherId: "sie_B_1", accountNumber: "3001", debit: 0, credit: 800, vatCode: "NA", deductible: false }),
+    line({ voucherId: "sie_B_1", accountNumber: "3308", debit: 0, credit: 200, vatCode: "NA", deductible: false }),
+    line({ voucherId: "sie_B_1", accountNumber: "2610", debit: 0, credit: 200, vatCode: "NA", deductible: false }),
+    line({ voucherId: "sie_B_1", accountNumber: "1930", debit: 1200, credit: 0, vatCode: "NA", deductible: false }),
+  ]);
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  assert.equal(amount("05"), 800, "only the domestic leg — 3308 is declared in box 39, not box 05");
+  assert.equal(amount("39"), 200);
+  assert.equal(amount("10"), 200);
 });
 
 test("declaration boundary is whole kronor: öre truncated, box 49 derived from the truncated boxes", () => {

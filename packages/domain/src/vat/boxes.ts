@@ -24,8 +24,11 @@ function toWholeKronor(amount: number): number {
  * Computed boxes (KFR Phase C / D4 — see
  * docs/superpowers/specs/2026-08-20-kapitas-full-replacement-design.md):
  *  - 05 sales base: a revenue-class line counts when its own `vatCode` is
- *    rated (the account-classification fix for imported vatCode:"NA"
- *    sales — readiness gap G5 — lands in Task C4).
+ *    rated, OR — the account-classification fix for imported
+ *    vatCode:"NA" sales (readiness gap G5, Task C4) — when its VOUCHER
+ *    carries a domestic output-VAT account line (2610/2620/2630).
+ *    Accounts owned by an `account-revenue` box (39/40) are excluded from
+ *    that second arm; see the inline note at the accumulator.
  *  - 10–12 domestic output VAT: account-keyed off `outputByRate`, its own
  *    map.
  *  - 30–32 reverse-charge output VAT: account-keyed off
@@ -73,6 +76,17 @@ export function buildVatReturnBoxes(
   const accountRevenueAccounts = new Set<string>(
     regime.boxes.filter((def) => def.kind === "account-revenue").flatMap((def) => def.accounts ?? []),
   );
+  const domesticOutputAccounts = new Set(accountByRate.values());
+
+  // Pass 1: which vouchers carry a domestic output-VAT account line at
+  // all (any rate) — the box 05 fallback below reads this, not the
+  // line's own vatCode, when that vatCode is silent (SIE imports; G5).
+  const voucherHasDomesticOutputVat = new Set<string>();
+  for (const line of lines) {
+    if (domesticOutputAccounts.has(line.accountNumber) && line.credit - line.debit !== 0) {
+      voucherHasDomesticOutputVat.add(line.voucherId);
+    }
+  }
 
   let salesBase = 0;
   let inputVat = 0;
@@ -105,10 +119,22 @@ export function buildVatReturnBoxes(
         (accountRevenueTotals.get(line.accountNumber) ?? 0) + line.credit - line.debit,
       );
     }
-    // Box 05: the line's actual vatCode decides ratedness (readiness gap
-    // G5 — imported vatCode:"NA" sales are NOT yet covered here; that
-    // lands in Task C4, which adds a second, account-based arm).
-    if (RATED_VAT_CODES.has(line.vatCode) && classifyAccountNumber(line.accountNumber, coa) === "revenue") {
+    // Box 05 (G5 fix): rated by the line's OWN vatCode, OR inferred from a
+    // matching domestic output-VAT account line in the SAME voucher.
+    //
+    // DEVIATION from the C4 brief: the inferred arm additionally EXCLUDES
+    // `account-revenue` accounts (3308/3305 — boxes 39/40). Their turnover
+    // is by definition not momspliktig försäljning, so a mixed imported
+    // voucher (domestic sale + EU service sale + one 2610 line) would
+    // otherwise declare the 39/40 leg twice and break the C3 invariant
+    // "the account-based arm must not bleed into box 05". The vatCode arm
+    // is deliberately left untouched: an explicit rated vatCode on the
+    // line is an operator statement, and "the line's own vatCode wins" is
+    // already pinned behavior.
+    const ratedForSalesBase =
+      RATED_VAT_CODES.has(line.vatCode) ||
+      (voucherHasDomesticOutputVat.has(line.voucherId) && !accountRevenueAccounts.has(line.accountNumber));
+    if (ratedForSalesBase && classifyAccountNumber(line.accountNumber, coa) === "revenue") {
       salesBase += line.credit - line.debit;
     }
   }
