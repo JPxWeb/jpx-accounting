@@ -45,6 +45,7 @@ import {
   encodePc8,
   nowIso,
   parseSie,
+  sieDecodeWarnings,
   summarizeEventIntegrity,
   today,
 } from "@jpx-accounting/domain";
@@ -558,7 +559,12 @@ export class AccountingApiClient {
     const asBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     if (this.fallbackStore) {
       // No actorId: the store attributes to the demo sentinel (WS-C R5).
-      return this.fallbackStore.importSie({ file: parseSie(decodeSieBuffer(asBytes)) });
+      const text = decodeSieBuffer(asBytes);
+      const parsed = parseSie(text);
+      // Mirror the API route: decode fallout (e.g. ø/Ø, unmapped in our CP437
+      // subset) is surfaced as a warning, never silently mangled (G11).
+      parsed.warnings = [...sieDecodeWarnings(text), ...parsed.warnings];
+      return this.fallbackStore.importSie({ file: parsed });
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     const response = await this.authorizedFetch(`${this.baseUrl}/api/imports/sie`, {

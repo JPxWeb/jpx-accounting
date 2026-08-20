@@ -36,6 +36,7 @@ import {
   nowIso,
   parseSie,
   ReviewBlockedError,
+  sieDecodeWarnings,
   summarizeEventIntegrity,
   today,
   type ReviewAction,
@@ -955,7 +956,11 @@ export function createApp({
     // Attribution is server-derived (R5) — the old `?actorId=` override let any
     // caller stamp arbitrary identities into the 7-year audit trail.
     const bytes = new Uint8Array(await context.req.arrayBuffer());
-    const parsed = parseSie(decodeSieBuffer(bytes));
+    const text = decodeSieBuffer(bytes);
+    const parsed = parseSie(text);
+    // Decode fallout first: a byte our CP437 subset can't map (e.g. ø/Ø) would
+    // otherwise silently mangle voucher text (readiness G11).
+    parsed.warnings = [...sieDecodeWarnings(text), ...parsed.warnings];
     const result = await currentStore.importSie({ actorId: deriveActorId(context), file: parsed });
     return context.json(result);
   });

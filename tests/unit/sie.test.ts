@@ -4,7 +4,14 @@ import test from "node:test";
 
 import type { CompanySettings, JournalEntryProjection } from "@jpx-accounting/contracts";
 import { sieImportResultSchema } from "@jpx-accounting/contracts";
-import { buildSieExport, decodePc8, decodeSieBuffer, encodePc8, parseSie } from "@jpx-accounting/domain";
+import {
+  buildSieExport,
+  decodePc8,
+  decodeSieBuffer,
+  encodePc8,
+  parseSie,
+  sieDecodeWarnings,
+} from "@jpx-accounting/domain";
 import {
   MemoryLedgerStore,
   planSieImport,
@@ -93,6 +100,28 @@ test("PC8 encode/decode are inverse over the Swedish subset; unmappable chars de
 
   assert.deepEqual([...encodePc8("€")], [0x3f], "unmappable encodes as '?'");
   assert.equal(decodePc8(new Uint8Array([0x41, 0xff])), "A�", "unmapped high byte decodes as U+FFFD");
+});
+
+test("CP437 map covers æ/Æ; an unmapped high byte (e.g. ø/Ø, no CP437 slot here) triggers a decode warning", () => {
+  assert.deepEqual([...encodePc8("æÆ")], [0x91, 0x92]);
+  assert.equal(decodePc8(encodePc8("æÆ")), "æÆ");
+
+  // Export side of the same gap: ø/Ø have no CP437 slot, so they degrade to
+  // '?' on the way out (the documented unmappable convention).
+  assert.deepEqual([...encodePc8("øØ")], [0x3f, 0x3f], "ø/Ø have no CP437 slot — exported as '?'");
+
+  assert.deepEqual(sieDecodeWarnings("clean text, no replacement chars"), []);
+
+  // 0xd8 is outside this subset's map — a stand-in for ø/Ø, which have no
+  // CP437 slot here (readiness G11).
+  const decoded = decodePc8(new Uint8Array([0x42, 0xd8, 0x6a, 0x6f, 0x72, 0x6e]));
+  assert.equal(decoded, "B�jorn");
+  const warnings = sieDecodeWarnings(decoded);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /1 character/);
+  // The warning must name the affected text — "review manually" is useless
+  // without pointing at the line to review.
+  assert.match(warnings[0]!, /B�jorn/);
 });
 
 test("decodeSieBuffer: strict UTF-8 first, CP437 subset on failure", () => {
@@ -323,6 +352,14 @@ test("importSie threads parse warnings into the result and they survive the wire
     0,
     "opening balances are not imported",
   );
+});
+
+test("decode-confidence warning reaches ParsedSieFile.warnings for a real garbled buffer", () => {
+  const garbled = new Uint8Array([0x23, 0x46, 0x4e, 0x41, 0x4d, 0x4e, 0x20, 0xd8]); // "#FNAMN " + an unmapped byte
+  const text = decodeSieBuffer(garbled);
+  const parsed = parseSie(text);
+  const merged = [...sieDecodeWarnings(text), ...parsed.warnings];
+  assert.ok(merged.some((warning) => warning.includes("could not be decoded")));
 });
 
 test("summarizeSieWarnings caps the threaded warnings so a junk file can't return an unbounded payload", () => {

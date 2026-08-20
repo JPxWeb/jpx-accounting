@@ -17,6 +17,8 @@ const UNICODE_TO_CP437: Record<string, number> = {
   É: 0x90,
   ü: 0x81,
   Ü: 0x9a,
+  æ: 0x91,
+  Æ: 0x92,
 };
 
 const CP437_TO_UNICODE = new Map<number, string>(Object.entries(UNICODE_TO_CP437).map(([char, byte]) => [byte, char]));
@@ -63,4 +65,31 @@ export function decodeSieBuffer(bytes: Uint8Array): string {
   } catch {
     return decodePc8(bytes);
   }
+}
+
+/** Longest excerpt of an affected line echoed back in a decode warning (bounded — CONVENTIONS Rule 25). */
+const DECODE_WARNING_EXCERPT_CHARS = 40;
+
+/**
+ * Detect CP437 decode fallout: a byte outside this subset's map (e.g. ø/Ø,
+ * which have no CP437 slot here) decodes to U+FFFD instead of the real
+ * character. Callers merge this into `ParsedSieFile.warnings` so a garbled
+ * voucher text is surfaced, not silent (readiness G11). The first affected
+ * line is quoted (bounded excerpt) so "review manually" has somewhere to point.
+ */
+export function sieDecodeWarnings(text: string): string[] {
+  const replacementCount = [...text].filter((char) => char === REPLACEMENT_CHARACTER).length;
+  if (replacementCount === 0) return [];
+  const firstAffected =
+    text
+      .split(/\r?\n/)
+      .find((line) => line.includes(REPLACEMENT_CHARACTER))
+      ?.trim() ?? "";
+  const excerpt =
+    firstAffected.length > DECODE_WARNING_EXCERPT_CHARS
+      ? `${firstAffected.slice(0, DECODE_WARNING_EXCERPT_CHARS)}…`
+      : firstAffected;
+  return [
+    `${replacementCount} character(s) could not be decoded (a PC8/CP437 byte outside this subset's map, e.g. ø/Ø) and were replaced with "${REPLACEMENT_CHARACTER}" — review affected voucher texts manually. First affected line: ${excerpt}`,
+  ];
 }
