@@ -12,6 +12,7 @@ import {
   evidenceComposeInputSchema,
   evidenceCreateInputSchema,
   knowledgeQuerySchema,
+  manualVoucherInputSchema,
   reviewDecisionInputSchema,
   type ReviewDecisionInput,
   simulationRequestSchema,
@@ -29,6 +30,7 @@ import {
   decodeSieBuffer,
   DEMO_ACTOR_ID,
   encodePc8,
+  InvalidManualVoucherError,
   InvalidPeriodTokenError,
   InvalidReviewEditError,
   nowIso,
@@ -576,6 +578,13 @@ export function createApp({
       });
     }
 
+    if (error instanceof InvalidManualVoucherError) {
+      // Well-formed JSON (the wire schema only tolerates ±0.005 float noise) but
+      // non-öre-exact or öre-unbalanced lines → 422 (Rule 16), same family as
+      // InvalidReviewEditError. Thrown by planManualVoucher before any mutation.
+      return jsonError(c, error.message, runtimeMode, 422, { code: "invalid_manual_voucher" });
+    }
+
     if (error instanceof ReviewBlockedError) {
       // Normal-mode approve refused while blockedReason is set (Wave D′ / P1-1).
       return jsonError(c, error.message, runtimeMode, 409, { code: error.code });
@@ -896,6 +905,19 @@ export function createApp({
     const suggestion = await currentStore.suggestVoucher(context.req.param("id"));
     if (!suggestion) throw new HTTPException(404, { message: "Voucher not found" });
     return context.json(suggestion);
+  });
+
+  // Manual journal entry (KFR Phase B / D2). Registered on the plain
+  // `/api/vouchers/manual` path — no collision with `/api/vouchers/:id/suggest`
+  // above, which is a four-segment route. Inherits the whole `/api/*` mutation
+  // middleware stack registered further up (JSON body limit, JWKS JWT gate when
+  // configured, per-subject mutation rate limiter); nothing is duplicated here.
+  // Actor attribution is spread LAST so a client-posted `actorId` (already
+  // stripped by the Zod object) can never win (WS-C R5).
+  app.post("/api/vouchers/manual", jsonValidated(manualVoucherInputSchema), async (context) => {
+    const input = context.req.valid("json");
+    const result = await currentStore.createManualVoucher({ ...input, actorId: deriveActorId(context) });
+    return context.json(result, 201);
   });
 
   app.post("/api/reviews/:id/approve", jsonValidated(reviewDecisionInputSchema), async (c) =>

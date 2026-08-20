@@ -8,6 +8,7 @@ import test from "node:test";
 import { createAdvisorChatHandler, type AdvisorChatHandlerOptions } from "../../services/api/src/advisor/chat";
 import { createApp } from "../../services/api/src/app";
 import { createApiRuntimeDependencies } from "../../services/api/src/runtime";
+import { DEMO_ACTOR_ID } from "@jpx-accounting/domain";
 import { MemoryLedgerStore, type LedgerStore } from "@jpx-accounting/domain/store";
 
 type TestAppOverrides = {
@@ -238,6 +239,110 @@ test("GET /api/close-runs/:id 404s when the id does not match the store's close 
   assert.ok(typeof body.requestId === "string" && body.requestId.length > 0);
 });
 
+test("POST /api/vouchers/manual creates a voucher + review and rejects a schema-invalid payload with 400", async () => {
+  const app = createTestApiApp("demo");
+  const ok = await app.request("http://localhost/api/vouchers/manual", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      description: "Utlägg för kontorsmaterial",
+      bookedAt: "2026-03-20",
+      lines: [
+        { accountNumber: "6110", debit: 250, credit: 0 },
+        { accountNumber: "2899", debit: 0, credit: 250 },
+      ],
+    }),
+  });
+  assert.equal(ok.status, 201);
+  const body = (await ok.json()) as { voucherId: string; reviewId: string };
+  assert.ok(body.voucherId);
+  assert.ok(body.reviewId);
+  // 201 body is exactly manualVoucherResultSchema — no extra internals leak.
+  assert.deepEqual(Object.keys(body).sort(), ["reviewId", "voucherId"]);
+
+  // Schema-invalid (single line: fails both `.min(2)` and the ±0.005 balance
+  // superRefine) → the contract-pinned 400, NOT the 422 domain family below.
+  const bad = await app.request("http://localhost/api/vouchers/manual", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      description: "Bad",
+      bookedAt: "2026-03-20",
+      lines: [{ accountNumber: "6110", debit: 250, credit: 0 }],
+    }),
+  });
+  assert.equal(bad.status, 400);
+  const badBody = (await bad.json()) as { code: string; issues: unknown[]; requestId: string };
+  assert.equal(badBody.code, "validation_error");
+  assert.ok(Array.isArray(badBody.issues) && badBody.issues.length > 0);
+  assert.ok(typeof badBody.requestId === "string" && badBody.requestId.length > 0);
+});
+
+test("POST /api/vouchers/manual maps a sub-öre payload to 422 invalid_manual_voucher", async () => {
+  const app = createTestApiApp("demo");
+
+  // Balanced within the wire schema's ±0.005 float-noise tolerance, so it
+  // passes jsonValidated — but 250.004 is not öre-exact, which planManualVoucher
+  // rejects with InvalidManualVoucherError (→ 422, same family as
+  // InvalidReviewEditError). Distinct from the 400 above: 422 is well-formed
+  // JSON that is semantically unprocessable (CONVENTIONS Rule 16).
+  const response = await app.request("http://localhost/api/vouchers/manual", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-request-id": "manual-ore-fixture" },
+    body: JSON.stringify({
+      description: "Sub-öre belopp",
+      bookedAt: "2026-03-20",
+      lines: [
+        { accountNumber: "6110", debit: 250.004, credit: 0 },
+        { accountNumber: "2899", debit: 0, credit: 250 },
+      ],
+    }),
+  });
+
+  assert.equal(response.status, 422);
+  const body = (await response.json()) as { code: string; error: string; runtimeMode: string; requestId: string };
+  assert.equal(body.code, "invalid_manual_voucher");
+  assert.match(body.error, /öre-exact/);
+  assert.equal(body.runtimeMode, "demo");
+  assert.equal(body.requestId, "manual-ore-fixture");
+  // A rejected entry never mutates the store (the planner throws before any id).
+  const snapshot = (await (await app.request("http://localhost/api/workspace")).json()) as {
+    vouchers: { voucherFields: { description: string } }[];
+  };
+  assert.ok(!snapshot.vouchers.some((voucher) => voucher.voucherFields.description === "Sub-öre belopp"));
+});
+
+test("POST /api/vouchers/manual derives the actor server-side and ignores a client-posted actorId", async () => {
+  const app = createTestApiApp("demo");
+
+  const response = await app.request("http://localhost/api/vouchers/manual", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      // Client-supplied attribution must be stripped by Zod and overwritten by
+      // deriveActorId (WS-C R5) — never trusted.
+      actorId: "user:spoofed-attacker",
+      description: "Manuell verifikation",
+      bookedAt: "2026-03-20",
+      lines: [
+        { accountNumber: "6110", debit: 100, credit: 0 },
+        { accountNumber: "2899", debit: 0, credit: 100 },
+      ],
+    }),
+  });
+
+  assert.equal(response.status, 201);
+  const { voucherId } = (await response.json()) as { voucherId: string };
+  const snapshot = (await (await app.request("http://localhost/api/workspace")).json()) as {
+    vouchers: { id: string; createdBy: string; origin: string; evidencePacketId: string | null }[];
+  };
+  const voucher = snapshot.vouchers.find((candidate) => candidate.id === voucherId);
+  assert.ok(voucher);
+  assert.equal(voucher.createdBy, DEMO_ACTOR_ID);
+  assert.equal(voucher.origin, "manual");
+  assert.equal(voucher.evidencePacketId, null);
+});
+
 // The readApiRuntimeConfig fail-closed suites (runtime mode, JWT algs, PORT, tool-approval
 // secret, boot posture) live in tests/unit/api-config.test.ts.
 
@@ -306,6 +411,22 @@ test("JWKS gate requires a token on /api/* reads, keeps runtime-info public, and
 
       const unauthenticatedMutation = await app.request("http://localhost/api/close-runs", { method: "POST" });
       assert.equal(unauthenticatedMutation.status, 401);
+
+      // The manual-voucher route inherits the same /api/* gate — no route-local
+      // auth wiring exists, so this pins that it never regressed to public.
+      const unauthenticatedManual = await app.request("http://localhost/api/vouchers/manual", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          description: "Manuell verifikation",
+          bookedAt: "2026-03-20",
+          lines: [
+            { accountNumber: "6110", debit: 100, credit: 0 },
+            { accountNumber: "2899", debit: 0, credit: 100 },
+          ],
+        }),
+      });
+      assert.equal(unauthenticatedManual.status, 401);
 
       // GET /api/runtime-info stays public (EU AI Act Art. 50 transparency panel).
       const runtimeInfo = await app.request("http://localhost/api/runtime-info");
