@@ -66,6 +66,13 @@ export function buildVatReturnBoxes(
       number,
     ]),
   );
+  // Flattened ONCE, as a set of accounts — not re-scanned per line per box.
+  // Accumulating inside a `for (const def of regime.boxes)` loop would add a
+  // line's amount once per MATCHING box, so an account listed by two
+  // `account-revenue` boxes would double-count into both of them.
+  const accountRevenueAccounts = new Set<string>(
+    regime.boxes.filter((def) => def.kind === "account-revenue").flatMap((def) => def.accounts ?? []),
+  );
 
   let salesBase = 0;
   let inputVat = 0;
@@ -92,13 +99,11 @@ export function buildVatReturnBoxes(
     // SIE-imported line carrying vatCode "NA" on 3308/3305 counts exactly
     // like a natively booked VAT0 one. credit − debit, so a credit note /
     // reversal reduces the declared turnover.
-    for (const def of regime.boxes) {
-      if (def.kind === "account-revenue" && def.accounts?.includes(line.accountNumber)) {
-        accountRevenueTotals.set(
-          line.accountNumber,
-          (accountRevenueTotals.get(line.accountNumber) ?? 0) + line.credit - line.debit,
-        );
-      }
+    if (accountRevenueAccounts.has(line.accountNumber)) {
+      accountRevenueTotals.set(
+        line.accountNumber,
+        (accountRevenueTotals.get(line.accountNumber) ?? 0) + line.credit - line.debit,
+      );
     }
     // Box 05: the line's actual vatCode decides ratedness (readiness gap
     // G5 — imported vatCode:"NA" sales are NOT yet covered here; that

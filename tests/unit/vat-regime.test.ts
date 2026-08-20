@@ -248,6 +248,54 @@ test("boxes 39/40 accumulate EU-service and export-service revenue account-based
   assert.equal(amount("05"), 0);
 });
 
+test("boxes 39/40 count SIE-imported vatCode:'NA' turnover and net credit notes off, without touching 05/10/49", () => {
+  const boxes = buildVatReturnBoxes([
+    // Norway (non-EU) service export, imported from SIE: the whole voucher
+    // carries vatCode "NA", so only the ACCOUNT (3305) can classify it.
+    line({ voucherId: "no1", accountNumber: "1930", debit: 9000, credit: 0, vatCode: "NA", deductible: false }),
+    line({ voucherId: "no1", accountNumber: "3305", debit: 0, credit: 9000, vatCode: "NA", deductible: false }),
+    // Credit note against that export: debit 3305 reduces declared turnover.
+    line({ voucherId: "no1cn", accountNumber: "3305", debit: 1500, credit: 0, vatCode: "NA", deductible: false }),
+    line({ voucherId: "no1cn", accountNumber: "1930", debit: 0, credit: 1500, vatCode: "NA", deductible: false }),
+    // EU B2B service sale (3308), also imported as "NA".
+    line({ voucherId: "eu2", accountNumber: "1930", debit: 5000, credit: 0, vatCode: "NA", deductible: false }),
+    line({ voucherId: "eu2", accountNumber: "3308", debit: 0, credit: 5000, vatCode: "NA", deductible: false }),
+    // A plain domestic 25 % sale in the same period.
+    ...saleLines(),
+  ]);
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  assert.equal(amount("39"), 5000, "vatCode 'NA' must not hide EU-service turnover from box 39");
+  assert.equal(amount("40"), 7500, "9000 − 1500: credit − debit nets the credit note off");
+  // The informational turnover boxes are outside the box-49 identity, and
+  // the account-based arm must not bleed into the vatCode-gated box 05.
+  assert.equal(amount("05"), 1000, "only the domestic sale is momspliktig försäljning");
+  assert.equal(amount("10"), 250);
+  assert.equal(amount("49"), 250, "49 = box 10 − box 48; 39/40 are not part of it");
+});
+
+test("an account-revenue box's total is per box: an account shared by two boxes is not double-counted", () => {
+  // Sweden maps 3308→39 and 3305→40 one-to-one, so the hazard is invisible
+  // on the shipped regime. Prove the accumulator is per-ACCOUNT (not
+  // per-matching-box) with a regime that lists 3305 in two boxes.
+  const sharedAccountRegime: VatRegime = {
+    ...swedishVatRegime,
+    boxes: [
+      ...swedishVatRegime.boxes,
+      { box: "41", label: "Hypothetical aggregate", kind: "account-revenue", accounts: ["3305"] },
+    ],
+  };
+  const boxes = buildVatReturnBoxes(
+    [
+      line({ voucherId: "no2", accountNumber: "1930", debit: 4000, credit: 0, vatCode: "NA", deductible: false }),
+      line({ voucherId: "no2", accountNumber: "3305", debit: 0, credit: 4000, vatCode: "NA", deductible: false }),
+    ],
+    sharedAccountRegime,
+  );
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  assert.equal(amount("40"), 4000);
+  assert.equal(amount("41"), 4000, "each box reports the account once — not 8000 in both");
+});
+
 test("box 05 attributes by the LINE's vatCode: off-template revenue counts, momsfri line on a rated account does not", () => {
   assert.equal(findCoaAccount(bas2026, "3011"), undefined, "precondition: 3011 must be off-template");
   const boxes = buildVatReturnBoxes([
