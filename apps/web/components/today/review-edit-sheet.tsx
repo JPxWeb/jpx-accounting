@@ -239,7 +239,7 @@ export function ReviewEditSheet({ review, voucher, onClose, onSuccess }: ReviewE
             data-testid="review-edit-close"
             className="rounded-md bg-surface px-3 py-2 text-sm font-medium text-muted-foreground"
           >
-            {t("cancel")}
+            {isManualOrigin ? t("close") : t("cancel")}
           </button>
         </div>
         <p id="review-edit-description" className="mt-2 text-sm text-muted-foreground">
