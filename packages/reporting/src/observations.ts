@@ -244,7 +244,7 @@ export function detectDeadlineProximity(deadlines: TaxDeadline[], today: string)
 export function detectMissingEvidence(snapshot: WorkspaceSnapshot): Observation[] {
   const packetsById = new Map(snapshot.packets.map((packet) => [packet.id, packet]));
   const missing = snapshot.vouchers.filter((voucher) => {
-    const packet = packetsById.get(voucher.evidencePacketId);
+    const packet = voucher.evidencePacketId ? packetsById.get(voucher.evidencePacketId) : undefined;
     return !packet || packet.evidenceIds.length === 0;
   });
   if (missing.length === 0) return [];

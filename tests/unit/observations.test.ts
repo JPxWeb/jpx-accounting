@@ -82,6 +82,7 @@ function makeVoucher(input: {
     organizationId: "org_jpx",
     workspaceId: "workspace_main",
     evidencePacketId: input.packetId,
+    origin: "capture",
     voucherNumber: `V-${input.id}`,
     status: "needs-review",
     accountingMethod: "invoice",
@@ -342,7 +343,7 @@ function spikeSnapshot(currentGross: number, trailingGross: number[]): Workspace
   );
   return makeSnapshot({
     vouchers,
-    packets: vouchers.map((voucher) => packet(voucher.evidencePacketId, ["evidence_x"])),
+    packets: vouchers.map((voucher) => packet(voucher.evidencePacketId!, ["evidence_x"])),
   });
 }
 

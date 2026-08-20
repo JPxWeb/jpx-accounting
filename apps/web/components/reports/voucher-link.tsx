@@ -35,7 +35,7 @@ export function buildVoucherLookup(snapshot?: Pick<WorkspaceSnapshot, "vouchers"
 export function VoucherLink({ voucherId, lookup }: { voucherId: string; lookup: VoucherLookup }) {
   const t = useTranslations("reports.drill");
   const voucher = lookup.vouchersById.get(voucherId);
-  const packet = voucher ? lookup.packetsById.get(voucher.evidencePacketId) : undefined;
+  const packet = voucher?.evidencePacketId ? lookup.packetsById.get(voucher.evidencePacketId) : undefined;
   const evidenceId = packet?.evidenceIds[0];
 
   if (voucher && evidenceId) {

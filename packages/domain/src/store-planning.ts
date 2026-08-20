@@ -170,6 +170,7 @@ export function planEvidenceCreate(
     voucherFields: deriveVoucherFields(extractedFields, input),
     createdAt,
     createdBy: actorId,
+    origin: "capture",
   };
 
   const ruleHits = evaluateVoucherRules(voucher);

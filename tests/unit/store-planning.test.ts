@@ -126,6 +126,7 @@ describe("planReviewDecision", () => {
       voucherFields: { currency: "SEK", grossAmount: 100, netAmount: 80, vatAmount: 20 },
       createdAt: "2026-03-15T12:00:00.000Z",
       createdBy: "user:x",
+      origin: "capture",
     } as Voucher;
     const review = {
       id: "r1",
@@ -175,6 +176,7 @@ describe("planReviewDecision", () => {
       },
       createdAt: "2026-03-15T12:00:00.000Z",
       createdBy: "user:x",
+      origin: "capture",
     } as Voucher;
     const suggestion = {
       id: "sug1",

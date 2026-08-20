@@ -9,6 +9,7 @@ const voucherFixture = (overrides: Partial<Voucher> = {}): Voucher => ({
   organizationId: "o",
   workspaceId: "w",
   evidencePacketId: "p1",
+  origin: "capture",
   voucherNumber: "V-1",
   status: "needs-review",
   accountingMethod: "invoice",

@@ -179,7 +179,7 @@ type VoucherRow = {
   id: string;
   organization_id: string;
   workspace_id: string;
-  evidence_packet_id: string;
+  evidence_packet_id: string | null;
   voucher_number: string;
   accounting_method: string;
   status: string;
@@ -187,6 +187,7 @@ type VoucherRow = {
   extracted_fields: ExtractedField[];
   created_by: string;
   created_at: Date | string;
+  origin: string;
 };
 
 type ReviewRow = {
@@ -272,6 +273,7 @@ function rowToVoucher(row: VoucherRow): Voucher {
     voucherFields: row.voucher_fields,
     createdAt: toIso(row.created_at),
     createdBy: row.created_by,
+    origin: row.origin as Voucher["origin"],
   };
 }
 
@@ -374,7 +376,7 @@ async function resolvePacketAndVoucher(
 
   const voucherRows = await runner<VoucherRow[]>`
     SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-           accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+           accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin
     FROM ledger.vouchers
     WHERE evidence_packet_id = ${packetRow.id}
       AND organization_id = ${scope.organizationId}
@@ -700,7 +702,8 @@ export class PostgresLedgerStore implements LedgerStore {
           voucher_fields,
           extracted_fields,
           created_by,
-          created_at
+          created_at,
+          origin
         ) VALUES (
           ${voucher.id},
           ${voucher.organizationId},
@@ -712,7 +715,8 @@ export class PostgresLedgerStore implements LedgerStore {
           ${tx.json(voucher.voucherFields as Parameters<typeof tx.json>[0])},
           ${tx.json(voucher.extractedFields as unknown as Parameters<typeof tx.json>[0])},
           ${voucher.createdBy},
-          ${voucher.createdAt}
+          ${voucher.createdAt},
+          ${voucher.origin}
         )
       `;
 
@@ -1178,7 +1182,7 @@ export class PostgresLedgerStore implements LedgerStore {
 
     const voucherRows = await this.client<VoucherRow[]>`
       SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-             accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+             accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin
       FROM ledger.vouchers
       WHERE organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
@@ -1251,7 +1255,7 @@ export class PostgresLedgerStore implements LedgerStore {
     return this.client.begin(async (tx) => {
       const voucherRows = await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin
         FROM ledger.vouchers
         WHERE id = ${voucherId}
           AND organization_id = ${this.defaults.organizationId}
@@ -1309,7 +1313,7 @@ export class PostgresLedgerStore implements LedgerStore {
 
         const voucherRows = await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin
         FROM ledger.vouchers
         WHERE id = ${review.voucherId}
           AND organization_id = ${this.defaults.organizationId}
@@ -1389,7 +1393,7 @@ export class PostgresLedgerStore implements LedgerStore {
             ? []
             : await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin
         FROM ledger.vouchers
         WHERE organization_id = ${this.defaults.organizationId}
           AND workspace_id = ${this.defaults.workspaceId}
@@ -1466,7 +1470,7 @@ export class PostgresLedgerStore implements LedgerStore {
 
       const voucherRows = await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin
         FROM ledger.vouchers
         WHERE organization_id = ${this.defaults.organizationId}
           AND workspace_id = ${this.defaults.workspaceId}
