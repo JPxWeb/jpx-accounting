@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { LedgerLine } from "@jpx-accounting/domain";
+import type { LedgerLine, VatRegime } from "@jpx-accounting/domain";
 import {
   bas2026,
   buildVat,
@@ -31,6 +31,18 @@ const saleLines = (): LedgerLine[] => [
   line({ accountNumber: "1930", debit: 1250, credit: 0, vatCode: "NA", deductible: false }),
   line({ accountNumber: "3001", debit: 0, credit: 1000, deductible: false }),
   line({ accountNumber: "2610", debit: 0, credit: 250, deductible: false }),
+];
+
+/**
+ * The canonical KFR D3 reverse-charge posting (`buildPostingLines` "rc25"
+ * shape, pinned in tests/unit/posting-balance.test.ts): net 1000 to the
+ * supplier, 250 self-assessed both ways, no VAT in the settlement leg.
+ */
+const rc25PurchaseLines = (): LedgerLine[] => [
+  line({ voucherId: "rc1", accountNumber: "6540", debit: 1000, credit: 0, vatCode: "RC25" }),
+  line({ voucherId: "rc1", accountNumber: "2645", debit: 250, credit: 0, vatCode: "RC25" }),
+  line({ voucherId: "rc1", accountNumber: "2614", debit: 0, credit: 250, vatCode: "RC25", deductible: false }),
+  line({ voucherId: "rc1", accountNumber: "1930", debit: 0, credit: 1000, vatCode: "NA", deductible: false }),
 ];
 
 test("Swedish regime rate table is exactly 25/12/6/0", () => {
@@ -98,6 +110,25 @@ test("buildVat recognizes output VAT on a sale", () => {
   assert.equal(vat25?.vatAmount, 250);
 });
 
+test("buildVat sees the reverse-charge OUTPUT leg, so an RC purchase is VAT-neutral instead of a pure claim", () => {
+  const projections = buildVat(rc25PurchaseLines());
+  const rc25 = projections.find((entry) => entry.vatCode === "RC25");
+  // Pre-fix: 2614 was in no account list at all, so the projection reported
+  // +250 — an RC purchase looked exactly like a deductible domestic one.
+  assert.equal(rc25?.vatAmount, 0, "the self-assessed 2614 liability offsets the 2645 input claim");
+});
+
+test("buildVat leaves the undeducted reverse-charge liability visible on book-without-vat", () => {
+  const projections = buildVat([
+    line({ voucherId: "rc2", accountNumber: "6540", debit: 1250, credit: 0, vatCode: "RC25", deductible: false }),
+    line({ voucherId: "rc2", accountNumber: "2645", debit: 0, credit: 0, vatCode: "RC25", deductible: false }),
+    line({ voucherId: "rc2", accountNumber: "2614", debit: 0, credit: 250, vatCode: "RC25", deductible: false }),
+    line({ voucherId: "rc2", accountNumber: "1930", debit: 0, credit: 1000, vatCode: "NA", deductible: false }),
+  ]);
+  const rc25 = projections.find((entry) => entry.vatCode === "RC25");
+  assert.equal(rc25?.vatAmount, -250, "no input claim, but the liability is not optional — 250 to pay");
+});
+
 test("buildVatReturnBoxes golden case: one 25 % purchase + one 25 % sale", () => {
   const boxes = buildVatReturnBoxes([...purchaseLines(), ...saleLines()]);
   const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
@@ -120,6 +151,83 @@ test("buildVatReturnBoxes emits every regime box; unmodeled-for-this-fixture box
       `box ${box} must stay 0 without a matching posting`,
     );
   }
+});
+
+test("boxes 30-32 are not starved by 10-12 sharing one accumulator (consumedRates regression)", () => {
+  // A domestic 25 % sale (feeds box 10) AND an RC25 25 % EU-service
+  // purchase (feeds box 30) in the same return: pre-fix, `consumedRates`
+  // handed the VAT25 rate to whichever box hit first and zeroed the other.
+  const rc25Purchase: LedgerLine[] = [
+    line({ voucherId: "rc1", accountNumber: "6540", debit: 400, credit: 0, vatCode: "RC25", deductible: true }),
+    line({ voucherId: "rc1", accountNumber: "2645", debit: 100, credit: 0, vatCode: "RC25", deductible: true }),
+    line({ voucherId: "rc1", accountNumber: "2614", debit: 0, credit: 100, vatCode: "RC25", deductible: false }),
+    line({ voucherId: "rc1", accountNumber: "1930", debit: 0, credit: 400, vatCode: "NA", deductible: false }),
+  ];
+  const boxes = buildVatReturnBoxes([...purchaseLines(), ...saleLines(), ...rc25Purchase]);
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  assert.equal(amount("10"), 250, "domestic output VAT (10) from saleLines() must be unaffected");
+  assert.equal(amount("30"), 100, "RC output VAT (30) must not be zeroed by box 10 claiming VAT25 first");
+  assert.equal(amount("21"), 400, "box 21 base = box 30 (100, whole kronor) ÷ 0.25");
+  assert.equal(
+    amount("48"),
+    250 + 100,
+    "box 48 already picks up the RC input-VAT leg on 2645 via Task C1's input list",
+  );
+});
+
+test("reverse-charge golden case: an isolated RC25 purchase fills 21/30/48 and nets 49 to zero", () => {
+  const boxes = buildVatReturnBoxes(rc25PurchaseLines());
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  assert.equal(amount("05"), 0, "an RC purchase is not momspliktig försäljning");
+  assert.equal(amount("10"), 0, "no domestic sale — box 10 must not borrow the reverse-charge accumulator");
+  assert.equal(amount("20"), 0, "EU goods stay modeled-but-zero (no goods RC accounts)");
+  assert.equal(amount("21"), 1000, "purchase base = declared box 30 ÷ 25 %");
+  assert.equal(amount("30"), 250);
+  assert.equal(amount("48"), 250, "2645 is an input account as of Task C1");
+  assert.equal(amount("49"), 0, "self-assessed liability nets against the input claim: nothing to pay");
+});
+
+test("box 21 derives from the DECLARED (truncated) box 30, not the öre-exact accumulator", () => {
+  const boxes = buildVatReturnBoxes([
+    line({ voucherId: "rc3", accountNumber: "6540", debit: 1003.6, credit: 0, vatCode: "RC25" }),
+    line({ voucherId: "rc3", accountNumber: "2645", debit: 250.9, credit: 0, vatCode: "RC25" }),
+    line({ voucherId: "rc3", accountNumber: "2614", debit: 0, credit: 250.9, vatCode: "RC25", deductible: false }),
+    line({ voucherId: "rc3", accountNumber: "1930", debit: 0, credit: 1003.6, vatCode: "NA", deductible: false }),
+  ]);
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  assert.equal(amount("30"), 250, "öretal faller bort");
+  assert.equal(amount("21"), 1000, "250 ÷ 0.25 — not trunc(250.90 ÷ 0.25) = 1003");
+  assert.equal(amount("48"), 250);
+  assert.equal(amount("49"), 0);
+});
+
+test("box 21 sums every modeled reverse-charge rate; 30-32 each keep their own rate", () => {
+  // Sweden models 25 % only today (YAGNI). Prove the per-rate loop is real by
+  // handing `buildVatReturnBoxes` a regime that also maps 12 % to BAS 2624.
+  const twoRateRegime: VatRegime = {
+    ...swedishVatRegime,
+    accounts: {
+      ...swedishVatRegime.accounts,
+      reverseChargeOutputByRate: { VAT25: "2614", VAT12: "2624" },
+    },
+  };
+  const boxes = buildVatReturnBoxes(
+    [
+      ...rc25PurchaseLines(),
+      line({ voucherId: "rc12", accountNumber: "6540", debit: 100, credit: 0, vatCode: "RC25" }),
+      line({ voucherId: "rc12", accountNumber: "2645", debit: 12, credit: 0, vatCode: "RC25" }),
+      line({ voucherId: "rc12", accountNumber: "2624", debit: 0, credit: 12, vatCode: "RC25", deductible: false }),
+      line({ voucherId: "rc12", accountNumber: "1930", debit: 0, credit: 100, vatCode: "NA", deductible: false }),
+    ],
+    twoRateRegime,
+  );
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  assert.equal(amount("30"), 250);
+  assert.equal(amount("31"), 12, "the 12 % reverse-charge box must not be starved by the 25 % one either");
+  assert.equal(amount("32"), 0);
+  assert.equal(amount("21"), 1100, "1000 (250 ÷ 25 %) + 100 (12 ÷ 12 %)");
+  assert.equal(amount("48"), 262);
+  assert.equal(amount("49"), 0, "49 = (250 + 12) − 262");
 });
 
 test("box 05 attributes by the LINE's vatCode: off-template revenue counts, momsfri line on a rated account does not", () => {

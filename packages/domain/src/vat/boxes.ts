@@ -21,19 +21,30 @@ function toWholeKronor(amount: number): number {
 /**
  * Map posted ledger lines onto the regime's VAT-return box subset.
  *
- * Computed boxes: sales base (05) from lines whose OWN `vatCode` is rated and
- * whose account classifies as revenue (template lookup with BAS first-digit
- * fallback, so off-template revenue accounts from SIE imports/edits still
- * count — attribution follows the booked VAT decision on the line, never the
- * template account's default code), output VAT (10–12) from the regime's
- * output accounts, input VAT (48) from the regime's input accounts, and net
- * (49) = output − input. Purchase-base and reverse-charge boxes (20/21/30–32)
- * are modeled in regime data but return 0 until reverse-charge postings exist.
+ * Computed boxes (KFR Phase C / D4 — see
+ * docs/superpowers/specs/2026-08-20-kapitas-full-replacement-design.md):
+ *  - 05 sales base: a revenue-class line counts when its own `vatCode` is
+ *    rated (the account-classification fix for imported vatCode:"NA"
+ *    sales — readiness gap G5 — lands in Task C4).
+ *  - 10–12 domestic output VAT: account-keyed off `outputByRate`, its own
+ *    map.
+ *  - 30–32 reverse-charge output VAT: account-keyed off
+ *    `reverseChargeOutputByRate`, ITS OWN map — no longer shares (and is
+ *    no longer starved by) the 10–12 accumulator.
+ *  - 21 EU-services purchase base: derived from the TRUNCATED box-30
+ *    family, per rate, base = RC output VAT ÷ rate (box30 / 0.25 today).
+ *    Box 20 (EU goods) stays 0 — no goods reverse-charge accounts
+ *    modeled (YAGNI).
+ *  - 48 input VAT: account-keyed off `accounts.input` (now also covers
+ *    the reverse-charge input legs 2645/2647 alongside 2641/2640, from
+ *    Task C1).
+ *  - 49 net = (10+11+12) + (30+31+32) − 48, computed FROM the truncated
+ *    component boxes — not truncated from the öre-exact net — matching
+ *    how Skatteverket derives it.
+ *  - 39/40 (account-based EU/export service revenue) land in Task C3.
  *
- * All box amounts are whole kronor (see `toWholeKronor`); box 49 is computed
- * FROM the truncated component boxes — not truncated from the öre-exact net —
- * so the declaration stays internally consistent (49 = 10+11+12+30+31+32 − 48
- * over the declared values, matching how Skatteverket derives it).
+ * All box amounts are whole kronor (see `toWholeKronor`); internal ledger
+ * lines and other projections (`buildVat`) stay öre-exact.
  */
 export function buildVatReturnBoxes(
   lines: LedgerLine[],
@@ -46,10 +57,17 @@ export function buildVatReturnBoxes(
       number,
     ]),
   );
+  const rcAccountByRate = new Map<VatRateId, string>(
+    (Object.entries(regime.accounts.reverseChargeOutputByRate) as Array<[VatRateId, string]>).map(([rate, number]) => [
+      rate,
+      number,
+    ]),
+  );
 
   let salesBase = 0;
   let inputVat = 0;
   const outputVatByRate = new Map<VatRateId, number>();
+  const rcOutputVatByRate = new Map<VatRateId, number>();
 
   for (const line of lines) {
     if (regime.accounts.input.includes(line.accountNumber)) {
@@ -61,27 +79,40 @@ export function buildVatReturnBoxes(
         outputVatByRate.set(rate, (outputVatByRate.get(rate) ?? 0) + line.credit - line.debit);
       }
     }
-    // Box 05: the line's actual vatCode decides ratedness (a momsfri line on a
-    // normally-rated account stays out); revenue classification keeps cost
-    // lines that also carry rated codes out of the sales base. VAT accounts
-    // classify as equity-liability, so they never double into the base.
+    for (const [rate, accountNumber] of rcAccountByRate) {
+      if (line.accountNumber === accountNumber) {
+        rcOutputVatByRate.set(rate, (rcOutputVatByRate.get(rate) ?? 0) + line.credit - line.debit);
+      }
+    }
+    // Box 05: the line's actual vatCode decides ratedness (readiness gap
+    // G5 — imported vatCode:"NA" sales are NOT yet covered here; that
+    // lands in Task C4, which adds a second, account-based arm).
     if (RATED_VAT_CODES.has(line.vatCode) && classifyAccountNumber(line.accountNumber, coa) === "revenue") {
       salesBase += line.credit - line.debit;
     }
   }
 
-  // Truncate each component box to whole kronor at the boundary, THEN derive
-  // the net from the truncated values (sum consistency — see doc above).
   const wholeSalesBase = toWholeKronor(salesBase);
   const wholeInputVat = toWholeKronor(inputVat);
   const wholeOutputVatByRate = new Map<VatRateId, number>(
     [...outputVatByRate].map(([rate, amount]) => [rate, toWholeKronor(amount)]),
   );
+  const wholeRcOutputVatByRate = new Map<VatRateId, number>(
+    [...rcOutputVatByRate].map(([rate, amount]) => [rate, toWholeKronor(amount)]),
+  );
   const totalOutputVat = [...wholeOutputVatByRate.values()].reduce((sum, amount) => sum + amount, 0);
+  const totalRcOutputVat = [...wholeRcOutputVatByRate.values()].reduce((sum, amount) => sum + amount, 0);
 
-  // Output-vat amounts go to the FIRST box declared for a rate (10–12); later
-  // boxes sharing the rate (30–32, reverse charge) stay 0 until modeled.
-  const consumedRates = new Set<VatRateId>();
+  // Box 21: base = Σ (truncated box-30-family amount ÷ rate), per rate
+  // that has a reverse-charge account modeled. Derived from the DECLARED
+  // (whole-kronor) box 30 family, not the öre-exact accumulator — same
+  // derive-from-declared-boxes discipline as box 49.
+  let purchaseBaseServices = 0;
+  for (const [rate, amount] of wholeRcOutputVatByRate) {
+    const percent = regime.rates[rate].percent;
+    if (percent > 0) purchaseBaseServices += amount / (percent / 100);
+  }
+  const wholePurchaseBaseServices = toWholeKronor(purchaseBaseServices);
 
   return regime.boxes.map((def) => {
     let amount = 0;
@@ -90,20 +121,21 @@ export function buildVatReturnBoxes(
         amount = wholeSalesBase;
         break;
       case "output-vat":
-        if (def.rate && !consumedRates.has(def.rate)) {
-          consumedRates.add(def.rate);
-          amount = wholeOutputVatByRate.get(def.rate) ?? 0;
+        if (def.rate) {
+          amount = (def.reverseCharge ? wholeRcOutputVatByRate : wholeOutputVatByRate).get(def.rate) ?? 0;
         }
         break;
       case "purchase-base":
-        amount = 0;
+        amount = def.reverseCharge ? wholePurchaseBaseServices : 0;
         break;
       case "input-vat":
         amount = wholeInputVat;
         break;
       case "net":
-        amount = totalOutputVat - wholeInputVat;
+        amount = totalOutputVat + totalRcOutputVat - wholeInputVat;
         break;
+      // "account-revenue" (boxes 39/40) has no case yet — falls through
+      // with amount 0. Task C3 adds it.
     }
     return { box: def.box, label: def.label, amount };
   });

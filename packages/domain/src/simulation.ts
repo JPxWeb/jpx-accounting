@@ -26,6 +26,13 @@ export function simulateApprovals(
 
   const balanceAcc = new Map<string, { name: string; debit: number; credit: number }>();
   const vatAcc = new Map<string, { base: number; amount: number }>();
+  // KFR Phase C (G1): the pre-approval preview must count BOTH reverse-charge
+  // legs. Counting only `accounts.input` promised a +250 claim on an EU-service
+  // purchase whose self-assessed 2614 liability cancels it — the modal told the
+  // reviewer they were about to gain VAT back when the net effect is zero (and
+  // −250, i.e. VAT to pay, when the input claim is declined). Both legs move by
+  // debit − credit, so `deltaAmount` reads as a net VAT receivable delta.
+  const reverseChargeOutputAccounts = new Set<string>(Object.values(regime.accounts.reverseChargeOutputByRate));
 
   for (const review of reviews) {
     const voucher = vouchersById.get(review.voucherId);
@@ -48,7 +55,8 @@ export function simulateApprovals(
       entry.credit += line.credit;
       balanceAcc.set(line.accountNumber, entry);
       const base = line.debit !== 0 ? line.debit : line.credit;
-      const isVatLine = regime.accounts.input.includes(line.accountNumber);
+      const isVatLine =
+        regime.accounts.input.includes(line.accountNumber) || reverseChargeOutputAccounts.has(line.accountNumber);
       const v = vatAcc.get(line.vatCode) ?? { base: 0, amount: 0 };
       v.base += base;
       if (isVatLine) v.amount += line.debit - line.credit;

@@ -92,8 +92,23 @@ export function buildBalances(lines: LedgerLine[]): AccountBalanceProjection[] {
   return [...map.values()].sort((left, right) => left.accountNumber.localeCompare(right.accountNumber));
 }
 
+/**
+ * Öre-exact VAT movement per vatCode (the declaration-boundary rounding lives
+ * only in `buildVatReturnBoxes`).
+ *
+ * KFR Phase C (G1): reverse-charge output VAT (2614) is a real VAT account —
+ * before this it matched no list at all, so an EU-service purchase projected
+ * as a plain input claim and hid the self-assessed liability that cancels it.
+ * Both reverse-charge legs carry the SAME vatCode ("RC25"), which makes RC the
+ * one direction pair that always lands in a single projection entry: booking
+ * the liability by `debit − credit` nets a fully deducted RC purchase to 0 and
+ * leaves a book-without-vat one at −250, i.e. VAT genuinely owed. Domestic
+ * output VAT (2610/2620/2630) keeps its legacy credit-positive sign — pinned
+ * by the regression tests in tests/unit/vat-regime.test.ts.
+ */
 export function buildVat(lines: LedgerLine[], regime: VatRegime = swedishVatRegime): VatProjection[] {
   const outputAccounts = new Set(Object.values(regime.accounts.outputByRate));
+  const reverseChargeOutputAccounts = new Set<string>(Object.values(regime.accounts.reverseChargeOutputByRate));
   const map = new Map<string, VatProjection>();
 
   for (const line of lines) {
@@ -105,7 +120,11 @@ export function buildVat(lines: LedgerLine[], regime: VatRegime = swedishVatRegi
     };
 
     current.baseAmount += line.debit || line.credit;
-    if (regime.accounts.input.includes(line.accountNumber)) {
+    // Input VAT and the reverse-charge liability both move by debit − credit:
+    // a claim adds, the self-assessed liability that offsets it subtracts.
+    const isInputVat = regime.accounts.input.includes(line.accountNumber);
+    const isReverseChargeOutputVat = reverseChargeOutputAccounts.has(line.accountNumber);
+    if (isInputVat || isReverseChargeOutputVat) {
       current.vatAmount += line.debit - line.credit;
     } else if (outputAccounts.has(line.accountNumber)) {
       current.vatAmount += line.credit - line.debit;

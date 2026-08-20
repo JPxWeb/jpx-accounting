@@ -69,6 +69,29 @@ test("book-without-vat zeroes the VAT line", () => {
   assert.equal(result.balanceDelta.find((b) => b.accountNumber === "2641")?.deltaDebit, 0);
 });
 
+const rc25Fixtures = () => {
+  const suggestion: AccountingSuggestion = { ...suggestionFixture("rc1"), vatCode: "RC25" };
+  const review: ReviewTask = { ...reviewFixture("rc1"), suggestion };
+  const voucher = voucherFixture("rc1", { grossAmount: 1250, netAmount: 1000, vatAmount: 250 });
+  return { suggestion, review, voucher };
+};
+
+test("RC25 approval previews a NET vat delta of zero: the self-assessed liability offsets the claim", () => {
+  const { suggestion, review, voucher } = rc25Fixtures();
+  const { vatDelta } = simulateApprovals([review], [suggestion], [voucher], "approve");
+  const rc25 = vatDelta.find((entry) => entry.vatCode === "RC25");
+  // Pre-fix the preview counted only the 2645 debit and promised +250
+  // claimable, hiding the 2614 credit that cancels it.
+  assert.equal(rc25?.deltaAmount, 0, "2645 debit 250 and 2614 credit 250 net out");
+});
+
+test("RC25 book-without-vat previews the undeducted liability as VAT to pay", () => {
+  const { suggestion, review, voucher } = rc25Fixtures();
+  const { vatDelta } = simulateApprovals([review], [suggestion], [voucher], "book-without-vat");
+  const rc25 = vatDelta.find((entry) => entry.vatCode === "RC25");
+  assert.equal(rc25?.deltaAmount, -250, "declining the input claim leaves the full 2614 liability standing");
+});
+
 test("skips reviews whose voucher is missing", () => {
   const result = simulateApprovals(
     [reviewFixture("v1"), reviewFixture("v2")],
