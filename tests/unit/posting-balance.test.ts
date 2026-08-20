@@ -10,6 +10,7 @@ import {
   buildVatReturnBoxes,
   InvalidReviewEditError,
   postingImbalanceOre,
+  resolveReviewDecisionEdit,
   UnbalancedPostingError,
 } from "@jpx-accounting/domain";
 import { MemoryLedgerStore, planSieImport } from "@jpx-accounting/domain/store";
@@ -214,6 +215,221 @@ test("property sweep: buildPostingLines can never return an unbalanced entry", (
         `unbalanced entry for ${action} with fields ${JSON.stringify(fields)}`,
       );
     }
+  }
+});
+
+test("buildPostingLines settlement override credits the given account instead of the default bank role", () => {
+  const lines = buildPostingLines(
+    voucherFixture({ grossAmount: 500, netAmount: 400, vatAmount: 100 }),
+    suggestionFixture(),
+    "approve",
+    "2026-05-01T00:00:00.000Z",
+    undefined,
+    { settlementAccountNumber: "2899" },
+  );
+  const settlement = lines[2];
+  assert.ok(settlement);
+  assert.equal(settlement.accountNumber, "2899");
+  assert.equal(settlement.credit, 500);
+  assert.equal(postingImbalanceOre(lines), 0);
+});
+
+test("buildPostingLines RC25 shape posts a balanced 4-line reverse-charge entry", () => {
+  const rc25Suggestion: AccountingSuggestion = { ...suggestionFixture(), vatCode: "RC25" };
+  const lines = buildPostingLines(
+    voucherFixture({ grossAmount: 1250, netAmount: 1000, vatAmount: 250 }),
+    rc25Suggestion,
+    "approve",
+    "2026-05-01T00:00:00.000Z",
+  );
+  assert.equal(lines.length, 4);
+  const [cost, rcInput, rcOutput, settlement] = lines;
+  assert.ok(cost && rcInput && rcOutput && settlement);
+  assert.equal(cost.accountNumber, "6540");
+  assert.equal(cost.debit, 1000);
+  assert.equal(rcInput.accountNumber, "2645");
+  assert.equal(rcInput.debit, 250);
+  assert.equal(rcOutput.accountNumber, "2614");
+  assert.equal(rcOutput.credit, 250);
+  assert.equal(settlement.accountNumber, "1930");
+  assert.equal(settlement.credit, 1000, "settlement carries only the net price — no VAT changes hands");
+  assert.equal(postingImbalanceOre(lines), 0);
+});
+
+test("buildPostingLines RC25 book-without-vat folds the undeducted VAT into the cost line but still self-assesses the output liability", () => {
+  const rc25Suggestion: AccountingSuggestion = { ...suggestionFixture(), vatCode: "RC25" };
+  const lines = buildPostingLines(
+    voucherFixture({ grossAmount: 1250, netAmount: 1000, vatAmount: 250 }),
+    rc25Suggestion,
+    "book-without-vat",
+    "2026-05-01T00:00:00.000Z",
+  );
+  const [cost, rcInput, rcOutput, settlement] = lines;
+  assert.ok(cost && rcInput && rcOutput && settlement);
+  assert.equal(cost.debit, 1250, "no VAT deduction claimed: full amount lands on the cost line");
+  assert.equal(rcInput.debit, 0);
+  assert.equal(rcOutput.credit, 250, "the self-assessed liability is not optional");
+  assert.equal(settlement.credit, 1000);
+  assert.equal(postingImbalanceOre(lines), 0);
+});
+
+test("buildPostingLines revenue direction posts a 2-line entry with no VAT line", () => {
+  const revenueSuggestion: AccountingSuggestion = {
+    ...suggestionFixture(),
+    accountNumber: "3305",
+    accountName: "Försäljning tjänster till land utanför EU",
+    vatCode: "VAT0",
+    direction: "revenue",
+  };
+  const lines = buildPostingLines(
+    voucherFixture({ grossAmount: 5000, netAmount: 5000, vatAmount: 0 }),
+    revenueSuggestion,
+    "approve",
+    "2026-05-01T00:00:00.000Z",
+  );
+  assert.equal(lines.length, 2);
+  const [settlement, revenue] = lines;
+  assert.ok(settlement && revenue);
+  assert.equal(settlement.accountNumber, "1930");
+  assert.equal(settlement.debit, 5000);
+  assert.equal(revenue.accountNumber, "3305");
+  assert.equal(revenue.credit, 5000);
+  assert.equal(postingImbalanceOre(lines), 0);
+});
+
+test("buildPostingLines infers revenue direction from the resolved account class when suggestion.direction is absent", () => {
+  const revenueSuggestion: AccountingSuggestion = {
+    ...suggestionFixture(),
+    accountNumber: "3305",
+    accountName: "Försäljning tjänster till land utanför EU",
+    vatCode: "VAT0",
+  };
+  const lines = buildPostingLines(
+    voucherFixture({ grossAmount: 5000, netAmount: 5000, vatAmount: 0 }),
+    revenueSuggestion,
+    "approve",
+    "2026-05-01T00:00:00.000Z",
+  );
+  assert.equal(lines.length, 2, "classifyAccountNumber(3305) = revenue even without an explicit direction");
+});
+
+test("resolveReviewDecisionEdit rejects an unknown settlementAccountNumber and threads a valid one through", () => {
+  const voucher = voucherFixture({ grossAmount: 500, netAmount: 400, vatAmount: 100 });
+  assert.throws(
+    () =>
+      resolveReviewDecisionEdit(voucher, suggestionFixture(), {
+        accountNumber: "6110",
+        vatCode: "VAT25",
+        settlementAccountNumber: "9999",
+      }),
+    (error: unknown) => error instanceof InvalidReviewEditError,
+  );
+  const resolved = resolveReviewDecisionEdit(voucher, suggestionFixture(), {
+    accountNumber: "6110",
+    vatCode: "VAT25",
+    settlementAccountNumber: "2899",
+  });
+  assert.equal(resolved.effectiveSettlementAccountNumber, "2899");
+});
+
+test("property sweep: the RC25 and revenue shapes can never return an unbalanced entry", () => {
+  const rc25Suggestion: AccountingSuggestion = { ...suggestionFixture(), vatCode: "RC25" };
+  const revenueSuggestion: AccountingSuggestion = {
+    ...suggestionFixture(),
+    accountNumber: "3305",
+    accountName: "Försäljning tjänster till land utanför EU",
+    vatCode: "VAT0",
+    direction: "revenue",
+  };
+  const edgeCases: Array<{ grossAmount?: number; netAmount?: number; vatAmount?: number }> = [
+    { grossAmount: 1250, netAmount: 1000, vatAmount: 250 },
+    // 33.33 + 8.33 = 41.66 ≠ 41.67: the classic öre residue.
+    { grossAmount: 41.67, netAmount: 33.33, vatAmount: 8.33 },
+    { grossAmount: 41.66, netAmount: 33.33, vatAmount: 8.33 },
+    { grossAmount: 0.01, netAmount: 0, vatAmount: 0.01 },
+    { grossAmount: 0.03, netAmount: 0.01, vatAmount: 0.01 },
+    { grossAmount: 100, netAmount: 100, vatAmount: 100 }, // VAT > net
+    { grossAmount: 100 },
+    { netAmount: 80, vatAmount: 20 },
+    { vatAmount: 25 },
+    {},
+  ];
+
+  let seed = 4242;
+  const nextRand = () => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  };
+  const randomCases = Array.from({ length: 400 }, () => {
+    const grossOre = Math.floor(nextRand() * 5_000_000);
+    const vatOre = Math.floor(nextRand() * grossOre * 1.2);
+    const jitterOre = Math.floor(nextRand() * 7) - 3;
+    const fields: { grossAmount?: number; netAmount?: number; vatAmount?: number } = {
+      grossAmount: grossOre / 100,
+      netAmount: (grossOre - vatOre + jitterOre) / 100,
+      vatAmount: vatOre / 100,
+    };
+    if (nextRand() < 0.1) delete fields.grossAmount;
+    if (nextRand() < 0.1) delete fields.netAmount;
+    if (nextRand() < 0.1) delete fields.vatAmount;
+    return fields;
+  });
+
+  for (const fields of [...edgeCases, ...randomCases]) {
+    for (const action of ["approve", "book-without-vat"] as const) {
+      const rc25 = buildPostingLines(voucherFixture(fields), rc25Suggestion, action, "2026-05-01T00:00:00.000Z");
+      assert.equal(rc25.length, 4);
+      assert.equal(postingImbalanceOre(rc25), 0, `unbalanced RC25 ${action} for ${JSON.stringify(fields)}`);
+      // The self-assessed output liability never depends on the action.
+      assert.equal(rc25[2]?.credit, Math.round((fields.vatAmount ?? 0) * 100) / 100);
+
+      const revenue = buildPostingLines(voucherFixture(fields), revenueSuggestion, action, "2026-05-01T00:00:00.000Z");
+      assert.equal(revenue.length, 2);
+      assert.equal(postingImbalanceOre(revenue), 0, `unbalanced revenue ${action} for ${JSON.stringify(fields)}`);
+
+      const settlement = buildPostingLines(
+        voucherFixture(fields),
+        suggestionFixture(),
+        action,
+        "2026-05-01T00:00:00.000Z",
+        undefined,
+        { settlementAccountNumber: "2899" },
+      );
+      assert.equal(settlement[2]?.accountNumber, "2899");
+      assert.equal(postingImbalanceOre(settlement), 0, `unbalanced settlement-override ${action}`);
+    }
+  }
+});
+
+test("buildPostingLines shape selection: RC25 outranks direction, and non-revenue classes stay on the expense shape", () => {
+  const fields = { grossAmount: 1250, netAmount: 1000, vatAmount: 250 };
+  // RC25 wins even when the suggestion explicitly claims a revenue direction.
+  const rc25OverRevenue = buildPostingLines(
+    voucherFixture(fields),
+    { ...suggestionFixture(), vatCode: "RC25", direction: "revenue" },
+    "approve",
+    "2026-05-01T00:00:00.000Z",
+  );
+  assert.equal(rc25OverRevenue.length, 4);
+
+  // An explicit "expense" direction on a 3xxx account overrides class inference.
+  const forcedExpense = buildPostingLines(
+    voucherFixture(fields),
+    { ...suggestionFixture(), accountNumber: "3740", accountName: "Öres- och kronutjämning", direction: "expense" },
+    "approve",
+    "2026-05-01T00:00:00.000Z",
+  );
+  assert.equal(forcedExpense.length, 3);
+
+  // Every non-revenue account class infers the expense shape.
+  for (const accountNumber of ["1930", "2440", "4010", "5410", "6540", "7010", "8410", "9999", "not-a-number"]) {
+    const lines = buildPostingLines(
+      voucherFixture(fields),
+      { ...suggestionFixture(), accountNumber },
+      "approve",
+      "2026-05-01T00:00:00.000Z",
+    );
+    assert.equal(lines.length, 3, `${accountNumber} must infer the expense shape`);
   }
 });
 
