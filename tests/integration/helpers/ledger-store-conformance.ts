@@ -437,12 +437,17 @@ export async function scenarioSettingsAlertsSimulation(h: ConformanceHarness): P
       locale: "sv-SE",
       currency: "SEK",
       fiscalYearStart: "01-01",
+      // Phase D, Task 6: the optional irregular-first-fiscal-year floor must
+      // survive the profile round trip identically in both stores, and both
+      // must feed it to `buildReportPack`.
+      firstFiscalYearStart: "2025-10-15",
       vatPeriod: "quarterly" as const,
     },
     aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
   };
   const saved = await h.store.putCompanySettings(settings);
   const loaded = await h.store.getCompanySettings();
+  const flooredFy = await h.store.getReportPack({ period: "fy-2025" });
 
   const created = await h.store.createEvidence({
     actorId: h.actorId,
@@ -506,6 +511,10 @@ export async function scenarioSettingsAlertsSimulation(h: ConformanceHarness): P
     settingsName: saved.organizationName,
     settingsRoundTrip: loaded?.organizationName,
     settingsCurrency: loaded?.profile.currency,
+    settingsFirstFiscalYearStart: loaded?.profile.firstFiscalYearStart,
+    // 01-01 anchor + a 2025-10-15 floor → fy-2025 starts at the floor, ends untouched.
+    flooredFyFrom: flooredFy.period.from,
+    flooredFyTo: flooredFy.period.to,
     alertCountStable: alerts.length === alertsAgain.length,
     autoAlerts,
     simulationBalanceDeltaCount: simulation.balanceDelta.length,

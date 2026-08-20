@@ -17,6 +17,11 @@ export type BuildReportPackInput = {
   periodToken: string;
   /** MM-DD fiscal year start from the workspace profile. */
   fiscalYearStart: string;
+  /**
+   * Optional YYYY-MM-DD floor for an irregular first fiscal year (Phase D,
+   * Task 6) — raises the `from` of the fy-/ytd window containing it.
+   */
+  firstFiscalYearStart?: string;
   /** Injected YYYY-MM-DD "today" for `ytd` (defaults to local calendar today). */
   today?: string;
   coa?: CoaTemplate;
@@ -38,6 +43,7 @@ export function buildReportPack(lines: LedgerLine[], input: BuildReportPackInput
   const period = resolvePeriodToken(input.periodToken, {
     fiscalYearStart: input.fiscalYearStart,
     ...(input.today !== undefined ? { today: input.today } : {}),
+    ...(input.firstFiscalYearStart !== undefined ? { firstFiscalYearStart: input.firstFiscalYearStart } : {}),
   });
   const coa = input.coa ?? defaultCoaTemplate;
   const regime = input.regime ?? swedishVatRegime;

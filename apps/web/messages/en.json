@@ -928,6 +928,8 @@
       "title": "Fiscal year and VAT cadence.",
       "description": "The fiscal year start month drives every fiscal-quarter report window and the statutory tax timeline. The VAT reporting cadence is shown here and edited together with the company profile.",
       "startLabel": "Fiscal year start month",
+      "firstFiscalYearStartLabel": "First fiscal year start date (optional)",
+      "firstFiscalYearStartHint": "Only needed for an irregular first fiscal year (e.g. the company was founded mid-year). Leave blank once the first fiscal year is closed.",
       "previewNote": "The window and deadline below follow the selected start month — save to apply it to reports and the tax timeline.",
       "currentWindow": "Current fiscal year",
       "arsredovisning": "Next årsredovisning deadline",

@@ -651,6 +651,43 @@ test("MemoryLedgerStore.getReportPack composes the period pack and reads fiscalY
   );
 });
 
+test("MemoryLedgerStore.getReportPack floors the first fiscal year from settings.profile.firstFiscalYearStart", async () => {
+  const store = new MemoryLedgerStore();
+  const settings = {
+    organizationName: "Test AB",
+    organizationNumber: "556677-8899",
+    addressLine1: "Kungsgatan 1",
+    postalCode: "111 22",
+    city: "Stockholm",
+    contactEmail: "test@example.com",
+    profile: {
+      country: "SE" as const,
+      locale: "sv-SE",
+      currency: "SEK",
+      // The real Kapitas-replacement company: recurring 09-01 anchor, but
+      // FY1 actually began at incorporation on 2025-10-15.
+      fiscalYearStart: "09-01",
+      vatPeriod: "quarterly" as const,
+    },
+    aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
+  };
+
+  // Unset → byte-identical to the pre-Task-6 anchor-derived behavior.
+  await store.putCompanySettings(settings);
+  const unfloored = await store.getReportPack({ period: "fy-2025" });
+  assert.equal(unfloored.period.from, "2025-09-01");
+
+  await store.putCompanySettings({
+    ...settings,
+    profile: { ...settings.profile, firstFiscalYearStart: "2025-10-15" },
+  });
+  const floored = await store.getReportPack({ period: "fy-2025" });
+  assert.equal(floored.period.from, "2025-10-15");
+  assert.equal(floored.period.to, "2026-08-31");
+  // A later fiscal year keeps the recurring anchor.
+  assert.equal((await store.getReportPack({ period: "fy-2026" })).period.from, "2026-09-01");
+});
+
 test("MemoryLedgerStore.getSnapshot carries evidence packets so the voucher→evidence join resolves", async () => {
   const store = new MemoryLedgerStore();
   const created = await store.createEvidence({

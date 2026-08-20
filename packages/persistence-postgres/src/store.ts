@@ -1380,6 +1380,9 @@ export class PostgresLedgerStore implements LedgerStore {
     return buildReportPack(lines, {
       periodToken: input.period,
       fiscalYearStart: settings?.profile.fiscalYearStart ?? "01-01",
+      ...(settings?.profile.firstFiscalYearStart !== undefined
+        ? { firstFiscalYearStart: settings.profile.firstFiscalYearStart }
+        : {}),
     });
   }
 

@@ -661,6 +661,17 @@ export const workspaceProfileSchema = z.object({
     .string()
     .regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/)
     .default("01-01"),
+  /**
+   * Optional floor for an irregular first fiscal year (Phase D, Task 6) —
+   * e.g. a company incorporated mid-year. When set, the fiscal year/ytd
+   * window CONTAINING this date has its `from` raised to this date instead
+   * of the recurring fiscalYearStart anchor; the SIE export's `#RAR 0`
+   * shares the same clamp. Leave unset once FY1 is closed.
+   */
+  firstFiscalYearStart: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   /** VAT reporting cadence — defaulted so pre-Phase-5 payloads keep parsing (no migration). */
   vatPeriod: vatPeriodSchema.default("quarterly"),
 });

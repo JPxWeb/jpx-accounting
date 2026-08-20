@@ -63,6 +63,19 @@ test("fiscalYearStart rejects impossible months and days", () => {
   assert.equal(workspaceProfileSchema.safeParse({ fiscalYearStart: "07-01" }).success, true);
 });
 
+test("firstFiscalYearStart is optional, ISO-day shaped, and absent by default", () => {
+  // Absent (not `undefined`-valued) on the default profile — the key must not
+  // appear at all, so `exactOptionalPropertyTypes` spreads stay clean.
+  assert.equal("firstFiscalYearStart" in DEFAULT_WORKSPACE_PROFILE, false);
+
+  const parsed = workspaceProfileSchema.parse({ firstFiscalYearStart: "2025-10-15" });
+  assert.equal(parsed.firstFiscalYearStart, "2025-10-15");
+
+  assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "2025-10" }).success, false);
+  assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "10-15" }).success, false);
+  assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "" }).success, false);
+});
+
 test("profile round-trips custom values through the settings schema", () => {
   const parsed = companySettingsSchema.parse({
     ...validBase,

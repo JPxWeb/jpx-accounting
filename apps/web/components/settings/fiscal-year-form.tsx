@@ -56,6 +56,9 @@ function FiscalYearFields({ settings }: { settings: CompanySettings | null }) {
 
   const profile = settings?.profile ?? DEFAULT_WORKSPACE_PROFILE;
   const [fiscalYearStart, setFiscalYearStart] = useState(profile.fiscalYearStart);
+  // Phase D Task 6: optional floor for an irregular FIRST fiscal year. "" is
+  // the empty-input sentinel — the contract field is absent, never "".
+  const [firstFiscalYearStart, setFirstFiscalYearStart] = useState(profile.firstFiscalYearStart ?? "");
 
   const monthFormatter = new Intl.DateTimeFormat(locale, { month: "long", timeZone: "UTC" });
   const monthOptions = Array.from({ length: 12 }, (_, index) => {
@@ -74,8 +77,18 @@ function FiscalYearFields({ settings }: { settings: CompanySettings | null }) {
   // Live preview from the SELECTED value (not the saved one): the whole point
   // of the page is showing what the start month drives before committing.
   const today = localTodayIso();
+  const periodOpts = {
+    fiscalYearStart,
+    today,
+    ...(firstFiscalYearStart !== "" ? { firstFiscalYearStart } : {}),
+  };
+  // Which fiscal year we are IN is a pure anchor question — derive it from the
+  // UNFLOORED ytd window. (A floor may sit in the next calendar year, e.g. a
+  // 09-01 anchor with an FY1 starting 2026-01-15; slicing the floored `from`
+  // would then name the wrong fiscal year.) The floor is applied to the window
+  // we render, below.
   const currentFyYear = Number(resolvePeriodToken("ytd", { fiscalYearStart, today }).from.slice(0, 4));
-  const fyWindow = resolvePeriodToken(`fy-${currentFyYear}`, { fiscalYearStart, today });
+  const fyWindow = resolvePeriodToken(`fy-${currentFyYear}`, periodOpts);
   const nextAnnualReport = buildTaxTimeline({
     profile: { vatPeriod: profile.vatPeriod, fiscalYearStart },
     today,
@@ -109,7 +122,12 @@ function FiscalYearFields({ settings }: { settings: CompanySettings | null }) {
       onSubmit={(event) => {
         event.preventDefault();
         if (!settings) return;
-        mutation.mutate({ ...settings, profile: { ...settings.profile, fiscalYearStart } });
+        // Clearing the floor must OMIT the key, not send `undefined`
+        // (`exactOptionalPropertyTypes`) — an empty date input deletes it.
+        const nextProfile: CompanySettings["profile"] = { ...settings.profile, fiscalYearStart };
+        if (firstFiscalYearStart === "") delete nextProfile.firstFiscalYearStart;
+        else nextProfile.firstFiscalYearStart = firstFiscalYearStart;
+        mutation.mutate({ ...settings, profile: nextProfile });
       }}
     >
       {!settings ? (
@@ -147,6 +165,21 @@ function FiscalYearFields({ settings }: { settings: CompanySettings | null }) {
           </SelectContent>
         </Select>
         <p className="text-sm leading-6 text-muted-foreground">{t("previewNote")}</p>
+      </div>
+
+      <div className="space-y-2">
+        <SectionLabel as="label" htmlFor="first-fiscal-year-start">
+          {t("firstFiscalYearStartLabel")}
+        </SectionLabel>
+        <input
+          id="first-fiscal-year-start"
+          data-testid="first-fiscal-year-start-input"
+          type="date"
+          value={firstFiscalYearStart}
+          onChange={(event) => setFirstFiscalYearStart(event.target.value)}
+          className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm sm:w-64"
+        />
+        <p className="text-sm leading-6 text-muted-foreground">{t("firstFiscalYearStartHint")}</p>
       </div>
 
       <dl className="grid gap-3 sm:grid-cols-2">

@@ -928,6 +928,8 @@
       "title": "Räkenskapsår och momstakt.",
       "description": "Räkenskapsårets startmånad styr varje kvartalsfönster i rapporterna och den lagstadgade skattetidslinjen. Momsredovisningstakten visas här och redigeras tillsammans med företagsprofilen.",
       "startLabel": "Räkenskapsårets startmånad",
+      "firstFiscalYearStartLabel": "Första räkenskapsårets startdatum (valfritt)",
+      "firstFiscalYearStartHint": "Endast för ett oregelbundet första räkenskapsår (t.ex. bolaget bildades mitt i året). Lämna tomt när det första räkenskapsåret är avslutat.",
       "previewNote": "Fönstret och deadlinen nedan följer den valda startmånaden — spara för att tillämpa den på rapporter och skattetidslinjen.",
       "currentWindow": "Innevarande räkenskapsår",
       "arsredovisning": "Nästa årsredovisningsdeadline",

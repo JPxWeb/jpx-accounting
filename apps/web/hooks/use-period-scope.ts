@@ -35,13 +35,20 @@ export function usePeriodScope() {
   const [token, setPeriod] = useQueryState("period", parseAsString.withDefault(currentMonthToken()));
 
   let resolved: ResolvedPeriod;
+  // Same options object for both attempts so the fallback window is resolved
+  // under the identical fiscal rules (incl. the Phase D irregular-first-year
+  // floor) as the requested one.
+  const resolverOpts = {
+    fiscalYearStart: profile.fiscalYearStart,
+    ...(profile.firstFiscalYearStart !== undefined ? { firstFiscalYearStart: profile.firstFiscalYearStart } : {}),
+  };
   try {
-    resolved = resolvePeriodToken(token, { fiscalYearStart: profile.fiscalYearStart });
+    resolved = resolvePeriodToken(token, resolverOpts);
   } catch (error) {
     if (!(error instanceof InvalidPeriodTokenError)) throw error;
     // Unknown token in the URL → fall back to the current month instead of
     // failing the whole screen (the URL keeps the bad token until changed).
-    resolved = resolvePeriodToken(currentMonthToken(), { fiscalYearStart: profile.fiscalYearStart });
+    resolved = resolvePeriodToken(currentMonthToken(), resolverOpts);
   }
 
   return {

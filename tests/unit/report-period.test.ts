@@ -187,3 +187,47 @@ test("filterLedgerLines without a range returns the input array unchanged", () =
   assert.equal(filterLedgerLines(lines), lines);
   assert.equal(filterLedgerLines(lines, {}), lines);
 });
+
+test("firstFiscalYearStart clamps the earliest fy/ytd window's `from` (irregular first fiscal year)", () => {
+  const FY_SEP_FLOORED = { fiscalYearStart: "09-01", firstFiscalYearStart: "2025-10-15" };
+
+  const fy2025 = resolvePeriodToken("fy-2025", FY_SEP_FLOORED);
+  assert.equal(fy2025.from, "2025-10-15", "the FIRST fiscal year floors to the real incorporation date");
+  assert.equal(fy2025.to, "2026-08-31", "the end date is untouched by the floor");
+
+  const fy2026 = resolvePeriodToken("fy-2026", FY_SEP_FLOORED);
+  assert.equal(fy2026.from, "2026-09-01", "a LATER fiscal year is unaffected");
+
+  const ytd = resolvePeriodToken("ytd", { ...FY_SEP_FLOORED, today: "2025-11-01" });
+  assert.equal(ytd.from, "2025-10-15", "ytd gets the same treatment when today falls inside the first fiscal year");
+
+  const unfloored = resolvePeriodToken("fy-2025", { fiscalYearStart: "09-01" });
+  assert.equal(unfloored.from, "2025-09-01", "omitting firstFiscalYearStart keeps the old anchor-derived behavior");
+});
+
+test("firstFiscalYearStart never inverts a window that ends before the floor", () => {
+  // A fiscal year entirely BEFORE incorporation keeps its anchor-derived
+  // `from` — clamping it would produce a nonsense `from > to` range on the
+  // reports screen. It reports zero activity either way (no pre-incorporation
+  // ledger data exists).
+  const FY_SEP_FLOORED = { fiscalYearStart: "09-01", firstFiscalYearStart: "2025-10-15" };
+
+  const fy2024 = resolvePeriodToken("fy-2024", FY_SEP_FLOORED);
+  assert.equal(fy2024.from, "2024-09-01");
+  assert.equal(fy2024.to, "2025-08-31");
+
+  // Same guard for `ytd` when today is inside FY1 but before the floor.
+  const earlyYtd = resolvePeriodToken("ytd", { ...FY_SEP_FLOORED, today: "2025-10-01" });
+  assert.equal(earlyYtd.from, "2025-09-01");
+  assert.equal(earlyYtd.to, "2025-10-01");
+});
+
+test("firstFiscalYearStart leaves quarter, month, and `all` windows untouched", () => {
+  const FY_SEP_FLOORED = { fiscalYearStart: "09-01", firstFiscalYearStart: "2025-10-15" };
+
+  // Deliberate per the Phase D plan: an unclamped pre-incorporation quarter
+  // simply reports zero activity, so quarters keep pure anchor arithmetic.
+  assert.equal(resolvePeriodToken("2025-Q1", FY_SEP_FLOORED).from, "2025-09-01");
+  assert.equal(resolvePeriodToken("2025-09", FY_SEP_FLOORED).from, "2025-09-01");
+  assert.equal(resolvePeriodToken("all", FY_SEP_FLOORED).from, "1900-01-01");
+});
