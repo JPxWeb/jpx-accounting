@@ -442,9 +442,9 @@ export class AccountingApiClient {
   }
 
   /**
-   * Short-lived read URL for the evidence file (Azure User-Delegation SAS).
-   * Returns `null` when no preview is available: stub storage, legacy synthetic
-   * blob paths, or the offline demo fallback.
+   * Short-lived read URL for the evidence file (Azure User-Delegation SAS, or the local-disk
+   * self-host backend's own HMAC-token URL). Returns `null` when no preview is available: stub
+   * storage, legacy synthetic blob paths, or the offline demo fallback.
    */
   async getEvidenceFileUrl(evidenceId: string): Promise<{ url: string } | null> {
     if (this.fallbackStore) return null;
@@ -458,7 +458,12 @@ export class AccountingApiClient {
     }
     const payload = (await response.json().catch(() => undefined)) as { url?: unknown } | undefined;
     if (!payload || typeof payload.url !== "string") return null;
-    return { url: payload.url };
+    // Azure SAS URLs are absolute and pass through untouched; the local-disk backend's HMAC-token
+    // read URL is API-relative (`/api/blobs/local/{token}`) and needs the same resolution
+    // uploadBlob already applies to stub uploads, or a browser hitting it directly would 404 on
+    // the web origin instead of reaching the API (possibly via the web api-proxy).
+    const isApiRelative = payload.url.startsWith("/") && this.baseUrl !== undefined;
+    return { url: isApiRelative ? `${this.baseUrl}${payload.url}` : payload.url };
   }
 
   /**

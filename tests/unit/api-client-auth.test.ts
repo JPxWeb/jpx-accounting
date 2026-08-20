@@ -184,6 +184,33 @@ test("demo fallback store bypasses the network — provider is never consulted",
 });
 
 // ---------------------------------------------------------------------------
+// Evidence read URLs: the local-disk blob backend mints API-relative
+// `/api/blobs/local/{token}` URLs, which must be resolved against the API base
+// the same way uploadBlob already resolves stub upload URLs — otherwise an
+// <img src> would 404 against the web origin.
+// ---------------------------------------------------------------------------
+
+test("getEvidenceFileUrl resolves an API-relative local blob URL against the API base", async (t) => {
+  const captured = mockFetch(t, () => jsonResponse({ url: "/api/blobs/local/abc123.def456", expiresInSeconds: 600 }));
+  const client = createAccountingApiClient({ baseUrl: BASE_URL, runtimeMode: "normal" });
+
+  const result = await client.getEvidenceFileUrl("evidence_1");
+
+  assert.deepEqual(result, { url: `${BASE_URL}/api/blobs/local/abc123.def456` });
+  assert.equal(captured[0]?.url, `${BASE_URL}/api/evidence/evidence_1/file-url`);
+});
+
+test("getEvidenceFileUrl passes an absolute Azure SAS URL through untouched", async (t) => {
+  const azureUrl = "https://account.blob.core.windows.net/evidence/receipt.jpg?sig=abc";
+  mockFetch(t, () => jsonResponse({ url: azureUrl, expiresInSeconds: 600 }));
+  const client = createAccountingApiClient({ baseUrl: BASE_URL, runtimeMode: "normal" });
+
+  const result = await client.getEvidenceFileUrl("evidence_1");
+
+  assert.deepEqual(result, { url: azureUrl });
+});
+
+// ---------------------------------------------------------------------------
 // The api-proxy must forward the Authorization header upstream — otherwise the
 // bearer token dies at the Next server and every normal-mode request 401s.
 // The route module imports "server-only" (unimportable under node:test), so
