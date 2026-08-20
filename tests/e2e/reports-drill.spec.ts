@@ -102,4 +102,10 @@ test("SIE-imported lines show the Imported badge and never a dead link", async (
   await expect(drawer.getByTestId("drill-line")).toHaveCount(1);
   await expect(drawer.getByTestId("drill-imported-badge")).toBeVisible();
   await expect(drawer.getByTestId("drill-voucher-link")).toHaveCount(0);
+
+  // KFR Phase D / Task 5: the chip shows the materialized voucher's real
+  // "<series> <number>", not the raw `sie_A_90` aggregate id.
+  const importedLine = drawer.getByTestId("drill-line").first();
+  await expect(importedLine).toContainText("A 90");
+  await expect(importedLine).not.toContainText("sie_A_90");
 });

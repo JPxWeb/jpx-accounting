@@ -109,8 +109,9 @@ export function JournalView() {
                 <TableRow key={`${entry.voucherId}-${entry.accountNumber}`}>
                   {/* Demo-seed bookings are dated "now"; masked so visual baselines stay date-stable. */}
                   <TableCell data-visual-mask>{entry.bookedAt.slice(0, 10)}</TableCell>
-                  {/* Same TEXT as before (voucherNumber ?? voucherId) — VoucherLink only
-                      adds the evidence link / imported badge around it (Task 4.8). */}
+                  {/* VoucherLink renders the voucher's real number when a row resolves
+                      (incl. SIE imports since KFR Phase D / Task 5), falling back to the
+                      raw voucherId, plus the evidence link / imported badge (Task 4.8). */}
                   <TableCell className="text-mono">
                     <VoucherLink voucherId={entry.voucherId} lookup={lookup} />
                   </TableCell>
