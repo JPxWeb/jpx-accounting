@@ -49,7 +49,16 @@ import {
 import { AdvisorDisabledError, AdvisorValidationError, createAdvisorChatHandler } from "./advisor/chat";
 import { createAdvisorModel, type AdvisorModelConfig } from "./advisor/model";
 import type { BlobUploader } from "./blob";
-import { BlobUploaderUnavailableError, MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
+import {
+  BlobUploaderUnavailableError,
+  inferLocalBlobContentType,
+  LocalBlobConflictError,
+  LocalBlobNotFoundError,
+  LocalBlobTokenError,
+  LocalDiskBlobUploader,
+  MAX_UPLOAD_BYTES,
+  UploadValidationError,
+} from "./blob";
 import { DEFAULT_SUPABASE_JWT_ALGS, type CorsRuntimePolicy, type SupabaseJwtAlgorithm } from "./config";
 import { queryKnowledge } from "./knowledge";
 import type { AiRuntimeMetadata } from "./runtime";
@@ -369,6 +378,11 @@ export function createApp({
   // limit below, matching MAX_UPLOAD_BYTES, instead of the 512 KiB JSON ceiling.
   const isStubUploadPut = (c: Context<AppEnv>) => c.req.method === "PUT" && /^\/api\/uploads\/[^/]+$/.test(c.req.path);
 
+  // Local-disk blob byte-transfer routes (D1): path pattern shared by the body-limit gate below
+  // and the JWKS-auth exemption further down — both must agree on exactly which requests these are.
+  const LOCAL_BLOB_ROUTE_PATTERN = /^\/api\/blobs\/local\/[^/]+$/;
+  const isLocalBlobPut = (c: Context<AppEnv>) => c.req.method === "PUT" && LOCAL_BLOB_ROUTE_PATTERN.test(c.req.path);
+
   app.use("/api/*", async (c, next) => {
     if (!["POST", "PUT", "PATCH"].includes(c.req.method)) {
       return next();
@@ -377,6 +391,9 @@ export function createApp({
       return next();
     }
     if (isStubUploadPut(c)) {
+      return next();
+    }
+    if (isLocalBlobPut(c)) {
       return next();
     }
     return defaultJsonBodyLimit(c, next);
@@ -392,6 +409,21 @@ export function createApp({
         return next();
       }
       return uploadBodyLimit(c, next);
+    });
+  }
+
+  // Local-disk blob PUTs carry file bytes like the stub upload route above — same MAX_UPLOAD_BYTES
+  // ceiling instead of the 512 KiB JSON default (which the gate above already skips for them).
+  if (blobUploader instanceof LocalDiskBlobUploader) {
+    const localBlobPutBodyLimit = bodyLimit({
+      maxSize: MAX_UPLOAD_BYTES,
+      onError: (inner) => jsonError(inner, "Request body too large.", runtimeMode, 413),
+    });
+    app.use("/api/blobs/local/:token", async (c, next) => {
+      if (!isLocalBlobPut(c)) {
+        return next();
+      }
+      return localBlobPutBodyLimit(c, next);
     });
   }
 
@@ -414,6 +446,13 @@ export function createApp({
       // Art. 50) must render before login. CORS preflights never reach here — the cors
       // middleware above short-circuits OPTIONS.
       if (c.req.method === "GET" && c.req.path === "/api/runtime-info") {
+        return next();
+      }
+      // Local-disk blob byte-transfer routes (D1) are guarded by their own short-lived HMAC
+      // token embedded in the URL, mirroring how an Azure SAS URL carries its own credential and
+      // never reaches this app's JWT gate either (it's not even routed through this app). A
+      // browser <img>/fetch reading an evidence preview cannot attach an Authorization header.
+      if (LOCAL_BLOB_ROUTE_PATTERN.test(c.req.path)) {
         return next();
       }
       // /api/testing/reset is route-gated on allowTestReset already, but layering JWT defense in
@@ -544,6 +583,20 @@ export function createApp({
 
     if (error instanceof BlobUploaderUnavailableError) {
       return jsonError(c, error.message, runtimeMode, 503, { code: error.code });
+    }
+
+    if (error instanceof LocalBlobTokenError) {
+      // Bad signature, wrong method, or expired token — the URL's token is the credential (401).
+      return jsonError(c, error.message, runtimeMode, 401, { code: error.code });
+    }
+
+    if (error instanceof LocalBlobConflictError) {
+      // Write-once violation: the blob already exists (409), never an overwrite.
+      return jsonError(c, error.message, runtimeMode, 409, { code: error.code });
+    }
+
+    if (error instanceof LocalBlobNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 404, { code: error.code });
     }
 
     if (error instanceof LedgerStoreUnavailableError || error instanceof AiRuntimeUnavailableError) {
@@ -703,6 +756,29 @@ export function createApp({
     app.put("/api/uploads/:uploadId", async (context) => {
       await context.req.arrayBuffer();
       return context.json({ ok: true, uploadId: context.req.param("uploadId") }, 201);
+    });
+  }
+
+  // Local-disk blob byte transfer (D1). The `:token` IS the credential — a method-bound,
+  // short-lived HMAC token minted by initUpload (PUT) / mintReadSas (GET); see the JWKS-auth
+  // exemption above. Writes are write-once, so a replayed upload URL answers 409, not an
+  // overwrite — evidence bytes are never silently replaced.
+  if (blobUploader instanceof LocalDiskBlobUploader) {
+    app.put("/api/blobs/local/:token", async (context) => {
+      const blobPath = blobUploader.verifyToken(context.req.param("token"), "PUT");
+      const bytes = new Uint8Array(await context.req.arrayBuffer());
+      await blobUploader.writeOnce(blobPath, bytes);
+      return context.json({ ok: true }, 201);
+    });
+
+    app.get("/api/blobs/local/:token", async (context) => {
+      const blobPath = blobUploader.verifyToken(context.req.param("token"), "GET");
+      const bytes = await blobUploader.readBlob(blobPath);
+      context.header("content-type", inferLocalBlobContentType(blobPath));
+      // Response bodies are typed as `Uint8Array<ArrayBuffer>` while fs hands back the wider
+      // `Uint8Array<ArrayBufferLike>`. A file read is never SharedArrayBuffer-backed, so this
+      // narrowing is sound — and it beats copying up to 16 MiB per preview request.
+      return context.body(bytes as Uint8Array<ArrayBuffer>);
     });
   }
 
