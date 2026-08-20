@@ -76,6 +76,33 @@ test("firstFiscalYearStart is optional, ISO-day shaped, and absent by default", 
   assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "" }).success, false);
 });
 
+test("firstFiscalYearStart rejects calendar-impossible dates the shape regex would accept", () => {
+  // The shape regex alone passes both of these; only the calendar round trip
+  // catches them (Date silently rolls Feb 30 over into March).
+  const impossibleMonthAndDay = workspaceProfileSchema.safeParse({ firstFiscalYearStart: "2025-13-45" });
+  assert.equal(impossibleMonthAndDay.success, false);
+
+  const rolloverDay = workspaceProfileSchema.safeParse({ firstFiscalYearStart: "2025-02-30" });
+  assert.equal(rolloverDay.success, false);
+  if (!rolloverDay.success) {
+    assert.ok(rolloverDay.error.issues.some((entry) => entry.path[0] === "firstFiscalYearStart"));
+    assert.match(rolloverDay.error.issues[0]!.message, /real calendar date/);
+  }
+
+  // Leap days are real — 2024 is a leap year, 2025 is not.
+  assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "2024-02-29" }).success, true);
+  assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "2025-02-29" }).success, false);
+
+  // The real Kapitas-replacement incorporation date still parses.
+  assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "2025-10-15" }).success, true);
+
+  // And the whole settings record rejects it end-to-end (the PUT's 400 path).
+  assert.equal(
+    companySettingsSchema.safeParse({ ...validBase, profile: { firstFiscalYearStart: "2025-02-30" } }).success,
+    false,
+  );
+});
+
 test("profile round-trips custom values through the settings schema", () => {
   const parsed = companySettingsSchema.parse({
     ...validBase,

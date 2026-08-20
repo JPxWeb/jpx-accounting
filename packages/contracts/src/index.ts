@@ -646,6 +646,21 @@ export const vatPeriodSchema = z.enum(["monthly", "quarterly", "yearly"]);
 export type VatPeriod = z.infer<typeof vatPeriodSchema>;
 
 /**
+ * True only for a `YYYY-MM-DD` string that names a day the calendar actually
+ * has. A shape regex alone accepts `2025-13-45` and `2025-02-30`; `Date`
+ * silently rolls those over (Feb 30 → Mar 2), so the round trip through LOCAL
+ * calendar parts is what catches them. Local parts on purpose — the repo bans
+ * `toISOString()` day math, which shifts across the UTC boundary.
+ */
+function isRealCalendarDay(day: string): boolean {
+  const year = Number(day.slice(0, 4));
+  const month = Number(day.slice(5, 7));
+  const date = Number(day.slice(8, 10));
+  const parsed = new Date(year, month - 1, date);
+  return parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === date;
+}
+
+/**
  * Workspace profile — country/locale/currency/fiscal-year seam for the
  * European abstractions (advisory pivot Phase 2). Lives on the org-level
  * company settings until multi-workspace lands.
@@ -667,10 +682,21 @@ export const workspaceProfileSchema = z.object({
    * window CONTAINING this date has its `from` raised to this date instead
    * of the recurring fiscalYearStart anchor; the SIE export's `#RAR 0`
    * shares the same clamp. Leave unset once FY1 is closed.
+   *
+   * Validated for SHAPE and CALENDAR validity only. There is deliberately no
+   * cross-validation against `fiscalYearStart`: every calendar date lies
+   * inside exactly one anchor-derived fiscal-year window, so no floor/anchor
+   * pair is structurally invalid — a floor merely selects which window it
+   * shortens. A floor the user did not intend is caught by FEEDBACK, not by a
+   * refine: `/settings/fiscal-year` previews the resulting FY1 window live,
+   * before the save. Please do not re-raise this as a missing check.
    */
   firstFiscalYearStart: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine(isRealCalendarDay, {
+      message: "firstFiscalYearStart must be a real calendar date (YYYY-MM-DD).",
+    })
     .optional(),
   /** VAT reporting cadence — defaulted so pre-Phase-5 payloads keep parsing (no migration). */
   vatPeriod: vatPeriodSchema.default("quarterly"),

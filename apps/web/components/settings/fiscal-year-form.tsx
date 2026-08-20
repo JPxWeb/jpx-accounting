@@ -111,6 +111,12 @@ function FiscalYearFields({ settings }: { settings: CompanySettings | null }) {
       toast.success(t("saved"));
     },
     onError: () => {
+      // Covers the contract's rejections too, not just transport failures: a
+      // calendar-impossible `firstFiscalYearStart` fails `companySettingsSchema`
+      // on BOTH save paths — the API's `jsonValidated` 400 (api-client throws
+      // AccountingApiError) and the demo fallback's `putCompanySettings` parse.
+      // The native `type="date"` input makes this practically unreachable; this
+      // is the honest floor under it, and matches the company form's surface.
       toast.error(t("saveError"));
     },
   });

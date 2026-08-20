@@ -211,6 +211,39 @@ test("JSON validation failures return structured issues and requestId", async ()
   assert.equal(body.requestId, "test-fixture-id");
 });
 
+test("PUT /api/settings/company rejects a calendar-impossible firstFiscalYearStart with a 400", async () => {
+  const app = createTestApiApp("demo");
+  const base = {
+    organizationName: "Test AB",
+    organizationNumber: "556677-8899",
+    addressLine1: "Kungsgatan 1",
+    postalCode: "111 22",
+    city: "Stockholm",
+    contactEmail: "test@example.com",
+  };
+
+  // 2025-02-30 passes the shape regex but is not a day the calendar has.
+  const rejected = await app.request("http://localhost/api/settings/company", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...base, profile: { firstFiscalYearStart: "2025-02-30" } }),
+  });
+  assert.equal(rejected.status, 400);
+  const body = (await rejected.json()) as { code: string; issues: { path?: unknown[] }[] };
+  assert.equal(body.code, "validation_error");
+  assert.ok(body.issues.some((issue) => issue.path?.includes("firstFiscalYearStart")));
+
+  // The real incorporation date saves and round-trips.
+  const accepted = await app.request("http://localhost/api/settings/company", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...base, profile: { firstFiscalYearStart: "2025-10-15" } }),
+  });
+  assert.equal(accepted.status, 200);
+  const saved = (await accepted.json()) as { profile: { firstFiscalYearStart?: string } };
+  assert.equal(saved.profile.firstFiscalYearStart, "2025-10-15");
+});
+
 test("GET /api/close-runs/:id returns the run when the id matches the store's close run", async () => {
   const app = createTestApiApp("demo");
 
