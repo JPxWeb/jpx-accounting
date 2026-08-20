@@ -732,6 +732,7 @@ test(
         importedVouchers: 1,
         importedTransactions: 2,
         skipped: [{ reference: "A 43", reason: "unbalanced" }],
+        warnings: [],
       });
 
       // getReports replay widened to VoucherImported: the lines appear in the journal.

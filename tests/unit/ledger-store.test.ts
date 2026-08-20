@@ -445,7 +445,13 @@ test("MemoryLedgerStore.importSie grows the journal, appends VoucherImported eve
   const eventsBefore = (await store.getEvents()).length;
 
   const result = await store.importSie({ actorId: "user_founder", file });
-  assert.deepEqual(result, { accepted: true, importedVouchers: 1, importedTransactions: 2, skipped: [] });
+  assert.deepEqual(result, {
+    accepted: true,
+    importedVouchers: 1,
+    importedTransactions: 2,
+    skipped: [],
+    warnings: [],
+  });
 
   const journal = (await store.getReports()).journal;
   assert.equal(journal.length, journalBefore + 2);
@@ -476,6 +482,7 @@ test("MemoryLedgerStore.importSie grows the journal, appends VoucherImported eve
     importedVouchers: 0,
     importedTransactions: 0,
     skipped: [{ reference: "A 42", reason: "duplicate" }],
+    warnings: [],
   });
   assert.equal((await store.getReports()).journal.length, journalBefore + 2, "no duplicate lines");
   assert.equal((await store.getEvents()).length, eventsBefore + 1, "no duplicate events");

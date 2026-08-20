@@ -4,6 +4,8 @@
  * Supported labels: `#SIETYP`, `#ORGNR`, `#FNAMN`, `#KONTO`, and
  * `#VER series [number] date [text]` with a `{ … }` block of
  * `#TRANS account {objects-ignored} amount [transdate] [text]` lines.
+ * `#IB` is recognized only to warn on a non-zero opening balance — balances
+ * are never imported (KFR readiness G4).
  * Unknown labels are skipped; bare `#TRANS` lines outside a `#VER` block are
  * ignored with a warning (real files never have them — the old placeholder
  * E2E fixture did).
@@ -241,6 +243,24 @@ export function parseSie(content: string): ParsedSieFile {
         const transDate = third !== undefined && /^\d{8}$/.test(third) ? toIsoDate(third) : undefined;
         const text = transDate !== undefined ? fields[4]?.value : third;
         pendingVoucher.transactions.push({ account, amount, transDate, text });
+        break;
+      }
+      case "#IB": {
+        // Minimal recognition (KFR readiness G4): detect non-zero opening
+        // balances and WARN — do NOT import them as balances this version
+        // (see the migration runbook for manual reconciliation). Field order
+        // per spec: `#IB <yeardelta> <account> <balance> [<quantity>]`.
+        // A zero balance is silent: real files carry an #IB row per account in
+        // the chart, and warning on every zero row would drown the signal.
+        const yearIndex = fields[1]?.value;
+        const account = fields[2]?.value;
+        const balanceRaw = fields[3]?.value;
+        const balance = balanceRaw === undefined ? Number.NaN : Number.parseFloat(balanceRaw);
+        if (Number.isFinite(balance) && Math.abs(balance) > 0.005) {
+          warnings.push(
+            `#IB ${yearIndex ?? "0"} ${account ?? "?"} ${balanceRaw} has a non-zero opening balance — opening balances are not imported in this version; reconcile manually (see the FY1 migration runbook).`,
+          );
+        }
         break;
       }
       default:

@@ -722,6 +722,13 @@ export const sieImportResultSchema = z.object({
   importedVouchers: z.number().int().nonnegative(),
   importedTransactions: z.number().int().nonnegative(),
   skipped: z.array(z.object({ reference: z.string(), reason: z.string() })).default([]),
+  /**
+   * Non-fatal parse notes from `ParsedSieFile.warnings` (ignored lines, an
+   * unterminated `#VER` block, a non-zero `#IB` opening balance …). Advisory
+   * only — the import still succeeded. Capped by `summarizeSieWarnings` in the
+   * stores so a pathological file can't return an unbounded payload.
+   */
+  warnings: z.array(z.string()).default([]),
 });
 export type SieImportResult = z.infer<typeof sieImportResultSchema>;
 

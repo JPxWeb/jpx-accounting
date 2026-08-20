@@ -162,6 +162,26 @@ export class SieImportError extends Error {
 export const SIE_IMPORT_MAX_VOUCHERS = 500;
 export const SIE_IMPORT_MAX_LINES_PER_VOUCHER = 100;
 
+/** Max parse warnings threaded into a `SieImportResult` before summarizing. */
+export const SIE_IMPORT_MAX_RESULT_WARNINGS = 50;
+
+/**
+ * Thread `ParsedSieFile.warnings` into the import result under a hard cap
+ * (CONVENTIONS Rule 25 — bounded accumulation). `parseSie` emits one warning
+ * per ignored line, so a pathological 32 MiB upload (the API's SIE body limit)
+ * of junk lines would otherwise serialize millions of strings back to the
+ * browser. Real files stay far under the cap; when they don't, the tail is
+ * replaced by a single count line so the reader still learns nothing was
+ * hidden. Shared by both stores so the field can't drift (Rule 11 parity).
+ */
+export function summarizeSieWarnings(warnings: readonly string[]): string[] {
+  if (warnings.length <= SIE_IMPORT_MAX_RESULT_WARNINGS) return [...warnings];
+  return [
+    ...warnings.slice(0, SIE_IMPORT_MAX_RESULT_WARNINGS),
+    `… and ${warnings.length - SIE_IMPORT_MAX_RESULT_WARNINGS} more parse warnings (not shown).`,
+  ];
+}
+
 export type SieImportInput = ActorAttribution & { file: ParsedSieFile };
 
 export type SiePlannedVoucher = {
@@ -665,6 +685,8 @@ export class MemoryLedgerStore implements LedgerStore {
       importedVouchers: 0,
       importedTransactions: 0,
       skipped: [...skipped],
+      // Non-fatal parse notes ride along so the caller can surface them (D3).
+      warnings: summarizeSieWarnings(input.file.warnings),
     };
 
     // Idempotency: skip vouchers whose aggregate id was already imported.

@@ -3,8 +3,15 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { CompanySettings, JournalEntryProjection } from "@jpx-accounting/contracts";
+import { sieImportResultSchema } from "@jpx-accounting/contracts";
 import { buildSieExport, decodePc8, decodeSieBuffer, encodePc8, parseSie } from "@jpx-accounting/domain";
-import { MemoryLedgerStore, planSieImport, SieImportError } from "@jpx-accounting/domain/store";
+import {
+  MemoryLedgerStore,
+  planSieImport,
+  SieImportError,
+  SIE_IMPORT_MAX_RESULT_WARNINGS,
+  summarizeSieWarnings,
+} from "@jpx-accounting/domain/store";
 
 const fixtureBytes = (name: string): Uint8Array =>
   new Uint8Array(readFileSync(new URL(`../fixtures/sie/${name}`, import.meta.url)));
@@ -188,7 +195,15 @@ test("full round-trip: export → parse → importSie reproduces the journal eco
 
   const text = buildSieExport({ journal: goldenJournal, settings: null, generatedAt: goldenGeneratedAt });
   const result = await store.importSie({ actorId: "user_test", file: parseSie(text) });
-  assert.deepEqual(result, { accepted: true, importedVouchers: 2, importedTransactions: 5, skipped: [] });
+  // `warnings: []` is load-bearing: our own export must parse back without a
+  // single non-fatal note (D3).
+  assert.deepEqual(result, {
+    accepted: true,
+    importedVouchers: 2,
+    importedTransactions: 5,
+    skipped: [],
+    warnings: [],
+  });
 
   const journalAfter = (await store.getReports()).journal;
   assert.equal(journalAfter.length, journalBefore + 5);
@@ -238,6 +253,86 @@ test("parseSie: bare #TRANS outside #VER is ignored with a warning (old placehol
   const parsed = parseSie("#FLAGGA 0\n#TRANS 1930 {} -100\n#TRANS 6540 {} 100");
   assert.equal(parsed.vouchers.length, 0);
   assert.ok(parsed.warnings.some((warning) => warning.includes("#TRANS")));
+});
+
+test("parseSie: non-zero #IB warns (opening balances aren't imported this version); zero #IB is silent", () => {
+  const withBalance = parseSie('#IB 0 1930 15000.50\n#VER A 1 20260101 "x"\n{\n#TRANS 1930 {} 0\n}');
+  assert.ok(
+    withBalance.warnings.some((warning) => warning.includes("#IB") && warning.includes("1930")),
+    "non-zero #IB must warn",
+  );
+
+  const zeroBalance = parseSie("#IB 0 1930 0.00");
+  assert.ok(!zeroBalance.warnings.some((warning) => warning.includes("#IB")), "a zero #IB is not worth warning about");
+
+  // The shape a first-fiscal-year export from the incumbent actually has: an
+  // #IB row per account in the chart, all zero. It must import in total silence
+  // — one warning per chart account would bury every real signal.
+  const kapitasLike = parseSie(
+    [
+      "#FLAGGA 0",
+      "#SIETYP 4",
+      '#FNAMN "JPx Demo AB"',
+      "#RAR 0 20260101 20261231",
+      '#KONTO 1930 "Företagskonto"',
+      '#KONTO 2440 "Leverantörsskulder"',
+      "#IB 0 1930 0.00",
+      "#IB 0 2440 0",
+      "#IB 0 3011 -0.00",
+      '#VER A 1 20260115 "Första verifikatet"',
+      "{",
+      "#TRANS 6110 {} 250.00",
+      "#TRANS 1930 {} -250.00",
+      "}",
+      "#UB 0 1930 -250.00",
+    ].join("\n"),
+  );
+  assert.deepEqual(kapitasLike.warnings, [], "a zero-opening-balance FY1 export must import silently");
+  assert.equal(kapitasLike.vouchers.length, 1);
+});
+
+test("importSie threads parse warnings into the result and they survive the wire round-trip", async () => {
+  const store = new MemoryLedgerStore();
+  const file = parseSie(
+    [
+      "#IB 0 1930 15000.50",
+      '#VER A 9 20260401 "Kaffe"',
+      "{",
+      "#TRANS 5810 {} 100.00",
+      "#TRANS 1930 {} -100.00",
+      "}",
+    ].join("\n"),
+  );
+
+  const result = await store.importSie({ file });
+  assert.equal(result.importedVouchers, 1, "the voucher still imports — an #IB warning is never fatal");
+  assert.ok(
+    result.warnings.some((warning) => warning.includes("#IB") && warning.includes("1930")),
+    "the parse warning must reach the import result",
+  );
+
+  // What the browser actually receives: JSON over the wire, re-parsed by the
+  // api-client through this very schema (demo fallback returns the same object).
+  const overTheWire = sieImportResultSchema.parse(JSON.parse(JSON.stringify(result)));
+  assert.deepEqual(overTheWire.warnings, result.warnings);
+
+  // #IB is recognized to WARN only — no opening balance is ever booked.
+  const journal = (await store.getReports()).journal;
+  assert.equal(
+    journal.filter((entry) => entry.debit === 15000.5 || entry.credit === 15000.5).length,
+    0,
+    "opening balances are not imported",
+  );
+});
+
+test("summarizeSieWarnings caps the threaded warnings so a junk file can't return an unbounded payload", () => {
+  const under = Array.from({ length: SIE_IMPORT_MAX_RESULT_WARNINGS }, (_, index) => `w${index}`);
+  assert.deepEqual(summarizeSieWarnings(under), under, "under the cap the list passes through verbatim");
+
+  const over = Array.from({ length: SIE_IMPORT_MAX_RESULT_WARNINGS + 7 }, (_, index) => `w${index}`);
+  const summarized = summarizeSieWarnings(over);
+  assert.equal(summarized.length, SIE_IMPORT_MAX_RESULT_WARNINGS + 1);
+  assert.equal(summarized.at(-1), "… and 7 more parse warnings (not shown).");
 });
 
 test("planSieImport enforces hard bounds via SieImportError", () => {

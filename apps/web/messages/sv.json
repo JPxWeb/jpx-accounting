@@ -282,7 +282,8 @@
     "sieResult": {
       "imported": "Importerade {vouchers} verifikat från SIE-filen.",
       "importedWithSkipped": "Importerade {vouchers} verifikat från SIE-filen — {skipped} hoppades över.",
-      "error": "Kunde inte importera SIE-filen."
+      "error": "Kunde inte importera SIE-filen.",
+      "warnings": "{count, plural, one {# varning} other {# varningar}} vid importen: {preview}"
     },
     "dropzone": {
       "aria": "Lägg till underlagsfiler genom att bläddra eller släppa dem här",

@@ -282,7 +282,8 @@
     "sieResult": {
       "imported": "Imported {vouchers} vouchers from the SIE file.",
       "importedWithSkipped": "Imported {vouchers} vouchers from the SIE file — {skipped} skipped.",
-      "error": "Could not import the SIE file."
+      "error": "Could not import the SIE file.",
+      "warnings": "{count, plural, one {# warning} other {# warnings}} during import: {preview}"
     },
     "dropzone": {
       "aria": "Add evidence files by browsing or dropping them here",

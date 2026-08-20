@@ -61,6 +61,7 @@ import {
   buildImportedVoucher,
   isDuplicateEvidence,
   planSieImport,
+  summarizeSieWarnings,
   ReviewNotFoundError,
   VoucherNotFoundError,
   type LedgerStore,
@@ -1034,6 +1035,8 @@ export class PostgresLedgerStore implements LedgerStore {
           importedVouchers: 0,
           importedTransactions: 0,
           skipped: [...skipped],
+          // Non-fatal parse notes ride along so the caller can surface them (D3).
+          warnings: summarizeSieWarnings(input.file.warnings),
         };
 
         // Idempotency: skip vouchers whose aggregate id was already imported.

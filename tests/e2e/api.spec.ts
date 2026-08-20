@@ -291,6 +291,9 @@ test("knowledge, simulation, close, and import endpoints round-trip", async ({ r
     importedVouchers: 1,
     importedTransactions: 2,
     skipped: [],
+    // D3: parse warnings cross the real HTTP boundary. This fixture is clean —
+    // `#FLAGGA` is an unknown label (silently skipped), not a warning.
+    warnings: [],
   });
 
   // Re-posting the same file is idempotent: the voucher is skipped as a duplicate.

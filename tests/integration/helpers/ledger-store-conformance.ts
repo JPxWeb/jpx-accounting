@@ -237,12 +237,37 @@ export async function scenarioSieImportIdempotency(h: ConformanceHarness): Promi
   assert.equal(importedVoucher?.status, "posted", `${h.label}: imported voucher status`);
   assert.equal(importedVoucher?.evidencePacketId, null, `${h.label}: imported voucher carries no evidence packet`);
 
+  // KFR Phase D / Task 3 (readiness G4): non-fatal parse warnings must survive
+  // into the result identically in both stores. Imported LAST so it can't
+  // perturb any delta measured above. `#IB` is recognized only to warn — the
+  // 15 000,50 opening balance must NOT show up as a ledger line.
+  const warningFile = parseSie(
+    ["#SIETYP 4", "#IB 0 1930 15000.50", '#VER W 1 20260520 "Warning fixture"', "{", "#TRANS 1930 {} 0.00", "}"].join(
+      "\n",
+    ),
+  );
+  const warningResult = await h.store.importSie({ actorId: h.actorId, file: warningFile });
+  assert.equal(result.warnings.length, 0, `${h.label}: the clean march fixture must carry no parse warnings`);
+  assert.ok(
+    warningResult.warnings.some((warning) => warning.includes("#IB") && warning.includes("1930")),
+    `${h.label}: a non-zero #IB must surface as an import warning`,
+  );
+  const balanceLines = (await h.store.getReports()).journal.filter(
+    (entry) => normalizeNumber(entry.debit) === 15000.5 || normalizeNumber(entry.credit) === 15000.5,
+  );
+  assert.equal(balanceLines.length, 0, `${h.label}: #IB opening balances must never be imported as ledger lines`);
+
   return {
     importedVouchers: result.importedVouchers,
     importedTransactions: result.importedTransactions,
     journalDelta: journalAfter - journalBefore,
     eventDelta: eventsAfter - eventsBefore,
     replayImported: replay.importedVouchers,
+    // KFR Phase D / Task 3: ParsedSieFile.warnings threads into the result.
+    // The march fixture is clean, so both stores must report exactly 0.
+    parseWarningCount: result.warnings.length,
+    replayParseWarningCount: replay.warnings.length,
+    ibWarnings: warningResult.warnings,
     replaySkippedReason: replay.skipped[0]?.reason ?? null,
     journalReplayDelta: journalReplay - journalAfter,
     eventReplayDelta: eventsReplay - eventsAfter,
