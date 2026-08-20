@@ -118,6 +118,66 @@ function reportRangeQuery(range?: ReportRange): string {
   return query ? `?${query}` : "";
 }
 
+/**
+ * Bounded retry knobs for transient 429s (readiness G9 — bulk capture backlog).
+ * The API's mutation limiter is a 60 s fixed window, so a server-advertised wait
+ * tops out just under a minute: the delay cap sits just past that window so a
+ * legitimate `Retry-After` / `reset=` is honored IN FULL (waiting out the window
+ * is the whole point — a shorter cap would burn all three retries inside the
+ * same exhausted window and hard-fail a bulk drop), while a bogus or hostile
+ * header (`Retry-After: 3600`) still can't park the client for an hour.
+ */
+const RATE_LIMIT_MAX_RETRIES = 3;
+const RATE_LIMIT_FALLBACK_DELAY_MS = 500;
+const RATE_LIMIT_MAX_DELAY_MS = 65_000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** `reset=<seconds>` out of hono-rate-limiter's draft-7 combined `RateLimit` header. */
+function parseRateLimitResetSeconds(header: string | null): number | undefined {
+  if (header === null) return undefined;
+  const match = /reset=(\d+)/.exec(header);
+  return match ? Number(match[1]) : undefined;
+}
+
+/** Delay before the next attempt: `Retry-After` (seconds) → `RateLimit: reset=` → exponential fallback. */
+function rateLimitDelayMs(response: Response, attempt: number): number {
+  const retryAfterHeader = response.headers.get("retry-after");
+  if (retryAfterHeader !== null) {
+    // Only the delta-seconds form is understood; an HTTP-date parses to NaN and falls through.
+    const seconds = Number(retryAfterHeader);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, RATE_LIMIT_MAX_DELAY_MS);
+  }
+  const resetSeconds = parseRateLimitResetSeconds(response.headers.get("ratelimit"));
+  if (resetSeconds !== undefined) return Math.min(resetSeconds * 1000, RATE_LIMIT_MAX_DELAY_MS);
+  return Math.min(RATE_LIMIT_FALLBACK_DELAY_MS * 2 ** attempt, RATE_LIMIT_MAX_DELAY_MS);
+}
+
+/**
+ * Wrap a fetch call with bounded 429 retry-with-backoff (readiness G9). Retrying
+ * is safe for EVERY route, mutations included: hono-rate-limiter's middleware
+ * answers 429 from its own handler BEFORE `next()` reaches the route, so a 429
+ * proves no server-side work happened and the retry is a first execution, not a
+ * second one (no double approval, no duplicate ledger event). Scoped strictly to
+ * 429 for exactly that reason — a 5xx may well have executed, so it is surfaced
+ * unretried. Bodies passed through here are re-sendable (string / Blob /
+ * TypedArray), never one-shot streams.
+ */
+async function fetchWithRateLimitRetry(fetchImpl: FetchLike, input: string, init: RequestInit): Promise<Response> {
+  let attempt = 0;
+  for (;;) {
+    const response = await fetchImpl(input, init);
+    if (response.status !== 429 || attempt >= RATE_LIMIT_MAX_RETRIES) return response;
+    const wait = rateLimitDelayMs(response, attempt);
+    // Release the discarded 429 body so a bulk drop's retries don't pile up unread streams.
+    void response.body?.cancel().catch(() => undefined);
+    await delay(wait);
+    attempt += 1;
+  }
+}
+
 async function requestJson<T>(
   fetchImpl: FetchLike,
   baseUrl: string,
@@ -142,7 +202,7 @@ async function requestJson<T>(
     init.body = JSON.stringify(options.json);
   }
 
-  const response = await fetchImpl(`${baseUrl}${path}`, init);
+  const response = await fetchWithRateLimitRetry(fetchImpl, `${baseUrl}${path}`, init);
 
   if (!response.ok) {
     const payload = await response.json().catch(() => undefined as { error?: string; message?: string } | undefined);
@@ -382,7 +442,12 @@ export class AccountingApiClient {
     };
     // Only API-relative stub uploads get the bearer token: the absolute Azure SAS
     // URL is its own credential and the session token must not leak to the storage host.
-    const response = isApiRelative ? await this.authorizedFetch(target, init) : await fetch(target, init);
+    const send: FetchLike = isApiRelative ? this.authorizedFetch : (url, requestInit) => fetch(url, requestInit);
+    // The PUT is the second of ~4 mutating calls per receipt and, in the local-blob backend, it
+    // lands on the API's own rate-limited surface — without the same bounded 429 retry a bulk
+    // drop would still strand drafts here (readiness G9). Overwriting the same blob path with the
+    // same bytes is idempotent, so a retry can only ever repeat itself.
+    const response = await fetchWithRateLimitRetry(send, target, init);
     if (!response.ok) {
       throw new AccountingApiError(response.status, `Blob upload failed: ${response.status} ${response.statusText}`);
     }
@@ -431,10 +496,17 @@ export class AccountingApiClient {
       });
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    const response = await this.authorizedFetch(`${this.baseUrl}/api/evidence/${evidenceId}/extract`, {
-      method: "POST",
-      headers: { accept: "application/json" },
-    });
+    // Fourth mutating call per receipt, and the one a bulk drop sheds first: the caller fires it
+    // best-effort, so an unretried 429 would silently leave a whole import un-extracted. Bounded
+    // retry keeps the extraction (readiness G9); after exhaustion the caller's catch still wins.
+    const response = await fetchWithRateLimitRetry(
+      this.authorizedFetch,
+      `${this.baseUrl}/api/evidence/${evidenceId}/extract`,
+      {
+        method: "POST",
+        headers: { accept: "application/json" },
+      },
+    );
     if (response.status === 404) return undefined;
     if (!response.ok) {
       throw new AccountingApiError(response.status, `extractEvidence failed: ${response.status}`);
