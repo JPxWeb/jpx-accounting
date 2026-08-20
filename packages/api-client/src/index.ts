@@ -40,11 +40,13 @@ import {
 } from "@jpx-accounting/contracts";
 import {
   buildSieExport,
+  computeSieBalances,
   decodeSieBuffer,
   deriveDeterministicExtraction,
   encodePc8,
   nowIso,
   parseSie,
+  resolvePeriodToken,
   sieDecodeWarnings,
   summarizeEventIntegrity,
   today,
@@ -527,17 +529,35 @@ export class AccountingApiClient {
    * SIE 4 export of the current workspace as PC8/CP437 bytes (matches
    * `GET /api/exports/sie`). Offline demo builds the same bytes locally via
    * the domain serializer instead of failing with a 503.
+   *
+   * An optional `period` token (Phase D, Task 7) scopes the export to that
+   * window and adds the #IB/#UB/#RES blocks; omitting it exports full history.
    */
-  async fetchSieExport(): Promise<Uint8Array<ArrayBuffer>> {
+  async fetchSieExport(period?: string): Promise<Uint8Array<ArrayBuffer>> {
     if (this.fallbackStore) {
       const [reports, settings] = await Promise.all([
         this.fallbackStore.getReports(),
         this.fallbackStore.getCompanySettings(),
       ]);
+      if (period !== undefined) {
+        // Same resolver the API route uses, so the demo bytes match the wire.
+        const resolved = resolvePeriodToken(period, {
+          fiscalYearStart: settings?.profile.fiscalYearStart ?? "01-01",
+          ...(settings?.profile.firstFiscalYearStart !== undefined
+            ? { firstFiscalYearStart: settings.profile.firstFiscalYearStart }
+            : {}),
+        });
+        const range = { from: resolved.from, to: resolved.to };
+        const balances = computeSieBalances(reports.journal, range);
+        return encodePc8(
+          buildSieExport({ journal: reports.journal, settings, generatedAt: nowIso(), range, ...balances }),
+        );
+      }
       return encodePc8(buildSieExport({ journal: reports.journal, settings, generatedAt: nowIso() }));
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    const response = await this.authorizedFetch(`${this.baseUrl}/api/exports/sie`, {
+    const query = period !== undefined ? `?period=${encodeURIComponent(period)}` : "";
+    const response = await this.authorizedFetch(`${this.baseUrl}/api/exports/sie${query}`, {
       headers: { accept: "text/plain,*/*" },
     });
     if (!response.ok) {

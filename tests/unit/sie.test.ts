@@ -6,6 +6,7 @@ import type { CompanySettings, JournalEntryProjection } from "@jpx-accounting/co
 import { sieImportResultSchema } from "@jpx-accounting/contracts";
 import {
   buildSieExport,
+  computeSieBalances,
   decodePc8,
   decodeSieBuffer,
   encodePc8,
@@ -187,6 +188,110 @@ test("golden export: serializer output is byte-identical to the fixture and pars
     ],
   );
   assert.equal(parsed.vouchers[1]?.text, 'Pärmar och "kvitton"', "escaped quotes survive the round trip");
+});
+
+test("period-scoped SIE export: #IB/#UB/#RES computed from the full ledger, #VER scoped to the range", () => {
+  const fullJournal: JournalEntryProjection[] = [
+    {
+      id: "j_pre_1",
+      voucherId: "voucher_pre",
+      accountNumber: "1930",
+      accountName: "Företagskonto",
+      description: "Aktiekapital",
+      debit: 5000,
+      credit: 0,
+      bookedAt: "2026-02-15",
+    },
+    {
+      id: "j_pre_2",
+      voucherId: "voucher_pre",
+      accountNumber: "2091",
+      accountName: "Balanserad vinst",
+      description: "Aktiekapital",
+      debit: 0,
+      credit: 5000,
+      bookedAt: "2026-02-15",
+    },
+    ...goldenJournal,
+    {
+      id: "j_post_1",
+      voucherId: "voucher_post",
+      accountNumber: "6110",
+      accountName: "Kontorsmateriel",
+      description: "April purchase (out of range)",
+      debit: 300,
+      credit: 0,
+      bookedAt: "2026-04-10",
+    },
+    {
+      id: "j_post_2",
+      voucherId: "voucher_post",
+      accountNumber: "1930",
+      accountName: "Företagskonto",
+      description: "April purchase (out of range)",
+      debit: 0,
+      credit: 300,
+      bookedAt: "2026-04-10",
+    },
+  ];
+  const range = { from: "2026-03-01", to: "2026-03-31" };
+  const balances = computeSieBalances(fullJournal, range);
+
+  assert.deepEqual(balances.openingBalances, { "1930": 5000, "2091": -5000 });
+  assert.deepEqual(balances.closingBalances, {
+    "1930": 3550,
+    "2091": -5000,
+    "2641": 250,
+    "6110": 200,
+    "6540": 1000,
+  });
+  assert.deepEqual(balances.results, { "6110": 200, "6540": 1000 });
+
+  const text = buildSieExport({
+    journal: fullJournal,
+    settings: goldenSettings,
+    generatedAt: goldenGeneratedAt,
+    range,
+    ...balances,
+  });
+
+  const expected = [
+    "#FLAGGA 0",
+    '#PROGRAM "JPX Accounting" "0.1.0"',
+    "#FORMAT PC8",
+    "#GEN 20260704",
+    "#SIETYP 4",
+    "#ORGNR 556677-8899",
+    '#FNAMN "Guldexport AB"',
+    "#RAR 0 20260301 20260331",
+    '#KONTO 1930 "Företagskonto"',
+    '#KONTO 2091 "Balanserad vinst"',
+    '#KONTO 2641 "Debiterad ingående moms"',
+    '#KONTO 6110 "Kontorsmateriel"',
+    '#KONTO 6540 "IT-tjänster"',
+    "#IB 0 1930 5000.00",
+    "#IB 0 2091 -5000.00",
+    "#UB 0 1930 3550.00",
+    "#UB 0 2091 -5000.00",
+    "#UB 0 2641 250.00",
+    "#UB 0 6110 200.00",
+    "#UB 0 6540 1000.00",
+    "#RES 0 6110 200.00",
+    "#RES 0 6540 1000.00",
+    '#VER A 1 20260305 "Programvara mars"',
+    "{",
+    "#TRANS 6540 {} 1000.00",
+    "#TRANS 2641 {} 250.00",
+    "#TRANS 1930 {} -1250.00",
+    "}",
+    '#VER A 2 20260312 "Pärmar och \\"kvitton\\""',
+    "{",
+    "#TRANS 6110 {} 200.00",
+    "#TRANS 1930 {} -200.00",
+    "}",
+    "",
+  ].join("\n");
+  assert.equal(text, expected);
 });
 
 test("escaping: quotes and backslashes survive serialize → parse", () => {

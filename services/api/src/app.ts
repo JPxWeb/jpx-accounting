@@ -26,6 +26,7 @@ import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intell
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import {
   buildSieExport,
+  computeSieBalances,
   currentMonthToken,
   decodeSieBuffer,
   DEMO_ACTOR_ID,
@@ -35,6 +36,7 @@ import {
   InvalidReviewEditError,
   nowIso,
   parseSie,
+  resolvePeriodToken,
   ReviewBlockedError,
   sieDecodeWarnings,
   summarizeEventIntegrity,
@@ -965,13 +967,39 @@ export function createApp({
     return context.json(result);
   });
 
+  // Optional `?period=<token>` (Phase D, Task 7) scopes the export: #VER blocks
+  // and #RAR 0 follow the resolved window, and #IB/#UB/#RES are derived from
+  // the FULL ledger so opening balances carry pre-period history. Absent
+  // `?period=` = full-history export, byte-identical to before.
   app.get("/api/exports/sie", async (context) => {
     const [reports, settings] = await Promise.all([currentStore.getReports(), currentStore.getCompanySettings()]);
-    const text = buildSieExport({ journal: reports.journal, settings, generatedAt: nowIso() });
+    const periodParam = context.req.query("period");
+
+    let range: { from: string; to: string } | undefined;
+    let balances: ReturnType<typeof computeSieBalances> | undefined;
+    if (periodParam !== undefined) {
+      // Unknown tokens throw InvalidPeriodTokenError → 422 (same as /api/reports/pack).
+      const resolved = resolvePeriodToken(periodParam, {
+        fiscalYearStart: settings?.profile.fiscalYearStart ?? "01-01",
+        today: today(),
+        ...(settings?.profile.firstFiscalYearStart !== undefined
+          ? { firstFiscalYearStart: settings.profile.firstFiscalYearStart }
+          : {}),
+      });
+      range = { from: resolved.from, to: resolved.to };
+      balances = computeSieBalances(reports.journal, range);
+    }
+
+    const text = buildSieExport({
+      journal: reports.journal,
+      settings,
+      generatedAt: nowIso(),
+      ...(range ? { range, ...balances } : {}),
+    });
     // Spec-valid PC8 (CP437) bytes — NOT UTF-8. `charset=ibm437` is the IANA
     // name browsers/tools recognize for CP437.
     context.header("content-type", "text/plain; charset=ibm437");
-    context.header("content-disposition", `attachment; filename="jpx-export-${today()}.se"`);
+    context.header("content-disposition", `attachment; filename="jpx-export-${periodParam ?? today()}.se"`);
     return context.body(encodePc8(text));
   });
 
