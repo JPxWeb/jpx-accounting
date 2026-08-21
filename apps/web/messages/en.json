@@ -515,7 +515,8 @@
         "vat-return": "VAT return",
         "employer-declaration": "Employer declaration",
         "f-skatt": "F-tax prepayment",
-        "annual-report": "Annual report"
+        "annual-report": "Annual report",
+        "income-tax-return": "Income tax return (INK2)"
       }
     },
     "alerts": {
@@ -619,7 +620,8 @@
           "vat-return": "VAT return",
           "employer-declaration": "Employer declaration",
           "f-skatt": "F-tax prepayment",
-          "annual-report": "Annual report"
+          "annual-report": "Annual report",
+          "income-tax-return": "Income tax return (INK2)"
         }
       },
       "observations": {

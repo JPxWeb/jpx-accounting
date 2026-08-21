@@ -90,7 +90,7 @@ function FiscalYearFields({ settings }: { settings: CompanySettings | null }) {
   const currentFyYear = Number(resolvePeriodToken("ytd", { fiscalYearStart, today }).from.slice(0, 4));
   const fyWindow = resolvePeriodToken(`fy-${currentFyYear}`, periodOpts);
   const nextAnnualReport = buildTaxTimeline({
-    profile: { vatPeriod: profile.vatPeriod, fiscalYearStart },
+    profile: { vatPeriod: profile.vatPeriod, fiscalYearStart, euTrade: profile.euTrade },
     today,
     horizonDays: ANNUAL_REPORT_HORIZON_DAYS,
     limit: ANNUAL_REPORT_SCAN_LIMIT,

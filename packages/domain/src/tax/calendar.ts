@@ -4,9 +4,10 @@ import { localTodayIso, resolvePeriodToken } from "../reports/period";
 
 /**
  * Swedish statutory tax calendar (advisory pivot Phase 5, plan finding 8 —
- * verified against Skatteverket 2026-07-04). Deadlines are encoded as DATA
- * with verbatim source strings; every date is computed from LOCAL calendar
- * parts (never `toISOString().slice`).
+ * verified against Skatteverket 2026-07-04; yearly-moms branch and INK2
+ * corrected/added 2026-08-20 — see docs/findings.md). Deadlines are encoded
+ * as DATA with verbatim source strings; every date is computed from LOCAL
+ * calendar parts (never `toISOString().slice`).
  *
  * Scope (documented limitations):
  * - SMB rules only (turnover ≤ 40 MSEK): monthly AND quarterly moms are due
@@ -20,8 +21,19 @@ import { localTodayIso, resolvePeriodToken } from "../reports/period";
  *   has no token in the unified period grammar (fiscal quarters only), so
  *   those deadline rows are date-only: no `periodToken`, `amountRef: null` —
  *   honest over approximate.
- * - Yearly moms (no EU trade): 26th of the second month after the fiscal-year
- *   end (27th when the due month is December).
+ * - Yearly moms branches on `profile.euTrade` (Skatteverket "När ska jag
+ *   deklarera moms"): `true` (EU-handel, or no inkomstdeklaration filed) →
+ *   the 26th of the second month after the fiscal-year end (27th when the
+ *   due month is December); `false` (no EU trade, an inkomstdeklaration is
+ *   filed — the common AB case) → the digital date is instead COUPLED to the
+ *   income declaration, keyed by the fiscal-year-end month bucket (see
+ *   `YEARLY_VAT_NON_EU_DUE_TABLE`). A prior version of this module applied
+ *   the 26th-rule unconditionally, which is wrong for any non-EU-trade AB —
+ *   see docs/findings.md 2026-08-20.
+ * - Income tax return (INK2, aktiebolag, Skatteverket "Deklarera åt ett
+ *   aktiebolag"): digital filing date keyed by the same fiscal-year-end month
+ *   bucket (see `INK2_DUE_TABLE`), weekend-shifted like every other
+ *   Skatteverket deadline below.
  * - Arbetsgivardeklaration + debiterad preliminärskatt (F-skatt): the 12th of
  *   every month (17th in January and August).
  * - Årsredovisning (AB): in by the end of the seventh month after the
@@ -36,13 +48,17 @@ export const TAX_DEADLINE_SOURCES: Record<string, string> = {
   "sv-vat-12":
     "Skatteverket: Momsdeklaration för företag med beskattningsunderlag om högst 40 miljoner kronor lämnas senast den 12:e i andra månaden efter redovisningsperiodens utgång (den 17:e i januari och augusti).",
   "sv-vat-yearly-26":
-    "Skatteverket: Momsdeklaration för helt beskattningsår utan EU-handel lämnas senast den 26:e i andra månaden efter beskattningsårets utgång (den 27:e om månaden är december).",
+    "Skatteverket: Momsdeklaration för helt beskattningsår med EU-handel (eller utan krav på inkomstdeklaration) lämnas senast den 26:e i andra månaden efter beskattningsårets utgång (den 27:e om månaden är december).",
+  "sv-vat-yearly-coupled":
+    'Skatteverket ("När ska jag deklarera moms"): för helårsmoms utan EU-handel knyts deklarationstidpunkten i stället till inkomstdeklarationen — digitalt senast den 17 augusti (bokslut september–december), den 12 december (bokslut januari–april, samma år), den 17 januari (bokslut maj–juni) eller den 12 april (bokslut juli–augusti), i förekommande fall flyttat till närmast följande vardag.',
   "sv-employer-12":
     "Skatteverket: Arbetsgivardeklaration lämnas senast den 12:e i månaden efter löneutbetalningen (den 17:e i januari och augusti).",
   "sv-fskatt-12":
     "Skatteverket: Debiterad preliminärskatt (F-skatt) ska vara bokförd på Skatteverkets konto senast den 12:e varje månad (den 17:e i januari och augusti).",
   "sv-arsredovisning-7m":
     "Årsredovisningslagen (1995:1554) 8 kap. 3 §: Årsredovisningen ska ha kommit in till Bolagsverket senast sju månader efter räkenskapsårets utgång.",
+  "sv-ink2-digital":
+    'Skatteverket ("Deklarera åt ett aktiebolag"): digital inkomstdeklaration 2 (INK2) lämnas senast den 1 augusti (bokslut september–december), den 1 december (bokslut januari–april, samma år), den 15 januari (bokslut maj–juni) eller den 1 april (bokslut juli–augusti), i förekommande fall flyttat till närmast följande vardag.',
 };
 
 /** Month is 1-based (1 = January). */
@@ -121,6 +137,48 @@ function twentySixthRuleDay(dueMonth: number): number {
   return dueMonth === 12 ? 27 : 26;
 }
 
+/**
+ * The fiscal-year-end month bucket Skatteverket uses for both the INK2
+ * filing date and the non-EU-trade yearly-moms date — both are "coupled to
+ * the income declaration": same four windows, different day-of-month tables.
+ */
+type FyeMonthBucket = "sepDec" | "janApr" | "majJun" | "julAug";
+
+function fyeMonthBucket(month: number): FyeMonthBucket {
+  if (month >= 9) return "sepDec"; // September–December
+  if (month <= 4) return "janApr"; // January–April
+  if (month <= 6) return "majJun"; // May–June
+  return "julAug"; // July–August
+}
+
+/** One bucketed due date: `yearOffset` 0 keeps the fiscal-year-end's calendar year, 1 moves to the next. */
+type BucketedDueRule = { yearOffset: 0 | 1; month: number; day: number };
+
+/** Digital INK2 filing dates by fiscal-year-end month bucket (Skatteverket "Deklarera åt ett aktiebolag"). */
+const INK2_DUE_TABLE: Record<FyeMonthBucket, BucketedDueRule> = {
+  sepDec: { yearOffset: 1, month: 8, day: 1 },
+  janApr: { yearOffset: 0, month: 12, day: 1 },
+  majJun: { yearOffset: 1, month: 1, day: 15 },
+  julAug: { yearOffset: 1, month: 4, day: 1 },
+};
+
+/** Digital non-EU-trade yearly-moms dates, coupled to the INK2 windows (Skatteverket "När ska jag deklarera moms"). */
+const YEARLY_VAT_NON_EU_DUE_TABLE: Record<FyeMonthBucket, BucketedDueRule> = {
+  sepDec: { yearOffset: 1, month: 8, day: 17 },
+  janApr: { yearOffset: 0, month: 12, day: 12 },
+  majJun: { yearOffset: 1, month: 1, day: 17 },
+  julAug: { yearOffset: 1, month: 4, day: 12 },
+};
+
+/** Resolve a fiscal-year-end-bucketed due date from one of the tables above, weekend-shifted. */
+function bucketedDueDate(
+  fyEnd: { year: number; month: number },
+  table: Record<FyeMonthBucket, BucketedDueRule>,
+): CalendarDate {
+  const rule = table[fyeMonthBucket(fyEnd.month)];
+  return shiftWeekendToMonday({ year: fyEnd.year + rule.yearOffset, month: rule.month, day: rule.day });
+}
+
 /** Skatteverket due date `monthsAfter` months after `periodEnd`'s month, weekend-shifted. */
 function skatteverketDueDate(
   periodEnd: { year: number; month: number },
@@ -196,7 +254,7 @@ export function currentVatPeriodToken(vatPeriod: VatPeriod, fiscalYearStart: str
 }
 
 export type BuildTaxTimelineInput = {
-  profile: Pick<WorkspaceProfile, "vatPeriod" | "fiscalYearStart">;
+  profile: Pick<WorkspaceProfile, "vatPeriod" | "fiscalYearStart" | "euTrade">;
   /** Injected local day (YYYY-MM-DD) for determinism; defaults to local today. */
   today?: string;
   /** Inclusive upcoming window in days. */
@@ -209,11 +267,11 @@ export type BuildTaxTimelineInput = {
  * Upcoming statutory deadlines for the workspace: next occurrences per kind
  * inside `[today, today + horizonDays]`, sorted by due date (then id for
  * determinism), bounded by `limit`. VAT deadlines carry the unified
- * `periodToken` + `amountRef: "box49"`; employer/F-skatt/annual-report are
- * date-only (`amountRef: null` — honest, plan finding 15).
+ * `periodToken` + `amountRef: "box49"`; employer/F-skatt/annual-report/
+ * income-tax-return are date-only (`amountRef: null` — honest, plan finding 15).
  */
 export function buildTaxTimeline(input: BuildTaxTimelineInput): TaxDeadline[] {
-  const { vatPeriod, fiscalYearStart } = input.profile;
+  const { vatPeriod, fiscalYearStart, euTrade } = input.profile;
   const todayDay = input.today ?? localTodayIso();
   const horizonDays = input.horizonDays ?? 120;
   const limit = input.limit ?? 8;
@@ -306,11 +364,13 @@ export function buildTaxTimeline(input: BuildTaxTimelineInput): TaxDeadline[] {
       include({
         id: `tax_vat_${fyToken}`,
         kind: "vat-return",
-        dueDate: formatDay(skatteverketDueDate(fyEnd, 2, twentySixthRuleDay)),
+        dueDate: euTrade
+          ? formatDay(skatteverketDueDate(fyEnd, 2, twentySixthRuleDay))
+          : formatDay(bucketedDueDate(fyEnd, YEARLY_VAT_NON_EU_DUE_TABLE)),
         periodLabel: `FY ${fyYear}`,
         periodToken: fyToken,
         amountRef: "box49",
-        sourceKey: "sv-vat-yearly-26",
+        sourceKey: euTrade ? "sv-vat-yearly-26" : "sv-vat-yearly-coupled",
       });
     }
 
@@ -330,6 +390,18 @@ export function buildTaxTimeline(input: BuildTaxTimelineInput): TaxDeadline[] {
       periodLabel: `FY ${fyYear}`,
       amountRef: null,
       sourceKey: "sv-arsredovisning-7m",
+    });
+
+    // Inkomstdeklaration 2 (INK2): unconditional for the AB this product
+    // serves — the digital filing date is keyed by the fiscal-year-end month
+    // bucket, weekend-shifted like the other Skatteverket deadlines.
+    include({
+      id: `tax_ink2_${fyToken}`,
+      kind: "income-tax-return",
+      dueDate: formatDay(bucketedDueDate(fyEnd, INK2_DUE_TABLE)),
+      periodLabel: `FY ${fyYear}`,
+      amountRef: null,
+      sourceKey: "sv-ink2-digital",
     });
   }
 
