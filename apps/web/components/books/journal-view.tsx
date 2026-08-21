@@ -54,7 +54,7 @@ export function JournalView() {
               type="button"
               data-testid="journal-supplier-filter-clear"
               aria-label={t("clearSupplierAria")}
-              className="rounded-full leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="rounded-full leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary print:hidden"
               onClick={() => void setSupplier(null)}
             >
               ×
@@ -106,7 +106,10 @@ export function JournalView() {
             </TableHeader>
             <TableBody>
               {entries.map((entry) => (
-                <TableRow key={`${entry.voucherId}-${entry.accountNumber}`}>
+                // `break-inside-avoid` is fragmentation-only (print / multicol),
+                // so screen rendering is byte-identical — on paper it keeps a
+                // printed grundbok from splitting one posting across two pages.
+                <TableRow key={`${entry.voucherId}-${entry.accountNumber}`} className="break-inside-avoid">
                   {/* Demo-seed bookings are dated "now"; masked so visual baselines stay date-stable. */}
                   <TableCell data-visual-mask>{entry.bookedAt.slice(0, 10)}</TableCell>
                   {/* VoucherLink renders the voucher's real number when a row resolves

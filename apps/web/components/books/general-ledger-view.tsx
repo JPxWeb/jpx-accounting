@@ -47,7 +47,7 @@ export function GeneralLedgerView() {
               type="button"
               data-testid="ledger-account-filter-clear"
               aria-label={t("clearAccountAria")}
-              className="rounded-full leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="rounded-full leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary print:hidden"
               onClick={() => void setAccount(null)}
             >
               ×
@@ -65,7 +65,16 @@ export function GeneralLedgerView() {
           const credit = entries.reduce((sum, e) => sum + e.credit, 0);
           const accountName = entries[0]?.accountName ?? "";
           return (
-            <details key={accountNumber} className="glass-panel rounded-xl p-4" open={accountNumber === account}>
+            // Print (Task E.6): `break-inside-avoid` keeps an account group off
+            // a page boundary, and `print-expand` (globals.css) reveals the
+            // postings of a group that is collapsed on screen — a printed
+            // huvudbok listing only account headers would be worthless. Both are
+            // fragmentation/print-only, so screen rendering is unchanged.
+            <details
+              key={accountNumber}
+              className="glass-panel print-expand break-inside-avoid rounded-xl p-4"
+              open={accountNumber === account}
+            >
               <summary className="flex cursor-pointer items-center justify-between gap-4">
                 <span>
                   <SectionLabel>{accountNumber}</SectionLabel>
