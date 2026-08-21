@@ -1,4 +1,5 @@
 import type { EvidencePacket, Voucher, WorkspaceSnapshot } from "@jpx-accounting/contracts";
+import { DRAFT_VOUCHER_NUMBER } from "@jpx-accounting/domain";
 
 /**
  * Pure voucher-chip resolution (KFR Phase D, Task 5), extracted from
@@ -23,7 +24,19 @@ export function buildVoucherLookup(snapshot?: Pick<WorkspaceSnapshot, "vouchers"
 export type VoucherLinkDisplay =
   | { kind: "link"; href: string; label: string; imported: boolean }
   | { kind: "imported-badge"; label: string }
+  | { kind: "draft"; href?: string }
   | { kind: "plain"; label: string };
+
+/**
+ * True when a voucher has not posted yet and therefore carries the shared
+ * draft sentinel instead of a real `V-<n>` (KFR E.1). The sentinel's literal
+ * value is Swedish ("Utkast") but `en` is the default UI locale, so every
+ * render site must translate it rather than print it — this predicate is the
+ * ONE place that recognises it.
+ */
+export function isDraftVoucherNumber(voucherNumber: string | undefined | null): boolean {
+  return voucherNumber === DRAFT_VOUCHER_NUMBER;
+}
 
 /**
  * Resolve how a voucher chip should render:
@@ -40,6 +53,11 @@ export type VoucherLinkDisplay =
  *     prefix;
  * (d) anything else (e.g. `voucher_seed_1`) → plain muted text.
  *
+ * An unposted voucher (KFR E.1 draft sentinel) short-circuits ahead of all of
+ * them: it has no number to print, so it renders as a translated Draft chip
+ * (still linked when its evidence resolves) rather than leaking the raw
+ * Swedish sentinel into an English UI.
+ *
  * NEVER a dead link — if the evidence join doesn't resolve, we render text.
  */
 export function resolveVoucherLinkDisplay(voucherId: string, lookup: VoucherLookup): VoucherLinkDisplay {
@@ -48,6 +66,9 @@ export function resolveVoucherLinkDisplay(voucherId: string, lookup: VoucherLook
   const evidenceId = packet?.evidenceIds[0];
   const imported = voucher?.origin === "import";
 
+  if (voucher && isDraftVoucherNumber(voucher.voucherNumber)) {
+    return evidenceId ? { kind: "draft", href: `/capture/evidence/${evidenceId}` } : { kind: "draft" };
+  }
   if (voucher && evidenceId) {
     return { kind: "link", href: `/capture/evidence/${evidenceId}`, label: voucher.voucherNumber, imported };
   }

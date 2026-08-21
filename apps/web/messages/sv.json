@@ -1,6 +1,7 @@
 {
   "common": {
     "skipToContent": "Hoppa till innehåll",
+    "draftVoucher": "Utkast",
     "theme": {
       "groupLabel": "Tema",
       "system": "Systemtema",

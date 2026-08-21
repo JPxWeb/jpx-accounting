@@ -1,6 +1,7 @@
 {
   "common": {
     "skipToContent": "Skip to content",
+    "draftVoucher": "Draft",
     "unavailable": {
       "eyebrow": "Unavailable"
     },

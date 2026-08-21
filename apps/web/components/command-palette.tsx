@@ -9,6 +9,7 @@ import type { WorkspaceSnapshot } from "@jpx-accounting/contracts";
 
 import { apiClient } from "../lib/client";
 import { useDialogFocusTrap } from "../lib/focus-trap";
+import { isDraftVoucherNumber } from "../lib/voucher-link-display";
 
 type Hit = {
   id: string;
@@ -22,6 +23,7 @@ const shortcutHint = isMacPlatform ? "⌘K" : "Ctrl K";
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useTranslations("palette");
+  const tCommon = useTranslations("common");
   const router = useRouter();
   const [query, setQuery] = useState("");
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -34,7 +36,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     staleTime: 30_000,
   });
 
-  const hits = useMemo(() => buildHits(data, query), [data, query]);
+  const draftLabel = tCommon("draftVoucher");
+  const hits = useMemo(() => buildHits(data, query, draftLabel), [data, query, draftLabel]);
 
   const handleClose = useCallback(() => {
     setQuery("");
@@ -120,7 +123,13 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   );
 }
 
-function buildHits(data: WorkspaceSnapshot | undefined, raw: string): Hit[] {
+/**
+ * `draftLabel` is the translated "Draft" chip text (KFR E.1): an unposted
+ * voucher carries the Swedish draft sentinel as its `voucherNumber`, which must
+ * never reach an English UI verbatim. Both the raw sentinel and the translated
+ * label stay searchable so either spelling finds the row.
+ */
+function buildHits(data: WorkspaceSnapshot | undefined, raw: string, draftLabel: string): Hit[] {
   if (!data) {
     return [];
   }
@@ -135,7 +144,8 @@ function buildHits(data: WorkspaceSnapshot | undefined, raw: string): Hit[] {
   for (const v of data.vouchers) {
     const supplier = v.voucherFields.supplierName ?? "";
     const gross = v.voucherFields.grossAmount;
-    const line = `${v.voucherNumber} ${supplier} ${gross ?? ""}`.trim();
+    const numberLabel = isDraftVoucherNumber(v.voucherNumber) ? draftLabel : v.voucherNumber;
+    const line = `${v.voucherNumber} ${numberLabel} ${supplier} ${gross ?? ""}`.trim();
     if (
       !q ||
       line.toLowerCase().includes(q) ||
@@ -145,7 +155,7 @@ function buildHits(data: WorkspaceSnapshot | undefined, raw: string): Hit[] {
       const review = reviewByVoucher.get(v.id);
       hits.push({
         id: `v-${v.id}`,
-        label: v.voucherNumber,
+        label: numberLabel,
         description: supplier || "Voucher",
         href: review ? `/today?review=${review.id}` : "/books?view=journal",
       });

@@ -12,6 +12,7 @@ import { apiClient } from "../../lib/client";
 import { getEvidenceBlob } from "../../lib/evidence-blob-cache";
 import { formatPercent } from "../../lib/presentation";
 import { invalidateLedgerDerived } from "../../lib/query-invalidation";
+import { isDraftVoucherNumber } from "../../lib/voucher-link-display";
 import { useWorkspaceProfile } from "../providers/workspace-profile-provider";
 import { Button } from "../ui/button";
 import { Money } from "../ui/money";
@@ -102,6 +103,7 @@ function EvidencePreview({ evidence }: { evidence: EvidenceObject }) {
 
 export function EvidenceDetailScreen() {
   const t = useTranslations("evidence");
+  const tCommon = useTranslations("common");
   const params = useParams<{ id: string }>();
   const { locale } = useWorkspaceProfile();
   const queryClient = useQueryClient();
@@ -221,7 +223,10 @@ export function EvidenceDetailScreen() {
         {voucher ? (
           <div className="mt-3 flex flex-wrap items-center gap-4">
             <span className="text-sm text-muted-foreground">
-              {t("links.voucher", { number: voucher.voucherNumber })}
+              {/* KFR E.1: an unposted voucher has no number — show the translated draft label. */}
+              {t("links.voucher", {
+                number: isDraftVoucherNumber(voucher.voucherNumber) ? tCommon("draftVoucher") : voucher.voucherNumber,
+              })}
             </span>
             {review ? (
               <Link

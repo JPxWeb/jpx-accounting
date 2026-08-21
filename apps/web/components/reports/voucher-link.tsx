@@ -20,6 +20,7 @@ export { buildVoucherLookup, type VoucherLookup };
 
 export function VoucherLink({ voucherId, lookup }: { voucherId: string; lookup: VoucherLookup }) {
   const t = useTranslations("reports.drill");
+  const tCommon = useTranslations("common");
   const display = resolveVoucherLinkDisplay(voucherId, lookup);
 
   if (display.kind === "link") {
@@ -42,6 +43,19 @@ export function VoucherLink({ voucherId, lookup }: { voucherId: string; lookup: 
         {link}
         <StatusBadge testId="drill-imported-badge" status={t("importedBadge")} variant="info" />
       </span>
+    );
+  }
+
+  // KFR E.1: an unposted voucher has no number yet. Its own visually distinct
+  // chip (warning, not info) — the badge text and variant are hardcoded per
+  // kind, so a shared branch could not have carried it.
+  if (display.kind === "draft") {
+    const badge = <StatusBadge testId="drill-draft-badge" status={tCommon("draftVoucher")} variant="warning" />;
+    if (!display.href) return badge;
+    return (
+      <Link data-testid="drill-voucher-link" href={display.href} className="inline-flex items-center">
+        {badge}
+      </Link>
     );
   }
 

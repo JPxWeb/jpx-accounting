@@ -3,7 +3,13 @@ import test from "node:test";
 
 import type { EvidencePacket, Voucher } from "@jpx-accounting/contracts";
 
-import { buildVoucherLookup, resolveVoucherLinkDisplay } from "../../apps/web/lib/voucher-link-display";
+import { DRAFT_VOUCHER_NUMBER } from "@jpx-accounting/domain";
+
+import {
+  buildVoucherLookup,
+  isDraftVoucherNumber,
+  resolveVoucherLinkDisplay,
+} from "../../apps/web/lib/voucher-link-display";
 
 function voucher(overrides: Partial<Voucher> & Pick<Voucher, "id" | "voucherNumber">): Voucher {
   return {
@@ -80,6 +86,45 @@ test("native voucher whose packet is missing from the snapshot: plain text with 
   });
   const display = resolveVoucherLinkDisplay("voucher_1", lookup);
   assert.deepEqual(display, { kind: "plain", label: "V-1001" });
+});
+
+test("unposted (draft) voucher with evidence: a linked Draft chip, never the raw Swedish sentinel", () => {
+  const lookup = buildVoucherLookup({
+    vouchers: [
+      voucher({
+        id: "voucher_1",
+        voucherNumber: DRAFT_VOUCHER_NUMBER,
+        status: "needs-review",
+        evidencePacketId: "packet_1",
+      }),
+    ],
+    packets: [packet({ id: "packet_1", evidenceIds: ["evidence_1"] })],
+  });
+  const display = resolveVoucherLinkDisplay("voucher_1", lookup);
+  assert.deepEqual(display, { kind: "draft", href: "/capture/evidence/evidence_1" });
+});
+
+test("unposted (draft) voucher with no evidence (manual entry): an unlinked Draft chip", () => {
+  const lookup = buildVoucherLookup({
+    vouchers: [
+      voucher({
+        id: "voucher_1",
+        voucherNumber: DRAFT_VOUCHER_NUMBER,
+        status: "needs-review",
+        origin: "manual",
+        evidencePacketId: null,
+      }),
+    ],
+    packets: [],
+  });
+  assert.deepEqual(resolveVoucherLinkDisplay("voucher_1", lookup), { kind: "draft" });
+});
+
+test("isDraftVoucherNumber only matches the shared sentinel", () => {
+  assert.equal(isDraftVoucherNumber(DRAFT_VOUCHER_NUMBER), true);
+  assert.equal(isDraftVoucherNumber("V-1001"), false);
+  assert.equal(isDraftVoucherNumber("A 90"), false);
+  assert.equal(isDraftVoucherNumber(undefined), false);
 });
 
 test("buildVoucherLookup tolerates an absent snapshot (loading state)", () => {
