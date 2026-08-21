@@ -522,6 +522,9 @@ button:active:not(:disabled) {
    * screen — a printed general ledger showing only account headers is useless.
    * `::details-content` is the only handle on a closed group's subtree, and the
    * UA rule it overrides also zeroes the block size, so both must be restored.
+   * Chrome 131+ only — Firefox/Safari have no closed-<details> content handle,
+   * so those printers still show headers-only until a JS beforeprint/afterprint
+   * fallback is added.
    */
   .print-expand::details-content {
     content-visibility: visible;
