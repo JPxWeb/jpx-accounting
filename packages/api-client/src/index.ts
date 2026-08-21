@@ -8,10 +8,14 @@ import type {
   AccountBalanceProjection,
   CompanySettings,
   ComplianceAlert,
+  EvidenceComposeInput,
   EvidenceContext,
   EvidenceCreateInput,
+  EvidencePacket,
   IntegritySummary,
   JournalEntryProjection,
+  ManualVoucherInput,
+  ManualVoucherResult,
   ReportPack,
   ReviewDecisionInput,
   ReviewTask,
@@ -28,8 +32,10 @@ import {
   complianceAlertSchema,
   evidenceContextSchema,
   evidenceCreateResultSchema,
+  evidencePacketSchema,
   integritySummarySchema,
   journalEntryProjectionSchema,
+  manualVoucherResultSchema,
   reportPackSchema,
   reviewTaskSchema,
   runtimeInfoSchema,
@@ -314,6 +320,48 @@ export class AccountingApiClient {
     if (this.fallbackStore) return this.fallbackStore.createEvidence(input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/evidence", evidenceCreateResultSchema, {
+      method: "POST",
+      json: input,
+    });
+  }
+
+  /**
+   * Compose evidence into a packet, optionally attaching it to a specific
+   * voucher (`POST /api/evidence/compose`) — this is what backs the
+   * evidence-detail "Koppla till verifikation" picker (KFR Phase E / Task 5).
+   * `targetVoucherId` overrides packet-history auto-detection entirely, which
+   * is the only way to attach to an imported voucher (those start with
+   * `evidencePacketId: null`, so there is no breadcrumb to follow). An id that
+   * names no voucher in scope throws `VoucherNotFoundError` offline and an
+   * `AccountingApiError` 404 (`voucher_not_found`) over the wire — in both
+   * cases before any mutation, so nothing dangles.
+   *
+   * No actorId (WS-C R5): the API derives attribution from the verified JWT
+   * subject and the demo store stamps its own sentinel.
+   */
+  async composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket> {
+    if (this.fallbackStore) return this.fallbackStore.composeEvidence(input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/evidence/compose", evidencePacketSchema, {
+      method: "POST",
+      json: input,
+    });
+  }
+
+  /**
+   * Manual N-line journal entry (`POST /api/vouchers/manual`, KFR Phase E /
+   * Task 4): creates a Voucher (`origin: "manual"`) + ReviewTask through the
+   * SAME review gate as captured evidence — nothing posts to the ledger until
+   * a human approves. Lines that don't balance to the öre are refused before
+   * any mutation (`AccountingApiError` 422 `invalid_manual_voucher` over the
+   * wire, `InvalidManualVoucherError` from the offline store).
+   *
+   * No actorId (WS-C R5) — attribution is server-derived.
+   */
+  async createManualVoucher(input: ManualVoucherInput): Promise<ManualVoucherResult> {
+    if (this.fallbackStore) return this.fallbackStore.createManualVoucher(input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/vouchers/manual", manualVoucherResultSchema, {
       method: "POST",
       json: input,
     });
