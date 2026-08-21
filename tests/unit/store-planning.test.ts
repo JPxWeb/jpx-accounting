@@ -739,6 +739,28 @@ describe("planManualVoucher", () => {
     assert.equal(plan.events.map((e) => e.eventType).join(","), "VoucherCreated,SuggestionGenerated");
   });
 
+  it("titles the review from the description, never from the draft voucher number", () => {
+    const plan = planManualVoucher(input, ctx);
+    // KFR E.4: `Review ${voucherNumber}` would render the literal
+    // "Review Utkast" in the queue, since a manual entry is a draft at intake.
+    assert.equal(plan.review.title, `Manual entry: ${input.description}`);
+    assert.ok(!plan.review.title.includes(DRAFT_VOUCHER_NUMBER));
+  });
+
+  it("keeps the description-derived title through approval (nothing to repair at posting time)", () => {
+    const plan = planManualVoucher(input, ctx);
+    const decided = planReviewDecision(
+      plan.review,
+      plan.voucher,
+      "approve",
+      { actorId: "user:x" },
+      { postedVoucherCount: 7 },
+    );
+    if (decided.kind !== "apply") throw new Error("unreachable");
+    assert.equal(decided.updatedVoucher.voucherNumber, "V-1008");
+    assert.equal(decided.updatedReview.title, `Manual entry: ${input.description}`);
+  });
+
   it("rejects lines that fail the exact-öre balance check", () => {
     const skewed = {
       ...input,

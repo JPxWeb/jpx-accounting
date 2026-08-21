@@ -336,7 +336,13 @@ export function planManualVoucher(
   const review: ReviewTask = {
     id: createId("review"),
     voucherId,
-    title: `Review ${voucher.voucherNumber}`,
+    // KFR E.4: titled from the entry the human typed, NOT from the voucher
+    // number. A manual voucher is a draft at intake, so `Review ${number}`
+    // would render the literal "Review Utkast" in the queue until approval.
+    // The description is the only human-meaningful handle a manual entry has
+    // (it carries no supplier name for `ReviewCard`'s heading to fall back to).
+    // English literal, matching every sibling planner string in this module.
+    title: `Manual entry: ${input.description}`,
     status: "needs-review",
     suggestedAction: "Approve the manual entry.",
     suggestion,
@@ -455,7 +461,9 @@ export function planReviewDecision(
   // The draft-derived review label must not survive onto a posted entry — an
   // archived review reading "Review Utkast" would be an audit-trail lie.
   // Guarded on the EXACT planner-generated draft label so a curated title (the
-  // demo seed's "Approve AI subscription posting") is never clobbered.
+  // demo seed's "Approve AI subscription posting") and a manual entry's
+  // description-derived title (`planManualVoucher`, KFR E.4 — never draft-
+  // derived, so nothing to repair) are never clobbered.
   const draftReviewTitle = `Review ${DRAFT_VOUCHER_NUMBER}`;
   const postedReviewTitle = lines && review.title === draftReviewTitle ? `Review ${postedVoucherNumber}` : review.title;
 
