@@ -249,6 +249,20 @@
       "extractSuccess": "Extraction refreshed.",
       "extractError": "Extraction failed. Try again.",
       "noVoucher": "No voucher is linked to this evidence yet."
+    },
+    "attach": {
+      "title": "Attach to voucher",
+      "description": "Search for another voucher and link this evidence to it instead. This evidence's own draft is discarded, so nothing is booked twice.",
+      "searchLabel": "Search vouchers",
+      "searchPlaceholder": "Search by voucher number, date, or description…",
+      "importedBadge": "Imported",
+      "empty": "No other vouchers to attach to.",
+      "attachButton": "Attach",
+      "attachAriaLabel": "Attach this evidence to {voucher}",
+      "attachSuccess": "Evidence attached to the voucher.",
+      "attachSuccessDraftDiscarded": "Evidence attached to the voucher. Its own draft was discarded, so nothing is booked twice.",
+      "attachDraftKept": "Evidence attached, but its own draft could not be discarded — reject it in the review queue so the cost isn't booked twice.",
+      "attachError": "Could not attach the evidence. Try again."
     }
   },
   "capture": {

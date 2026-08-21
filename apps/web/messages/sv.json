@@ -249,6 +249,20 @@
       "extractSuccess": "Extraktionen uppdaterad.",
       "extractError": "Extraktionen misslyckades. Försök igen.",
       "noVoucher": "Inget verifikat är kopplat till det här underlaget ännu."
+    },
+    "attach": {
+      "title": "Koppla till verifikation",
+      "description": "Sök upp en annan verifikation och koppla det här underlaget till den i stället. Underlagets eget utkast kasseras då, så ingenting bokförs två gånger.",
+      "searchLabel": "Sök verifikation",
+      "searchPlaceholder": "Sök på verifikatnummer, datum eller beskrivning…",
+      "importedBadge": "Importerad",
+      "empty": "Inga andra verifikat att koppla till.",
+      "attachButton": "Koppla",
+      "attachAriaLabel": "Koppla underlaget till {voucher}",
+      "attachSuccess": "Underlaget kopplades till verifikationen.",
+      "attachSuccessDraftDiscarded": "Underlaget kopplades till verifikationen. Dess eget utkast kasserades, så ingenting bokförs två gånger.",
+      "attachDraftKept": "Underlaget kopplades, men dess eget utkast kunde inte kasseras — avvisa det i granskningskön så att kostnaden inte bokförs två gånger.",
+      "attachError": "Kunde inte koppla underlaget. Försök igen."
     }
   },
   "capture": {

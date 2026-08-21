@@ -5,16 +5,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { useObjectUrl } from "../../hooks/use-object-url";
 import { apiClient } from "../../lib/client";
 import { getEvidenceBlob } from "../../lib/evidence-blob-cache";
+import {
+  attachCandidateDate,
+  attachCandidateLabel,
+  findOrphanedDraftReviewId,
+  selectAttachCandidates,
+} from "../../lib/evidence-attach";
 import { formatPercent } from "../../lib/presentation";
 import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { isDraftVoucherNumber } from "../../lib/voucher-link-display";
 import { useWorkspaceProfile } from "../providers/workspace-profile-provider";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { Money } from "../ui/money";
 import { ScreenHeader } from "../ui/screen-header";
 import { ScreenSkeleton } from "../ui/skeleton";
@@ -101,6 +109,158 @@ function EvidencePreview({ evidence }: { evidence: EvidenceObject }) {
   );
 }
 
+/**
+ * Audit note stamped on the auto-discarded draft. A stable English constant,
+ * not a translated string: it lands in an append-only event payload, where the
+ * reader's UI locale years from now is nobody's business (same call as
+ * `ADVISOR_APPROVAL_NOTES`).
+ */
+const DRAFT_DISCARD_NOTES = "Draft discarded — evidence attached to another voucher";
+
+/** Rendered candidate cap; the search box is how you reach past it. */
+const MAX_ATTACH_CANDIDATES = 20;
+
+const ATTACH_SEARCH_INPUT_ID = "evidence-attach-search-input";
+
+/**
+ * What actually happened, so the toast can say it. The attach is the operation;
+ * discarding this evidence's own orphaned draft is cleanup that either happened
+ * or didn't — never a reason to report the attach itself as failed.
+ */
+type AttachOutcome = "attached" | "draft-discarded" | "draft-kept";
+
+/**
+ * "Attach to voucher" (KFR Phase E / Task E.5) — relink this evidence to an
+ * EXISTING voucher, which for imported SIE history is the only way to give a
+ * migrated entry its receipt (imported vouchers start with
+ * `evidencePacketId: null`, so there is no packet breadcrumb to auto-detect).
+ *
+ * An inline section, not a modal: the whole flow is the browser's own tab order
+ * (search field → one Attach button per row), so it needs no focus trap.
+ *
+ * Candidates come from the workspace snapshot the journal view and command
+ * palette already read — no new endpoint for the picker.
+ */
+function AttachToVoucherPicker({
+  evidenceId,
+  currentVoucherId,
+  orphanedDraftReviewId,
+}: {
+  evidenceId: string;
+  currentVoucherId: string | undefined;
+  orphanedDraftReviewId: string | undefined;
+}) {
+  const t = useTranslations("evidence.attach");
+  const tCommon = useTranslations("common");
+  const queryClient = useQueryClient();
+  const [query, setQuery] = useState("");
+  const workspaceQuery = useQuery({ queryKey: ["workspace"], queryFn: () => apiClient.getSnapshot() });
+
+  const attach = useMutation({
+    mutationFn: async (targetVoucherId: string): Promise<AttachOutcome> => {
+      await apiClient.composeEvidence({ evidenceIds: [evidenceId], targetVoucherId });
+      if (!orphanedDraftReviewId) return "attached";
+      // Attach first, discard second — the reverse order would destroy a draft
+      // on the way to a failed attach. Reject appends no ledger lines and
+      // consumes no voucher number (KFR E.1 numbers at posting time only).
+      try {
+        await apiClient.rejectReview(orphanedDraftReviewId, { notes: DRAFT_DISCARD_NOTES });
+        return "draft-discarded";
+      } catch {
+        // The attach already landed; calling that a failure would be a lie.
+        // The toast names the leftover draft so the human can finish the job.
+        return "draft-kept";
+      }
+    },
+    onSuccess: (outcome) => {
+      invalidateLedgerDerived(queryClient);
+      if (outcome === "draft-kept") {
+        toast.warning(t("attachDraftKept"));
+        return;
+      }
+      toast.success(outcome === "draft-discarded" ? t("attachSuccessDraftDiscarded") : t("attachSuccess"));
+    },
+    onError: () => toast.error(t("attachError")),
+  });
+
+  const candidates = selectAttachCandidates(workspaceQuery.data?.vouchers ?? [], {
+    excludeVoucherId: currentVoucherId,
+    query,
+    limit: MAX_ATTACH_CANDIDATES,
+  });
+
+  return (
+    <section className="glass-panel rounded-xl p-5" data-testid="evidence-attach-picker">
+      <h2 className="text-lg font-semibold">{t("title")}</h2>
+      <p className="mt-2 text-sm text-muted-foreground">{t("description")}</p>
+      <label className="sr-only" htmlFor={ATTACH_SEARCH_INPUT_ID}>
+        {t("searchLabel")}
+      </label>
+      <Input
+        id={ATTACH_SEARCH_INPUT_ID}
+        data-testid="evidence-attach-search"
+        type="search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder={t("searchPlaceholder")}
+        className="mt-3 h-9"
+      />
+      {attach.isError ? (
+        // Inline AND toasted: a toast alone is a message you can miss, and the
+        // 404 here means the snapshot went stale under the picker.
+        <p
+          role="alert"
+          className="mt-3 rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger"
+          data-testid="evidence-attach-error"
+        >
+          {t("attachError")}
+        </p>
+      ) : null}
+      {workspaceQuery.isPending ? null : candidates.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground" data-testid="evidence-attach-empty">
+          {t("empty")}
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {candidates.map((voucher) => {
+            // KFR E.1: an unposted voucher carries the Swedish draft sentinel —
+            // translate it, never print it (`en` is the default UI locale).
+            const number = isDraftVoucherNumber(voucher.voucherNumber)
+              ? tCommon("draftVoucher")
+              : voucher.voucherNumber;
+            const label = attachCandidateLabel(voucher);
+            return (
+              <li
+                key={voucher.id}
+                className="glass-panel-soft flex items-center justify-between gap-3 rounded-lg px-3 py-2"
+              >
+                <span className="text-sm">
+                  <span className="text-mono font-semibold">{number}</span>
+                  {voucher.origin === "import" ? (
+                    <span className="ml-2 text-xs text-muted-foreground">{t("importedBadge")}</span>
+                  ) : null}
+                  {" · "}
+                  {/* Seeded/demo vouchers are dated off the clock — mask for stable baselines (Rule 27). */}
+                  <span data-visual-mask>{attachCandidateDate(voucher).slice(0, 10)}</span>
+                  {label ? ` · ${label}` : ""}
+                </span>
+                <Button
+                  size="sm"
+                  aria-label={t("attachAriaLabel", { voucher: label ? `${number} — ${label}` : number })}
+                  disabled={attach.isPending}
+                  onClick={() => attach.mutate(voucher.id)}
+                >
+                  {t("attachButton")}
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function EvidenceDetailScreen() {
   const t = useTranslations("evidence");
   const tCommon = useTranslations("common");
@@ -133,7 +293,7 @@ export function EvidenceDetailScreen() {
     return <UnavailableState testId="evidence-not-found" title={t("notFound.title")} message={t("notFound.message")} />;
   }
 
-  const { evidence, voucher, review } = context;
+  const { evidence, packet, voucher, review } = context;
   const extractedFields = voucher?.extractedFields ?? [];
   // Append-only: once the review is decided the voucher is history — re-extraction is locked.
   const reviewDecided = Boolean(review && review.status !== "needs-review");
@@ -250,6 +410,12 @@ export function EvidenceDetailScreen() {
         )}
         {reviewDecided ? <p className="mt-2 text-xs text-muted-foreground">{t("links.extractLocked")}</p> : null}
       </section>
+
+      <AttachToVoucherPicker
+        evidenceId={evidence.id}
+        currentVoucherId={voucher?.id}
+        orphanedDraftReviewId={findOrphanedDraftReviewId({ evidenceId: evidence.id, packet, voucher, review })}
+      />
     </div>
   );
 }

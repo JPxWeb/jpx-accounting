@@ -1,10 +1,10 @@
 import path from "node:path";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 import { installConsoleGuard } from "./console-guard";
-import { activateControl, resetApiState } from "./test-helpers";
+import { activateControl, apiBaseUrl, createEvidencePayload, resetApiState } from "./test-helpers";
 
 const receiptFixture = path.join(__dirname, "..", "fixtures", "receipt.jpg");
 const invoiceFixture = path.join(__dirname, "..", "fixtures", "invoice.pdf");
@@ -87,6 +87,137 @@ test("an evidence row drills through to detail with the hash visible", async ({ 
 // paste listener funnel through the same `captureFiles` pipeline the file-input specs
 // above already exercise end-to-end.
 test.skip("clipboard paste promotes a copied image", () => {});
+
+/** Narrow view of `GET /api/workspace` — only what the attach specs assert on. */
+type AttachSnapshot = {
+  reviews: { id: string; status: string }[];
+  vouchers: { id: string; voucherNumber: string }[];
+  reports: { journal: unknown[] };
+};
+
+async function readSnapshot(request: APIRequestContext): Promise<AttachSnapshot> {
+  const response = await request.get(`${apiBaseUrl}/api/workspace`);
+  expect(response.ok()).toBeTruthy();
+  return (await response.json()) as AttachSnapshot;
+}
+
+/** Open the SEEDED evidence ("OpenAI subscription invoice", still needs-review) from the archive. */
+async function openSeededEvidence(page: Page, isMobile: boolean) {
+  await page.goto("/capture");
+  await page.getByTestId("evidence-search").fill("OpenAI subscription invoice");
+  await activateControl(page.getByTestId("evidence-open").first(), isMobile);
+  await expect(page.getByTestId("evidence-attach-picker")).toBeVisible();
+}
+
+test("evidence detail can attach a receipt to a different, already-posted voucher", async ({
+  page,
+  isMobile,
+  request,
+}) => {
+  // Create a SECOND evidence+voucher+review directly (setup, not the flow under
+  // test) and approve it so it carries a real V-number — attaching to an
+  // "Utkast" target would be visually ambiguous (two drafts both render Draft).
+  const created = await request.post(`${apiBaseUrl}/api/evidence`, {
+    data: { ...createEvidencePayload, title: "Second receipt for attach test" },
+  });
+  expect(created.ok()).toBeTruthy();
+  const { review } = (await created.json()) as { review: { id: string } };
+  const approved = await request.post(`${apiBaseUrl}/api/reviews/${review.id}/approve`, { data: {} });
+  expect(approved.ok()).toBeTruthy();
+  const before = await readSnapshot(request);
+
+  await openSeededEvidence(page, isMobile);
+
+  const picker = page.getByTestId("evidence-attach-picker");
+  // The evidence's own draft voucher is never a target for its own evidence.
+  await expect(picker.getByRole("listitem")).toHaveCount(1);
+  await expect(picker).not.toContainText("OpenAI subscription invoice");
+
+  await picker.getByTestId("evidence-attach-search").fill("Second receipt");
+  const candidate = picker.getByRole("listitem").first();
+  await expect(candidate).toContainText("V-1001");
+  await activateControl(candidate.getByRole("button"), isMobile);
+
+  // The evidence now hangs off the posted voucher, not its own draft.
+  await expect(page.getByTestId("evidence-review-links")).toContainText("V-1001");
+
+  // Controller addition: the evidence's OWN auto-created draft must not linger
+  // as a double-booking trap. It is rejected — which posts no lines and burns
+  // no V-number, since KFR E.1 mints numbers at posting time only.
+  const after = await readSnapshot(request);
+  expect(after.reviews.filter((r) => r.status === "needs-review")).toHaveLength(0);
+  expect(after.vouchers.filter((v) => v.voucherNumber.startsWith("V-"))).toHaveLength(1);
+  // Neither the relink nor the discard posts anything: the journal is unmoved.
+  expect(after.reports.journal).toEqual(before.reports.journal);
+});
+
+test("evidence detail can attach a receipt to imported SIE history", async ({ page, isMobile, request }) => {
+  // The migration story this picker exists for: an imported voucher starts with
+  // `evidencePacketId: null`, so `targetVoucherId` is the ONLY way to give it
+  // its receipt — there is no packet breadcrumb to auto-detect from.
+  const sieFixture = [
+    "#FLAGGA 0",
+    "#SIETYP 4",
+    '#KONTO 6110 "Kontorsmateriel"',
+    '#VER A 77 20260315 "SIE import via Playwright"',
+    "{",
+    "#TRANS 6110 {} 100.00",
+    "#TRANS 1930 {} -100.00",
+    "}",
+  ].join("\n");
+  const imported = await request.post(`${apiBaseUrl}/api/imports/sie`, {
+    headers: { "content-type": "text/plain" },
+    data: sieFixture,
+  });
+  expect(imported.ok()).toBeTruthy();
+
+  await openSeededEvidence(page, isMobile);
+  const picker = page.getByTestId("evidence-attach-picker");
+  await picker.getByTestId("evidence-attach-search").fill("A 77");
+  const candidate = picker.getByRole("listitem").first();
+  // Migrated history keeps its real "<series> <number>" and says where it came from.
+  await expect(candidate).toContainText("A 77");
+  await expect(candidate).toContainText("Imported");
+  await activateControl(candidate.getByRole("button"), isMobile);
+
+  // An imported voucher carries no review, so the links section shows the
+  // number alone — and the receipt's own draft is still discarded.
+  await expect(page.getByTestId("evidence-review-links")).toContainText("A 77");
+  const snapshot = await readSnapshot(request);
+  expect(snapshot.reviews.filter((r) => r.status === "needs-review")).toHaveLength(0);
+});
+
+test("a failed attach surfaces an error and leaves the evidence's own draft intact", async ({
+  page,
+  isMobile,
+  request,
+}) => {
+  // A second (undecided) evidence just so the picker has a candidate to click.
+  const created = await request.post(`${apiBaseUrl}/api/evidence`, {
+    data: { ...createEvidencePayload, title: "Stale attach target" },
+  });
+  expect(created.ok()).toBeTruthy();
+
+  // Simulate the only real 404 path: a snapshot that has gone stale under the
+  // picker (the target voucher no longer exists server-side).
+  await page.route("**/api-proxy/api/evidence/compose", (route) =>
+    route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ code: "voucher_not_found", message: "Voucher not found", requestId: "test" }),
+    }),
+  );
+
+  await openSeededEvidence(page, isMobile);
+  const picker = page.getByTestId("evidence-attach-picker");
+  await picker.getByTestId("evidence-attach-search").fill("Stale attach target");
+  await activateControl(picker.getByRole("listitem").first().getByRole("button"), isMobile);
+
+  await expect(page.getByTestId("evidence-attach-error")).toBeVisible();
+  // Attach-then-discard ordering: a failed attach must never destroy the draft.
+  const snapshot = await readSnapshot(request);
+  expect(snapshot.reviews.filter((r) => r.status === "needs-review")).toHaveLength(2);
+});
 
 test("capture has no serious accessibility violations", async ({ page }) => {
   await page.goto("/capture");
