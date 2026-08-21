@@ -1,8 +1,8 @@
 ---
 title: Momsdeklaration — redovisningsperioder och deklarationstidpunkter
-source: Skatteverket — Deklarationstidpunkter för moms; skatteförfarandelagen 26 kap.
+source: Skatteverket — "När ska jag deklarera moms"; Deklarationstidpunkter för moms; skatteförfarandelagen 26 kap.
 url: https://www.skatteverket.se/foretag/moms/deklareraochbetalamoms
-effective: 2026-07-04
+effective: 2026-08-20
 ---
 
 ## Redovisningsperioder
@@ -21,10 +21,16 @@ effective: 2026-07-04
 
 ## Helårsmoms (redovisningsperiod ett beskattningsår)
 
-- Utan EU-handel: deklarationen ska vara inne senast den 26:e i andra månaden efter beskattningsårets utgång; när tidpunkten infaller i december gäller i stället den 27:e.
-- Räkenskapsår som slutar den 31 december → deklaration och betalning senast den 26 februari året därpå.
-- Räkenskapsår som slutar den 31 oktober → deklaration senast den 27 december samma år.
-- Företag som bedriver EU-handel har en tidigare deklarationstidpunkt än företag utan EU-handel.
+- Vilken av två tidtabeller som gäller avgörs av om företaget bedriver EU-handel (unionsvaruhandel/unionstjänstehandel) eller inte behöver lämna någon inkomstdeklaration.
+- Med EU-handel, eller inget krav på inkomstdeklaration: deklarationen ska vara inne senast den 26:e i andra månaden efter beskattningsårets utgång; när tidpunkten infaller i december gäller i stället den 27:e.
+- Räkenskapsår som slutar den 31 december (EU-handel) → deklaration och betalning senast den 26 februari året därpå.
+- Räkenskapsår som slutar den 31 oktober (EU-handel) → deklaration senast den 27 december samma år.
+- Utan EU-handel, för bolag som lämnar inkomstdeklaration (t.ex. de flesta aktiebolag): momsdeklarationen knyts i stället till inkomstdeklarationens tidpunkt och styrs av räkenskapsårets slutmånad, inte av 26:e-regeln. Digital inlämning:
+  - Räkenskapsår september–december → senast den 17 augusti året därpå.
+  - Räkenskapsår januari–april → senast den 12 december samma år.
+  - Räkenskapsår maj–juni → senast den 17 januari året därpå.
+  - Räkenskapsår juli–augusti → senast den 12 april året därpå.
+- Pappersinlämning i samma fyra fönster har tidigare datum: 12 juli, 12 november, 27 december respektive 12 mars.
 
 ## Större företag (beskattningsunderlag över 40 miljoner kronor)
 
