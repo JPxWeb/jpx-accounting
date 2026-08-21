@@ -1,4 +1,4 @@
-import { classifyAccountNumber, getCoaTemplate } from "../coa/registry";
+import { classifyAccountNumber, findCoaAccount, getCoaTemplate } from "../coa/registry";
 import type { LedgerLine } from "../projections";
 import type { VatRateId, VatRegime } from "./regime";
 import { swedishVatRegime } from "./regime";
@@ -26,9 +26,9 @@ function toWholeKronor(amount: number): number {
  *  - 05 sales base: a revenue-class line counts when its own `vatCode` is
  *    rated, OR — the account-classification fix for imported
  *    vatCode:"NA" sales (readiness gap G5, Task C4) — when its VOUCHER
- *    carries a domestic output-VAT account line (2610/2620/2630).
- *    Accounts owned by an `account-revenue` box (39/40) are excluded from
- *    that second arm; see the inline note at the accumulator.
+ *    carries a domestic output-VAT account line (2610/2620/2630) AND the
+ *    account is a rated one in the CoA (or absent from it); see the
+ *    inline note at the accumulator.
  *  - 10–12 domestic output VAT: account-keyed off `outputByRate`, its own
  *    map.
  *  - 30–32 reverse-charge output VAT: account-keyed off
@@ -122,18 +122,27 @@ export function buildVatReturnBoxes(
     // Box 05 (G5 fix): rated by the line's OWN vatCode, OR inferred from a
     // matching domestic output-VAT account line in the SAME voucher.
     //
-    // DEVIATION from the C4 brief: the inferred arm additionally EXCLUDES
-    // `account-revenue` accounts (3308/3305 — boxes 39/40). Their turnover
-    // is by definition not momspliktig försäljning, so a mixed imported
-    // voucher (domestic sale + EU service sale + one 2610 line) would
-    // otherwise declare the 39/40 leg twice and break the C3 invariant
-    // "the account-based arm must not bleed into box 05". The vatCode arm
-    // is deliberately left untouched: an explicit rated vatCode on the
-    // line is an operator statement, and "the line's own vatCode wins" is
-    // already pinned behavior.
+    // DEVIATION from the C4 brief: the inferred arm counts a revenue line
+    // only when the CHART OF ACCOUNTS says that account is a rated one
+    // (`defaultVatCode` VAT25/12/6), or when the account is unknown to the
+    // CoA at all — conservative, so an off-template imported account keeps
+    // today's behavior. Voucher-level evidence (one 2610 line) says the
+    // VOUCHER contains a rated sale, never that EVERY revenue leg in it is
+    // one: a mixed imported voucher pairing 3001 (rated) with 3004
+    // "Försäljning inom Sverige, momsfri" or 3740 (öresutjämning) would
+    // otherwise declare the VAT-free legs as momspliktig försäljning. This
+    // subsumes the earlier hardcoded 3308/3305 exclusion — both are VAT0 in
+    // the CoA — and keeps the C3 invariant "the account-based arm (boxes
+    // 39/40) must not bleed into box 05". The vatCode arm is deliberately
+    // left untouched: an explicit rated vatCode on the line is an operator
+    // statement, and "the line's own vatCode wins" is already pinned
+    // behavior.
+    const inferredRatedRevenue = () => {
+      const account = findCoaAccount(coa, line.accountNumber);
+      return account === undefined || RATED_VAT_CODES.has(account.defaultVatCode);
+    };
     const ratedForSalesBase =
-      RATED_VAT_CODES.has(line.vatCode) ||
-      (voucherHasDomesticOutputVat.has(line.voucherId) && !accountRevenueAccounts.has(line.accountNumber));
+      RATED_VAT_CODES.has(line.vatCode) || (voucherHasDomesticOutputVat.has(line.voucherId) && inferredRatedRevenue());
     if (ratedForSalesBase && classifyAccountNumber(line.accountNumber, coa) === "revenue") {
       salesBase += line.credit - line.debit;
     }

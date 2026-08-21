@@ -333,6 +333,39 @@ test("box 05 also counts an imported (vatCode NA) domestic sale via its voucher'
   assert.equal(amount("10"), 250, "output VAT was already account-based and is unaffected by this fix");
 });
 
+test("the account-inferred box-05 arm excludes VAT-free domestic revenue inside a mixed voucher (I-8)", () => {
+  // One imported voucher bundling a rated domestic sale (3001, CoA default
+  // VAT25) with a momsfri domestic sale (3004 "Försäljning inom Sverige,
+  // momsfri", CoA default VAT0) and an öresutjämning line (3740, "NA") —
+  // every line forced to vatCode "NA" by `planSieImport`. The single 2610 line
+  // is evidence that the VOUCHER contains a rated sale, never that EVERY
+  // revenue leg in it is one, so only the 3001 leg is momspliktig.
+  assert.equal(findCoaAccount(bas2026, "3004")?.defaultVatCode, "VAT0", "precondition: 3004 is momsfri in the CoA");
+  assert.equal(findCoaAccount(bas2026, "3740")?.defaultVatCode, "NA", "precondition: 3740 is VAT-neutral in the CoA");
+  const boxes = buildVatReturnBoxes([
+    line({ voucherId: "sie_C_1", accountNumber: "3001", debit: 0, credit: 800, vatCode: "NA", deductible: false }),
+    line({ voucherId: "sie_C_1", accountNumber: "3004", debit: 0, credit: 500, vatCode: "NA", deductible: false }),
+    line({ voucherId: "sie_C_1", accountNumber: "3740", debit: 0, credit: 0.4, vatCode: "NA", deductible: false }),
+    line({ voucherId: "sie_C_1", accountNumber: "2610", debit: 0, credit: 200, vatCode: "NA", deductible: false }),
+    line({ voucherId: "sie_C_1", accountNumber: "1930", debit: 1500.4, credit: 0, vatCode: "NA", deductible: false }),
+  ]);
+  const amount = (box: string) => boxes.find((entry) => entry.box === box)?.amount;
+  assert.equal(amount("05"), 800, "only the rated leg — the momsfri sale and the rounding line stay out");
+  assert.equal(amount("10"), 200);
+});
+
+test("an off-template revenue account in an inferred voucher still counts (conservative fallback, I-8)", () => {
+  // 3011 is not in the CoA, so nothing can say it is VAT-free: the inferred
+  // arm keeps counting it, exactly as it did before the narrowing.
+  assert.equal(findCoaAccount(bas2026, "3011"), undefined, "precondition: 3011 must be off-template");
+  const boxes = buildVatReturnBoxes([
+    line({ voucherId: "sie_D_1", accountNumber: "3011", debit: 0, credit: 400, vatCode: "NA", deductible: false }),
+    line({ voucherId: "sie_D_1", accountNumber: "2610", debit: 0, credit: 100, vatCode: "NA", deductible: false }),
+    line({ voucherId: "sie_D_1", accountNumber: "1930", debit: 500, credit: 0, vatCode: "NA", deductible: false }),
+  ]);
+  assert.equal(boxes.find((entry) => entry.box === "05")?.amount, 400);
+});
+
 test("the account-inferred box-05 arm excludes account-revenue (39/40) accounts inside a mixed voucher", () => {
   // One imported voucher bundling a domestic rated sale (3001) with an EU
   // B2B service sale (3308), every line at vatCode "NA". The 2610 line is
