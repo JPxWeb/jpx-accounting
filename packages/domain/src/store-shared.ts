@@ -62,6 +62,23 @@ export function validEditVatCodes(regime: VatRegime): ReadonlySet<string> {
 }
 
 /**
+ * Domestic RATED VAT codes of a regime (Sweden: VAT25/VAT12/VAT6) — the rate
+ * vocabulary minus the zero-rated entry. Regime-driven, never a hardcoded list,
+ * so a future regime's rate table stays the single source.
+ *
+ * Used by the revenue-shape guard below: the 2-line revenue posting models
+ * VAT-FREE sales only, so pairing it with a rated code would silently drop the
+ * output VAT (see `buildPostingLines`' revenue branch).
+ */
+export function ratedDomesticVatCodes(regime: VatRegime): ReadonlySet<string> {
+  return new Set(
+    Object.entries(regime.rates)
+      .filter(([, rate]) => rate.percent > 0)
+      .map(([id]) => id),
+  );
+}
+
+/**
  * Validate a decision-time edit and derive the effective posting inputs.
  * Append-only by construction: the returned `effectiveVoucher` /
  * `effectiveSuggestion` are decision-time derivations for `buildPostingLines`
@@ -94,10 +111,35 @@ export function resolveReviewDecisionEdit(
   if (!registryAccount) {
     issues.push(`Edited accountNumber (${edited.accountNumber}) does not exist in the ${coa.id} chart of accounts.`);
   }
-  const vatVocabulary = validEditVatCodes(getVatRegime(coa.country));
+  const regime = getVatRegime(coa.country);
+  const vatVocabulary = validEditVatCodes(regime);
   if (!vatVocabulary.has(edited.vatCode)) {
     issues.push(
       `Edited vatCode (${edited.vatCode}) is not in the VAT regime vocabulary (${[...vatVocabulary].join(", ")}).`,
+    );
+  }
+  // I-1 (fix wave): the 2-line revenue shape credits the full amount to the
+  // revenue account and emits NO output-VAT line — it models VAT-FREE sales
+  // (export/EU B2B) only. Combining it with a rated domestic code (VAT25/12/6)
+  // would post a sale with zero utgående moms AND declare its gross in box 05:
+  // a silently wrong momsdeklaration. Domestic rated sales stay YAGNI (see the
+  // revenue branch of `buildPostingLines`); the combination is refused here —
+  // 422, before any mutation — rather than left reachable and silent. The same
+  // guard is what makes `simulateApprovals`' VAT delta honest, since no
+  // approvable edit can produce output VAT the preview does not model.
+  const editedShape = resolvePostingShape(
+    {
+      accountNumber: edited.accountNumber,
+      vatCode: edited.vatCode,
+      ...(suggestion?.direction !== undefined ? { direction: suggestion.direction } : {}),
+    },
+    coa,
+  );
+  if (editedShape === "revenue" && ratedDomesticVatCodes(regime).has(edited.vatCode)) {
+    issues.push(
+      `Edited vatCode (${edited.vatCode}) cannot be combined with revenue account ${edited.accountNumber}: ` +
+        `the revenue posting shape carries no output-VAT line, so a rated domestic sale would be booked without moms. ` +
+        `Use VAT0/NA for VAT-free sales (export, EU B2B), or book the sale on a cost/expense account.`,
     );
   }
   // KFR D3: an edited settlement account (2899 utlägg, 1630 skattekonto, …
@@ -321,8 +363,16 @@ export function deriveBookedAt(
   return decisionDay;
 }
 
-/** KFR D3 shape selection: RC25 wins outright; otherwise direction (explicit or inferred from account class) picks expense vs. revenue. */
-function resolvePostingShape(suggestion: AccountingSuggestion, coa: CoaTemplate): "expense" | "rc25" | "revenue" {
+/**
+ * KFR D3 shape selection: RC25 wins outright; otherwise direction (explicit or
+ * inferred from account class) picks expense vs. revenue. Takes only the three
+ * fields it reads so `resolveReviewDecisionEdit` can ask the SAME question of a
+ * not-yet-built edited suggestion (the I-1 guard) instead of re-deriving it.
+ */
+export function resolvePostingShape(
+  suggestion: Pick<AccountingSuggestion, "accountNumber" | "vatCode" | "direction">,
+  coa: CoaTemplate = defaultCoaTemplate,
+): "expense" | "rc25" | "revenue" {
   if (suggestion.vatCode === "RC25") return "rc25";
   const direction =
     suggestion.direction ??
@@ -367,6 +417,12 @@ export function buildPostingLines(
     // D3(c): VAT0/export revenue — debit settlement, credit revenue, no VAT
     // line. Output VAT on domestic sales is not modelled here (KFR Phase B
     // scope: the revenue shape exists for the VAT-free export case).
+    //
+    // That YAGNI is safe ONLY because `resolveReviewDecisionEdit` refuses a
+    // revenue shape carrying a rated domestic code (VAT25/12/6) with a 422
+    // (I-1): the missing output-VAT line is therefore an unreachable state,
+    // not a silent one. If domestic rated sales are ever built here, drop that
+    // guard in the same change — never before.
     const amount = fields.grossAmount ?? fields.netAmount ?? 0;
     const lines: LedgerLine[] = [
       {

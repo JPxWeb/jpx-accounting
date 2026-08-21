@@ -349,6 +349,59 @@ test("buildPostingLines infers revenue direction from the resolved account class
   assert.equal(lines.length, 2, "classifyAccountNumber(3305) = revenue even without an explicit direction");
 });
 
+test("resolveReviewDecisionEdit refuses a revenue account combined with a rated domestic VAT code (I-1)", () => {
+  const voucher = voucherFixture({ grossAmount: 1250, netAmount: 1000, vatAmount: 250 });
+  // 3001 "Försäljning inom Sverige 25 %" + VAT25 is two clicks away in the
+  // review-edit sheet. The revenue shape has no output-VAT line, so this used
+  // to post 1250 kr of sales with 0 kr utgående moms and declare the GROSS in
+  // box 05 — a silently wrong momsdeklaration. It must now be a visible 422.
+  for (const vatCode of ["VAT25", "VAT12", "VAT6"]) {
+    assert.throws(
+      () => resolveReviewDecisionEdit(voucher, suggestionFixture(), { accountNumber: "3001", vatCode }),
+      (error: unknown) => {
+        assert.ok(error instanceof InvalidReviewEditError);
+        assert.equal(error.issues.length, 1);
+        assert.match(error.issues[0]!, /revenue posting shape carries no output-VAT line/);
+        return true;
+      },
+      `${vatCode} on a revenue account must be refused`,
+    );
+  }
+
+  // An explicit revenue direction on a non-revenue account picks the same
+  // (VAT-less) shape, so the guard follows the SHAPE, not just the account.
+  assert.throws(
+    () =>
+      resolveReviewDecisionEdit(
+        voucher,
+        { ...suggestionFixture(), direction: "revenue" },
+        { accountNumber: "6540", vatCode: "VAT25" },
+      ),
+    (error: unknown) => error instanceof InvalidReviewEditError,
+  );
+
+  // VAT-free revenue (the shape's actual purpose) still resolves and posts.
+  for (const vatCode of ["VAT0", "NA"]) {
+    const resolved = resolveReviewDecisionEdit(voucher, suggestionFixture(), { accountNumber: "3305", vatCode });
+    assert.equal(resolved.effectiveSuggestion?.vatCode, vatCode);
+    const lines = buildPostingLines(
+      resolved.effectiveVoucher,
+      resolved.effectiveSuggestion!,
+      "approve",
+      "2026-05-01T00:00:00.000Z",
+    );
+    assert.equal(lines.length, 2, `${vatCode} revenue still posts the 2-line shape`);
+    assert.equal(postingImbalanceOre(lines), 0);
+  }
+
+  // A rated code on a COST account is untouched by the guard (expense shape).
+  const expense = resolveReviewDecisionEdit(voucher, suggestionFixture(), {
+    accountNumber: "6110",
+    vatCode: "VAT25",
+  });
+  assert.equal(expense.effectiveSuggestion?.accountNumber, "6110");
+});
+
 test("resolveReviewDecisionEdit rejects an unknown settlementAccountNumber and threads a valid one through", () => {
   const voucher = voucherFixture({ grossAmount: 500, netAmount: 400, vatAmount: 100 });
   assert.throws(
