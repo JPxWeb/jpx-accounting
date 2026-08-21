@@ -422,6 +422,7 @@
       "diff": "Differens",
       "imbalanceHint": "Summa debet måste vara lika med summa kredit innan verifikationen kan skickas.",
       "rowError": "Varje rad behöver ett giltigt konto och exakt ett belopp (debet eller kredit).",
+      "oreError": "Belopp anges med högst två decimaler (hela ören). Avrunda beloppet innan du skickar verifikationen.",
       "submit": "Skicka till granskning",
       "submitting": "Skickar…",
       "createSuccess": "Verifikationen skapades och väntar på granskning.",

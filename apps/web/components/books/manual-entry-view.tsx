@@ -6,6 +6,7 @@ import { vatCodeSchema } from "@jpx-accounting/contracts";
 import {
   defaultCoaTemplate,
   findCoaAccount,
+  isOreExact,
   isValidCalendarDay,
   localTodayIso,
   postingImbalanceOre,
@@ -63,6 +64,19 @@ function isRowValid(accountNumber: string, debit: number, credit: number): boole
 }
 
 /**
+ * Öre precision per row, via the SAME domain predicate `planManualVoucher`
+ * gates on. Balance alone is not enough: `postingImbalanceOre` compares ROUNDED
+ * integer öre, so 100.006 debit against 100.006 credit renders a 0,00
+ * difference and would sail through to a 422 that says the entry does not
+ * balance — while the user is looking at a zero difference (fix wave I-3).
+ * `<input type="number" step="0.01">` does not block extra decimals: the form
+ * is `noValidate` and nothing calls `checkValidity()`.
+ */
+function isRowOreExact(debit: number, credit: number): boolean {
+  return isOreExact(debit) && isOreExact(credit);
+}
+
+/**
  * Manual N-line journal entry (KFR Phase E / Task E.4), rendered inline at
  * `/books?view=manual-entry` — not a modal, so the whole form is reachable by
  * keyboard without a focus trap and the browser's own tab order is the flow.
@@ -108,6 +122,7 @@ export function ManualEntryView() {
   );
   const balanced = imbalanceOre === 0;
   const rowsValid = parsedRows.every((row) => isRowValid(row.accountNumber, row.debitNumber, row.creditNumber));
+  const rowsOreExact = parsedRows.every((row) => isRowOreExact(row.debitNumber, row.creditNumber));
   const descriptionValid = description.trim().length > 0 && description.trim().length <= MAX_DESCRIPTION;
   // A future booking date is refused by `planManualVoucher` (422), because
   // `deriveBookedAt` would otherwise discard it at approval and silently book
@@ -123,7 +138,12 @@ export function ManualEntryView() {
    */
   function describeError(error: unknown): string {
     if (!(error instanceof AccountingApiError)) return t("createError");
-    if (error.status === 422) return t("createErrorImbalance");
+    // 422 covers three distinct refusals (sub-öre line, öre imbalance, bad
+    // booking date) and the server's own message names WHICH — mapping them
+    // all to the fixed "does not balance" string contradicted the form's own
+    // 0,00 difference badge (I-3). Fall back to that string only when the
+    // server sent no detail.
+    if (error.status === 422) return error.detail || t("createErrorImbalance");
     if (error.status === 400) return t("createErrorValidation");
     return error.detail || t("createError");
   }
@@ -145,20 +165,24 @@ export function ManualEntryView() {
   });
 
   const submitDisabled =
-    !balanced || !rowsValid || !descriptionValid || !bookedAtValid || createManualVoucher.isPending;
+    !balanced || !rowsValid || !rowsOreExact || !descriptionValid || !bookedAtValid || createManualVoucher.isPending;
 
   // One "why can't I submit?" line, balance first — the primary gate. The
   // imbalance case renders in the totals panel next to the numbers it is about.
+  // Öre precision ranks right after the row shape: a sub-öre amount reads as
+  // balanced, so without its own line the form would look submittable.
   const blockedHint = balanced
     ? !rowsValid
       ? t("rowError")
-      : !descriptionValid
-        ? t("descriptionRequired")
-        : !isValidCalendarDay(bookedAt)
-          ? t("bookedAtInvalid")
-          : !bookedAtValid
-            ? t("bookedAtFuture")
-            : null
+      : !rowsOreExact
+        ? t("oreError")
+        : !descriptionValid
+          ? t("descriptionRequired")
+          : !isValidCalendarDay(bookedAt)
+            ? t("bookedAtInvalid")
+            : !bookedAtValid
+              ? t("bookedAtFuture")
+              : null
     : null;
 
   const submitError = createManualVoucher.error ? describeError(createManualVoucher.error) : null;
@@ -353,6 +377,18 @@ export function ManualEntryView() {
                   </div>
                   {!amountValid && (row.debit !== "" || row.credit !== "") ? (
                     <p className="mt-2 text-xs text-danger">{t("rowError")}</p>
+                  ) : null}
+                  {/* I-3: sub-öre precision, called out on the row that carries
+                      it — the totals panel cannot show it (integer öre round it
+                      away) and the server's 422 arrives only after submit. */}
+                  {!isRowOreExact(debitNumber, creditNumber) ? (
+                    <p
+                      role="status"
+                      data-testid={`manual-entry-ore-error-${index}`}
+                      className="mt-2 text-xs text-danger"
+                    >
+                      {t("oreError")}
+                    </p>
                   ) : null}
                 </div>
               );

@@ -157,6 +157,31 @@ test("manual entry blocks submission while debits and credits do not balance", a
   await expect(page.getByTestId("manual-entry-submit")).toBeEnabled();
 });
 
+test("manual entry blocks a sub-öre amount that reads as balanced (I-3 regression)", async ({ page }) => {
+  await page.goto("/books?view=manual-entry");
+  await expect(page.getByTestId("manual-entry-view")).toBeVisible();
+
+  await page.getByTestId("manual-entry-description").fill("Sub-öre post");
+  await page.getByTestId("manual-entry-account-0").fill("6110");
+  await page.getByTestId("manual-entry-debit-0").fill("100.006");
+  await page.getByTestId("manual-entry-account-1").fill("1930");
+  await page.getByTestId("manual-entry-credit-1").fill("100.006");
+
+  // The difference badge compares ROUNDED integer öre, so it reads zero — this
+  // is exactly the state where the form used to enable submit and the server
+  // then answered 422 "does not balance to the öre", contradicting the badge.
+  await expect(page.getByTestId("manual-entry-diff")).toHaveText(/0,00/);
+  await expect(page.getByTestId("manual-entry-ore-error-0")).toBeVisible();
+  await expect(page.getByTestId("manual-entry-ore-error-1")).toBeVisible();
+  await expect(page.getByTestId("manual-entry-submit")).toBeDisabled();
+
+  // Rounding to whole öre clears the row hints and unblocks submission.
+  await page.getByTestId("manual-entry-debit-0").fill("100.01");
+  await page.getByTestId("manual-entry-credit-1").fill("100.01");
+  await expect(page.getByTestId("manual-entry-ore-error-0")).toHaveCount(0);
+  await expect(page.getByTestId("manual-entry-submit")).toBeEnabled();
+});
+
 test("manual entry supports adding and removing rows, with a floor of two", async ({ page, isMobile }) => {
   await page.goto("/books?view=manual-entry");
   await expect(page.getByTestId("manual-entry-row-0")).toBeVisible();

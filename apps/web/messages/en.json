@@ -422,6 +422,7 @@
       "diff": "Difference",
       "imbalanceHint": "Total debit must equal total credit before the voucher can be submitted.",
       "rowError": "Every row needs a valid account and exactly one amount (debit or credit).",
+      "oreError": "Amounts take at most two decimals (whole öre). Round the amount before submitting the voucher.",
       "submit": "Send to review",
       "submitting": "Sending…",
       "createSuccess": "The voucher was created and is waiting for review.",
