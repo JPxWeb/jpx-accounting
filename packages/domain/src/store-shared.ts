@@ -205,6 +205,16 @@ export const DEMO_ACTOR_ID = "user_founder";
 export const DRAFT_VOUCHER_NUMBER = "Utkast";
 
 /**
+ * Decision note stamped on an intake draft that `composeEvidence` discards
+ * because its evidence was attached to another voucher (KFR Phase E / E.5).
+ * Shared by both stores so the `ReviewRejected` payload is byte-identical
+ * (Rule 11), and a fixed English literal because it lands in an append-only
+ * event whose future reader's UI locale is unknowable — same call as the
+ * advisor's approval note.
+ */
+export const INTAKE_DRAFT_DISCARD_NOTES = "Draft discarded — evidence attached to another voucher";
+
+/**
  * True for voucher/review statuses that correspond to an actual PostedToLedger
  * event, i.e. the ones that consumed a `V-<n>` from the workspace sequence.
  *

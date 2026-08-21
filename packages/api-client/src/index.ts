@@ -9,9 +9,9 @@ import type {
   CompanySettings,
   ComplianceAlert,
   EvidenceComposeInput,
+  EvidenceComposeResult,
   EvidenceContext,
   EvidenceCreateInput,
-  EvidencePacket,
   IntegritySummary,
   JournalEntryProjection,
   ManualVoucherInput,
@@ -31,8 +31,8 @@ import {
   accountBalanceProjectionSchema,
   complianceAlertSchema,
   evidenceContextSchema,
+  evidenceComposeResultSchema,
   evidenceCreateResultSchema,
-  evidencePacketSchema,
   integritySummarySchema,
   journalEntryProjectionSchema,
   manualVoucherResultSchema,
@@ -338,11 +338,16 @@ export class AccountingApiClient {
    *
    * No actorId (WS-C R5): the API derives attribution from the verified JWT
    * subject and the demo store stamps its own sentinel.
+   *
+   * Returns `{ packet, discardedReviewIds }` (KFR Phase E / E.5): an explicit
+   * attach also rejects, in the same store transaction, the intake drafts it
+   * orphaned — the caller reads `discardedReviewIds` to report what happened
+   * rather than issuing a second reject call of its own.
    */
-  async composeEvidence(input: EvidenceComposeInput): Promise<EvidencePacket> {
+  async composeEvidence(input: EvidenceComposeInput): Promise<EvidenceComposeResult> {
     if (this.fallbackStore) return this.fallbackStore.composeEvidence(input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    return requestJson(this.authorizedFetch, this.baseUrl, "/api/evidence/compose", evidencePacketSchema, {
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/evidence/compose", evidenceComposeResultSchema, {
       method: "POST",
       json: input,
     });

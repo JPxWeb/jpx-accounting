@@ -181,6 +181,10 @@ export function planEvidenceCreate(
     createdAt,
     createdBy: actorId,
     origin: "capture",
+    // KFR E.5: the fact that THIS evidence is why this voucher exists. Recorded
+    // now because it is not recoverable later — `evidencePacketId` follows every
+    // re-attach, so a re-attached receipt leaves no trace of its intake draft.
+    intakeEvidenceId: evidenceId,
   };
 
   const ruleHits = evaluateVoucherRules(voucher);
@@ -344,6 +348,9 @@ export function planManualVoucher(
     createdAt,
     createdBy: actorId,
     origin: "manual",
+    // No spawning evidence — a manual entry stands on its own, so an attach
+    // that later moves evidence off it must never discard its review (E.5).
+    intakeEvidenceId: null,
   };
 
   const suggestion: AccountingSuggestion = {

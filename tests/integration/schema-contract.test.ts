@@ -84,6 +84,8 @@ test(
       "vouchers-tenant-pk",
       "evidence-dedupe-index",
       "manual-vouchers-schema",
+      "draft-voucher-number-index",
+      "voucher-intake-evidence",
     ]) {
       assert.ok(names.has(required), `capability assertion "${required}" must run`);
     }

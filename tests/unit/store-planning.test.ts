@@ -128,6 +128,7 @@ describe("planReviewDecision", () => {
       createdAt: "2026-03-15T12:00:00.000Z",
       createdBy: "user:x",
       origin: "capture",
+      intakeEvidenceId: null,
     } as Voucher;
     const suggestion = {
       id: "sug1",
@@ -192,6 +193,7 @@ describe("planReviewDecision", () => {
       createdAt: "2026-03-15T12:00:00.000Z",
       createdBy: "user:x",
       origin: "capture",
+      intakeEvidenceId: null,
     } as Voucher;
     const review = {
       id: "r1",
@@ -219,6 +221,7 @@ describe("planReviewDecision", () => {
       createdAt: "2026-03-15T12:00:00.000Z",
       createdBy: "user:x",
       origin: "capture",
+      intakeEvidenceId: null,
     } as Voucher;
     const review = {
       id: "r1",
@@ -269,6 +272,7 @@ describe("planReviewDecision", () => {
       createdAt: "2026-03-15T12:00:00.000Z",
       createdBy: "user:x",
       origin: "capture",
+      intakeEvidenceId: null,
     } as Voucher;
     const suggestion = {
       id: "sug1",
@@ -347,6 +351,7 @@ describe("planReviewDecision", () => {
       createdAt: "2026-03-15T12:00:00.000Z",
       createdBy: "user:x",
       origin: "capture",
+      intakeEvidenceId: null,
     } as Voucher;
     const review = {
       id: "r1",
@@ -404,6 +409,7 @@ describe("planReviewDecision", () => {
       createdAt: "2026-03-15T12:00:00.000Z",
       createdBy: "user:x",
       origin: "capture",
+      intakeEvidenceId: null,
     } as Voucher;
     const review = {
       id: "r1",
@@ -455,6 +461,7 @@ describe("planReviewDecision", () => {
       createdAt: "2026-03-20T09:00:00.000Z",
       createdBy: "user:x",
       origin: "manual",
+      intakeEvidenceId: null,
     } as Voucher;
     const review = {
       id: "r1",
@@ -512,6 +519,7 @@ describe("planReviewDecision", () => {
       createdAt: "2026-03-20T09:00:00.000Z",
       createdBy: "user:x",
       origin: "manual",
+      intakeEvidenceId: null,
     } as Voucher;
     const review = {
       id: "r1",
@@ -570,6 +578,7 @@ describe("planReviewDecision", () => {
       createdAt: "2026-03-20T09:00:00.000Z",
       createdBy: "user:x",
       origin: "manual",
+      intakeEvidenceId: null,
     } as Voucher;
     const review = {
       id: "r1",
@@ -625,6 +634,7 @@ describe("planReviewDecision", () => {
       createdAt: "2026-03-20T09:00:00.000Z",
       createdBy: "user:x",
       origin: "manual",
+      intakeEvidenceId: null,
     } as Voucher;
     // A tampered/corrupted stored suggestion must not slip an unbalanced entry
     // into the ledger — buildManualPostingLines re-asserts the invariant.
@@ -669,6 +679,7 @@ describe("planReviewDecision", () => {
       createdAt: "2026-03-20T09:00:00.000Z",
       createdBy: "user:x",
       origin: "manual",
+      intakeEvidenceId: null,
     } as Voucher;
     // Constructed directly at the planner level, bypassing planManualVoucher's
     // 422 gate — the shape any OTHER future writer (edit endpoint, migration,

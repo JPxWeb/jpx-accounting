@@ -261,7 +261,6 @@
       "attachAriaLabel": "Attach this evidence to {voucher}",
       "attachSuccess": "Evidence attached to the voucher.",
       "attachSuccessDraftDiscarded": "Evidence attached to the voucher. Its own draft was discarded, so nothing is booked twice.",
-      "attachDraftKept": "Evidence attached, but its own draft could not be discarded — reject it in the review queue so the cost isn't booked twice.",
       "attachError": "Could not attach the evidence. Try again."
     }
   },

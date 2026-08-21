@@ -75,7 +75,12 @@ test("POST /api/evidence/compose attaches the packet to an imported voucher name
     body: JSON.stringify({ evidenceIds: [receipt.id], targetVoucherId: "sie_A_42" }),
   });
   assert.equal(composeResponse.status, 201);
-  const packet = (await composeResponse.json()) as { id: string };
+  // KFR E.5 widened the response to `{ packet, discardedReviewIds }` — the
+  // attach also rejects the receipt's own now-orphaned intake draft, and says
+  // which review it rejected.
+  const composed = (await composeResponse.json()) as { packet: { id: string }; discardedReviewIds: string[] };
+  const packet = composed.packet;
+  assert.equal(composed.discardedReviewIds.length, 1, "the receipt's own intake draft is discarded with the attach");
 
   // The evidence detail read API must surface the attachment.
   const detailResponse = await app.request(`http://localhost/api/evidence/${receipt.id}`);
@@ -112,6 +117,13 @@ test("POST /api/evidence/compose 404s with voucher_not_found for an unknown targ
   // The rejected attach changed nothing: the receipt still resolves to its own
   // native voucher, and no orphan packet was left behind.
   const detailResponse = await app.request(`http://localhost/api/evidence/${receipt.id}`);
-  const detail = (await detailResponse.json()) as { packet?: { id: string }; voucher?: { id: string } };
+  const detail = (await detailResponse.json()) as {
+    packet?: { id: string };
+    voucher?: { id: string };
+    review?: { status: string };
+  };
   assert.equal(detail.voucher?.id, receipt.voucherId);
+  // E.5: the discard is part of the attach transaction, so a refused attach
+  // must leave the receipt's own draft pending — never discard on the way out.
+  assert.equal(detail.review?.status, "needs-review");
 });

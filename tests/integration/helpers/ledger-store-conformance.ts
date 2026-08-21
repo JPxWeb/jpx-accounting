@@ -173,8 +173,8 @@ export async function scenarioComposeAndExtraction(h: ConformanceHarness): Promi
   const refreshedGross = Number.parseFloat(refresh.fields.find((field) => field.key === "grossAmount")!.value);
 
   return {
-    composedItemCount: composed.evidenceIds.length,
-    voucherRelinked: context?.voucher?.evidencePacketId === composed.id,
+    composedItemCount: composed.packet.evidenceIds.length,
+    voucherRelinked: context?.voucher?.evidencePacketId === composed.packet.id,
     refreshGross: normalizeNumber(updated?.voucher?.voucherFields.grossAmount),
     expectedGross: normalizeNumber(refreshedGross),
     extractionEventDelta: eventsAfterRefresh - eventsBeforeRefresh,
@@ -331,7 +331,10 @@ export async function scenarioComposeEvidenceTargetVoucher(h: ConformanceHarness
     targetVoucherId: importedVoucherId,
   });
   const eventsAfterCompose = await h.store.getEvents();
-  const relink = eventsAfterCompose.at(-1);
+  // KFR E.5: the attach now appends TWO events — the relink, then the rejection
+  // of the receipt's own orphaned intake draft — so the relink is no longer the
+  // chain tail. Locate it by type instead of by position.
+  const relink = eventsAfterCompose.findLast((event) => event.eventType === "EvidenceRelinked");
   const context = await h.store.getEvidenceContext(receipt.evidence.id);
   const snapshotAfterAttach = await h.store.getSnapshot();
   const nativeVoucherAfterAttach = snapshotAfterAttach.vouchers.find((voucher) => voucher.id === nativeVoucherId);
@@ -343,11 +346,21 @@ export async function scenarioComposeEvidenceTargetVoucher(h: ConformanceHarness
   );
   assert.equal(
     context?.voucher?.evidencePacketId,
-    composed.id,
+    composed.packet.id,
     `${h.label}: the imported voucher must point at the freshly composed packet`,
   );
   assert.equal(relink?.eventType, "EvidenceRelinked", `${h.label}: the attach must append an EvidenceRelinked event`);
   assert.equal(relink?.aggregateId, importedVoucherId, `${h.label}: relink event aggregate is the target voucher`);
+  assert.deepEqual(
+    composed.discardedReviewIds,
+    [receipt.review.id],
+    `${h.label}: attaching the receipt elsewhere discards its own intake draft (E.5)`,
+  );
+  assert.equal(
+    eventsAfterCompose.at(-1)?.eventType,
+    "ReviewRejected",
+    `${h.label}: the discard is chain-visible, appended after the relink`,
+  );
 
   // --- unknown target: throws, and changes nothing -------------------------
   const eventsBeforeMiss = (await h.store.getEvents()).length;
@@ -376,7 +389,7 @@ export async function scenarioComposeEvidenceTargetVoucher(h: ConformanceHarness
     targetVoucherId: nativeVoucherId,
   });
   const eventsAfterSecond = await h.store.getEvents();
-  const secondRelink = eventsAfterSecond.at(-1);
+  const secondRelink = eventsAfterSecond.findLast((event) => event.eventType === "EvidenceRelinked");
   const contextAfterSecond = await h.store.getEvidenceContext(receipt.evidence.id);
   const feed = await h.store.getReviewFeed();
   const snapshotFinal = await h.store.getSnapshot();
@@ -392,20 +405,25 @@ export async function scenarioComposeEvidenceTargetVoucher(h: ConformanceHarness
     feed.some((review) => review.voucherId === nativeVoucherId),
     `${h.label}: re-pointing a native voucher's packet must not disturb its review linkage`,
   );
+  assert.deepEqual(
+    secondCompose.discardedReviewIds,
+    [],
+    `${h.label}: attaching back onto the receipt's OWN intake voucher discards nothing`,
+  );
 
   return {
     // Generated packet ids differ per store — compare linkage, not identity.
     attachedVoucherId: context?.voucher?.id ?? null,
     attachedVoucherOrigin: context?.voucher?.origin ?? null,
     attachedVoucherStatus: context?.voucher?.status ?? null,
-    voucherLinkMatchesComposedPacket: context?.voucher?.evidencePacketId === composed.id,
-    contextPacketIsComposedPacket: context?.packet?.id === composed.id,
+    voucherLinkMatchesComposedPacket: context?.voucher?.evidencePacketId === composed.packet.id,
+    contextPacketIsComposedPacket: context?.packet?.id === composed.packet.id,
     composeEventDelta: eventsAfterCompose.length - eventsBeforeCompose,
     relinkEventType: relink?.eventType ?? null,
     relinkAggregateId: relink?.aggregateId ?? null,
     relinkActorId: relink?.actorId ?? null,
     relinkVoucherIdInPayload: relink?.payload.voucherId ?? null,
-    relinkPacketIsComposedPacket: relink?.payload.packetId === composed.id,
+    relinkPacketIsComposedPacket: relink?.payload.packetId === composed.packet.id,
     // First-ever attach to an imported voucher: no previous packet to record.
     relinkPreviousPacketId: relink?.payload.previousPacketId === undefined ? "none" : "present",
     // The receipt's own native voucher is untouched by an attach elsewhere.
@@ -414,16 +432,16 @@ export async function scenarioComposeEvidenceTargetVoucher(h: ConformanceHarness
     notFoundError,
     notFoundEventDelta: eventsAfterMiss - eventsBeforeMiss,
     notFoundLeavesAttachIntact:
-      contextAfterMiss?.voucher?.id === importedVoucherId && contextAfterMiss?.packet?.id === composed.id,
+      contextAfterMiss?.voucher?.id === importedVoucherId && contextAfterMiss?.packet?.id === composed.packet.id,
 
     secondAttachVoucherId: contextAfterSecond?.voucher?.id === nativeVoucherId ? "native" : "other",
     secondRelinkAggregateIsNative: secondRelink?.aggregateId === nativeVoucherId,
     secondRelinkPreviousPacketId: secondRelink?.payload.previousPacketId === nativePacketId ? "native" : "other",
-    nativeVoucherLinkedToSecondPacket: nativeVoucherFinal?.evidencePacketId === secondCompose.id,
+    nativeVoucherLinkedToSecondPacket: nativeVoucherFinal?.evidencePacketId === secondCompose.packet.id,
     // Re-pointing a native voucher's packet never rewrites its review linkage.
     nativeReviewStillLinked: feed.some((review) => review.voucherId === nativeVoucherId),
     // The imported voucher keeps the packet it was attached to.
-    importedVoucherKeepsFirstPacket: importedVoucherFinal?.evidencePacketId === composed.id,
+    importedVoucherKeepsFirstPacket: importedVoucherFinal?.evidencePacketId === composed.packet.id,
     importedVoucherInReviewFeed: feed.some((review) => review.voucherId === importedVoucherId),
   };
 }
@@ -867,6 +885,125 @@ export async function scenarioPostingTimeNumbering(h: ConformanceHarness): Promi
   };
 }
 
+/**
+ * KFR Phase E / E.5 — the orphaned intake draft is discarded WITH the attach,
+ * and nothing else is.
+ *
+ * The regression this exists for: the first implementation decided "is this the
+ * receipt's own draft?" from the live packet graph, whose conditions are all
+ * satisfied by ANY voucher the receipt is currently attached to. Two ordinary
+ * sequential attaches were therefore enough to reject a bystander's review.
+ * `intakeEvidenceId` is a recorded creation-time fact, so a second attach can
+ * only ever find the draft the FIRST one already discarded.
+ *
+ * Pinned: (1) attaching to an approved target discards the receipt's own draft
+ * and posts nothing; (2) a SECOND attach discards nothing and leaves an
+ * unrelated pending review untouched; (3) attaching a DIFFERENT receipt to a
+ * native voucher that has its own pending review never touches that review.
+ */
+export async function scenarioAttachDiscardsOnlyItsOwnIntakeDraft(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const create = async (label: string) =>
+    h.store.createEvidence({
+      actorId: h.actorId,
+      title: `Attach discard ${label}`,
+      originalFilename: `attach-discard-${label}.jpg`,
+      mimeType: "image/jpeg",
+      modalities: ["camera"],
+      extractedText: `Attach discard ${label} body`,
+    });
+
+  // A: the receipt that gets moved around. B: an innocent bystander whose own
+  // draft is still pending. T: an approved (posted) attach target.
+  const a = await create("a");
+  const b = await create("b");
+  const target = await create("target");
+  await h.store.applyReviewDecision(target.review.id, "approve", { actorId: h.actorId });
+
+  const statusOf = async (reviewId: string) =>
+    (await h.store.getReviewFeed()).find((review) => review.id === reviewId)?.status ?? null;
+  const journalLength = async () => (await h.store.getReports()).journal.length;
+
+  const journalBefore = await journalLength();
+
+  // --- attach 1: A → the approved target ----------------------------------
+  const first = await h.store.composeEvidence({
+    actorId: h.actorId,
+    evidenceIds: [a.evidence.id],
+    targetVoucherId: target.voucher.id,
+  });
+  const aStatusAfterFirst = await statusOf(a.review.id);
+  const bStatusAfterFirst = await statusOf(b.review.id);
+  const journalAfterFirst = await journalLength();
+
+  assert.deepEqual(
+    first.discardedReviewIds,
+    [a.review.id],
+    `${h.label}: the first attach discards exactly A's own intake draft`,
+  );
+  assert.equal(aStatusAfterFirst, "rejected", `${h.label}: A's orphaned draft is rejected, not left pending`);
+  assert.equal(bStatusAfterFirst, "needs-review", `${h.label}: B's unrelated draft is untouched`);
+  assert.equal(journalAfterFirst, journalBefore, `${h.label}: a discard posts no journal lines`);
+
+  // --- attach 2: A → B's still-pending draft (the CRITICAL regression) -----
+  // A's own draft is already rejected, so this attach must discard NOTHING —
+  // and above all must not reject B's review, which belongs to B's receipt.
+  const second = await h.store.composeEvidence({
+    actorId: h.actorId,
+    evidenceIds: [a.evidence.id],
+    targetVoucherId: b.voucher.id,
+  });
+  const bStatusAfterSecond = await statusOf(b.review.id);
+
+  assert.deepEqual(second.discardedReviewIds, [], `${h.label}: a second attach has no intake draft left to discard`);
+  assert.equal(
+    bStatusAfterSecond,
+    "needs-review",
+    `${h.label}: attaching A onto B's draft must NEVER reject B's review`,
+  );
+
+  // --- attach 3: a DIFFERENT receipt onto a voucher with a pending review --
+  const c = await create("c");
+  const third = await h.store.composeEvidence({
+    actorId: h.actorId,
+    evidenceIds: [c.evidence.id],
+    targetVoucherId: b.voucher.id,
+  });
+  const bStatusAfterThird = await statusOf(b.review.id);
+
+  assert.deepEqual(third.discardedReviewIds, [c.review.id], `${h.label}: C's own draft is the only one discarded`);
+  assert.equal(bStatusAfterThird, "needs-review", `${h.label}: the attach target's own review still survives`);
+
+  // Voucher numbers: a discard never posts, so it never burns one.
+  const snapshot = await h.store.getSnapshot();
+  const numbered = snapshot.vouchers.filter((voucher) => voucher.voucherNumber.startsWith("V-"));
+  assert.deepEqual(
+    numbered.map((voucher) => voucher.voucherNumber),
+    ["V-1001"],
+    `${h.label}: only the approved target ever took a number`,
+  );
+
+  return {
+    firstDiscardIsOwnDraft: first.discardedReviewIds.length === 1 && first.discardedReviewIds[0] === a.review.id,
+    aStatusAfterFirst,
+    bStatusAfterFirst,
+    secondDiscardCount: second.discardedReviewIds.length,
+    bStatusAfterSecond,
+    thirdDiscardIsOwnDraft: third.discardedReviewIds.length === 1 && third.discardedReviewIds[0] === c.review.id,
+    bStatusAfterThird,
+    journalUnchangedByDiscards: (await journalLength()) === journalBefore,
+    numberedVoucherCount: numbered.length,
+    // The recorded intake fact itself must agree across stores.
+    intakeEvidenceIdOfOwnDraft:
+      snapshot.vouchers.find((voucher) => voucher.id === a.voucher.id)?.intakeEvidenceId === a.evidence.id
+        ? "own-evidence"
+        : "other",
+    intakeEvidenceIdOfApprovedTarget:
+      snapshot.vouchers.find((voucher) => voucher.id === target.voucher.id)?.intakeEvidenceId === target.evidence.id
+        ? "own-evidence"
+        : "other",
+  };
+}
+
 export const CONFORMANCE_SCENARIOS: Array<{
   name: string;
   run: (h: ConformanceHarness) => Promise<ConformanceOutcome>;
@@ -877,6 +1014,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "review ordering + suggestions", run: scenarioReviewOrderingAndSuggestion },
   { name: "SIE import idempotency + reports window", run: scenarioSieImportIdempotency },
   { name: "compose evidence with explicit targetVoucherId", run: scenarioComposeEvidenceTargetVoucher },
+  { name: "attach discards only its own intake draft", run: scenarioAttachDiscardsOnlyItsOwnIntakeDraft },
   { name: "settings / alerts / simulation / unknown ids", run: scenarioSettingsAlertsSimulation },
   { name: "append-only event vocabulary", run: scenarioAppendOnlyEventVocabulary },
   { name: "review reject", run: scenarioReviewReject },

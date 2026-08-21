@@ -140,10 +140,14 @@ test("evidence detail can attach a receipt to a different, already-posted vouche
 
   // The evidence now hangs off the posted voucher, not its own draft.
   await expect(page.getByTestId("evidence-review-links")).toContainText("V-1001");
+  // The outcome stays readable after the toast times out — and focus is parked
+  // on the section heading, since the row that was activated is gone.
+  await expect(page.getByTestId("evidence-attach-status")).toBeVisible();
+  await expect(picker.getByRole("heading", { name: "Attach to voucher" })).toBeFocused();
 
-  // Controller addition: the evidence's OWN auto-created draft must not linger
-  // as a double-booking trap. It is rejected — which posts no lines and burns
-  // no V-number, since KFR E.1 mints numbers at posting time only.
+  // The evidence's OWN auto-created draft must not linger as a double-booking
+  // trap. The server rejects it inside the attach transaction — which posts no
+  // lines and burns no V-number, since E.1 mints numbers at posting time only.
   const after = await readSnapshot(request);
   expect(after.reviews.filter((r) => r.status === "needs-review")).toHaveLength(0);
   expect(after.vouchers.filter((v) => v.voucherNumber.startsWith("V-"))).toHaveLength(1);
@@ -185,6 +189,43 @@ test("evidence detail can attach a receipt to imported SIE history", async ({ pa
   await expect(page.getByTestId("evidence-review-links")).toContainText("A 77");
   const snapshot = await readSnapshot(request);
   expect(snapshot.reviews.filter((r) => r.status === "needs-review")).toHaveLength(0);
+});
+
+test("a second attach never discards the target voucher's own pending review", async ({ page, isMobile, request }) => {
+  // Regression (E.5 review, CRITICAL): deciding "is this the receipt's own
+  // intake draft?" from the live packet graph is true of ANY voucher the
+  // receipt is currently attached to, so two ordinary sequential attaches
+  // rejected a bystander's review. Two attaches, one bystander, asserted here
+  // through the real UI on both projects.
+  const bystander = await request.post(`${apiBaseUrl}/api/evidence`, {
+    data: { ...createEvidencePayload, title: "Bystander draft keeps its review" },
+  });
+  expect(bystander.ok()).toBeTruthy();
+  const second = await request.post(`${apiBaseUrl}/api/evidence`, {
+    data: { ...createEvidencePayload, title: "Second attach target" },
+  });
+  expect(second.ok()).toBeTruthy();
+
+  const attachTo = async (search: string) => {
+    await openSeededEvidence(page, isMobile);
+    const picker = page.getByTestId("evidence-attach-picker");
+    await picker.getByTestId("evidence-attach-search").fill(search);
+    await activateControl(picker.getByRole("listitem").first().getByRole("button"), isMobile);
+    await expect(page.getByTestId("evidence-attach-status")).toBeVisible();
+  };
+
+  // Attach 1 → the bystander's draft. The SEEDED receipt's own draft is the one
+  // that gets discarded; the bystander's review is not the seeded receipt's.
+  await attachTo("Bystander draft");
+  // Attach 2 → somewhere else. Nothing is left to discard.
+  await attachTo("Second attach target");
+
+  const snapshot = await readSnapshot(request);
+  const pending = snapshot.reviews.filter((r) => r.status === "needs-review");
+  // Both attach targets keep their own pending reviews; only the seeded
+  // receipt's own intake draft was discarded, and only once.
+  expect(pending).toHaveLength(2);
+  expect(snapshot.reviews.filter((r) => r.status === "rejected")).toHaveLength(1);
 });
 
 test("a failed attach surfaces an error and leaves the evidence's own draft intact", async ({

@@ -149,6 +149,19 @@ export const voucherSchema = z.object({
   createdBy: z.string(),
   /** capture = evidence-driven (default, existing rows backfill via this default); manual = KFR D2; import = SIE (reserved, KFR Phase D). */
   origin: z.enum(["capture", "manual", "import"]).default("capture"),
+  /**
+   * The evidence this voucher was SPAWNED BY at intake (KFR Phase E / E.5).
+   * `null` for manual and imported vouchers, which stand on their own.
+   *
+   * A recorded domain fact, not something derivable from the current packet
+   * graph: `evidencePacketId` follows every re-attach, so after evidence moves
+   * to another voucher there is no longer any link that says "this draft only
+   * exists because that receipt arrived". Without this column, discarding the
+   * orphan draft on attach (see `composeEvidence`) cannot tell the receipt's
+   * own intake draft apart from an unrelated voucher it was attached to a
+   * moment earlier. Defaulted so pre-E.5 payloads and rows keep parsing.
+   */
+  intakeEvidenceId: z.string().nullable().default(null),
 });
 
 /**
@@ -519,6 +532,29 @@ export const evidenceComposeInputSchema = z.object({
    * (→ HTTP 404 `voucher_not_found`) before any mutation.
    */
   targetVoucherId: z.string().optional(),
+});
+
+/**
+ * `POST /api/evidence/compose` response (KFR Phase E / E.5). Widened from a
+ * bare `EvidencePacket` because the attach is no longer only a relink: when it
+ * orphans the evidence's OWN intake draft, that draft's pending review is
+ * rejected in the SAME store transaction, and the caller has to be able to say
+ * so. `discardedReviewId` is the rejected review's id, or `null` when the
+ * attach orphaned nothing (imported/manual target, already-decided draft, or
+ * an attach back onto the intake voucher itself).
+ */
+export const evidenceComposeResultSchema = z.object({
+  packet: evidencePacketSchema,
+  /**
+   * Ids of the intake reviews rejected as part of this attach — one per
+   * evidence in `evidenceIds` whose own intake draft the attach orphaned, so
+   * empty is the common case (imported/manual target, already-decided draft,
+   * or an attach back onto the intake voucher itself). An array rather than a
+   * single nullable id because `evidenceIds` is a list: bundling two receipts
+   * onto one voucher orphans two drafts, and reporting only one of them would
+   * be a lie by omission.
+   */
+  discardedReviewIds: z.array(z.string()),
 });
 
 /**
@@ -976,6 +1012,7 @@ export type EvidenceCreateResult = z.infer<typeof evidenceCreateResultSchema>;
 export type WorkspaceSnapshot = z.infer<typeof workspaceSnapshotSchema>;
 export type EvidenceCreateInput = z.infer<typeof evidenceCreateInputSchema>;
 export type EvidenceComposeInput = z.infer<typeof evidenceComposeInputSchema>;
+export type EvidenceComposeResult = z.infer<typeof evidenceComposeResultSchema>;
 export type ReviewDecisionInput = z.infer<typeof reviewDecisionInputSchema>;
 export type KnowledgeQuery = z.infer<typeof knowledgeQuerySchema>;
 export type SimulationRequest = z.infer<typeof simulationRequestSchema>;

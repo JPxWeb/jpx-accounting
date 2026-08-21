@@ -4,6 +4,7 @@ import type {
   ComplianceAlert,
   CloseRun,
   EvidenceComposeInput,
+  EvidenceComposeResult,
   EvidenceContext,
   EvidenceCreateInput,
   EvidenceCreateResult,
@@ -56,6 +57,7 @@ import {
 import {
   DEMO_ACTOR_ID,
   DRAFT_VOUCHER_NUMBER,
+  INTAKE_DRAFT_DISCARD_NOTES,
   InvalidReviewEditError,
   ReviewBlockedError,
   buildPostingLines,
@@ -81,6 +83,7 @@ import {
 export {
   DEMO_ACTOR_ID,
   DRAFT_VOUCHER_NUMBER,
+  INTAKE_DRAFT_DISCARD_NOTES,
   InvalidReviewEditError,
   ReviewBlockedError,
   buildPostingLines,
@@ -334,6 +337,9 @@ export function buildImportedVoucher(
     },
     createdAt: ctx.createdAt,
     createdBy: ctx.actorId,
+    // Migrated history stands on its own: no evidence spawned it, so attaching
+    // a receipt to it later must never discard anything (KFR E.5).
+    intakeEvidenceId: null,
   };
 }
 
@@ -353,11 +359,21 @@ export interface LedgerStore {
    *
    * A resolved link repoints `voucher.evidencePacketId` and appends one
    * `EvidenceRelinked` event (WS-B B6b) — the relink is chain-visible, never a
-   * silent read-model repoint. It touches no ReviewTask: a voucher's review
-   * linkage survives an attach untouched. With no link resolved, only the
-   * packet is created and NO event is appended.
+   * silent read-model repoint. No voucher's review LINKAGE is ever disturbed.
+   * With no link resolved, only the packet is created and NO event is appended.
+   *
+   * KFR Phase E / E.5 — an EXPLICIT attach additionally discards the intake
+   * drafts it orphans, in the SAME transaction as the relink: for each
+   * evidence id, the `origin: "capture"` voucher whose `intakeEvidenceId` is
+   * that evidence (and which is not the attach target itself) has its
+   * still-undecided review REJECTED, appending `ReviewRejected` after
+   * `EvidenceRelinked`. Rejection posts no lines and burns no voucher number,
+   * so the ledger does not move — it just stops an evidence-less draft from
+   * sitting in the review queue as a double-booking trap. Their ids come back
+   * in `discardedReviewIds` so the caller can say what happened; the
+   * auto-detect path (no `targetVoucherId`) never discards anything.
    */
-  composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket>;
+  composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidenceComposeResult>;
   getEvidenceContext(
     evidenceId: string,
   ): Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined>;
@@ -554,7 +570,61 @@ export class MemoryLedgerStore implements LedgerStore {
     };
   }
 
-  async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket> {
+  /**
+   * Reject the intake drafts this attach just orphaned (KFR Phase E / E.5).
+   *
+   * A capture voucher exists BECAUSE a receipt arrived (`intakeEvidenceId`).
+   * Move that receipt onto another voucher and the draft is left backing
+   * nothing — a double-booking trap one approval away from booking the same
+   * cost twice. `intakeEvidenceId` is what makes this decidable: the packet
+   * graph cannot distinguish "the draft this receipt created" from "a voucher
+   * this receipt was attached to a minute ago", because `evidencePacketId`
+   * follows every re-attach.
+   *
+   * Narrow on purpose — a draft is discarded only when it was spawned by this
+   * exact evidence, is `origin: "capture"`, is NOT the attach target itself,
+   * and still has an undecided review. Rejection posts no lines and burns no
+   * voucher number (E.1 numbers at posting time), so the ledger never moves.
+   *
+   * Runs in the same synchronous block as the relink — Memory's equivalent of
+   * the Postgres transaction, so an attach and its discard are never half-done.
+   */
+  private discardOrphanedIntakeDrafts(evidenceIds: readonly string[], targetVoucherId: string, actorId: string) {
+    const discardedReviewIds: string[] = [];
+    for (const evidenceId of evidenceIds) {
+      const voucher = [...this.vouchers.values()].find(
+        (candidate) =>
+          candidate.intakeEvidenceId === evidenceId &&
+          candidate.origin === "capture" &&
+          candidate.id !== targetVoucherId,
+      );
+      if (!voucher) continue;
+      const reviewId = this.voucherIdToReviewId.get(voucher.id);
+      const review = reviewId ? this.reviews.get(reviewId) : undefined;
+      if (!review || review.status !== "needs-review") continue;
+
+      // Reject never posts, so `postedVoucherCount` is irrelevant — pass 0 and
+      // skip the scan, exactly as `applyReviewDecision` does for a reject.
+      const plan = planReviewDecision(
+        review,
+        voucher,
+        "reject",
+        { actorId, notes: INTAKE_DRAFT_DISCARD_NOTES },
+        { postedVoucherCount: 0 },
+      );
+      if (plan.kind === "replay") continue;
+
+      this.reviews.set(review.id, plan.updatedReview);
+      this.vouchers.set(voucher.id, plan.updatedVoucher);
+      for (const event of plan.events) {
+        this.appendEvent(event);
+      }
+      discardedReviewIds.push(review.id);
+    }
+    return discardedReviewIds;
+  }
+
+  async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidenceComposeResult> {
     const actorId = input.actorId ?? DEMO_ACTOR_ID;
     // KFR Phase D / Task 2: validate the explicit target BEFORE anything is
     // written, so an unknown id leaves zero state behind (no packet row, no
@@ -616,7 +686,16 @@ export class MemoryLedgerStore implements LedgerStore {
       });
     }
 
-    return packet;
+    // Discard AFTER the relink, so the chain reads in causal order: the
+    // evidence moved, therefore the draft it left behind was discarded. Only
+    // an explicit attach can orphan anything — the auto-detect path re-bundles
+    // evidence onto the voucher it already backs.
+    const discardedReviewIds =
+      input.targetVoucherId === undefined
+        ? []
+        : this.discardOrphanedIntakeDrafts(input.evidenceIds, input.targetVoucherId, actorId);
+
+    return { packet, discardedReviewIds };
   }
 
   async getEvidenceContext(evidenceId: string): Promise<

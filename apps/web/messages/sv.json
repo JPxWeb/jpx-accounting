@@ -261,7 +261,6 @@
       "attachAriaLabel": "Koppla underlaget till {voucher}",
       "attachSuccess": "Underlaget kopplades till verifikationen.",
       "attachSuccessDraftDiscarded": "Underlaget kopplades till verifikationen. Dess eget utkast kasserades, så ingenting bokförs två gånger.",
-      "attachDraftKept": "Underlaget kopplades, men dess eget utkast kunde inte kasseras — avvisa det i granskningskön så att kostnaden inte bokförs två gånger.",
       "attachError": "Kunde inte koppla underlaget. Försök igen."
     }
   },

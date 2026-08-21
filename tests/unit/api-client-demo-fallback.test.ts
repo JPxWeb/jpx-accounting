@@ -147,16 +147,19 @@ test("demo composeEvidence relinks evidence via MemoryLedgerStore.composeEvidenc
   const client = createAccountingApiClient({ runtimeMode: "demo" });
 
   const created = await client.createEvidence(EVIDENCE_INPUT);
-  const packet = await client.composeEvidence({
+  const result = await client.composeEvidence({
     evidenceIds: [created.evidence.id],
     targetVoucherId: created.voucher.id,
   });
 
-  evidencePacketSchema.parse(packet);
-  assert.deepEqual(packet.evidenceIds, [created.evidence.id]);
+  evidencePacketSchema.parse(result.packet);
+  assert.deepEqual(result.packet.evidenceIds, [created.evidence.id]);
+  // Attaching evidence back onto its OWN intake voucher orphans nothing, so
+  // nothing is discarded (KFR E.5 — the target is excluded from the search).
+  assert.deepEqual(result.discardedReviewIds, []);
   // The relink is observable: the target voucher now points at the new packet.
   const context = await client.getEvidenceContext(created.evidence.id);
-  assert.equal(context?.voucher?.evidencePacketId, packet.id);
+  assert.equal(context?.voucher?.evidencePacketId, result.packet.id);
   assert.equal(captured.length, 0, "demo composeEvidence must not fetch");
 });
 
@@ -189,13 +192,20 @@ test("createManualVoucher posts the contract body to /api/vouchers/manual and pa
   assert.equal("actorId" in body, false, "attribution is server-derived, never client-supplied (WS-C R5)");
 });
 
-test("composeEvidence round-trips targetVoucherId on the wire and parses the packet", async (t) => {
-  const captured = mockFetch(t, () => jsonResponse({ id: "packet_1", evidenceIds: ["evidence_1"] }, 201));
+test("composeEvidence round-trips targetVoucherId on the wire and parses packet + discards", async (t) => {
+  // KFR E.5: the response is `{ packet, discardedReviewIds }` — the ids of the
+  // intake drafts the server rejected inside the attach transaction.
+  const captured = mockFetch(t, () =>
+    jsonResponse({ packet: { id: "packet_1", evidenceIds: ["evidence_1"] }, discardedReviewIds: ["review_9"] }, 201),
+  );
   const client = createAccountingApiClient({ baseUrl: BASE_URL, runtimeMode: "normal" });
 
-  const packet = await client.composeEvidence({ evidenceIds: ["evidence_1"], targetVoucherId: "voucher_7" });
+  const result = await client.composeEvidence({ evidenceIds: ["evidence_1"], targetVoucherId: "voucher_7" });
 
-  assert.deepEqual(packet, { id: "packet_1", evidenceIds: ["evidence_1"] });
+  assert.deepEqual(result, {
+    packet: { id: "packet_1", evidenceIds: ["evidence_1"] },
+    discardedReviewIds: ["review_9"],
+  });
   assert.equal(captured[0]?.url, `${BASE_URL}/api/evidence/compose`);
   assert.equal(captured[0]?.init?.method, "POST");
   assert.deepEqual(JSON.parse(String(captured[0]?.init?.body)), {

@@ -1,4 +1,4 @@
-import type { EvidencePacket, ReviewTask, Voucher } from "@jpx-accounting/contracts";
+import type { Voucher } from "@jpx-accounting/contracts";
 
 /**
  * Pure decision logic for the evidence-detail "Attach to voucher" picker (KFR
@@ -62,39 +62,4 @@ function attachHaystack(voucher: AttachCandidate): string {
   ]
     .join(" ")
     .toLowerCase();
-}
-
-/**
- * The review that must be auto-rejected when this evidence is attached
- * elsewhere, or `undefined` when the attach orphans nothing.
- *
- * Every captured receipt auto-creates its OWN draft voucher + review. Moving
- * the evidence onto an existing voucher leaves that draft behind with nothing
- * backing it — a double-booking trap sitting in the review queue, one approval
- * away from booking the same cost twice. Rejecting it posts no lines and burns
- * no voucher number (KFR E.1 mints numbers at posting time), so the discard is
- * cheap and reversible only in the sense that matters: the ledger never moved.
- *
- * Deliberately narrow — all four conditions must hold:
- * 1. the review is still undecided (a decided review is history, never touched);
- * 2. the voucher is `origin: "capture"` — it exists *because* of this evidence.
- *    Manual and imported vouchers legitimately stand alone with no evidence, so
- *    detaching never orphans them;
- * 3. the voucher is currently backed by exactly the packet this evidence sits
- *    in (a voucher re-pointed at some newer packet keeps that one);
- * 4. that packet holds this evidence alone — a multi-evidence packet still
- *    backs the voucher after this one leaves.
- */
-export function findOrphanedDraftReviewId(context: {
-  evidenceId: string;
-  packet: Pick<EvidencePacket, "id" | "evidenceIds"> | undefined;
-  voucher: Pick<Voucher, "origin" | "evidencePacketId"> | undefined;
-  review: Pick<ReviewTask, "id" | "status"> | undefined;
-}): string | undefined {
-  const { evidenceId, packet, voucher, review } = context;
-  if (!review || review.status !== "needs-review") return undefined;
-  if (!voucher || voucher.origin !== "capture") return undefined;
-  if (!packet || voucher.evidencePacketId !== packet.id) return undefined;
-  if (packet.evidenceIds.length !== 1 || packet.evidenceIds[0] !== evidenceId) return undefined;
-  return review.id;
 }

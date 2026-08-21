@@ -86,6 +86,7 @@ function makeVoucher(input: {
     workspaceId: "workspace_main",
     evidencePacketId: input.packetId,
     origin: input.origin ?? "capture",
+    intakeEvidenceId: null,
     voucherNumber: `V-${input.id}`,
     status: "needs-review",
     accountingMethod: "invoice",

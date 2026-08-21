@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   attachCandidateDate,
   attachCandidateLabel,
-  findOrphanedDraftReviewId,
   selectAttachCandidates,
   type AttachCandidate,
 } from "../../apps/web/lib/evidence-attach";
@@ -101,56 +100,4 @@ test("selectAttachCandidates sorts newest business date first, then caps", () =>
   );
   // Rule 17: the snapshot array the cache owns must not be reordered in place.
   assert.deepEqual(vouchers, frozen);
-});
-
-const packet = { id: "packet_1", evidenceIds: ["evidence_1"] };
-const draftVoucher = { origin: "capture" as const, evidencePacketId: "packet_1" };
-const pendingReview = { id: "review_1", status: "needs-review" as const };
-
-test("findOrphanedDraftReviewId names the auto-created draft that the attach orphans", () => {
-  assert.equal(
-    findOrphanedDraftReviewId({
-      evidenceId: "evidence_1",
-      packet,
-      voucher: draftVoucher,
-      review: pendingReview,
-    }),
-    "review_1",
-  );
-});
-
-test("findOrphanedDraftReviewId leaves anything that is not an orphaned capture draft alone", () => {
-  const base = { evidenceId: "evidence_1", packet, voucher: draftVoucher, review: pendingReview };
-
-  // A decided review is history — never re-decided.
-  assert.equal(findOrphanedDraftReviewId({ ...base, review: { id: "r", status: "approved" } }), undefined);
-  assert.equal(findOrphanedDraftReviewId({ ...base, review: undefined }), undefined);
-  // Manual and imported vouchers legitimately stand alone without evidence.
-  assert.equal(
-    findOrphanedDraftReviewId({ ...base, voucher: { origin: "manual", evidencePacketId: "packet_1" } }),
-    undefined,
-  );
-  assert.equal(
-    findOrphanedDraftReviewId({ ...base, voucher: { origin: "import", evidencePacketId: "packet_1" } }),
-    undefined,
-  );
-  assert.equal(findOrphanedDraftReviewId({ ...base, voucher: undefined }), undefined);
-  // The voucher already moved on to a newer packet — that one still backs it.
-  assert.equal(
-    findOrphanedDraftReviewId({ ...base, voucher: { origin: "capture", evidencePacketId: "packet_2" } }),
-    undefined,
-  );
-  assert.equal(findOrphanedDraftReviewId({ ...base, packet: undefined }), undefined);
-  // A multi-evidence packet still backs the voucher after this one leaves.
-  assert.equal(
-    findOrphanedDraftReviewId({
-      ...base,
-      packet: { id: "packet_1", evidenceIds: ["evidence_1", "evidence_2"] },
-    }),
-    undefined,
-  );
-  assert.equal(
-    findOrphanedDraftReviewId({ ...base, packet: { id: "packet_1", evidenceIds: ["evidence_other"] } }),
-    undefined,
-  );
 });

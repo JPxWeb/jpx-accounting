@@ -5,6 +5,7 @@ import type {
   CompanySettings,
   ComplianceAlert,
   EvidenceComposeInput,
+  EvidenceComposeResult,
   EvidenceContext,
   EvidenceCreateInput,
   EvidenceCreateResult,
@@ -43,6 +44,7 @@ import {
   detectComplianceIssues,
   evaluateVoucherRules,
   filterLedgerLines,
+  INTAKE_DRAFT_DISCARD_NOTES,
   LINE_CARRYING_EVENT_TYPES,
   nowIso,
   planComplianceMerge,
@@ -194,6 +196,7 @@ type VoucherRow = {
   created_by: string;
   created_at: Date | string;
   origin: string;
+  intake_evidence_id: string | null;
 };
 
 type ReviewRow = {
@@ -280,6 +283,10 @@ function rowToVoucher(row: VoucherRow): Voucher {
     createdAt: toIso(row.created_at),
     createdBy: row.created_by,
     origin: row.origin as Voucher["origin"],
+    // Nullable by design: manual, imported, and pre-0012 rows have no spawning
+    // evidence (KFR E.5). `?? null` normalizes a missing column read to the
+    // same shape MemoryLedgerStore produces (Rule 11).
+    intakeEvidenceId: row.intake_evidence_id ?? null,
   };
 }
 
@@ -382,7 +389,7 @@ async function resolvePacketAndVoucher(
 
   const voucherRows = await runner<VoucherRow[]>`
     SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-           accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin
+           accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
     FROM ledger.vouchers
     WHERE evidence_packet_id = ${packetRow.id}
       AND organization_id = ${scope.organizationId}
@@ -702,7 +709,8 @@ export class PostgresLedgerStore implements LedgerStore {
           extracted_fields,
           created_by,
           created_at,
-          origin
+          origin,
+          intake_evidence_id
         ) VALUES (
           ${voucher.id},
           ${voucher.organizationId},
@@ -715,7 +723,8 @@ export class PostgresLedgerStore implements LedgerStore {
           ${tx.json(voucher.extractedFields as unknown as Parameters<typeof tx.json>[0])},
           ${voucher.createdBy},
           ${voucher.createdAt},
-          ${voucher.origin}
+          ${voucher.origin},
+          ${voucher.intakeEvidenceId}
         )
       `;
 
@@ -773,11 +782,14 @@ export class PostgresLedgerStore implements LedgerStore {
   // refreshComplianceAlerts and putCompanySettings
   // below stay lock-free: they mutate read models only and append NO chain
   // events — the chain lock's scope is chain appends.
-  async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket> {
+  async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidenceComposeResult> {
     const actorId = input.actorId ?? DEMO_ACTOR_ID;
     return this.withChainForkRetry(() =>
       this.client.begin(async (tx) => {
         const tailHash = await this.lockWorkspaceTail(tx);
+        // Every append in this transaction chains off the previous one; the
+        // orphan discard below extends the same chain after the relink.
+        let chainTail = tailHash;
 
         // KFR Phase D / Task 2: resolve the explicit target up front — its
         // existence, and its current packet for the audit payload's
@@ -869,7 +881,7 @@ export class PostgresLedgerStore implements LedgerStore {
           // WS-B B6b: a relink changes which evidence backs a voucher — that
           // must be visible in the audit chain, not a silent repoint (payload
           // parity with MemoryLedgerStore.composeEvidence).
-          await this.appendEvent(
+          const relinked = await this.appendEvent(
             tx,
             {
               organizationId: this.defaults.organizationId,
@@ -886,11 +898,88 @@ export class PostgresLedgerStore implements LedgerStore {
                 evidenceIds: [...input.evidenceIds],
               },
             },
-            tailHash,
+            chainTail,
           );
+          chainTail = relinked.eventHash;
         }
 
-        return packet;
+        // KFR Phase E / E.5 — discard the intake drafts this attach orphaned,
+        // inside THIS transaction (already holding the workspace chain lock),
+        // so an attach and its discard are never half-applied. See the
+        // `LedgerStore.composeEvidence` contract for the four-condition rule;
+        // `intakeEvidenceId` is what makes "the draft this receipt created"
+        // distinguishable from "a voucher this receipt was attached to a
+        // moment ago" — `evidence_packet_id` follows every re-attach and so
+        // cannot answer it. Only an explicit attach can orphan anything.
+        const discardedReviewIds: string[] = [];
+        if (input.targetVoucherId !== undefined) {
+          for (const evidenceId of input.evidenceIds) {
+            const orphanRows = await tx<VoucherRow[]>`
+              SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
+                     accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
+              FROM ledger.vouchers
+              WHERE intake_evidence_id = ${evidenceId}
+                AND origin = 'capture'
+                AND id <> ${input.targetVoucherId}
+                AND organization_id = ${this.defaults.organizationId}
+                AND workspace_id = ${this.defaults.workspaceId}
+              LIMIT 1
+            `;
+            const orphanRow = orphanRows[0];
+            if (!orphanRow) continue;
+
+            const reviewRows = await tx<ReviewRow[]>`
+              SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
+                     suggested_action, suggestion, provenance_timeline, title, created_at
+              FROM ledger.review_tasks
+              WHERE voucher_id = ${orphanRow.id}
+                AND organization_id = ${this.defaults.organizationId}
+                AND workspace_id = ${this.defaults.workspaceId}
+              LIMIT 1
+            `;
+            const reviewRow = reviewRows[0];
+            if (!reviewRow || reviewRow.status !== "needs-review") continue;
+
+            // Reject never posts, so the posted-voucher COUNT(*) is irrelevant
+            // — pass 0 and skip the scan, exactly as applyReviewDecision does.
+            const plan = planReviewDecision(
+              rowToReview(reviewRow),
+              rowToVoucher(orphanRow),
+              "reject",
+              { actorId, notes: INTAKE_DRAFT_DISCARD_NOTES },
+              { postedVoucherCount: 0 },
+            );
+            if (plan.kind === "replay") continue;
+
+            await tx`
+              UPDATE ledger.review_tasks
+              SET status = ${plan.updatedReview.status},
+                  title = ${plan.updatedReview.title},
+                  provenance_timeline = ${tx.json(plan.updatedReview.provenanceTimeline as unknown as Parameters<typeof tx.json>[0])}
+              WHERE id = ${plan.updatedReview.id}
+            `;
+            await tx`
+              UPDATE ledger.vouchers
+              SET status = ${plan.updatedVoucher.status},
+                  voucher_number = ${plan.updatedVoucher.voucherNumber}
+              WHERE id = ${plan.updatedVoucher.id}
+                AND organization_id = ${this.defaults.organizationId}
+                AND workspace_id = ${this.defaults.workspaceId}
+            `;
+
+            for (const event of plan.events) {
+              const appended = await this.appendEvent(
+                tx,
+                { ...event, payload: event.payload as unknown as Record<string, unknown> },
+                chainTail,
+              );
+              chainTail = appended.eventHash;
+            }
+            discardedReviewIds.push(plan.updatedReview.id);
+          }
+        }
+
+        return { packet, discardedReviewIds };
       }),
     );
   }
@@ -1142,7 +1231,7 @@ export class PostgresLedgerStore implements LedgerStore {
           INSERT INTO ledger.vouchers (
             id, organization_id, workspace_id, evidence_packet_id, voucher_number,
             accounting_method, status, origin, voucher_fields, extracted_fields,
-            created_by, created_at
+            created_by, created_at, intake_evidence_id
           )
           SELECT
             v->>'id',
@@ -1156,7 +1245,10 @@ export class PostgresLedgerStore implements LedgerStore {
             v->'voucherFields',
             v->'extractedFields',
             v->>'createdBy',
-            (v->>'createdAt')::timestamptz
+            (v->>'createdAt')::timestamptz,
+            -- Imported history has no spawning evidence (KFR E.5); explicit so a
+            -- future column default can never silently diverge from the read model.
+            NULL
           FROM jsonb_array_elements(${tx.json(voucherBatch as unknown as Parameters<typeof tx.json>[0])}::jsonb) AS v
         `;
         }
@@ -1230,7 +1322,8 @@ export class PostgresLedgerStore implements LedgerStore {
             extracted_fields,
             created_by,
             created_at,
-            origin
+            origin,
+            intake_evidence_id
           ) VALUES (
             ${voucher.id},
             ${voucher.organizationId},
@@ -1243,7 +1336,8 @@ export class PostgresLedgerStore implements LedgerStore {
             ${tx.json(voucher.extractedFields as unknown as Parameters<typeof tx.json>[0])},
             ${voucher.createdBy},
             ${voucher.createdAt},
-            ${voucher.origin}
+            ${voucher.origin},
+            ${voucher.intakeEvidenceId}
           )
         `;
 
@@ -1383,7 +1477,7 @@ export class PostgresLedgerStore implements LedgerStore {
 
     const voucherRows = await this.client<VoucherRow[]>`
       SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-             accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin
+             accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
       FROM ledger.vouchers
       WHERE organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
@@ -1456,7 +1550,7 @@ export class PostgresLedgerStore implements LedgerStore {
     return this.client.begin(async (tx) => {
       const voucherRows = await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
         FROM ledger.vouchers
         WHERE id = ${voucherId}
           AND organization_id = ${this.defaults.organizationId}
@@ -1535,7 +1629,7 @@ export class PostgresLedgerStore implements LedgerStore {
 
         const voucherRows = await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
         FROM ledger.vouchers
         WHERE id = ${review.voucherId}
           AND organization_id = ${this.defaults.organizationId}
@@ -1640,7 +1734,7 @@ export class PostgresLedgerStore implements LedgerStore {
             ? []
             : await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
         FROM ledger.vouchers
         WHERE organization_id = ${this.defaults.organizationId}
           AND workspace_id = ${this.defaults.workspaceId}
@@ -1717,7 +1811,7 @@ export class PostgresLedgerStore implements LedgerStore {
 
       const voucherRows = await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
         FROM ledger.vouchers
         WHERE organization_id = ${this.defaults.organizationId}
           AND workspace_id = ${this.defaults.workspaceId}

@@ -652,6 +652,30 @@ export async function runCapabilityAssertions(sql: PostgresClient | ReservedSql)
     }),
   );
 
+  results.push(
+    await safeCheck("voucher-intake-evidence", async () => {
+      // KFR E.5: composeEvidence discards the receipt's OWN orphaned intake
+      // draft in-transaction, which is only decidable from this recorded fact
+      // (evidence_packet_id follows every re-attach). Missing column → the
+      // store's INSERT column list does not match the table.
+      const column = await getColumnInfo(sql, "ledger", "vouchers", "intake_evidence_id");
+      const nullableRows = await sql<{ is_nullable: string }[]>`
+        select is_nullable from information_schema.columns
+        where table_schema = 'ledger' and table_name = 'vouchers' and column_name = 'intake_evidence_id'
+      `;
+      const nullable = nullableRows[0]?.is_nullable === "YES";
+      const pass = column?.data_type === "text" && nullable;
+      return {
+        name: "voucher-intake-evidence",
+        pass,
+        detail: pass
+          ? "ledger.vouchers.intake_evidence_id is present, text, and nullable."
+          : `ledger.vouchers.intake_evidence_id type=${column?.data_type ?? "missing"}, nullable=${nullable}.`,
+        ...(pass ? {} : { remediation: "Apply migration 0012_voucher_intake_evidence.sql." }),
+      };
+    }),
+  );
+
   return results;
 }
 

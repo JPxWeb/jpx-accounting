@@ -879,17 +879,17 @@ test("PostgresLedgerStore.getSnapshot exposes org/workspace-scoped packets + Mem
     assert.equal(snapshot.packets.length, 2, "create + compose packets, org/workspace-scoped");
     const createdPacket = snapshot.packets.find((packet) => packet.id === created.packet.id);
     assert.deepEqual(createdPacket?.evidenceIds, [created.evidence.id]);
-    const composedPacket = snapshot.packets.find((packet) => packet.id === composed.id);
+    const composedPacket = snapshot.packets.find((packet) => packet.id === composed.packet.id);
     assert.deepEqual(composedPacket?.evidenceIds, [created.evidence.id]);
     assert.equal(composedPacket?.note, "Bundled for the drill join");
 
     // After composeEvidence relink (§A N9), the voucher points at the newest packet.
     const voucher = snapshot.vouchers.find((candidate) => candidate.id === created.voucher.id);
     assert.ok(voucher);
-    assert.equal(voucher.evidencePacketId, composed.id, "composeEvidence must relink the voucher");
+    assert.equal(voucher.evidencePacketId, composed.packet.id, "composeEvidence must relink the voucher");
     const joined = snapshot.packets.find((packet) => packet.id === voucher.evidencePacketId);
     assert.deepEqual(joined?.evidenceIds, [created.evidence.id]);
-    assert.equal(joined?.id, composed.id);
+    assert.equal(joined?.id, composed.packet.id);
 
     // Memory parity (Rule 11): the same create resolves the same join shape.
     const memory = new MemoryLedgerStore();
@@ -928,19 +928,19 @@ test(
       });
 
       // EvidencePacket shape parity (§A N10): optional keys always present.
-      assert.ok("note" in composed);
-      assert.ok("voiceTranscript" in composed);
-      assert.equal(composed.note, "Rebundled packet");
+      assert.ok("note" in composed.packet);
+      assert.ok("voiceTranscript" in composed.packet);
+      assert.equal(composed.packet.note, "Rebundled packet");
 
       const context = await store.getEvidenceContext(created.evidence.id);
-      assert.equal(context?.packet?.id, composed.id, "getEvidenceContext picks newest packet");
-      assert.equal(context?.voucher?.evidencePacketId, composed.id, "voucher relinked to newest packet");
+      assert.equal(context?.packet?.id, composed.packet.id, "getEvidenceContext picks newest packet");
+      assert.equal(context?.voucher?.evidencePacketId, composed.packet.id, "voucher relinked to newest packet");
 
       const snapshot = await store.getSnapshot();
       const snapshotVoucher = snapshot.vouchers.find((candidate) => candidate.id === created.voucher.id);
-      assert.equal(snapshotVoucher?.evidencePacketId, composed.id, "getSnapshot voucher link matches context");
+      assert.equal(snapshotVoucher?.evidencePacketId, composed.packet.id, "getSnapshot voucher link matches context");
 
-      const snapshotPacket = snapshot.packets.find((packet) => packet.id === composed.id);
+      const snapshotPacket = snapshot.packets.find((packet) => packet.id === composed.packet.id);
       assert.ok(snapshotPacket);
       assert.ok("note" in snapshotPacket);
       assert.ok("voiceTranscript" in snapshotPacket);
@@ -955,7 +955,7 @@ test(
       assert.equal(relinkEvt?.aggregateType, "voucher");
       assert.equal(relinkEvt?.aggregateId, created.voucher.id);
       assert.equal(relinkEvt?.actorId, "user_test");
-      assert.equal(relinkEvt?.payload.packetId, composed.id);
+      assert.equal(relinkEvt?.payload.packetId, composed.packet.id);
       assert.equal(relinkEvt?.payload.previousPacketId, created.packet.id);
       assert.deepEqual(relinkEvt?.payload.evidenceIds, [created.evidence.id]);
       // The relink event chains onto the prior tail (linkage intact).
@@ -978,7 +978,7 @@ test(
       const memRelinkEvt = (await memory.getEvents()).at(-1);
       assert.equal(memRelinkEvt?.eventType, "EvidenceRelinked");
       assert.equal(memRelinkEvt?.aggregateId, memCreated.voucher.id);
-      assert.equal(memRelinkEvt?.payload.packetId, memComposed.id);
+      assert.equal(memRelinkEvt?.payload.packetId, memComposed.packet.id);
       assert.deepEqual(Object.keys(memRelinkEvt?.payload ?? {}).sort(), Object.keys(relinkEvt?.payload ?? {}).sort());
     } finally {
       await requireCtx().cleanupOrganization(orgId);

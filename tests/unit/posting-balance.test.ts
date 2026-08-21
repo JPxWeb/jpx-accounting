@@ -31,6 +31,7 @@ const voucherFixture = (fields: { grossAmount?: number; netAmount?: number; vatA
   workspaceId: "w",
   evidencePacketId: "p",
   origin: "capture",
+  intakeEvidenceId: null,
   voucherNumber: "V-v1",
   status: "needs-review",
   accountingMethod: "invoice",

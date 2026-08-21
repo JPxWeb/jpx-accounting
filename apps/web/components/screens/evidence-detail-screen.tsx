@@ -5,18 +5,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useObjectUrl } from "../../hooks/use-object-url";
 import { apiClient } from "../../lib/client";
 import { getEvidenceBlob } from "../../lib/evidence-blob-cache";
-import {
-  attachCandidateDate,
-  attachCandidateLabel,
-  findOrphanedDraftReviewId,
-  selectAttachCandidates,
-} from "../../lib/evidence-attach";
+import { attachCandidateDate, attachCandidateLabel, selectAttachCandidates } from "../../lib/evidence-attach";
 import { formatPercent } from "../../lib/presentation";
 import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { isDraftVoucherNumber } from "../../lib/voucher-link-display";
@@ -109,31 +104,22 @@ function EvidencePreview({ evidence }: { evidence: EvidenceObject }) {
   );
 }
 
-/**
- * Audit note stamped on the auto-discarded draft. A stable English constant,
- * not a translated string: it lands in an append-only event payload, where the
- * reader's UI locale years from now is nobody's business (same call as
- * `ADVISOR_APPROVAL_NOTES`).
- */
-const DRAFT_DISCARD_NOTES = "Draft discarded — evidence attached to another voucher";
-
 /** Rendered candidate cap; the search box is how you reach past it. */
 const MAX_ATTACH_CANDIDATES = 20;
 
 const ATTACH_SEARCH_INPUT_ID = "evidence-attach-search-input";
 
 /**
- * What actually happened, so the toast can say it. The attach is the operation;
- * discarding this evidence's own orphaned draft is cleanup that either happened
- * or didn't — never a reason to report the attach itself as failed.
- */
-type AttachOutcome = "attached" | "draft-discarded" | "draft-kept";
-
-/**
  * "Attach to voucher" (KFR Phase E / Task E.5) — relink this evidence to an
  * EXISTING voucher, which for imported SIE history is the only way to give a
  * migrated entry its receipt (imported vouchers start with
  * `evidencePacketId: null`, so there is no packet breadcrumb to auto-detect).
+ *
+ * ONE call: `composeEvidence` also discards this evidence's orphaned intake
+ * draft server-side, in the same transaction as the relink, and reports which
+ * reviews it rejected. The client neither decides that nor issues a second
+ * mutation — "which voucher did this receipt create at intake" is a recorded
+ * domain fact (`intakeEvidenceId`), not something the packet graph still knows.
  *
  * An inline section, not a modal: the whole flow is the browser's own tab order
  * (search field → one Attach button per row), so it needs no focus trap.
@@ -144,41 +130,26 @@ type AttachOutcome = "attached" | "draft-discarded" | "draft-kept";
 function AttachToVoucherPicker({
   evidenceId,
   currentVoucherId,
-  orphanedDraftReviewId,
 }: {
   evidenceId: string;
   currentVoucherId: string | undefined;
-  orphanedDraftReviewId: string | undefined;
 }) {
   const t = useTranslations("evidence.attach");
   const tCommon = useTranslations("common");
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const workspaceQuery = useQuery({ queryKey: ["workspace"], queryFn: () => apiClient.getSnapshot() });
 
   const attach = useMutation({
-    mutationFn: async (targetVoucherId: string): Promise<AttachOutcome> => {
-      await apiClient.composeEvidence({ evidenceIds: [evidenceId], targetVoucherId });
-      if (!orphanedDraftReviewId) return "attached";
-      // Attach first, discard second — the reverse order would destroy a draft
-      // on the way to a failed attach. Reject appends no ledger lines and
-      // consumes no voucher number (KFR E.1 numbers at posting time only).
-      try {
-        await apiClient.rejectReview(orphanedDraftReviewId, { notes: DRAFT_DISCARD_NOTES });
-        return "draft-discarded";
-      } catch {
-        // The attach already landed; calling that a failure would be a lie.
-        // The toast names the leftover draft so the human can finish the job.
-        return "draft-kept";
-      }
-    },
-    onSuccess: (outcome) => {
+    mutationFn: (targetVoucherId: string) => apiClient.composeEvidence({ evidenceIds: [evidenceId], targetVoucherId }),
+    onSuccess: (result) => {
       invalidateLedgerDerived(queryClient);
-      if (outcome === "draft-kept") {
-        toast.warning(t("attachDraftKept"));
-        return;
-      }
-      toast.success(outcome === "draft-discarded" ? t("attachSuccessDraftDiscarded") : t("attachSuccess"));
+      // The row that was just activated disappears from the list (its voucher
+      // becomes the current one), so focus would fall to <body>. Park it on the
+      // section heading, next to the status line that says what happened.
+      headingRef.current?.focus();
+      toast.success(result.discardedReviewIds.length > 0 ? t("attachSuccessDraftDiscarded") : t("attachSuccess"));
     },
     onError: () => toast.error(t("attachError")),
   });
@@ -191,7 +162,11 @@ function AttachToVoucherPicker({
 
   return (
     <section className="glass-panel rounded-xl p-5" data-testid="evidence-attach-picker">
-      <h2 className="text-lg font-semibold">{t("title")}</h2>
+      {/* tabIndex -1: not a tab stop, but a deterministic focus target for the
+          post-attach hand-off (the activated row is gone by then). */}
+      <h2 className="text-lg font-semibold" ref={headingRef} tabIndex={-1}>
+        {t("title")}
+      </h2>
       <p className="mt-2 text-sm text-muted-foreground">{t("description")}</p>
       <label className="sr-only" htmlFor={ATTACH_SEARCH_INPUT_ID}>
         {t("searchLabel")}
@@ -205,15 +180,20 @@ function AttachToVoucherPicker({
         placeholder={t("searchPlaceholder")}
         className="mt-3 h-9"
       />
+      {/* Inline AND toasted: a toast times out and is easy to miss, and focus
+          lands here after a successful attach — the outcome has to still be
+          readable at that point, not only while the toast was up. */}
       {attach.isError ? (
-        // Inline AND toasted: a toast alone is a message you can miss, and the
-        // 404 here means the snapshot went stale under the picker.
         <p
           role="alert"
           className="mt-3 rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger"
           data-testid="evidence-attach-error"
         >
           {t("attachError")}
+        </p>
+      ) : attach.isSuccess ? (
+        <p role="status" className="mt-3 text-sm text-muted-foreground" data-testid="evidence-attach-status">
+          {attach.data.discardedReviewIds.length > 0 ? t("attachSuccessDraftDiscarded") : t("attachSuccess")}
         </p>
       ) : null}
       {workspaceQuery.isPending ? null : candidates.length === 0 ? (
@@ -293,7 +273,7 @@ export function EvidenceDetailScreen() {
     return <UnavailableState testId="evidence-not-found" title={t("notFound.title")} message={t("notFound.message")} />;
   }
 
-  const { evidence, packet, voucher, review } = context;
+  const { evidence, voucher, review } = context;
   const extractedFields = voucher?.extractedFields ?? [];
   // Append-only: once the review is decided the voucher is history — re-extraction is locked.
   const reviewDecided = Boolean(review && review.status !== "needs-review");
@@ -411,11 +391,7 @@ export function EvidenceDetailScreen() {
         {reviewDecided ? <p className="mt-2 text-xs text-muted-foreground">{t("links.extractLocked")}</p> : null}
       </section>
 
-      <AttachToVoucherPicker
-        evidenceId={evidence.id}
-        currentVoucherId={voucher?.id}
-        orphanedDraftReviewId={findOrphanedDraftReviewId({ evidenceId: evidence.id, packet, voucher, review })}
-      />
+      <AttachToVoucherPicker evidenceId={evidence.id} currentVoucherId={voucher?.id} />
     </div>
   );
 }

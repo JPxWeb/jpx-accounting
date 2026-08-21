@@ -807,20 +807,24 @@ test("MemoryLedgerStore.composeEvidence relinks the voucher to the newest packet
 
   // Packet shape parity with PostgresLedgerStore (§A N10): optional keys are
   // always present on the object, even when undefined.
-  assert.ok("note" in composed, "note key present even when set");
-  assert.ok("voiceTranscript" in composed, "voiceTranscript key present even when undefined");
-  assert.equal(composed.note, "Rebundled packet");
-  assert.equal(composed.voiceTranscript, undefined);
+  assert.ok("note" in composed.packet, "note key present even when set");
+  assert.ok("voiceTranscript" in composed.packet, "voiceTranscript key present even when undefined");
+  assert.equal(composed.packet.note, "Rebundled packet");
+  assert.equal(composed.packet.voiceTranscript, undefined);
 
   // Relink (§A N9): getEvidenceContext must resolve to the newest packet, and
   // the voucher's evidencePacketId must agree so getSnapshot doesn't disagree.
   const context = await store.getEvidenceContext(created.evidence.id);
-  assert.equal(context?.packet?.id, composed.id, "getEvidenceContext picks the newest packet");
-  assert.equal(context?.voucher?.evidencePacketId, composed.id, "voucher relinked to the newest packet");
+  assert.equal(context?.packet?.id, composed.packet.id, "getEvidenceContext picks the newest packet");
+  assert.equal(context?.voucher?.evidencePacketId, composed.packet.id, "voucher relinked to the newest packet");
 
   const snapshot = await store.getSnapshot();
   const snapshotVoucher = snapshot.vouchers.find((voucher) => voucher.id === created.voucher.id);
-  assert.equal(snapshotVoucher?.evidencePacketId, composed.id, "getSnapshot voucher link matches getEvidenceContext");
+  assert.equal(
+    snapshotVoucher?.evidencePacketId,
+    composed.packet.id,
+    "getSnapshot voucher link matches getEvidenceContext",
+  );
 
   // WS-B B6b: the relink is chain-visible — one EvidenceRelinked event with
   // the old→new packet linkage in the payload.
@@ -829,9 +833,56 @@ test("MemoryLedgerStore.composeEvidence relinks the voucher to the newest packet
   assert.equal(relinkEvt?.aggregateType, "voucher");
   assert.equal(relinkEvt?.aggregateId, created.voucher.id);
   assert.equal(relinkEvt?.actorId, "user_founder");
-  assert.equal(relinkEvt?.payload.packetId, composed.id);
+  assert.equal(relinkEvt?.payload.packetId, composed.packet.id);
   assert.equal(relinkEvt?.payload.previousPacketId, created.packet.id);
   assert.deepEqual(relinkEvt?.payload.evidenceIds, [created.evidence.id]);
+});
+
+test("MemoryLedgerStore.composeEvidence discards ONLY the attached evidence's own intake draft", async () => {
+  // The E.5 CRITICAL regression, pinned in the fast gate (the full parity
+  // version lives in the conformance suite): deciding "is this the receipt's
+  // own draft?" from the live packet graph is satisfied by ANY voucher the
+  // receipt is currently attached to, so two ordinary sequential attaches
+  // rejected a bystander's review. `intakeEvidenceId` is a creation-time fact,
+  // so the second attach can only find the draft the first one already closed.
+  const store = new MemoryLedgerStore();
+  const make = (title: string) =>
+    store.createEvidence({
+      actorId: "user_founder",
+      title,
+      originalFilename: `${title}.jpg`,
+      mimeType: "image/jpeg",
+      modalities: ["camera"],
+    });
+
+  const a = await make("attach-a");
+  const b = await make("attach-b");
+  const journalBefore = (await store.getReports()).journal.length;
+
+  const first = await store.composeEvidence({
+    actorId: "user_founder",
+    evidenceIds: [a.evidence.id],
+    targetVoucherId: b.voucher.id,
+  });
+  assert.deepEqual(first.discardedReviewIds, [a.review.id], "A's own orphaned intake draft is discarded");
+
+  const statusOf = async (id: string) => (await store.getReviewFeed()).find((review) => review.id === id)?.status;
+  assert.equal(await statusOf(a.review.id), "rejected");
+  assert.equal(await statusOf(b.review.id), "needs-review", "B's own draft is not collateral damage");
+
+  // Second attach: A has no undecided intake draft left, so nothing is discarded.
+  const c = await make("attach-c");
+  const second = await store.composeEvidence({
+    actorId: "user_founder",
+    evidenceIds: [a.evidence.id],
+    targetVoucherId: c.voucher.id,
+  });
+  assert.deepEqual(second.discardedReviewIds, [], "a second attach has no draft of its own left to discard");
+  assert.equal(await statusOf(b.review.id), "needs-review");
+  assert.equal(await statusOf(c.review.id), "needs-review", "the new target's review survives the attach");
+
+  // A discard rejects — it never posts, so the ledger does not move.
+  assert.equal((await store.getReports()).journal.length, journalBefore);
 });
 
 test("MemoryLedgerStore.composeEvidence without a linked voucher appends no EvidenceRelinked event", async () => {

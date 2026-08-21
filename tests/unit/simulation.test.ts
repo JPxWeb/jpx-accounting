@@ -10,6 +10,7 @@ const voucherFixture = (id: string, overrides: Partial<Voucher["voucherFields"]>
   workspaceId: "w",
   evidencePacketId: "p",
   origin: "capture",
+  intakeEvidenceId: null,
   voucherNumber: `V-${id}`,
   status: "needs-review",
   accountingMethod: "invoice",

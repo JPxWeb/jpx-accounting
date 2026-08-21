@@ -18,6 +18,7 @@ function voucher(overrides: Partial<Voucher> & Pick<Voucher, "id" | "voucherNumb
     evidencePacketId: null,
     status: "posted",
     origin: "capture",
+    intakeEvidenceId: null,
     accountingMethod: "invoice",
     extractedFields: [],
     voucherFields: { currency: "SEK" },
