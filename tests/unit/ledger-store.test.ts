@@ -10,9 +10,16 @@ import {
   InvalidPeriodTokenError,
   InvalidReviewEditError,
   parseSie,
+  summarizeEventIntegrity,
   today,
 } from "@jpx-accounting/domain";
-import { MemoryLedgerStore, ReviewNotFoundError, SieImportError, type LedgerStore } from "@jpx-accounting/domain/store";
+import {
+  DEMO_ACTOR_ID,
+  MemoryLedgerStore,
+  ReviewNotFoundError,
+  SieImportError,
+  type LedgerStore,
+} from "@jpx-accounting/domain/store";
 
 /**
  * March 2026 SIE fixture: seed lines are booked "now", so a voucher pinned to
@@ -438,7 +445,13 @@ test("MemoryLedgerStore.importSie grows the journal, appends VoucherImported eve
   const eventsBefore = (await store.getEvents()).length;
 
   const result = await store.importSie({ actorId: "user_founder", file });
-  assert.deepEqual(result, { accepted: true, importedVouchers: 1, importedTransactions: 2, skipped: [] });
+  assert.deepEqual(result, {
+    accepted: true,
+    importedVouchers: 1,
+    importedTransactions: 2,
+    skipped: [],
+    warnings: [],
+  });
 
   const journal = (await store.getReports()).journal;
   assert.equal(journal.length, journalBefore + 2);
@@ -469,6 +482,7 @@ test("MemoryLedgerStore.importSie grows the journal, appends VoucherImported eve
     importedVouchers: 0,
     importedTransactions: 0,
     skipped: [{ reference: "A 42", reason: "duplicate" }],
+    warnings: [],
   });
   assert.equal((await store.getReports()).journal.length, journalBefore + 2, "no duplicate lines");
   assert.equal((await store.getEvents()).length, eventsBefore + 1, "no duplicate events");
@@ -516,6 +530,7 @@ test("MemoryLedgerStore.getCompanySettings/putCompanySettings round-trip", async
       currency: "EUR",
       fiscalYearStart: "07-01",
       vatPeriod: "quarterly" as const,
+      euTrade: false,
     },
     aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
   };
@@ -544,6 +559,7 @@ test("MemoryLedgerStore.putCompanySettings normalizes legacy payloads without a 
     currency: "SEK",
     fiscalYearStart: "01-01",
     vatPeriod: "quarterly",
+    euTrade: false,
   });
 });
 
@@ -622,6 +638,7 @@ test("MemoryLedgerStore.getReportPack composes the period pack and reads fiscalY
       currency: "SEK",
       fiscalYearStart: "07-01",
       vatPeriod: "quarterly" as const,
+      euTrade: false,
     },
     aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
   });
@@ -635,6 +652,44 @@ test("MemoryLedgerStore.getReportPack composes the period pack and reads fiscalY
     () => store.getReportPack({ period: "bogus" }),
     (error) => error instanceof InvalidPeriodTokenError,
   );
+});
+
+test("MemoryLedgerStore.getReportPack floors the first fiscal year from settings.profile.firstFiscalYearStart", async () => {
+  const store = new MemoryLedgerStore();
+  const settings = {
+    organizationName: "Test AB",
+    organizationNumber: "556677-8899",
+    addressLine1: "Kungsgatan 1",
+    postalCode: "111 22",
+    city: "Stockholm",
+    contactEmail: "test@example.com",
+    profile: {
+      country: "SE" as const,
+      locale: "sv-SE",
+      currency: "SEK",
+      // The real Kapitas-replacement company: recurring 09-01 anchor, but
+      // FY1 actually began at incorporation on 2025-10-15.
+      fiscalYearStart: "09-01",
+      vatPeriod: "quarterly" as const,
+      euTrade: false,
+    },
+    aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
+  };
+
+  // Unset → byte-identical to the pre-Task-6 anchor-derived behavior.
+  await store.putCompanySettings(settings);
+  const unfloored = await store.getReportPack({ period: "fy-2025" });
+  assert.equal(unfloored.period.from, "2025-09-01");
+
+  await store.putCompanySettings({
+    ...settings,
+    profile: { ...settings.profile, firstFiscalYearStart: "2025-10-15" },
+  });
+  const floored = await store.getReportPack({ period: "fy-2025" });
+  assert.equal(floored.period.from, "2025-10-15");
+  assert.equal(floored.period.to, "2026-08-31");
+  // A later fiscal year keeps the recurring anchor.
+  assert.equal((await store.getReportPack({ period: "fy-2026" })).period.from, "2026-09-01");
 });
 
 test("MemoryLedgerStore.getSnapshot carries evidence packets so the voucher→evidence join resolves", async () => {
@@ -756,20 +811,24 @@ test("MemoryLedgerStore.composeEvidence relinks the voucher to the newest packet
 
   // Packet shape parity with PostgresLedgerStore (§A N10): optional keys are
   // always present on the object, even when undefined.
-  assert.ok("note" in composed, "note key present even when set");
-  assert.ok("voiceTranscript" in composed, "voiceTranscript key present even when undefined");
-  assert.equal(composed.note, "Rebundled packet");
-  assert.equal(composed.voiceTranscript, undefined);
+  assert.ok("note" in composed.packet, "note key present even when set");
+  assert.ok("voiceTranscript" in composed.packet, "voiceTranscript key present even when undefined");
+  assert.equal(composed.packet.note, "Rebundled packet");
+  assert.equal(composed.packet.voiceTranscript, undefined);
 
   // Relink (§A N9): getEvidenceContext must resolve to the newest packet, and
   // the voucher's evidencePacketId must agree so getSnapshot doesn't disagree.
   const context = await store.getEvidenceContext(created.evidence.id);
-  assert.equal(context?.packet?.id, composed.id, "getEvidenceContext picks the newest packet");
-  assert.equal(context?.voucher?.evidencePacketId, composed.id, "voucher relinked to the newest packet");
+  assert.equal(context?.packet?.id, composed.packet.id, "getEvidenceContext picks the newest packet");
+  assert.equal(context?.voucher?.evidencePacketId, composed.packet.id, "voucher relinked to the newest packet");
 
   const snapshot = await store.getSnapshot();
   const snapshotVoucher = snapshot.vouchers.find((voucher) => voucher.id === created.voucher.id);
-  assert.equal(snapshotVoucher?.evidencePacketId, composed.id, "getSnapshot voucher link matches getEvidenceContext");
+  assert.equal(
+    snapshotVoucher?.evidencePacketId,
+    composed.packet.id,
+    "getSnapshot voucher link matches getEvidenceContext",
+  );
 
   // WS-B B6b: the relink is chain-visible — one EvidenceRelinked event with
   // the old→new packet linkage in the payload.
@@ -778,9 +837,56 @@ test("MemoryLedgerStore.composeEvidence relinks the voucher to the newest packet
   assert.equal(relinkEvt?.aggregateType, "voucher");
   assert.equal(relinkEvt?.aggregateId, created.voucher.id);
   assert.equal(relinkEvt?.actorId, "user_founder");
-  assert.equal(relinkEvt?.payload.packetId, composed.id);
+  assert.equal(relinkEvt?.payload.packetId, composed.packet.id);
   assert.equal(relinkEvt?.payload.previousPacketId, created.packet.id);
   assert.deepEqual(relinkEvt?.payload.evidenceIds, [created.evidence.id]);
+});
+
+test("MemoryLedgerStore.composeEvidence discards ONLY the attached evidence's own intake draft", async () => {
+  // The E.5 CRITICAL regression, pinned in the fast gate (the full parity
+  // version lives in the conformance suite): deciding "is this the receipt's
+  // own draft?" from the live packet graph is satisfied by ANY voucher the
+  // receipt is currently attached to, so two ordinary sequential attaches
+  // rejected a bystander's review. `intakeEvidenceId` is a creation-time fact,
+  // so the second attach can only find the draft the first one already closed.
+  const store = new MemoryLedgerStore();
+  const make = (title: string) =>
+    store.createEvidence({
+      actorId: "user_founder",
+      title,
+      originalFilename: `${title}.jpg`,
+      mimeType: "image/jpeg",
+      modalities: ["camera"],
+    });
+
+  const a = await make("attach-a");
+  const b = await make("attach-b");
+  const journalBefore = (await store.getReports()).journal.length;
+
+  const first = await store.composeEvidence({
+    actorId: "user_founder",
+    evidenceIds: [a.evidence.id],
+    targetVoucherId: b.voucher.id,
+  });
+  assert.deepEqual(first.discardedReviewIds, [a.review.id], "A's own orphaned intake draft is discarded");
+
+  const statusOf = async (id: string) => (await store.getReviewFeed()).find((review) => review.id === id)?.status;
+  assert.equal(await statusOf(a.review.id), "rejected");
+  assert.equal(await statusOf(b.review.id), "needs-review", "B's own draft is not collateral damage");
+
+  // Second attach: A has no undecided intake draft left, so nothing is discarded.
+  const c = await make("attach-c");
+  const second = await store.composeEvidence({
+    actorId: "user_founder",
+    evidenceIds: [a.evidence.id],
+    targetVoucherId: c.voucher.id,
+  });
+  assert.deepEqual(second.discardedReviewIds, [], "a second attach has no draft of its own left to discard");
+  assert.equal(await statusOf(b.review.id), "needs-review");
+  assert.equal(await statusOf(c.review.id), "needs-review", "the new target's review survives the attach");
+
+  // A discard rejects — it never posts, so the ledger does not move.
+  assert.equal((await store.getReports()).journal.length, journalBefore);
 });
 
 test("MemoryLedgerStore.composeEvidence without a linked voucher appends no EvidenceRelinked event", async () => {
@@ -1000,4 +1106,157 @@ test("MemoryLedgerStore.getCloseRun returns the honest empty shell: close_unavai
   const now = new Date();
   const expectedPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   assert.equal(closeRun.period, expectedPeriod);
+});
+
+test("MemoryLedgerStore.createManualVoucher creates a review, then approve posts the verbatim lines", async () => {
+  const store = new MemoryLedgerStore();
+  const journalBefore = (await store.getReports()).journal.length;
+  const feedBefore = (await store.getReviewFeed()).length;
+
+  const result = await store.createManualVoucher({
+    actorId: "user_founder",
+    description: "Utlägg för kontorsmaterial",
+    bookedAt: "2026-03-20",
+    lines: [
+      { accountNumber: "6110", debit: 250, credit: 0, vatCode: "NA" },
+      { accountNumber: "2899", debit: 0, credit: 250, vatCode: "NA" },
+    ],
+  });
+
+  const feed = await store.getReviewFeed();
+  assert.equal(feed.length, feedBefore + 1);
+  const review = feed.find((r) => r.id === result.reviewId);
+  assert.ok(review);
+  assert.equal(review.status, "needs-review");
+  assert.deepEqual(
+    review.suggestion?.lines?.map((l) => l.accountNumber),
+    ["6110", "2899"],
+  );
+
+  const snapshot = await store.getSnapshot();
+  const voucher = snapshot.vouchers.find((v) => v.id === result.voucherId);
+  assert.ok(voucher);
+  assert.equal(voucher.origin, "manual");
+  assert.equal(voucher.evidencePacketId, null);
+
+  const decided = await store.applyReviewDecision(result.reviewId, "approve", { actorId: "user_founder" });
+  assert.equal(decided?.status, "approved");
+
+  const journal = (await store.getReports()).journal;
+  assert.equal(journal.length, journalBefore + 2, "verbatim 2-line manual entry, not a fabricated 3-line expense");
+  const [cost, settlement] = journal.slice(-2);
+  assert.ok(cost && settlement);
+  assert.equal(cost.accountNumber, "6110");
+  assert.equal(cost.debit, 250);
+  assert.equal(settlement.accountNumber, "2899");
+  assert.equal(settlement.credit, 250);
+  assert.equal(cost.bookedAt.slice(0, 10), "2026-03-20");
+});
+
+test("MemoryLedgerStore.createManualVoucher rejects an exact-öre-unbalanced entry before any mutation", async () => {
+  const store = new MemoryLedgerStore();
+  const eventsBefore = (await store.getEvents()).length;
+  const vouchersBefore = (await store.getSnapshot()).vouchers.length;
+  await assert.rejects(
+    () =>
+      store.createManualVoucher({
+        actorId: "user_founder",
+        description: "Bad entry",
+        bookedAt: "2026-03-20",
+        lines: [
+          { accountNumber: "6110", debit: 100.01, credit: 0, vatCode: "NA" },
+          { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" },
+        ],
+      }),
+    // Cross-module-boundary error identity: name, never instanceof (tsx keeps
+    // a dual module cache, so the class identity can differ per import path).
+    (error: unknown) => (error as Error).name === "InvalidManualVoucherError",
+  );
+  assert.equal((await store.getEvents()).length, eventsBefore, "no events appended on rejection");
+  assert.equal((await store.getSnapshot()).vouchers.length, vouchersBefore, "no voucher read model written");
+});
+
+test("MemoryLedgerStore.createManualVoucher falls back to the demo actor sentinel when attribution is absent", async () => {
+  const store = new MemoryLedgerStore();
+  const result = await store.createManualVoucher({
+    description: "Ingen inloggad användare",
+    bookedAt: "2026-03-21",
+    lines: [
+      { accountNumber: "6110", debit: 100, credit: 0, vatCode: "NA" },
+      { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" },
+    ],
+  });
+
+  const voucher = (await store.getSnapshot()).vouchers.find((v) => v.id === result.voucherId);
+  assert.equal(voucher?.createdBy, DEMO_ACTOR_ID);
+  const created = (await store.getEvents()).filter((event) => event.aggregateId === result.voucherId);
+  assert.deepEqual(
+    created.map((event) => event.actorId),
+    [DEMO_ACTOR_ID],
+  );
+});
+
+test("MemoryLedgerStore.createManualVoucher appends a hash-linked VoucherCreated + SuggestionGenerated pair", async () => {
+  const store = new MemoryLedgerStore();
+  const eventsBefore = await store.getEvents();
+  const result = await store.createManualVoucher({
+    actorId: "user:sub-1",
+    description: "Kedjekontroll",
+    bookedAt: "2026-03-22",
+    lines: [
+      { accountNumber: "6110", debit: 40, credit: 0, vatCode: "NA" },
+      { accountNumber: "2899", debit: 0, credit: 40, vatCode: "NA" },
+    ],
+  });
+
+  const events = await store.getEvents();
+  const appended = events.slice(eventsBefore.length);
+  assert.deepEqual(
+    appended.map((event) => event.eventType),
+    ["VoucherCreated", "SuggestionGenerated"],
+  );
+  assert.equal(appended[0]?.aggregateId, result.voucherId);
+  assert.equal(appended[1]?.aggregateId, result.reviewId);
+  // Chain linkage: each appended event links to its predecessor's hash — the
+  // store's own appendEvent derived it, no hand-crafted previousHash.
+  assert.equal(appended[0]?.previousHash, eventsBefore.at(-1)?.eventHash);
+  assert.equal(appended[1]?.previousHash, appended[0]?.eventHash);
+  const integrity = summarizeEventIntegrity(events, { verifiedAt: "2026-03-22T00:00:00.000Z", verifyPayloads: true });
+  assert.equal(integrity.chainLinked, true, "manual-voucher events keep the chain linked");
+  assert.equal(integrity.payloadMismatchCount, 0, "payloads recompute to their stored hashes");
+
+  // Read APIs resolve the pair both ways.
+  const byVoucher = await store.findReviewByVoucher(result.voucherId);
+  assert.equal(byVoucher?.id, result.reviewId);
+  assert.equal((await store.suggestVoucher(result.voucherId))?.voucherId, result.voucherId);
+});
+
+test("MemoryLedgerStore.suggestVoucher never regenerates over a manual voucher's verbatim lines", async () => {
+  const store = new MemoryLedgerStore();
+  const result = await store.createManualVoucher({
+    actorId: "user_founder",
+    description: "Verbatim bevarande",
+    bookedAt: "2026-03-23",
+    lines: [
+      { accountNumber: "6110", debit: 75, credit: 0, vatCode: "NA" },
+      { accountNumber: "2899", debit: 0, credit: 75, vatCode: "NA" },
+    ],
+  });
+
+  // POST /api/vouchers/:id/suggest is reachable for ANY voucher id. Rebuilding
+  // a deterministic single-account suggestion here would strip `lines` from
+  // the review and make approval throw the manual-origin invariant.
+  const regenerated = await store.suggestVoucher(result.voucherId);
+  assert.deepEqual(
+    regenerated?.lines?.map((line) => line.accountNumber),
+    ["6110", "2899"],
+  );
+  const review = await store.findReviewByVoucher(result.voucherId);
+  assert.deepEqual(
+    review?.suggestion?.lines?.map((line) => line.accountNumber),
+    ["6110", "2899"],
+  );
+
+  const decided = await store.applyReviewDecision(result.reviewId, "approve", { actorId: "user_founder" });
+  assert.equal(decided?.status, "approved");
 });

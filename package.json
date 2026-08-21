@@ -33,6 +33,7 @@
     "db:seed": "tsx scripts/db.mts seed",
     "db:test": "tsx scripts/db.mts test",
     "db:down": "tsx scripts/db.mts down",
+    "db:backup": "tsx scripts/db-backup.mts",
     "build:e2e": "cross-env NEXT_PUBLIC_ACCOUNTING_RUNTIME_MODE=demo NEXT_PUBLIC_API_BASE_URL=/api-proxy corepack pnpm build",
     "test:e2e": "corepack pnpm build:e2e && playwright test",
     "test:e2e:headed": "corepack pnpm build:e2e && playwright test --headed",

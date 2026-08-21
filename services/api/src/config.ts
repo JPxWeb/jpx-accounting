@@ -47,6 +47,13 @@ export type ApiRuntimeConfig = {
     accountName?: string | undefined;
     containerName?: string | undefined;
   };
+  /**
+   * ACCOUNTING_BLOB_DIR (D1 — local self-host ops): filesystem root for `LocalDiskBlobUploader`,
+   * consumed by `createBlobUploader`'s precedence (Azure → LocalDisk → Unavailable/Stub) when
+   * Azure Storage env is absent. Optional and orthogonal to runtimeMode: leaving it unset
+   * preserves today's precedence exactly (Azure → stub in demo, Azure → Unavailable in normal).
+   */
+  localBlobDir?: string | undefined;
   azureDocumentIntelligence: {
     endpoint?: string | undefined;
     apiKey?: string | undefined;
@@ -383,6 +390,7 @@ export function readApiRuntimeConfig(env: NodeJS.ProcessEnv = process.env): ApiR
       accountName: normalizeOptionalValue(env.AZURE_STORAGE_ACCOUNT),
       containerName: normalizeOptionalValue(env.AZURE_STORAGE_CONTAINER),
     },
+    localBlobDir: normalizeOptionalValue(env.ACCOUNTING_BLOB_DIR),
     azureDocumentIntelligence: {
       endpoint: normalizeOptionalValue(env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT),
       apiKey: normalizeOptionalValue(env.AZURE_DOCUMENT_INTELLIGENCE_API_KEY),

@@ -83,10 +83,10 @@ export function useDashboardData(): DashboardData {
   const deadlines = useMemo(
     () =>
       buildTaxTimeline({
-        profile: { vatPeriod: profile.vatPeriod, fiscalYearStart: profile.fiscalYearStart },
+        profile: { vatPeriod: profile.vatPeriod, fiscalYearStart: profile.fiscalYearStart, euTrade: profile.euTrade },
         today,
       }),
-    [profile.vatPeriod, profile.fiscalYearStart, today],
+    [profile.vatPeriod, profile.fiscalYearStart, profile.euTrade, today],
   );
 
   const snapshot = workspaceQuery.data;

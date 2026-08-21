@@ -177,3 +177,15 @@ test("invalid period tokens propagate InvalidPeriodTokenError from buildReportPa
     InvalidPeriodTokenError,
   );
 });
+
+test("buildReportPack floors fy-2025's from when firstFiscalYearStart is set", () => {
+  const pack = buildReportPack([], {
+    periodToken: "fy-2025",
+    fiscalYearStart: "09-01",
+    firstFiscalYearStart: "2025-10-15",
+  });
+  assert.equal(pack.period.from, "2025-10-15");
+  assert.equal(pack.period.to, "2026-08-31");
+  // The preceding window is deliberately NOT clamped.
+  assert.equal(pack.previousPeriod?.from, "2024-09-01");
+});

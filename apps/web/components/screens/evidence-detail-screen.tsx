@@ -5,15 +5,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useObjectUrl } from "../../hooks/use-object-url";
 import { apiClient } from "../../lib/client";
 import { getEvidenceBlob } from "../../lib/evidence-blob-cache";
+import { attachCandidateDate, attachCandidateLabel, selectAttachCandidates } from "../../lib/evidence-attach";
 import { formatPercent } from "../../lib/presentation";
 import { invalidateLedgerDerived } from "../../lib/query-invalidation";
+import { isDraftVoucherNumber } from "../../lib/voucher-link-display";
 import { useWorkspaceProfile } from "../providers/workspace-profile-provider";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { Money } from "../ui/money";
 import { ScreenHeader } from "../ui/screen-header";
 import { ScreenSkeleton } from "../ui/skeleton";
@@ -100,8 +104,146 @@ function EvidencePreview({ evidence }: { evidence: EvidenceObject }) {
   );
 }
 
+/** Rendered candidate cap; the search box is how you reach past it. */
+const MAX_ATTACH_CANDIDATES = 20;
+
+const ATTACH_SEARCH_INPUT_ID = "evidence-attach-search-input";
+
+/**
+ * "Attach to voucher" (KFR Phase E / Task E.5) — relink this evidence to an
+ * EXISTING voucher, which for imported SIE history is the only way to give a
+ * migrated entry its receipt (imported vouchers start with
+ * `evidencePacketId: null`, so there is no packet breadcrumb to auto-detect).
+ *
+ * ONE call: `composeEvidence` also discards this evidence's orphaned intake
+ * draft server-side, in the same transaction as the relink, and reports which
+ * reviews it rejected. The client neither decides that nor issues a second
+ * mutation — "which voucher did this receipt create at intake" is a recorded
+ * domain fact (`intakeEvidenceId`), not something the packet graph still knows.
+ *
+ * An inline section, not a modal: the whole flow is the browser's own tab order
+ * (search field → one Attach button per row), so it needs no focus trap.
+ *
+ * Candidates come from the workspace snapshot the journal view and command
+ * palette already read — no new endpoint for the picker.
+ */
+function AttachToVoucherPicker({
+  evidenceId,
+  currentVoucherId,
+}: {
+  evidenceId: string;
+  currentVoucherId: string | undefined;
+}) {
+  const t = useTranslations("evidence.attach");
+  const tCommon = useTranslations("common");
+  const queryClient = useQueryClient();
+  const [query, setQuery] = useState("");
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const workspaceQuery = useQuery({ queryKey: ["workspace"], queryFn: () => apiClient.getSnapshot() });
+
+  const attach = useMutation({
+    mutationFn: (targetVoucherId: string) => apiClient.composeEvidence({ evidenceIds: [evidenceId], targetVoucherId }),
+    onSuccess: (result) => {
+      invalidateLedgerDerived(queryClient);
+      // The row that was just activated disappears from the list (its voucher
+      // becomes the current one), so focus would fall to <body>. Park it on the
+      // section heading, next to the status line that says what happened.
+      headingRef.current?.focus();
+      toast.success(result.discardedReviewIds.length > 0 ? t("attachSuccessDraftDiscarded") : t("attachSuccess"));
+    },
+    onError: () => toast.error(t("attachError")),
+  });
+
+  const candidates = selectAttachCandidates(workspaceQuery.data?.vouchers ?? [], {
+    excludeVoucherId: currentVoucherId,
+    query,
+    limit: MAX_ATTACH_CANDIDATES,
+  });
+
+  return (
+    <section className="glass-panel rounded-xl p-5" data-testid="evidence-attach-picker">
+      {/* tabIndex -1: not a tab stop, but a deterministic focus target for the
+          post-attach hand-off (the activated row is gone by then). */}
+      <h2 className="text-lg font-semibold" ref={headingRef} tabIndex={-1}>
+        {t("title")}
+      </h2>
+      <p className="mt-2 text-sm text-muted-foreground">{t("description")}</p>
+      <label className="sr-only" htmlFor={ATTACH_SEARCH_INPUT_ID}>
+        {t("searchLabel")}
+      </label>
+      <Input
+        id={ATTACH_SEARCH_INPUT_ID}
+        data-testid="evidence-attach-search"
+        type="search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder={t("searchPlaceholder")}
+        className="mt-3 h-9"
+      />
+      {/* Inline AND toasted: a toast times out and is easy to miss, and focus
+          lands here after a successful attach — the outcome has to still be
+          readable at that point, not only while the toast was up. */}
+      {attach.isError ? (
+        <p
+          role="alert"
+          className="mt-3 rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger"
+          data-testid="evidence-attach-error"
+        >
+          {t("attachError")}
+        </p>
+      ) : attach.isSuccess ? (
+        <p role="status" className="mt-3 text-sm text-muted-foreground" data-testid="evidence-attach-status">
+          {attach.data.discardedReviewIds.length > 0 ? t("attachSuccessDraftDiscarded") : t("attachSuccess")}
+        </p>
+      ) : null}
+      {workspaceQuery.isPending ? null : candidates.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground" data-testid="evidence-attach-empty">
+          {t("empty")}
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {candidates.map((voucher) => {
+            // KFR E.1: an unposted voucher carries the Swedish draft sentinel —
+            // translate it, never print it (`en` is the default UI locale).
+            const number = isDraftVoucherNumber(voucher.voucherNumber)
+              ? tCommon("draftVoucher")
+              : voucher.voucherNumber;
+            const label = attachCandidateLabel(voucher);
+            return (
+              <li
+                key={voucher.id}
+                className="glass-panel-soft flex items-center justify-between gap-3 rounded-lg px-3 py-2"
+              >
+                <span className="text-sm">
+                  <span className="text-mono font-semibold">{number}</span>
+                  {voucher.origin === "import" ? (
+                    <span className="ml-2 text-xs text-muted-foreground">{t("importedBadge")}</span>
+                  ) : null}
+                  {" · "}
+                  {/* Seeded/demo vouchers are dated off the clock — mask for stable baselines (Rule 27). */}
+                  <span data-visual-mask>{attachCandidateDate(voucher).slice(0, 10)}</span>
+                  {label ? ` · ${label}` : ""}
+                </span>
+                <Button
+                  size="sm"
+                  aria-label={t("attachAriaLabel", { voucher: label ? `${number} — ${label}` : number })}
+                  disabled={attach.isPending}
+                  onClick={() => attach.mutate(voucher.id)}
+                >
+                  {t("attachButton")}
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function EvidenceDetailScreen() {
   const t = useTranslations("evidence");
+  const tCommon = useTranslations("common");
   const params = useParams<{ id: string }>();
   const { locale } = useWorkspaceProfile();
   const queryClient = useQueryClient();
@@ -221,7 +363,10 @@ export function EvidenceDetailScreen() {
         {voucher ? (
           <div className="mt-3 flex flex-wrap items-center gap-4">
             <span className="text-sm text-muted-foreground">
-              {t("links.voucher", { number: voucher.voucherNumber })}
+              {/* KFR E.1: an unposted voucher has no number — show the translated draft label. */}
+              {t("links.voucher", {
+                number: isDraftVoucherNumber(voucher.voucherNumber) ? tCommon("draftVoucher") : voucher.voucherNumber,
+              })}
             </span>
             {review ? (
               <Link
@@ -245,6 +390,8 @@ export function EvidenceDetailScreen() {
         )}
         {reviewDecided ? <p className="mt-2 text-xs text-muted-foreground">{t("links.extractLocked")}</p> : null}
       </section>
+
+      <AttachToVoucherPicker evidenceId={evidence.id} currentVoucherId={voucher?.id} />
     </div>
   );
 }

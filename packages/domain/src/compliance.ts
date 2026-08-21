@@ -1,6 +1,21 @@
 import type { ComplianceAlert, ReviewTask, Voucher } from "@jpx-accounting/contracts";
 
+import { DRAFT_VOUCHER_NUMBER } from "./store-shared";
+
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Human-readable voucher label for alert titles. Unposted vouchers all share
+ * the DRAFT_VOUCHER_NUMBER sentinel (KFR E.1), so N simultaneously-stale
+ * drafts would otherwise produce N alerts with byte-identical titles — the
+ * ids/targetIds stay distinct, but the label a human reads would not. Append
+ * the voucher id in that one case so every alert names a specific voucher.
+ */
+function voucherAlertLabel(voucher: Voucher): string {
+  return voucher.voucherNumber === DRAFT_VOUCHER_NUMBER
+    ? `${DRAFT_VOUCHER_NUMBER} ${voucher.id}`
+    : voucher.voucherNumber;
+}
 
 /**
  * Floored day-difference. Both timestamps normalized to UTC before compare.
@@ -57,7 +72,7 @@ export function detectComplianceIssuesDetailed(
       if (daysBetween(`${voucherDate}T00:00:00.000Z`, detectedAt) <= 7) continue;
       alerts.push({
         id: deterministicAlertId("stale-blocked", voucher.id),
-        title: `Blocked voucher unresolved for >7 days (${voucher.voucherNumber})`,
+        title: `Blocked voucher unresolved for >7 days (${voucherAlertLabel(voucher)})`,
         source: "internal/compliance",
         detectedAt,
         impactSummary:

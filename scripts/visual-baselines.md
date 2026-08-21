@@ -36,6 +36,25 @@ other** — a platform with no baselines fails all 20 comparisons with
 "snapshot doesn't exist", which is exactly the vacuous-red CI state this
 workflow exists to prevent.
 
+## `--update-snapshots` never refreshes a PASSING baseline
+
+Playwright rewrites a baseline only when the capture **fails** the comparison.
+A baseline that is stale but still inside `maxDiffPixelRatio` (0.02 here) is
+left untouched by `--update-snapshots`, and `=all` does not change that. This
+is how `books-*-linux` kept showing a Books header with two buttons missing
+while every run reported green.
+
+To genuinely refresh such a file, **delete it first** and re-run — the missing
+snapshot is then written from the current app:
+
+```bash
+rm tests/e2e/visual-regression.spec.ts-snapshots/books-*-win32.png
+corepack pnpm exec playwright test tests/e2e/visual-regression.spec.ts -g "books" --update-snapshots
+```
+
+Do the same inside the container for the `-linux` twins (step 4 below), so the
+two platforms never drift apart again.
+
 ## Golden rule (CONVENTIONS.md rule 27)
 
 Re-baseline **only after reviewing every diff image**. A diff localized to a

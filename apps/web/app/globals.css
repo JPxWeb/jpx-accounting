@@ -515,4 +515,30 @@ button:active:not(:disabled) {
   a {
     text-decoration: underline;
   }
+
+  /*
+   * Collapsible groups that opt in with `.print-expand` (KFR Task E.6: the
+   * huvudbok's per-account <details>) print their contents even when closed on
+   * screen — a printed general ledger showing only account headers is useless.
+   * `::details-content` is the only handle on a closed group's subtree, and the
+   * UA rule it overrides also zeroes the block size, so both must be restored.
+   * Chrome 131+ only — Firefox/Safari have no closed-<details> content handle,
+   * so those printers still show headers-only until a JS beforeprint/afterprint
+   * fallback is added.
+   */
+  .print-expand::details-content {
+    content-visibility: visible;
+    block-size: auto;
+    overflow: visible;
+  }
+
+  /* The disclosure triangle is a screen affordance, not ink. */
+  .print-expand > summary {
+    list-style: none;
+    cursor: auto;
+  }
+
+  .print-expand > summary::-webkit-details-marker {
+    display: none;
+  }
 }

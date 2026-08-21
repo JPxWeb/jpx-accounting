@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { AccountingApiError, createAccountingApiClient } from "@jpx-accounting/api-client";
-import type { EvidenceCreateInput } from "@jpx-accounting/contracts";
-import { uploadInitResultSchema } from "@jpx-accounting/contracts";
+import type { EvidenceCreateInput, ManualVoucherInput } from "@jpx-accounting/contracts";
+import { evidencePacketSchema, manualVoucherResultSchema, uploadInitResultSchema } from "@jpx-accounting/contracts";
+import { decodeSieBuffer } from "@jpx-accounting/domain";
 
 // ---------------------------------------------------------------------------
 // WS-E: api-client demo-fallback store behaviors beyond auth (the bearer-token
@@ -107,6 +108,142 @@ test("demo evidence flow: create → context → deterministic extraction refres
 });
 
 // ---------------------------------------------------------------------------
+// KFR Phase E / Task 2: manual vouchers + evidence composition. Both halves of
+// each seam matter — the demo fallback drives the in-memory store directly (this
+// is what the E2E demo build exercises) and the networked path posts the exact
+// contract body to the exact route.
+// ---------------------------------------------------------------------------
+
+const MANUAL_VOUCHER_INPUT: ManualVoucherInput = {
+  description: "Kontorsmaterial, kontant",
+  bookedAt: "2026-08-10",
+  lines: [
+    { accountNumber: "6110", debit: 100, credit: 0, vatCode: "NA" },
+    { accountNumber: "1930", debit: 0, credit: 100, vatCode: "NA" },
+  ],
+};
+
+test("demo createManualVoucher posts through MemoryLedgerStore.createManualVoucher without network", async (t) => {
+  const captured = mockFetch(t, () => jsonResponse({}));
+  const client = createAccountingApiClient({ runtimeMode: "demo" });
+
+  const result = await client.createManualVoucher(MANUAL_VOUCHER_INPUT);
+
+  manualVoucherResultSchema.parse(result);
+  const snapshot = await client.getSnapshot();
+  const review = snapshot.reviews.find((r) => r.id === result.reviewId);
+  assert.ok(review, "manual voucher review must appear in the workspace snapshot");
+  assert.equal(review.status, "needs-review");
+  assert.equal(review.voucherId, result.voucherId);
+  // Nothing posts until a human approves — the manual entry lands in the SAME
+  // review gate as captured evidence (AI/manual both suggest, never mutate).
+  const voucher = snapshot.vouchers.find((v) => v.id === result.voucherId);
+  assert.equal(voucher?.origin, "manual");
+  assert.equal(captured.length, 0, "demo createManualVoucher must not fetch");
+});
+
+test("demo composeEvidence relinks evidence via MemoryLedgerStore.composeEvidence without network", async (t) => {
+  const captured = mockFetch(t, () => jsonResponse({}));
+  const client = createAccountingApiClient({ runtimeMode: "demo" });
+
+  const created = await client.createEvidence(EVIDENCE_INPUT);
+  const result = await client.composeEvidence({
+    evidenceIds: [created.evidence.id],
+    targetVoucherId: created.voucher.id,
+  });
+
+  evidencePacketSchema.parse(result.packet);
+  assert.deepEqual(result.packet.evidenceIds, [created.evidence.id]);
+  // Attaching evidence back onto its OWN intake voucher orphans nothing, so
+  // nothing is discarded (KFR E.5 — the target is excluded from the search).
+  assert.deepEqual(result.discardedReviewIds, []);
+  // The relink is observable: the target voucher now points at the new packet.
+  const context = await client.getEvidenceContext(created.evidence.id);
+  assert.equal(context?.voucher?.evidencePacketId, result.packet.id);
+  assert.equal(captured.length, 0, "demo composeEvidence must not fetch");
+});
+
+test("demo composeEvidence surfaces an unknown targetVoucherId as VoucherNotFoundError", async () => {
+  const client = createAccountingApiClient({ runtimeMode: "demo" });
+  const created = await client.createEvidence(EVIDENCE_INPUT);
+
+  await assert.rejects(
+    () => client.composeEvidence({ evidenceIds: [created.evidence.id], targetVoucherId: "voucher_missing" }),
+    // Cross-boundary: assert on the error's NAME, not `instanceof` against a
+    // class the api-client re-exports through a different module instance.
+    (error: unknown) => {
+      assert.equal((error as Error).name, "VoucherNotFoundError");
+      return true;
+    },
+  );
+});
+
+test("createManualVoucher posts the contract body to /api/vouchers/manual and parses the result", async (t) => {
+  const captured = mockFetch(t, () => jsonResponse({ voucherId: "voucher_1", reviewId: "review_1" }, 201));
+  const client = createAccountingApiClient({ baseUrl: BASE_URL, runtimeMode: "normal" });
+
+  const result = await client.createManualVoucher(MANUAL_VOUCHER_INPUT);
+
+  assert.deepEqual(result, { voucherId: "voucher_1", reviewId: "review_1" });
+  assert.equal(captured[0]?.url, `${BASE_URL}/api/vouchers/manual`);
+  assert.equal(captured[0]?.init?.method, "POST");
+  const body = JSON.parse(String(captured[0]?.init?.body)) as Record<string, unknown>;
+  assert.deepEqual(body, MANUAL_VOUCHER_INPUT);
+  assert.equal("actorId" in body, false, "attribution is server-derived, never client-supplied (WS-C R5)");
+});
+
+test("composeEvidence round-trips targetVoucherId on the wire and parses packet + discards", async (t) => {
+  // KFR E.5: the response is `{ packet, discardedReviewIds }` — the ids of the
+  // intake drafts the server rejected inside the attach transaction.
+  const captured = mockFetch(t, () =>
+    jsonResponse({ packet: { id: "packet_1", evidenceIds: ["evidence_1"] }, discardedReviewIds: ["review_9"] }, 201),
+  );
+  const client = createAccountingApiClient({ baseUrl: BASE_URL, runtimeMode: "normal" });
+
+  const result = await client.composeEvidence({ evidenceIds: ["evidence_1"], targetVoucherId: "voucher_7" });
+
+  assert.deepEqual(result, {
+    packet: { id: "packet_1", evidenceIds: ["evidence_1"] },
+    discardedReviewIds: ["review_9"],
+  });
+  assert.equal(captured[0]?.url, `${BASE_URL}/api/evidence/compose`);
+  assert.equal(captured[0]?.init?.method, "POST");
+  assert.deepEqual(JSON.parse(String(captured[0]?.init?.body)), {
+    evidenceIds: ["evidence_1"],
+    targetVoucherId: "voucher_7",
+  });
+});
+
+test("manual voucher + compose failures surface the server's status and detail", async (t) => {
+  const client = createAccountingApiClient({ baseUrl: BASE_URL, runtimeMode: "normal" });
+
+  // 422 invalid_manual_voucher (the domain öre gate, past Zod's ±0.005 wire
+  // tolerance). `jsonError` puts the human text in `error`, the machine tag in `code`.
+  mockFetch(t, () => jsonResponse({ error: "Manual voucher does not balance.", code: "invalid_manual_voucher" }, 422));
+  await assert.rejects(
+    () => client.createManualVoucher(MANUAL_VOUCHER_INPUT),
+    (error: unknown) => {
+      assert.equal((error as Error).name, "AccountingApiError");
+      assert.equal((error as AccountingApiError).status, 422);
+      assert.equal((error as AccountingApiError).detail, "Manual voucher does not balance.");
+      return true;
+    },
+  );
+
+  // 404 voucher_not_found on an unknown compose target.
+  mockFetch(t, () => jsonResponse({ error: "Voucher not found", code: "voucher_not_found" }, 404));
+  await assert.rejects(
+    () => client.composeEvidence({ evidenceIds: ["evidence_1"], targetVoucherId: "voucher_missing" }),
+    (error: unknown) => {
+      assert.equal((error as Error).name, "AccountingApiError");
+      assert.equal((error as AccountingApiError).status, 404);
+      assert.equal((error as AccountingApiError).detail, "Voucher not found");
+      return true;
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Fail-closed wiring: normal mode without a baseUrl is a 503, not a fallback.
 // ---------------------------------------------------------------------------
 
@@ -117,6 +254,8 @@ test("normal mode without baseUrl throws AccountingApiError 503 instead of falli
     () => client.getSnapshot(),
     () => client.initUpload({ filename: "a.pdf", mimeType: "application/pdf", size: 1 }),
     () => client.getEvidenceContext("evidence_1"),
+    () => client.createManualVoucher(MANUAL_VOUCHER_INPUT),
+    () => client.composeEvidence({ evidenceIds: ["evidence_1"] }),
   ]) {
     await assert.rejects(call, (error: unknown) => {
       assert.ok(error instanceof AccountingApiError);
@@ -234,4 +373,34 @@ test("getEvidenceContext returns undefined on HTTP 404 (unknown evidence is not 
 
   assert.equal(await client.getEvidenceContext("evidence_unknown"), undefined);
   assert.equal(captured[0]?.url, `${BASE_URL}/api/evidence/evidence_unknown`);
+});
+
+// ---------------------------------------------------------------------------
+// KFR Phase D / Task 7: the period argument on fetchSieExport. Both halves of
+// the seam matter — the demo fallback builds the scoped bytes locally (this is
+// what the E2E demo build downloads), and the networked path forwards the
+// token as `?period=` so the API scopes and names the file.
+// ---------------------------------------------------------------------------
+
+test("fetchSieExport(period): demo fallback emits a period-scoped file; no period keeps full history", async () => {
+  const client = createAccountingApiClient({ runtimeMode: "demo" });
+
+  const scoped = decodeSieBuffer(await client.fetchSieExport("2026-03"));
+  // I-2b: #RAR 0 declares the fiscal year the window belongs to (calendar year
+  // on the default profile), never the one-month window itself.
+  assert.match(scoped, /^#RAR 0 20260101 20261231$/m, "the containing fiscal year is declared");
+
+  const full = decodeSieBuffer(await client.fetchSieExport());
+  assert.doesNotMatch(full, /^#(IB|UB|RES) /m, "full history carries no balance blocks");
+});
+
+test("fetchSieExport(period) forwards the token as ?period= over the wire", async (t) => {
+  const captured = mockFetch(t, () => new Response(new Uint8Array([0x23, 0x46]), { status: 200 }));
+  const client = createAccountingApiClient({ baseUrl: BASE_URL, runtimeMode: "normal" });
+
+  await client.fetchSieExport("fy-2026");
+  assert.equal(captured[0]?.url, `${BASE_URL}/api/exports/sie?period=fy-2026`);
+
+  await client.fetchSieExport();
+  assert.equal(captured[1]?.url, `${BASE_URL}/api/exports/sie`, "no period = no query string");
 });

@@ -16,6 +16,8 @@ function voucherFixture(fields: Partial<Voucher["voucherFields"]> = {}): Voucher
     organizationId: "org_demo",
     workspaceId: "ws_demo",
     evidencePacketId: "packet_test_1",
+    origin: "capture",
+    intakeEvidenceId: null,
     voucherNumber: "V-2026-0001",
     status: "needs-review",
     accountingMethod: "invoice",

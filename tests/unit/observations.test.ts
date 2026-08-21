@@ -12,6 +12,8 @@ import type {
   WorkspaceSnapshot,
 } from "@jpx-accounting/contracts";
 import { observationSchema } from "@jpx-accounting/contracts";
+import { parseSie } from "@jpx-accounting/domain";
+import { MemoryLedgerStore } from "@jpx-accounting/domain/store";
 import {
   buildObservations,
   detectCashRunway,
@@ -72,16 +74,19 @@ function makeSnapshot(partial: Partial<WorkspaceSnapshot> = {}): WorkspaceSnapsh
 
 function makeVoucher(input: {
   id: string;
-  packetId: string;
+  packetId: string | null;
   supplier?: string;
   gross?: number;
   month?: string;
+  origin?: Voucher["origin"];
 }): Voucher {
   return {
     id: input.id,
     organizationId: "org_jpx",
     workspaceId: "workspace_main",
     evidencePacketId: input.packetId,
+    origin: input.origin ?? "capture",
+    intakeEvidenceId: null,
     voucherNumber: `V-${input.id}`,
     status: "needs-review",
     accountingMethod: "invoice",
@@ -317,6 +322,62 @@ test("missing-evidence: vouchers without packet evidence aggregate into one warn
   assert.equal(obs.action?.href, "/capture");
 });
 
+test("missing-evidence: manual- and import-origin vouchers are excluded; capture-origin still flags", () => {
+  // A hand-typed journal entry legitimately has no captured evidence — the
+  // detector must not manufacture a warning the user can never clear (same
+  // design precedent as the documented SIE exclusion).
+  const manualOnly = makeSnapshot({
+    vouchers: [
+      makeVoucher({ id: "v_manual", packetId: null, origin: "manual" }),
+      makeVoucher({ id: "v_import", packetId: null, origin: "import" }),
+    ],
+    packets: [],
+  });
+  assert.deepEqual(detectMissingEvidence(manualOnly), []);
+
+  const mixed = makeSnapshot({
+    vouchers: [
+      makeVoucher({ id: "v_manual", packetId: null, origin: "manual" }),
+      makeVoucher({ id: "v_capture", packetId: "p_gone" }),
+    ],
+    packets: [],
+  });
+  const observations = detectMissingEvidence(mixed);
+  assert.equal(observations.length, 1);
+  assert.deepEqual(observations[0]?.params, { count: 1 }, "only the capture-origin voucher counts");
+  assert.deepEqual(observations[0]?.provenance, [{ kind: "voucher", target: "v_capture" }]);
+});
+
+test("missing-evidence: a real SIE import produces no unclearable warning (KFR Phase D / Task 1)", async () => {
+  // The origin exclusion above used synthetic rows. Since Task 1, `importSie`
+  // materializes REAL `origin: "import"` voucher rows with
+  // `evidencePacketId: null` — exactly the shape the detector would otherwise
+  // flag. Pin the live trigger end to end, not just the synthetic one.
+  const store = new MemoryLedgerStore();
+  await store.importSie({
+    actorId: "user_test",
+    file: parseSie(
+      [
+        "#SIETYP 4",
+        '#KONTO 6110 "Kontorsmateriel"',
+        '#VER A 42 20260315 "Inkopta parmar"',
+        "{",
+        "#TRANS 6110 {} 100.00",
+        "#TRANS 1930 {} -100.00",
+        "}",
+      ].join("\n"),
+    ),
+  });
+
+  const snapshot = await store.getSnapshot();
+  assert.equal(
+    snapshot.vouchers.filter((voucher) => voucher.origin === "import").length,
+    1,
+    "the import must have materialized a voucher row — otherwise this test proves nothing",
+  );
+  assert.deepEqual(detectMissingEvidence(snapshot), []);
+});
+
 test("missing-evidence: fully evidenced workspaces stay silent", () => {
   const snapshot = makeSnapshot({
     vouchers: [makeVoucher({ id: "v_ok", packetId: "p_ok" })],
@@ -342,7 +403,7 @@ function spikeSnapshot(currentGross: number, trailingGross: number[]): Workspace
   );
   return makeSnapshot({
     vouchers,
-    packets: vouchers.map((voucher) => packet(voucher.evidencePacketId, ["evidence_x"])),
+    packets: vouchers.map((voucher) => packet(voucher.evidencePacketId!, ["evidence_x"])),
   });
 }
 

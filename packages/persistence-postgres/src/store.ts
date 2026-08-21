@@ -5,6 +5,7 @@ import type {
   CompanySettings,
   ComplianceAlert,
   EvidenceComposeInput,
+  EvidenceComposeResult,
   EvidenceContext,
   EvidenceCreateInput,
   EvidenceCreateResult,
@@ -14,6 +15,8 @@ import type {
   ExtractedField,
   ExtractionResult,
   LedgerEvent,
+  ManualVoucherInput,
+  ManualVoucherResult,
   ReportBundle,
   ReportPack,
   ReviewDecisionInput,
@@ -41,11 +44,13 @@ import {
   detectComplianceIssues,
   evaluateVoucherRules,
   filterLedgerLines,
+  INTAKE_DRAFT_DISCARD_NOTES,
   LINE_CARRYING_EVENT_TYPES,
   nowIso,
   planComplianceMerge,
   planEvidenceCreate,
   planExtractionRefresh,
+  planManualVoucher,
   planReviewDecision,
   simulateApprovals,
   today,
@@ -55,9 +60,12 @@ import {
   type ReviewAction,
 } from "@jpx-accounting/domain";
 import {
+  buildImportedVoucher,
   isDuplicateEvidence,
   planSieImport,
+  summarizeSieWarnings,
   ReviewNotFoundError,
+  VoucherNotFoundError,
   type LedgerStore,
   type ReportRange,
   type SieImportInput,
@@ -179,7 +187,7 @@ type VoucherRow = {
   id: string;
   organization_id: string;
   workspace_id: string;
-  evidence_packet_id: string;
+  evidence_packet_id: string | null;
   voucher_number: string;
   accounting_method: string;
   status: string;
@@ -187,6 +195,8 @@ type VoucherRow = {
   extracted_fields: ExtractedField[];
   created_by: string;
   created_at: Date | string;
+  origin: string;
+  intake_evidence_id: string | null;
 };
 
 type ReviewRow = {
@@ -272,6 +282,11 @@ function rowToVoucher(row: VoucherRow): Voucher {
     voucherFields: row.voucher_fields,
     createdAt: toIso(row.created_at),
     createdBy: row.created_by,
+    origin: row.origin as Voucher["origin"],
+    // Nullable by design: manual, imported, and pre-0012 rows have no spawning
+    // evidence (KFR E.5). `?? null` normalizes a missing column read to the
+    // same shape MemoryLedgerStore produces (Rule 11).
+    intakeEvidenceId: row.intake_evidence_id ?? null,
   };
 }
 
@@ -374,7 +389,7 @@ async function resolvePacketAndVoucher(
 
   const voucherRows = await runner<VoucherRow[]>`
     SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-           accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+           accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
     FROM ledger.vouchers
     WHERE evidence_packet_id = ${packetRow.id}
       AND organization_id = ${scope.organizationId}
@@ -611,18 +626,11 @@ export class PostgresLedgerStore implements LedgerStore {
         const duplicate = await this.findDuplicateEvidence(tx, input);
         if (duplicate) return duplicate;
 
-        // Voucher number sequencing: COUNT(*) inside the workspace, just like
-        // MemoryLedgerStore which uses `this.vouchers.size + 1001`. Planner is
-        // called INSIDE the retry closure so fork retries re-derive ids.
-        const voucherCountRows = await tx<{ count: string }[]>`
-        SELECT COUNT(*)::text AS count
-        FROM ledger.vouchers
-        WHERE organization_id = ${this.defaults.organizationId}
-          AND workspace_id = ${this.defaults.workspaceId}
-      `;
-        const voucherCount = Number(voucherCountRows[0]?.count ?? "0");
+        // Voucher number: DRAFT_VOUCHER_NUMBER at intake — the real V-<n> is
+        // assigned only when the voucher posts (applyReviewDecision), KFR E.1 /
+        // G8. Planner is called INSIDE the retry closure so fork retries
+        // re-derive ids.
         const plan = planEvidenceCreate(input, {
-          voucherIndex: voucherCount,
           organizationId: this.defaults.organizationId,
           workspaceId: this.defaults.workspaceId,
         });
@@ -700,7 +708,9 @@ export class PostgresLedgerStore implements LedgerStore {
           voucher_fields,
           extracted_fields,
           created_by,
-          created_at
+          created_at,
+          origin,
+          intake_evidence_id
         ) VALUES (
           ${voucher.id},
           ${voucher.organizationId},
@@ -712,7 +722,9 @@ export class PostgresLedgerStore implements LedgerStore {
           ${tx.json(voucher.voucherFields as Parameters<typeof tx.json>[0])},
           ${tx.json(voucher.extractedFields as unknown as Parameters<typeof tx.json>[0])},
           ${voucher.createdBy},
-          ${voucher.createdAt}
+          ${voucher.createdAt},
+          ${voucher.origin},
+          ${voucher.intakeEvidenceId}
         )
       `;
 
@@ -770,11 +782,36 @@ export class PostgresLedgerStore implements LedgerStore {
   // refreshComplianceAlerts and putCompanySettings
   // below stay lock-free: they mutate read models only and append NO chain
   // events — the chain lock's scope is chain appends.
-  async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket> {
+  async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidenceComposeResult> {
     const actorId = input.actorId ?? DEMO_ACTOR_ID;
     return this.withChainForkRetry(() =>
       this.client.begin(async (tx) => {
         const tailHash = await this.lockWorkspaceTail(tx);
+        // Every append in this transaction chains off the previous one; the
+        // orphan discard below extends the same chain after the relink.
+        let chainTail = tailHash;
+
+        // KFR Phase D / Task 2: resolve the explicit target up front — its
+        // existence, and its current packet for the audit payload's
+        // `previousPacketId`. Throwing here rolls the whole transaction back
+        // (nothing is written yet either way) and `withChainForkRetry`
+        // re-throws non-fork errors immediately, so the caller sees
+        // `VoucherNotFoundError` un-retried.
+        let voucherIdToRelink: string | undefined = input.targetVoucherId;
+        let previousPacketId: string | undefined;
+        if (input.targetVoucherId !== undefined) {
+          const targetRows = await tx<Array<{ evidence_packet_id: string | null }>>`
+          SELECT evidence_packet_id FROM ledger.vouchers
+          WHERE id = ${input.targetVoucherId}
+            AND organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+          LIMIT 1
+        `;
+          if (targetRows.length === 0) {
+            throw new VoucherNotFoundError(input.targetVoucherId);
+          }
+          previousPacketId = targetRows[0]!.evidence_packet_id ?? undefined;
+        }
 
         const packet: EvidencePacket = {
           id: createId("packet"),
@@ -812,22 +849,32 @@ export class PostgresLedgerStore implements LedgerStore {
         // Voucher relink read-model fix (Memory parity §A N9): when evidence is
         // re-bundled into a new packet, repoint vouchers.evidence_packet_id so
         // getEvidenceContext (newest packet) and getSnapshot (voucher link) agree.
-        let voucherIdToRelink: string | undefined;
-        let previousPacketId: string | undefined;
-        for (const evidenceId of input.evidenceIds) {
-          const linkedRows = await tx<Array<{ voucher_id: string; evidence_packet_id: string }>>`
-          SELECT v.id AS voucher_id, v.evidence_packet_id
-          FROM ledger.vouchers v
-          JOIN ledger.evidence_packet_items i ON i.evidence_packet_id = v.evidence_packet_id
-          WHERE i.evidence_object_id = ${evidenceId}
-            AND i.evidence_packet_id != ${packet.id}
-            AND v.organization_id = ${this.defaults.organizationId}
-            AND v.workspace_id = ${this.defaults.workspaceId}
-          LIMIT 1
-        `;
-          if (linkedRows[0]?.voucher_id && !voucherIdToRelink) {
-            voucherIdToRelink = linkedRows[0].voucher_id;
-            previousPacketId = linkedRows[0].evidence_packet_id;
+        // Auto-detect only runs when no explicit target was given (Task 2).
+        if (voucherIdToRelink === undefined) {
+          for (const evidenceId of input.evidenceIds) {
+            // Store parity (Rule 11): MemoryLedgerStore resolves this through
+            // `evidenceIdToPacketId`, which always holds the NEWEST packet the
+            // evidence was composed into. An unordered LIMIT 1 let Postgres
+            // pick either voucher once a receipt had lived on two of them —
+            // ordinary state since the explicit attach flow landed — so order
+            // by packet recency, with the packet id as a stable same-timestamp
+            // tiebreak (fix wave I-7).
+            const linkedRows = await tx<Array<{ voucher_id: string; evidence_packet_id: string }>>`
+            SELECT v.id AS voucher_id, v.evidence_packet_id
+            FROM ledger.vouchers v
+            JOIN ledger.evidence_packet_items i ON i.evidence_packet_id = v.evidence_packet_id
+            JOIN ledger.evidence_packets p ON p.id = v.evidence_packet_id
+            WHERE i.evidence_object_id = ${evidenceId}
+              AND i.evidence_packet_id != ${packet.id}
+              AND v.organization_id = ${this.defaults.organizationId}
+              AND v.workspace_id = ${this.defaults.workspaceId}
+            ORDER BY p.created_at DESC, p.id DESC
+            LIMIT 1
+          `;
+            if (linkedRows[0]?.voucher_id && !voucherIdToRelink) {
+              voucherIdToRelink = linkedRows[0].voucher_id;
+              previousPacketId = linkedRows[0].evidence_packet_id;
+            }
           }
         }
 
@@ -843,7 +890,7 @@ export class PostgresLedgerStore implements LedgerStore {
           // WS-B B6b: a relink changes which evidence backs a voucher — that
           // must be visible in the audit chain, not a silent repoint (payload
           // parity with MemoryLedgerStore.composeEvidence).
-          await this.appendEvent(
+          const relinked = await this.appendEvent(
             tx,
             {
               organizationId: this.defaults.organizationId,
@@ -860,11 +907,88 @@ export class PostgresLedgerStore implements LedgerStore {
                 evidenceIds: [...input.evidenceIds],
               },
             },
-            tailHash,
+            chainTail,
           );
+          chainTail = relinked.eventHash;
         }
 
-        return packet;
+        // KFR Phase E / E.5 — discard the intake drafts this attach orphaned,
+        // inside THIS transaction (already holding the workspace chain lock),
+        // so an attach and its discard are never half-applied. See the
+        // `LedgerStore.composeEvidence` contract for the four-condition rule;
+        // `intakeEvidenceId` is what makes "the draft this receipt created"
+        // distinguishable from "a voucher this receipt was attached to a
+        // moment ago" — `evidence_packet_id` follows every re-attach and so
+        // cannot answer it. Only an explicit attach can orphan anything.
+        const discardedReviewIds: string[] = [];
+        if (input.targetVoucherId !== undefined) {
+          for (const evidenceId of input.evidenceIds) {
+            const orphanRows = await tx<VoucherRow[]>`
+              SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
+                     accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
+              FROM ledger.vouchers
+              WHERE intake_evidence_id = ${evidenceId}
+                AND origin = 'capture'
+                AND id <> ${input.targetVoucherId}
+                AND organization_id = ${this.defaults.organizationId}
+                AND workspace_id = ${this.defaults.workspaceId}
+              LIMIT 1
+            `;
+            const orphanRow = orphanRows[0];
+            if (!orphanRow) continue;
+
+            const reviewRows = await tx<ReviewRow[]>`
+              SELECT id, organization_id, workspace_id, voucher_id, status, blocked_reason,
+                     suggested_action, suggestion, provenance_timeline, title, created_at
+              FROM ledger.review_tasks
+              WHERE voucher_id = ${orphanRow.id}
+                AND organization_id = ${this.defaults.organizationId}
+                AND workspace_id = ${this.defaults.workspaceId}
+              LIMIT 1
+            `;
+            const reviewRow = reviewRows[0];
+            if (!reviewRow || reviewRow.status !== "needs-review") continue;
+
+            // Reject never posts, so the posted-voucher COUNT(*) is irrelevant
+            // — pass 0 and skip the scan, exactly as applyReviewDecision does.
+            const plan = planReviewDecision(
+              rowToReview(reviewRow),
+              rowToVoucher(orphanRow),
+              "reject",
+              { actorId, notes: INTAKE_DRAFT_DISCARD_NOTES },
+              { postedVoucherCount: 0 },
+            );
+            if (plan.kind === "replay") continue;
+
+            await tx`
+              UPDATE ledger.review_tasks
+              SET status = ${plan.updatedReview.status},
+                  title = ${plan.updatedReview.title},
+                  provenance_timeline = ${tx.json(plan.updatedReview.provenanceTimeline as unknown as Parameters<typeof tx.json>[0])}
+              WHERE id = ${plan.updatedReview.id}
+            `;
+            await tx`
+              UPDATE ledger.vouchers
+              SET status = ${plan.updatedVoucher.status},
+                  voucher_number = ${plan.updatedVoucher.voucherNumber}
+              WHERE id = ${plan.updatedVoucher.id}
+                AND organization_id = ${this.defaults.organizationId}
+                AND workspace_id = ${this.defaults.workspaceId}
+            `;
+
+            for (const event of plan.events) {
+              const appended = await this.appendEvent(
+                tx,
+                { ...event, payload: event.payload as unknown as Record<string, unknown> },
+                chainTail,
+              );
+              chainTail = appended.eventHash;
+            }
+            discardedReviewIds.push(plan.updatedReview.id);
+          }
+        }
+
+        return { packet, discardedReviewIds };
       }),
     );
   }
@@ -951,6 +1075,8 @@ export class PostgresLedgerStore implements LedgerStore {
         SET extracted_fields = ${tx.json(plan.updatedVoucher.extractedFields as unknown as Parameters<typeof tx.json>[0])},
             voucher_fields = ${tx.json(plan.updatedVoucher.voucherFields as Parameters<typeof tx.json>[0])}
         WHERE id = ${plan.updatedVoucher.id}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
       `;
 
         // 6. Persist regenerated suggestion / blocked copy on the review read model.
@@ -1000,6 +1126,8 @@ export class PostgresLedgerStore implements LedgerStore {
           importedVouchers: 0,
           importedTransactions: 0,
           skipped: [...skipped],
+          // Non-fatal parse notes ride along so the caller can surface them (D3).
+          warnings: summarizeSieWarnings(input.file.warnings),
         };
 
         // Idempotency: skip vouchers whose aggregate id was already imported.
@@ -1033,6 +1161,9 @@ export class PostgresLedgerStore implements LedgerStore {
           eventHash: string;
         };
         const batch: PlannedEventRow[] = [];
+        // KFR Phase D / Task 1: the already-posted Voucher rows materialized
+        // alongside the events, batched the same way for the same reason.
+        const voucherBatch: Voucher[] = [];
         let prev = tailHash;
         for (const planned of vouchers) {
           if (alreadyImported.has(planned.aggregateId)) {
@@ -1051,6 +1182,15 @@ export class PostgresLedgerStore implements LedgerStore {
           const eventHash = buildEventHash(prev, payload);
           batch.push({ id: createId("evt"), aggregateId: planned.aggregateId, payload, previousHash: prev, eventHash });
           prev = eventHash;
+
+          voucherBatch.push(
+            buildImportedVoucher(planned, {
+              organizationId: this.defaults.organizationId,
+              workspaceId: this.defaults.workspaceId,
+              actorId,
+              createdAt: occurredAt,
+            }),
+          );
 
           result.importedVouchers += 1;
           result.importedTransactions += planned.lines.length;
@@ -1089,7 +1229,172 @@ export class PostgresLedgerStore implements LedgerStore {
         `;
         }
 
+        if (voucherBatch.length > 0) {
+          // Same one-round-trip bulk-insert shape as the events batch above,
+          // for the same reason: never one INSERT per SIE voucher under the
+          // workspace chain lock. `evidence_packet_id` is always NULL for a
+          // freshly-imported voucher — only the compose/attach path ever sets
+          // it. Casts are explicit so the text values coming out of jsonb land
+          // in the timestamptz column without relying on assignment coercion.
+          await tx`
+          INSERT INTO ledger.vouchers (
+            id, organization_id, workspace_id, evidence_packet_id, voucher_number,
+            accounting_method, status, origin, voucher_fields, extracted_fields,
+            created_by, created_at, intake_evidence_id
+          )
+          SELECT
+            v->>'id',
+            v->>'organizationId',
+            v->>'workspaceId',
+            NULL,
+            v->>'voucherNumber',
+            v->>'accountingMethod',
+            v->>'status',
+            v->>'origin',
+            v->'voucherFields',
+            v->'extractedFields',
+            v->>'createdBy',
+            (v->>'createdAt')::timestamptz,
+            -- Imported history has no spawning evidence (KFR E.5); explicit so a
+            -- future column default can never silently diverge from the read model.
+            NULL
+          FROM jsonb_array_elements(${tx.json(voucherBatch as unknown as Parameters<typeof tx.json>[0])}::jsonb) AS v
+        `;
+        }
+
         return result;
+      }),
+    );
+  }
+
+  /**
+   * Manual N-line journal entry through the review gate (KFR Phase B / D2).
+   * Store parity with `MemoryLedgerStore.createManualVoucher` (Rule 11): the
+   * SAME `planManualVoucher` plan, written inside the standard advisory-lock +
+   * chain-fork-retry transaction every other appender uses, so the voucher, its
+   * review, and the VoucherCreated + SuggestionGenerated chain pair all land or
+   * none of them do.
+   *
+   * Enabled by migration 0009: `evidence_packet_id` is nullable (a manual
+   * voucher has no evidence packet) and `origin` carries 'manual', which is
+   * what `planReviewDecision` reads at approval time to post the reviewer's
+   * lines VERBATIM instead of re-deriving a single-account expense shape.
+   *
+   * Rejection ordering: `planManualVoucher`'s exact-öre gate runs INSIDE the
+   * transaction (it needs the under-lock voucher COUNT for the voucher number,
+   * and every `withChainForkRetry` closure must re-derive its state on retry).
+   * An `InvalidManualVoucherError` therefore rolls the transaction back before
+   * anything is visible — no rows, no events, no chain movement, matching
+   * Memory's "throws before any mutation" behavior from the caller's side.
+   */
+  async createManualVoucher(input: ManualVoucherInput & ActorAttribution): Promise<ManualVoucherResult> {
+    // Server-derived attribution or the demo sentinel — never a client value
+    // (R5). `planManualVoucher` requires a RESOLVED actor (it stamps
+    // `createdBy` and both event `actorId`s), exactly as Memory resolves it.
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
+
+    return this.withChainForkRetry(() =>
+      this.client.begin(async (tx) => {
+        const tailHash = await this.lockWorkspaceTail(tx);
+
+        // Voucher number: DRAFT_VOUCHER_NUMBER at intake, identical to
+        // createEvidence — manual entries earn their V-<n> on the shared
+        // posting branch (applyReviewDecision), KFR E.1 / G8. Planner runs
+        // INSIDE the retry closure so a fork retry re-derives every id and hash.
+        const plan = planManualVoucher(
+          { ...input, actorId },
+          {
+            organizationId: this.defaults.organizationId,
+            workspaceId: this.defaults.workspaceId,
+          },
+        );
+        const { voucher, review } = plan;
+        // A manual plan's review ALWAYS carries the verbatim-line suggestion
+        // (planManualVoucher builds it unconditionally); assert rather than
+        // persist a null suggestion the approval path then reads back as the
+        // manual-origin invariant throw. Same guard as Memory.
+        const suggestion = review.suggestion;
+        if (!suggestion) {
+          throw new Error(`Manual voucher plan for ${voucher.id} produced no suggestion (invariant violation).`);
+        }
+
+        await tx`
+          INSERT INTO ledger.vouchers (
+            id,
+            organization_id,
+            workspace_id,
+            evidence_packet_id,
+            voucher_number,
+            accounting_method,
+            status,
+            voucher_fields,
+            extracted_fields,
+            created_by,
+            created_at,
+            origin,
+            intake_evidence_id
+          ) VALUES (
+            ${voucher.id},
+            ${voucher.organizationId},
+            ${voucher.workspaceId},
+            ${voucher.evidencePacketId},
+            ${voucher.voucherNumber},
+            ${voucher.accountingMethod},
+            ${voucher.status},
+            ${tx.json(voucher.voucherFields as Parameters<typeof tx.json>[0])},
+            ${tx.json(voucher.extractedFields as unknown as Parameters<typeof tx.json>[0])},
+            ${voucher.createdBy},
+            ${voucher.createdAt},
+            ${voucher.origin},
+            ${voucher.intakeEvidenceId}
+          )
+        `;
+
+        await tx`
+          INSERT INTO ledger.review_tasks (
+            id,
+            organization_id,
+            workspace_id,
+            voucher_id,
+            status,
+            blocked_reason,
+            suggested_action,
+            suggestion,
+            provenance_timeline,
+            title,
+            created_at
+          ) VALUES (
+            ${review.id},
+            ${this.defaults.organizationId},
+            ${this.defaults.workspaceId},
+            ${review.voucherId},
+            ${review.status},
+            ${review.blockedReason ?? null},
+            ${review.suggestedAction},
+            ${tx.json(suggestion as unknown as Parameters<typeof tx.json>[0])},
+            ${tx.json(review.provenanceTimeline as unknown as Parameters<typeof tx.json>[0])},
+            ${review.title},
+            ${voucher.createdAt}
+          )
+        `;
+
+        // Append the planned VoucherCreated + SuggestionGenerated pair, threading
+        // previous_hash forward — never hand-crafted, always the store's own
+        // appendEvent chained off the locked tail.
+        let prev = tailHash;
+        for (const event of plan.events) {
+          const appended = await this.appendEvent(
+            tx,
+            {
+              ...event,
+              payload: event.payload as unknown as Record<string, unknown>,
+            },
+            prev,
+          );
+          prev = appended.eventHash;
+        }
+
+        return { voucherId: voucher.id, reviewId: review.id };
       }),
     );
   }
@@ -1163,6 +1468,9 @@ export class PostgresLedgerStore implements LedgerStore {
     return buildReportPack(lines, {
       periodToken: input.period,
       fiscalYearStart: settings?.profile.fiscalYearStart ?? "01-01",
+      ...(settings?.profile.firstFiscalYearStart !== undefined
+        ? { firstFiscalYearStart: settings.profile.firstFiscalYearStart }
+        : {}),
     });
   }
 
@@ -1178,7 +1486,7 @@ export class PostgresLedgerStore implements LedgerStore {
 
     const voucherRows = await this.client<VoucherRow[]>`
       SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-             accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+             accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
       FROM ledger.vouchers
       WHERE organization_id = ${this.defaults.organizationId}
         AND workspace_id = ${this.defaults.workspaceId}
@@ -1251,7 +1559,7 @@ export class PostgresLedgerStore implements LedgerStore {
     return this.client.begin(async (tx) => {
       const voucherRows = await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
         FROM ledger.vouchers
         WHERE id = ${voucherId}
           AND organization_id = ${this.defaults.organizationId}
@@ -1262,6 +1570,27 @@ export class PostgresLedgerStore implements LedgerStore {
       if (!voucherRow) return undefined;
 
       const voucher = rowToVoucher(voucherRow);
+
+      // KFR D2 (store parity, Rule 11 — MemoryLedgerStore applies the identical
+      // guard): a manual voucher's suggestion IS the reviewer's verbatim lines.
+      // There is nothing to re-derive from extracted fields (a manual entry has
+      // none), and regenerating would write a deterministic single-account
+      // suggestion — with no `lines` — over the review below, turning the next
+      // approval into the manual-origin invariant throw. `POST
+      // /api/vouchers/:id/suggest` is reachable for ANY voucher id, so this is
+      // a live path, not a theoretical one. Return what was authored, unchanged.
+      if (voucher.origin === "manual") {
+        const storedRows = await tx<{ suggestion: AccountingSuggestion | null }[]>`
+          SELECT suggestion
+          FROM ledger.review_tasks
+          WHERE voucher_id = ${voucherId}
+            AND organization_id = ${this.defaults.organizationId}
+            AND workspace_id = ${this.defaults.workspaceId}
+          LIMIT 1
+        `;
+        return storedRows[0]?.suggestion ?? undefined;
+      }
+
       const ruleHits = evaluateVoucherRules(voucher);
       const suggestion = buildDeterministicSuggestion(voucher, ruleHits);
 
@@ -1309,7 +1638,7 @@ export class PostgresLedgerStore implements LedgerStore {
 
         const voucherRows = await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
         FROM ledger.vouchers
         WHERE id = ${review.voucherId}
           AND organization_id = ${this.defaults.organizationId}
@@ -1321,14 +1650,36 @@ export class PostgresLedgerStore implements LedgerStore {
 
         const voucher = rowToVoucher(voucherRow);
 
+        // KFR E.1 posting-time numbering: count the workspace's already-posted
+        // vouchers ONLY when this decision can actually post. The read happens
+        // inside the SAME advisory-locked transaction as `lockWorkspaceTail`
+        // above, so two concurrent approvals serialize and can never observe
+        // the same count — no two vouchers ever get the same V-<n>.
+        // `status = 'posted'` (SIE imports) is deliberately excluded: those
+        // carry their own "<series> <number>" and never consume a V-number.
+        // Same guard as MemoryLedgerStore (Rule 11).
+        const willPost = review.status === "needs-review" && action !== "reject" && Boolean(review.suggestion);
+        let postedVoucherCount = 0;
+        if (willPost) {
+          const postedCountRows = await tx<{ count: string }[]>`
+        SELECT COUNT(*)::text AS count
+        FROM ledger.vouchers
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+          AND status IN ('approved', 'booked-without-vat')
+      `;
+          postedVoucherCount = Number(postedCountRows[0]?.count ?? "0");
+        }
+
         // Planner validates edits (InvalidReviewEditError) before any write and
         // is re-entered on every chain-fork retry.
-        const plan = planReviewDecision(review, voucher, action, input);
+        const plan = planReviewDecision(review, voucher, action, input, { postedVoucherCount });
         if (plan.kind === "replay") return plan.review;
 
         await tx`
         UPDATE ledger.review_tasks
         SET status = ${plan.updatedReview.status},
+            title = ${plan.updatedReview.title},
             provenance_timeline = ${tx.json(plan.updatedReview.provenanceTimeline as unknown as Parameters<typeof tx.json>[0])},
             suggestion = ${plan.updatedReview.suggestion ? tx.json(plan.updatedReview.suggestion as unknown as Parameters<typeof tx.json>[0]) : null}
         WHERE id = ${plan.updatedReview.id}
@@ -1336,8 +1687,11 @@ export class PostgresLedgerStore implements LedgerStore {
 
         await tx`
         UPDATE ledger.vouchers
-        SET status = ${plan.updatedVoucher.status}
+        SET status = ${plan.updatedVoucher.status},
+            voucher_number = ${plan.updatedVoucher.voucherNumber}
         WHERE id = ${plan.updatedVoucher.id}
+          AND organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
       `;
 
         // Honest decision vocabulary (WS-B B6a) + optional PostedToLedger with
@@ -1389,7 +1743,7 @@ export class PostgresLedgerStore implements LedgerStore {
             ? []
             : await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
         FROM ledger.vouchers
         WHERE organization_id = ${this.defaults.organizationId}
           AND workspace_id = ${this.defaults.workspaceId}
@@ -1466,7 +1820,7 @@ export class PostgresLedgerStore implements LedgerStore {
 
       const voucherRows = await tx<VoucherRow[]>`
         SELECT id, organization_id, workspace_id, evidence_packet_id, voucher_number,
-               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at
+               accounting_method, status, voucher_fields, extracted_fields, created_by, created_at, origin, intake_evidence_id
         FROM ledger.vouchers
         WHERE organization_id = ${this.defaults.organizationId}
           AND workspace_id = ${this.defaults.workspaceId}

@@ -288,7 +288,7 @@ async function snapshotHistory(sql: PostgresClient | ReservedSql): Promise<Histo
 /**
  * `ledger.events` existing while `jpx_meta.schema_migrations` is empty means this is a
  * pre-tooling database (bootstrap case), not a fresh one — purely informational for the log
- * line below. The APPLY LOGIC itself needs no separate branch: 0001-0008 are all written
+ * line below. The APPLY LOGIC itself needs no separate branch: 0001-0009 are all written
  * idempotently (`IF NOT EXISTS` / exception-guarded `DO` blocks — verified by reading them),
  * so "pending = every discovered file" safely replays the full set on an existing schema
  * exactly as it would create one from scratch, and each file's checksum is then baselined
@@ -428,7 +428,7 @@ async function indexExists(
 /**
  * Capability assertions run after `migrate` (and on demand via `verify`/`replay`). Each
  * check queries information_schema/pg_catalog for the exact names introduced by migrations
- * 0005-0008 (read from the actual SQL files, not recalled) rather than probing behavior, so
+ * 0005-0009 (read from the actual SQL files, not recalled) rather than probing behavior, so
  * a failure names precisely which migration is missing or which provider capability is
  * absent.
  */
@@ -581,6 +581,21 @@ export async function runCapabilityAssertions(sql: PostgresClient | ReservedSql)
   );
 
   results.push(
+    await safeCheck("vouchers-tenant-pk", async () => {
+      const columns = await primaryKeyColumns(sql, "ledger", "vouchers");
+      const pkPass = JSON.stringify(columns) === JSON.stringify(["organization_id", "workspace_id", "id"]);
+      const fkPass = await constraintExists(sql, "ledger", "review_tasks", "ledger_review_tasks_voucher_fk", "f");
+      const pass = pkPass && fkPass;
+      return {
+        name: "vouchers-tenant-pk",
+        pass,
+        detail: `ledger.vouchers primary key columns: (${columns.join(", ") || "none"}); composite review-task FK ${fkPass ? "present" : "missing"}.`,
+        ...(pass ? {} : { remediation: "Apply migration 0010_voucher_tenant_pk.sql." }),
+      };
+    }),
+  );
+
+  results.push(
     await safeCheck("evidence-dedupe-index", async () => {
       const pass = await indexExists(sql, "ledger", "evidence_objects", "ledger_evidence_objects_dedupe_idx");
       return {
@@ -590,6 +605,73 @@ export async function runCapabilityAssertions(sql: PostgresClient | ReservedSql)
           ? "Index ledger_evidence_objects_dedupe_idx is present on ledger.evidence_objects."
           : "ledger_evidence_objects_dedupe_idx not found on ledger.evidence_objects.",
         ...(pass ? {} : { remediation: "Apply migration 0008_evidence_dedupe_index.sql." }),
+      };
+    }),
+  );
+
+  results.push(
+    await safeCheck("manual-vouchers-schema", async () => {
+      const originColumn = await getColumnInfo(sql, "ledger", "vouchers", "origin");
+      const nullableRows = await sql<{ is_nullable: string }[]>`
+        select is_nullable from information_schema.columns
+        where table_schema = 'ledger' and table_name = 'vouchers' and column_name = 'evidence_packet_id'
+      `;
+      const packetNullable = nullableRows[0]?.is_nullable === "YES";
+      const hasOriginCheck = await constraintExists(sql, "ledger", "vouchers", "ledger_vouchers_origin_check", "c");
+      const pass = Boolean(originColumn) && packetNullable && hasOriginCheck;
+      return {
+        name: "manual-vouchers-schema",
+        pass,
+        detail: pass
+          ? "ledger.vouchers.evidence_packet_id is nullable and origin + its CHECK constraint are present."
+          : `ledger.vouchers evidence_packet_id nullable=${packetNullable}, origin column=${Boolean(originColumn)}, origin check=${hasOriginCheck}.`,
+        ...(pass ? {} : { remediation: "Apply migration 0009_manual_vouchers.sql." }),
+      };
+    }),
+  );
+
+  results.push(
+    await safeCheck("draft-voucher-number-index", async () => {
+      // KFR E.1: unposted vouchers all share the 'Utkast' sentinel, so the
+      // voucher-number unique index MUST be partial on that predicate — a full
+      // index makes the second draft in a workspace fail with 23505.
+      const rows = await sql<{ indexdef: string }[]>`
+        select indexdef from pg_indexes
+        where schemaname = 'ledger' and tablename = 'vouchers' and indexname = 'ledger_vouchers_number_idx'
+      `;
+      const indexdef = rows[0]?.indexdef ?? "";
+      const pass = indexdef.includes("Utkast");
+      return {
+        name: "draft-voucher-number-index",
+        pass,
+        detail: pass
+          ? "ledger_vouchers_number_idx is partial — the draft-number sentinel is exempt from uniqueness."
+          : `ledger_vouchers_number_idx is not partial on the draft sentinel (definition: ${indexdef || "missing"}).`,
+        ...(pass ? {} : { remediation: "Apply migration 0011_draft_voucher_numbers.sql." }),
+      };
+    }),
+  );
+
+  results.push(
+    await safeCheck("voucher-intake-evidence", async () => {
+      // KFR E.5: composeEvidence discards the receipt's OWN orphaned intake
+      // draft in-transaction, which is only decidable from this recorded fact
+      // (evidence_packet_id follows every re-attach). Missing column → the
+      // store's INSERT column list does not match the table.
+      const column = await getColumnInfo(sql, "ledger", "vouchers", "intake_evidence_id");
+      const nullableRows = await sql<{ is_nullable: string }[]>`
+        select is_nullable from information_schema.columns
+        where table_schema = 'ledger' and table_name = 'vouchers' and column_name = 'intake_evidence_id'
+      `;
+      const nullable = nullableRows[0]?.is_nullable === "YES";
+      const pass = column?.data_type === "text" && nullable;
+      return {
+        name: "voucher-intake-evidence",
+        pass,
+        detail: pass
+          ? "ledger.vouchers.intake_evidence_id is present, text, and nullable."
+          : `ledger.vouchers.intake_evidence_id type=${column?.data_type ?? "missing"}, nullable=${nullable}.`,
+        ...(pass ? {} : { remediation: "Apply migration 0012_voucher_intake_evidence.sql." }),
       };
     }),
   );

@@ -1,7 +1,8 @@
 import type { CoaAccount, CoaTemplate } from "./types";
 
 /**
- * BAS 2026 — 68-account Swedish SMB subset (advisory-pivot Phase 2).
+ * BAS 2026 — 78-account Swedish SMB subset (advisory-pivot Phase 2; 68 original
+ * + 10 KFR Phase B reverse-charge/year-end additions).
  *
  * Notes:
  * - `-LIMITED` vat codes are retired; deductibility moved to data
@@ -14,7 +15,19 @@ const accounts: CoaAccount[] = [
   // 1xxx assets
   { number: "1110", name: "Byggnader", accountClass: "asset", defaultVatCode: "NA" },
   { number: "1220", name: "Inventarier och verktyg", accountClass: "asset", defaultVatCode: "NA" },
+  {
+    number: "1229",
+    name: "Ackumulerade avskrivningar på inventarier och verktyg",
+    accountClass: "asset",
+    defaultVatCode: "NA",
+  },
   { number: "1250", name: "Datorer", accountClass: "asset", defaultVatCode: "NA" },
+  {
+    number: "1259",
+    name: "Ackumulerade avskrivningar på datorer",
+    accountClass: "asset",
+    defaultVatCode: "NA",
+  },
   { number: "1510", name: "Kundfordringar", accountClass: "asset", defaultVatCode: "NA" },
   {
     number: "1630",
@@ -35,13 +48,33 @@ const accounts: CoaAccount[] = [
   { number: "2081", name: "Aktiekapital", accountClass: "equity-liability", defaultVatCode: "NA" },
   { number: "2091", name: "Balanserad vinst eller förlust", accountClass: "equity-liability", defaultVatCode: "NA" },
   { number: "2099", name: "Årets resultat", accountClass: "equity-liability", defaultVatCode: "NA" },
+  { number: "2126", name: "Periodiseringsfond 2026", accountClass: "equity-liability", defaultVatCode: "NA" },
   { number: "2440", name: "Leverantörsskulder", accountClass: "equity-liability", defaultVatCode: "NA" },
   { number: "2510", name: "Skatteskulder", accountClass: "equity-liability", defaultVatCode: "NA" },
+  { number: "2518", name: "Betald F-skatt", accountClass: "equity-liability", defaultVatCode: "NA" },
   { number: "2610", name: "Utgående moms 25 %", accountClass: "equity-liability", defaultVatCode: "NA" },
+  {
+    number: "2614",
+    name: "Utgående moms omvänd skattskyldighet, 25 %",
+    accountClass: "equity-liability",
+    defaultVatCode: "NA",
+  },
   { number: "2620", name: "Utgående moms 12 %", accountClass: "equity-liability", defaultVatCode: "NA" },
   { number: "2630", name: "Utgående moms 6 %", accountClass: "equity-liability", defaultVatCode: "NA" },
   { number: "2640", name: "Ingående moms", accountClass: "equity-liability", defaultVatCode: "NA" },
   { number: "2641", name: "Debiterad ingående moms", accountClass: "equity-liability", defaultVatCode: "NA" },
+  {
+    number: "2645",
+    name: "Beräknad ingående moms på förvärv från utlandet",
+    accountClass: "equity-liability",
+    defaultVatCode: "NA",
+  },
+  {
+    number: "2647",
+    name: "Ingående moms omvänd skattskyldighet varor och tjänster i Sverige",
+    accountClass: "equity-liability",
+    defaultVatCode: "NA",
+  },
   { number: "2650", name: "Redovisningskonto för moms", accountClass: "equity-liability", defaultVatCode: "NA" },
   { number: "2710", name: "Personalskatt", accountClass: "equity-liability", defaultVatCode: "NA" },
   {
@@ -51,6 +84,7 @@ const accounts: CoaAccount[] = [
     defaultVatCode: "NA",
   },
   { number: "2890", name: "Övriga kortfristiga skulder", accountClass: "equity-liability", defaultVatCode: "NA" },
+  { number: "2899", name: "Övriga kortfristiga skulder", accountClass: "equity-liability", defaultVatCode: "NA" },
   {
     number: "2990",
     name: "Övriga upplupna kostnader och förutbetalda intäkter",
@@ -62,6 +96,12 @@ const accounts: CoaAccount[] = [
   { number: "3002", name: "Försäljning inom Sverige 12 %", accountClass: "revenue", defaultVatCode: "VAT12" },
   { number: "3003", name: "Försäljning inom Sverige 6 %", accountClass: "revenue", defaultVatCode: "VAT6" },
   { number: "3004", name: "Försäljning inom Sverige, momsfri", accountClass: "revenue", defaultVatCode: "VAT0" },
+  {
+    number: "3305",
+    name: "Försäljning tjänster till land utanför EU",
+    accountClass: "revenue",
+    defaultVatCode: "VAT0",
+  },
   {
     number: "3308",
     name: "Försäljning tjänster till annat EU-land",
@@ -173,6 +213,12 @@ const accounts: CoaAccount[] = [
     accountClass: "financial",
     defaultVatCode: "NA",
   },
+  {
+    number: "8811",
+    name: "Avsättning till periodiseringsfond",
+    accountClass: "financial",
+    defaultVatCode: "NA",
+  },
   { number: "8910", name: "Skatt som belastar årets resultat", accountClass: "financial", defaultVatCode: "NA" },
   { number: "8999", name: "Årets resultat", accountClass: "financial", defaultVatCode: "NA" },
 ];
@@ -192,5 +238,8 @@ export const bas2026: CoaTemplate = {
     vatSettlement: "2650",
     fallbackExpense: "6991",
     rounding: "3740",
+    reverseChargeOutput: "2614",
+    reverseChargeInput: "2645",
+    ownerSettlement: "2899",
   },
 };

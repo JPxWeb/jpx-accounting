@@ -6,6 +6,8 @@ coverage
 playwright-report
 test-results
 artifacts/
+# `pnpm db:backup` output — database dumps and mirrored evidence blobs; never committable.
+backups/
 *.tsbuildinfo
 pw-debug*.log
 .env

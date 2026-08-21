@@ -1,6 +1,7 @@
 {
   "common": {
     "skipToContent": "Skip to content",
+    "draftVoucher": "Draft",
     "unavailable": {
       "eyebrow": "Unavailable"
     },
@@ -124,6 +125,9 @@
       "closeAria": "Close the edit sheet",
       "accountLabel": "Account",
       "vatCodeLabel": "VAT code",
+      "rc25Hint": "Reverse charge: enter the invoice total as the net amount — 25% VAT is calculated and added on top. It is reported as both output and input VAT, so the payment is unaffected.",
+      "settlementAccountLabel": "Settlement account",
+      "settlementAccountHint": "The account credited for the payment. Defaults to the business bank account.",
       "grossLabel": "Gross amount",
       "netLabel": "Net amount",
       "vatAmountLabel": "VAT amount",
@@ -134,7 +138,11 @@
       "submit": "Approve with edits",
       "submitting": "Approving…",
       "cancel": "Cancel",
+      "close": "Close",
       "submitError": "The edited approval could not be completed.",
+      "manualOriginTitle": "Manual journal entry",
+      "manualOriginDescription": "This verification was entered manually and cannot be edited here.",
+      "manualOriginNotice": "The lines post exactly as they were entered — the verification is approved or rejected as-is. If something needs changing, reject it and enter a new verification.",
       "appendOnlyNote": "Approving posts new ledger lines with your corrections — the original evidence, suggestion, and event history stay append-only and are never rewritten."
     },
     "card": {
@@ -241,6 +249,19 @@
       "extractSuccess": "Extraction refreshed.",
       "extractError": "Extraction failed. Try again.",
       "noVoucher": "No voucher is linked to this evidence yet."
+    },
+    "attach": {
+      "title": "Attach to voucher",
+      "description": "Search for another voucher and link this evidence to it instead. This evidence's own draft is discarded, so nothing is booked twice.",
+      "searchLabel": "Search vouchers",
+      "searchPlaceholder": "Search by voucher number, date, or description…",
+      "importedBadge": "Imported",
+      "empty": "No other vouchers to attach to.",
+      "attachButton": "Attach",
+      "attachAriaLabel": "Attach this evidence to {voucher}",
+      "attachSuccess": "Evidence attached to the voucher.",
+      "attachSuccessDraftDiscarded": "Evidence attached to the voucher. Its own draft was discarded, so nothing is booked twice.",
+      "attachError": "Could not attach the evidence. Try again."
     }
   },
   "capture": {
@@ -275,7 +296,8 @@
     "sieResult": {
       "imported": "Imported {vouchers} vouchers from the SIE file.",
       "importedWithSkipped": "Imported {vouchers} vouchers from the SIE file — {skipped} skipped.",
-      "error": "Could not import the SIE file."
+      "error": "Could not import the SIE file.",
+      "warnings": "{count, plural, one {# warning} other {# warnings}} during import: {preview}"
     },
     "dropzone": {
       "aria": "Add evidence files by browsing or dropping them here",
@@ -370,6 +392,44 @@
         "title": "Period close not available yet",
         "message": "Month-end checklists will appear here once period-close runs are implemented. The review queue remains the path to posted vouchers."
       }
+    },
+    "print": {
+      "button": "Print / save as PDF"
+    },
+    "newManualEntry": "New voucher",
+    "manualEntry": {
+      "eyebrow": "New voucher",
+      "title": "Manual journal entry",
+      "description": "Book a voucher against any accounts. The entry lands in the review queue — nothing posts directly.",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "What is this voucher for?",
+      "descriptionRequired": "A description is required before the voucher can be submitted.",
+      "bookedAtLabel": "Booking date",
+      "bookedAtInvalid": "Enter a valid date (YYYY-MM-DD).",
+      "bookedAtFuture": "The booking date cannot be in the future.",
+      "accountLabel": "Account",
+      "accountPlaceholder": "Account number",
+      "accountInvalid": "Enter a valid 4-digit account number.",
+      "accountUnknown": "Account outside the chart of accounts — booked anyway.",
+      "debitLabel": "Debit",
+      "creditLabel": "Credit",
+      "vatCodeLabel": "VAT code",
+      "removeRow": "Remove",
+      "removeRowAria": "Remove row {row}",
+      "addRow": "Add row",
+      "totalDebit": "Total debit",
+      "totalCredit": "Total credit",
+      "diff": "Difference",
+      "imbalanceHint": "Total debit must equal total credit before the voucher can be submitted.",
+      "rowError": "Every row needs a valid account and exactly one amount (debit or credit).",
+      "oreError": "Amounts take at most two decimals (whole öre). Round the amount before submitting the voucher.",
+      "submit": "Send to review",
+      "submitting": "Sending…",
+      "createSuccess": "The voucher was created and is waiting for review.",
+      "openReviewQueue": "Open the review queue",
+      "createError": "The voucher could not be created. Please try again.",
+      "createErrorValidation": "The server rejected the voucher: check the accounts, amounts, and date.",
+      "createErrorImbalance": "The voucher does not balance to the öre. Adjust the amounts and try again."
     }
   },
   "reports": {
@@ -456,7 +516,8 @@
         "vat-return": "VAT return",
         "employer-declaration": "Employer declaration",
         "f-skatt": "F-tax prepayment",
-        "annual-report": "Annual report"
+        "annual-report": "Annual report",
+        "income-tax-return": "Income tax return (INK2)"
       }
     },
     "alerts": {
@@ -560,7 +621,8 @@
           "vat-return": "VAT return",
           "employer-declaration": "Employer declaration",
           "f-skatt": "F-tax prepayment",
-          "annual-report": "Annual report"
+          "annual-report": "Annual report",
+          "income-tax-return": "Income tax return (INK2)"
         }
       },
       "observations": {
@@ -886,6 +948,8 @@
       "currency": "Currency",
       "fiscalYearStart": "Fiscal year start",
       "vatPeriod": "VAT period",
+      "euTrade": "Do you sell goods or services to VAT-registered buyers in other EU countries (EC sales list)?",
+      "euTradeHint": "EU PURCHASES do not count — cloud services from e.g. Google or Microsoft under reverse charge are not a yes here. The answer controls the timing of the yearly VAT return: with such EU sales the 26th-of-month rule applies, otherwise the deadline is coupled to the income tax return.",
       "save": "Save company",
       "saving": "Saving…",
       "saved": "Company settings saved.",
@@ -920,6 +984,8 @@
       "title": "Fiscal year and VAT cadence.",
       "description": "The fiscal year start month drives every fiscal-quarter report window and the statutory tax timeline. The VAT reporting cadence is shown here and edited together with the company profile.",
       "startLabel": "Fiscal year start month",
+      "firstFiscalYearStartLabel": "First fiscal year start date (optional)",
+      "firstFiscalYearStartHint": "Only needed for an irregular first fiscal year (e.g. the company was founded mid-year). Leave blank once the first fiscal year is closed.",
       "previewNote": "The window and deadline below follow the selected start month — save to apply it to reports and the tax timeline.",
       "currentWindow": "Current fiscal year",
       "arsredovisning": "Next årsredovisning deadline",

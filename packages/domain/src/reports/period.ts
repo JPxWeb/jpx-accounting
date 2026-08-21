@@ -14,6 +14,11 @@
  * - `ytd`      — current fiscal year start through `today`.
  * - `all`      — sentinel window `1900-01-01`…`2999-12-31`.
  *
+ * The optional `firstFiscalYearStart` (workspace profile, Phase D Task 6)
+ * raises the `from` of the `fy-`/`ytd` window CONTAINING it, so an irregular
+ * first fiscal year reports from the real incorporation date instead of the
+ * recurring MM-DD anchor. Quarters are deliberately left unclamped.
+ *
  * All dates are formatted from LOCAL calendar parts — never via
  * `toISOString().slice(0, 10)`, which serialises in UTC and crosses the day
  * boundary in any non-UTC timezone (the live Books `?period=` month-edge bug
@@ -157,8 +162,22 @@ export function currentMonthToken(today?: string): string {
  * Resolve a period token to an inclusive day range plus its equal-kind
  * preceding window. Unknown tokens throw `InvalidPeriodTokenError` (→ 422).
  */
-export function resolvePeriodToken(token: string, opts: { fiscalYearStart: string; today?: string }): ResolvedPeriod {
+export function resolvePeriodToken(
+  token: string,
+  opts: { fiscalYearStart: string; today?: string; firstFiscalYearStart?: string },
+): ResolvedPeriod {
   const fiscalStart = parseFiscalYearStart(opts.fiscalYearStart);
+  // Phase D, Task 6: an irregular FIRST fiscal year (company incorporated
+  // mid-year) starts on the real incorporation date, not on the recurring
+  // MM-DD anchor. Only the window CONTAINING the floor moves: later windows
+  // already start after it, and a window that ends BEFORE it is left alone
+  // rather than clamped into an inverted `from > to` range (such a window
+  // predates the company entirely, so it reports zero activity either way).
+  // `to` and `previous` are deliberately untouched, and quarters stay
+  // unclamped for the same zero-activity reason.
+  const floor = opts.firstFiscalYearStart;
+  const clampFrom = (from: string, to: string): string =>
+    floor !== undefined && from < floor && floor <= to ? floor : from;
 
   const monthMatch = MONTH_TOKEN.exec(token);
   if (monthMatch) {
@@ -204,7 +223,7 @@ export function resolvePeriodToken(token: string, opts: { fiscalYearStart: strin
     return {
       token,
       kind: "fiscal-year",
-      from: formatDay(window.from),
+      from: clampFrom(formatDay(window.from), formatDay(window.to)),
       to: formatDay(window.to),
       previous: { from: formatDay(previous.from), to: formatDay(previous.to) },
     };
@@ -221,7 +240,7 @@ export function resolvePeriodToken(token: string, opts: { fiscalYearStart: strin
     return {
       token,
       kind: "ytd",
-      from: formatDay(from),
+      from: clampFrom(formatDay(from), formatDay(today)),
       to: formatDay(today),
       previous: { from: formatDay(previousFrom), to: formatDay(previousTo) },
     };

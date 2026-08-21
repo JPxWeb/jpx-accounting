@@ -9,6 +9,7 @@ import Link from "next/link";
 import type { Ref } from "react";
 import { apiClient } from "../../lib/client";
 import { formatPercent, formatShortDate } from "../../lib/presentation";
+import { isDraftVoucherNumber } from "../../lib/voucher-link-display";
 import { useWorkspaceProfile } from "../providers/workspace-profile-provider";
 import { Money } from "../ui/money";
 import { SectionLabel } from "../ui/section-label";
@@ -58,6 +59,7 @@ type ReviewCardProps = {
 
 export function ReviewCard({ review, voucher, index, focused, onFocus, onAction, ref }: ReviewCardProps) {
   const t = useTranslations("today.card");
+  const tCommon = useTranslations("common");
   const { locale } = useWorkspaceProfile();
   // Motion pass (Task 6.4): the y-offset entrance is transform motion, so it is
   // disabled for reduced-motion users; the opacity fade stays (not vestibular).
@@ -130,7 +132,14 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
         <div className="min-w-0">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
-              <SectionLabel>{voucher?.voucherNumber ?? t("pendingVoucher")}</SectionLabel>
+              {/* KFR E.1: unposted vouchers carry the draft sentinel, not a number. */}
+              <SectionLabel>
+                {voucher === undefined
+                  ? t("pendingVoucher")
+                  : isDraftVoucherNumber(voucher.voucherNumber)
+                    ? tCommon("draftVoucher")
+                    : voucher.voucherNumber}
+              </SectionLabel>
               <h3 className="mt-2 text-xl font-semibold text-foreground">{review.title}</h3>
               {suggestionsEnabled ? (
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{review.suggestedAction}</p>
@@ -232,6 +241,7 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
             onAction={onAction}
             disabled={!isActionable}
             approveDisabled={Boolean(review.blockedReason)}
+            manualOrigin={voucher?.origin === "manual"}
           />
         </div>
       </div>

@@ -7,6 +7,19 @@ export * from "./countries";
 export const roleSchema = z.enum(["Preparer", "Approver", "Accountant", "Admin", "Auditor", "Advisor"]);
 
 export const accountingMethodSchema = z.enum(["invoice", "cash"]);
+
+/**
+ * VAT code vocabulary for CLIENT-SELECTABLE postings (KFR Phase B / D3):
+ * reviewer edits and manual voucher lines. Deliberately narrower than every
+ * value the system can carry — "VAT-REVIEW" is the system's blocked-marker
+ * assigned by `buildDeterministicSuggestion` when a voucher is rule-blocked
+ * (packages/domain/src/rules.ts) and is NEVER a posting choice, so it is
+ * excluded here on purpose. `accountingSuggestionSchema.vatCode` stays
+ * `z.string()` for that reason — do not tighten it to this schema.
+ */
+export const vatCodeSchema = z.enum(["VAT25", "VAT12", "VAT6", "VAT0", "NA", "RC25"]);
+export type VatCode = z.infer<typeof vatCodeSchema>;
+
 export const runtimeModeSchema = z.enum(["normal", "demo"]);
 export const evidenceModalitySchema = z.enum([
   "camera",
@@ -19,7 +32,13 @@ export const evidenceModalitySchema = z.enum([
   "email-forward",
 ]);
 export const suggestionKindSchema = z.enum(["explanation", "recommendation", "automation-request"]);
-export const reviewStatusSchema = z.enum(["needs-review", "approved", "rejected", "booked-without-vat"]);
+/**
+ * `posted` (KFR Phase D / Task 1) is distinct from `approved`: an imported
+ * voucher arrives already booked and never passed through a review decision,
+ * so it has no ReviewTask and no approval attribution. It never appears on a
+ * ReviewTask — only on a `origin: "import"` Voucher row.
+ */
+export const reviewStatusSchema = z.enum(["needs-review", "approved", "rejected", "booked-without-vat", "posted"]);
 export const trustLevelSchema = z.enum(["official", "internal", "user-upload"]);
 /**
  * Append-only event vocabulary (WS-B B6). ADDITIVE ONLY: members are never
@@ -120,7 +139,7 @@ export const voucherSchema = z.object({
   id: z.string(),
   organizationId: z.string(),
   workspaceId: z.string(),
-  evidencePacketId: z.string(),
+  evidencePacketId: z.string().nullable(),
   voucherNumber: z.string(),
   status: reviewStatusSchema,
   accountingMethod: accountingMethodSchema,
@@ -128,7 +147,39 @@ export const voucherSchema = z.object({
   voucherFields: voucherFieldSchema,
   createdAt: z.string(),
   createdBy: z.string(),
+  /** capture = evidence-driven (default, existing rows backfill via this default); manual = KFR D2; import = SIE (reserved, KFR Phase D). */
+  origin: z.enum(["capture", "manual", "import"]).default("capture"),
+  /**
+   * The evidence this voucher was SPAWNED BY at intake (KFR Phase E / E.5).
+   * `null` for manual and imported vouchers, which stand on their own.
+   *
+   * A recorded domain fact, not something derivable from the current packet
+   * graph: `evidencePacketId` follows every re-attach, so after evidence moves
+   * to another voucher there is no longer any link that says "this draft only
+   * exists because that receipt arrived". Without this column, discarding the
+   * orphan draft on attach (see `composeEvidence`) cannot tell the receipt's
+   * own intake draft apart from an unrelated voucher it was attached to a
+   * moment earlier. Defaulted so pre-E.5 payloads and rows keep parsing.
+   */
+  intakeEvidenceId: z.string().nullable().default(null),
 });
+
+/**
+ * One line of a manual N-line journal entry (KFR Phase B / D2). Exactly one
+ * of debit/credit must be positive — never both, never neither.
+ */
+export const manualVoucherLineSchema = z
+  .object({
+    accountNumber: z.string().regex(/^\d{4}$/),
+    debit: z.number().nonnegative(),
+    credit: z.number().nonnegative(),
+    vatCode: vatCodeSchema.default("NA"),
+  })
+  .refine((line) => line.debit > 0 !== line.credit > 0, {
+    message: "Exactly one of debit or credit must be greater than 0.",
+    path: ["debit"],
+  });
+export type ManualVoucherLine = z.infer<typeof manualVoucherLineSchema>;
 
 export const accountingSuggestionSchema = z.object({
   id: z.string(),
@@ -141,6 +192,16 @@ export const accountingSuggestionSchema = z.object({
   kind: suggestionKindSchema.default("recommendation"),
   citations: z.array(citationSchema),
   ruleHits: z.array(ruleHitSchema),
+  /** Absent = expense (KFR D3). Explicit "revenue" wins over account-class inference in buildPostingLines. */
+  direction: z.enum(["expense", "revenue"]).optional(),
+  /**
+   * Verbatim posting lines for a manual-origin voucher's suggestion (KFR
+   * Phase B / D2). Present ONLY when the owning voucher's `origin` is
+   * "manual" — approval posts these lines unchanged, bypassing
+   * `buildPostingLines` (see `planReviewDecision`). Absent for every
+   * capture/import-origin suggestion.
+   */
+  lines: z.array(manualVoucherLineSchema).optional(),
 });
 
 export const reviewTaskSchema = z.object({
@@ -462,6 +523,38 @@ export const evidenceComposeInputSchema = z.object({
   evidenceIds: z.array(z.string()).min(1),
   note: z.string().optional(),
   voiceTranscript: z.string().optional(),
+  /**
+   * Explicit attach target (KFR Phase D, Task 2): links the composed packet to
+   * this voucher (imported OR native) instead of relying on evidence-level
+   * packet history to infer one. Needed for imported vouchers, which start
+   * with `evidencePacketId: null` and no prior packet to auto-detect from.
+   * An id that names no voucher in scope throws `VoucherNotFoundError`
+   * (→ HTTP 404 `voucher_not_found`) before any mutation.
+   */
+  targetVoucherId: z.string().optional(),
+});
+
+/**
+ * `POST /api/evidence/compose` response (KFR Phase E / E.5). Widened from a
+ * bare `EvidencePacket` because the attach is no longer only a relink: when it
+ * orphans the evidence's OWN intake draft, that draft's pending review is
+ * rejected in the SAME store transaction, and the caller has to be able to say
+ * so. `discardedReviewId` is the rejected review's id, or `null` when the
+ * attach orphaned nothing (imported/manual target, already-decided draft, or
+ * an attach back onto the intake voucher itself).
+ */
+export const evidenceComposeResultSchema = z.object({
+  packet: evidencePacketSchema,
+  /**
+   * Ids of the intake reviews rejected as part of this attach — one per
+   * evidence in `evidenceIds` whose own intake draft the attach orphaned, so
+   * empty is the common case (imported/manual target, already-decided draft,
+   * or an attach back onto the intake voucher itself). An array rather than a
+   * single nullable id because `evidenceIds` is a list: bundling two receipts
+   * onto one voucher orphans two drafts, and reporting only one of them would
+   * be a lie by omission.
+   */
+  discardedReviewIds: z.array(z.string()),
 });
 
 /**
@@ -510,6 +603,17 @@ export const reviewDecisionEditSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /**
+   * Settlement account override (KFR D3): replaces the hardcoded bank credit
+   * in `buildPostingLines` — e.g. 2899 (utlägg) or 1630 (skattekonto)
+   * instead of the default 1930. Must exist in the CoA (validated in
+   * `resolveReviewDecisionEdit`, same rigor as `accountNumber`). Absent =
+   * `coa.roles.bank`.
+   */
+  settlementAccountNumber: z
+    .string()
+    .regex(/^\d{4}$/)
+    .optional(),
 });
 export type ReviewDecisionEdit = z.infer<typeof reviewDecisionEditSchema>;
 
@@ -517,6 +621,46 @@ export const reviewDecisionInputSchema = z.object({
   notes: z.string().optional(),
   edited: reviewDecisionEditSchema.optional(),
 });
+
+/**
+ * `POST /api/vouchers/manual` request body (KFR Phase B / D2). Balanced to
+ * within 0.005 at the wire boundary; `LedgerStore.createManualVoucher`
+ * additionally requires exact-öre balance (`postingImbalanceOre`) before any
+ * mutation — the ±0.005 tolerance here only lets legitimate float noise
+ * through, not real imbalances.
+ */
+export const manualVoucherInputSchema = z
+  .object({
+    description: z.string().min(1).max(200),
+    bookedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    lines: z.array(manualVoucherLineSchema).min(2).max(100),
+    /**
+     * Forward-compat only: accepted but NOT attached by this route.
+     * `createManualVoucher` always creates the voucher with
+     * `evidencePacketId: null` (see interface contract). Attaching is a
+     * separate call — `POST /api/evidence/compose` with
+     * `targetVoucherId` set to the returned voucher id (KFR Phase D / Task 2).
+     */
+    evidenceIds: z.array(z.string()).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const debit = value.lines.reduce((sum, line) => sum + line.debit, 0);
+    const credit = value.lines.reduce((sum, line) => sum + line.credit, 0);
+    if (Math.abs(debit - credit) > 0.005) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Manual voucher lines do not balance: Σdebit (${debit}) must equal Σcredit (${credit}) within 0.005.`,
+        path: ["lines"],
+      });
+    }
+  });
+export type ManualVoucherInput = z.infer<typeof manualVoucherInputSchema>;
+
+export const manualVoucherResultSchema = z.object({
+  voucherId: z.string(),
+  reviewId: z.string(),
+});
+export type ManualVoucherResult = z.infer<typeof manualVoucherResultSchema>;
 
 export const knowledgeQuerySchema = z.object({
   query: z.string(),
@@ -538,6 +682,21 @@ export const vatPeriodSchema = z.enum(["monthly", "quarterly", "yearly"]);
 export type VatPeriod = z.infer<typeof vatPeriodSchema>;
 
 /**
+ * True only for a `YYYY-MM-DD` string that names a day the calendar actually
+ * has. A shape regex alone accepts `2025-13-45` and `2025-02-30`; `Date`
+ * silently rolls those over (Feb 30 → Mar 2), so the round trip through LOCAL
+ * calendar parts is what catches them. Local parts on purpose — the repo bans
+ * `toISOString()` day math, which shifts across the UTC boundary.
+ */
+function isRealCalendarDay(day: string): boolean {
+  const year = Number(day.slice(0, 4));
+  const month = Number(day.slice(5, 7));
+  const date = Number(day.slice(8, 10));
+  const parsed = new Date(year, month - 1, date);
+  return parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === date;
+}
+
+/**
  * Workspace profile — country/locale/currency/fiscal-year seam for the
  * European abstractions (advisory pivot Phase 2). Lives on the org-level
  * company settings until multi-workspace lands.
@@ -553,8 +712,39 @@ export const workspaceProfileSchema = z.object({
     .string()
     .regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/)
     .default("01-01"),
+  /**
+   * Optional floor for an irregular first fiscal year (Phase D, Task 6) —
+   * e.g. a company incorporated mid-year. When set, the fiscal year/ytd
+   * window CONTAINING this date has its `from` raised to this date instead
+   * of the recurring fiscalYearStart anchor; the SIE export's `#RAR 0`
+   * shares the same clamp. Leave unset once FY1 is closed.
+   *
+   * Validated for SHAPE and CALENDAR validity only. There is deliberately no
+   * cross-validation against `fiscalYearStart`: every calendar date lies
+   * inside exactly one anchor-derived fiscal-year window, so no floor/anchor
+   * pair is structurally invalid — a floor merely selects which window it
+   * shortens. A floor the user did not intend is caught by FEEDBACK, not by a
+   * refine: `/settings/fiscal-year` previews the resulting FY1 window live,
+   * before the save. Please do not re-raise this as a missing check.
+   */
+  firstFiscalYearStart: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine(isRealCalendarDay, {
+      message: "firstFiscalYearStart must be a real calendar date (YYYY-MM-DD).",
+    })
+    .optional(),
   /** VAT reporting cadence — defaulted so pre-Phase-5 payloads keep parsing (no migration). */
   vatPeriod: vatPeriodSchema.default("quarterly"),
+  /**
+   * Bedriver EU-handel (unionsvaruhandel/unionstjänstehandel)? Selects which
+   * yearly-moms deadline table `buildTaxTimeline` uses when `vatPeriod` is
+   * "yearly": `true` keeps the 26th-of-second-month rule; `false` couples the
+   * deadline to the income declaration instead (Skatteverket "När ska jag
+   * deklarera moms" — see docs/findings.md 2026-08-20). Defaulted so
+   * pre-Phase-F payloads keep parsing (no migration).
+   */
+  euTrade: z.boolean().default(false),
 });
 export type WorkspaceProfile = z.infer<typeof workspaceProfileSchema>;
 export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = workspaceProfileSchema.parse({});
@@ -614,6 +804,13 @@ export const sieImportResultSchema = z.object({
   importedVouchers: z.number().int().nonnegative(),
   importedTransactions: z.number().int().nonnegative(),
   skipped: z.array(z.object({ reference: z.string(), reason: z.string() })).default([]),
+  /**
+   * Non-fatal parse notes from `ParsedSieFile.warnings` (ignored lines, an
+   * unterminated `#VER` block, a non-zero `#IB` opening balance …). Advisory
+   * only — the import still succeeded. Capped by `summarizeSieWarnings` in the
+   * stores so a pathological file can't return an unbounded payload.
+   */
+  warnings: z.array(z.string()).default([]),
 });
 export type SieImportResult = z.infer<typeof sieImportResultSchema>;
 
@@ -664,7 +861,13 @@ export const workspaceSnapshotSchema = z.object({
  * web, the API, and the pure packages all speak the same shapes.
  */
 
-export const taxDeadlineKindSchema = z.enum(["vat-return", "employer-declaration", "f-skatt", "annual-report"]);
+export const taxDeadlineKindSchema = z.enum([
+  "vat-return",
+  "employer-declaration",
+  "f-skatt",
+  "annual-report",
+  "income-tax-return",
+]);
 
 export const taxDeadlineSchema = z.object({
   /** Deterministic id, e.g. `tax_vat_2026-Q2`. */
@@ -824,6 +1027,7 @@ export type EvidenceCreateResult = z.infer<typeof evidenceCreateResultSchema>;
 export type WorkspaceSnapshot = z.infer<typeof workspaceSnapshotSchema>;
 export type EvidenceCreateInput = z.infer<typeof evidenceCreateInputSchema>;
 export type EvidenceComposeInput = z.infer<typeof evidenceComposeInputSchema>;
+export type EvidenceComposeResult = z.infer<typeof evidenceComposeResultSchema>;
 export type ReviewDecisionInput = z.infer<typeof reviewDecisionInputSchema>;
 export type KnowledgeQuery = z.infer<typeof knowledgeQuerySchema>;
 export type SimulationRequest = z.infer<typeof simulationRequestSchema>;

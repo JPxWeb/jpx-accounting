@@ -4,6 +4,53 @@ Append-only log of research findings, decisions, thresholds, and open questions 
 
 ---
 
+## 2026-08-20 — Swedish yearly-close (bokslut/årsredovisning/INK2) coverage audit + Kapitas-migration gap analysis
+
+### What the product already covers for a yearly close (verified by code inventory)
+
+- **SIE 4 import/export is shipped**: `packages/domain/src/sie/{parse,serialize,pc8}.ts`, `POST /api/imports/sie` (32 MiB, caps 500 vouchers / 100 lines each), `GET /api/exports/sie` (CP437 `.se`), UI in `quick-add-grid.tsx` + reports screen. Imported vouchers keep original series+number as aggregate id (`sie_<series>_<number>`) → re-import is idempotent.
+- **Fiscal year is fully configurable** (`WorkspaceProfile.fiscalYearStart`, `MM-DD`, settings UI at `/settings/fiscal-year` + company form) and the period model (`packages/domain/src/reports/period.ts`) handles broken fiscal years (`fy-YYYY`, fiscal quarters).
+- **Reports**: journal, huvudbok (client-grouped), period-movement trial balance, P&L, balance sheet (2 flat buckets + computed-result line), VAT boxes (05/10-12/20-21/30-32/48/49, whole-kronor truncation). Print = `window.print()` only; **no CSV, no server PDF**.
+- **Tax calendar** (`packages/domain/src/tax/calendar.ts`): VAT (monthly/quarterly/yearly), AGI, F-skatt, årsredovisning (7 months after FY end). **INK2 is NOT modeled** — no income-tax-return deadline kind exists.
+
+### Yearly-close gaps (the honest list — each is a feature, not a bug)
+
+1. **SIE parser silently drops `#IB`/`#UB`/`#RES`** (`parse.ts` switch handles only `#SIETYP/#ORGNR/#FNAMN/#KONTO/#VER/#TRANS`) and the export emits none either → migrating a live company mid-history loses opening balances; no opening-balance concept exists anywhere in the domain. Cleanest fix: parse `#IB` and synthesize a `VoucherImported` opening-balance voucher (`sie_OB_<year>`) dated FY day 1; emit `#IB/#UB/#RES` on export.
+2. **No evidence→imported-voucher linkage**: SIE-imported vouchers create no Voucher rows (by design), so receipts can't be attached to them; `composeEvidence` relink only works via Voucher-row maps. A migration needs either relink-to-ledger-aggregate or anchor rows.
+3. **No close engine**: `getCloseRun()` returns an honest empty shell; `CloseRunGenerated`, `PeriodLocked`, `CorrectionPosted` are reserved/never-emitted; no resultatdisposition (result → 2091/2099), no bokslutsverifikationer, no period lock.
+4. **No manual N-line journal entry** anywhere (API or UI) — `buildPostingLines` always emits the fixed 3-line template. Year-end adjustment entries (periodiseringar, avskrivningar, kontantmetoden AR/AP conversion, skatt) currently have NO input path except an SIE 4I file.
+5. **BAS subset (68 accounts)** lacks year-end essentials: no accumulated-depreciation contras (1229/1259), no periodiseringsfond accounts (21xx obeskattade reserver), no 2510/2512 skatteskulder, no 8910 skatt på årets resultat (equity 2081/2091/2099 do exist). `classifyAccountNumber` first-digit fallback keeps imported unknown accounts bucketed, but without names/VAT codes.
+6. **No årsredovisning document generation** (förvaltningsberättelse/noter/fastställelseintyg) and no INK2/SRU export. External tools (e.g. Årsredovisning Online, DigitalK2) consume SIE 4 → our existing export is the interop path, **but** those tools expect `#IB/#UB/#RES`, so gap 1 blocks that too.
+
+### Kapitas interop facts (verified against kapitas.se docs 2026-08-20)
+
+- Kapitas exports **SIE4 with balances + transactions** (Settings → Bokföring → SIE4 Export) and imports SIE4/4i; PDF-only reports (7 kinds); **no API**; **no CSV**; attachments do NOT travel in SIE and have no documented bulk export (per-voucher retrieval only — vendor-unconfirmed inference).
+- **Kapitas free tier is being discontinued**: no new signups since 2026-04-02; existing free accounts get notice through 2026-09-30, then 60 days normal + 60 days export-only. Kapitas Plus = 59 kr/mo ex VAT. Kapitas has **no bokslut/årsredovisning/INK2 capability at any tier** (vendor-adjacent FAQ: "Bokslut ingår inte").
+- Implication: any Kapitas-based company doing a yearly close needs a second tool regardless — that is exactly the wedge JPX Accounting's close features would fill.
+
+### ⚠ Two statutory-content bugs found while verifying against Skatteverket/Bolagsverket (2026-08-20)
+
+1. **`docs/knowledge/sv/moms-deklarationstider.md` has the helårsmoms conditions INVERTED.** Skatteverket ("När ska jag deklarera moms", canonical page): the _26:e i andra månaden efter beskattningsårets utgång_ rule applies to companies **with EU-handel** (or those not filing an inkomstdeklaration). Companies **without EU-handel** that file an inkomstdeklaration declare _i anslutning till inkomstdeklarationen_ — by FY-end month: jan–apr → 12 nov (paper)/12 dec (digital); maj–jun → 27 dec/17 jan; **jul–aug → 12 mars/12 april**; sep–dec → 12 juli/17 aug. Our corpus article states the 26:e-rule for "utan EU-handel" — wrong branch. The advisor cites this corpus → fix + `pnpm build:knowledge` + re-ingest.
+2. **`docs/knowledge/sv/arsredovisning-ab.md` förseningsavgift amounts are stale.** Prop. 2024/25:8 ("Bolag och brott", in force 2025-01-01) raised private-AB late fees to **7 500 / +7 500 / +15 000 kr** (total 30 000). Corpus still says 5 000/5 000/10 000.
+3. Same inverted-branch issue affects `packages/domain/src/tax/calendar.ts`: yearly VAT is computed only as 26th/27th of the second month after FY end — correct **only** for the EU-handel branch; a non-EU-handel helårsmoms company gets a deadline up to ~6 months too early (annoying) and, worse, the INK2-coupled real dates are absent. Needs an `euTrade`-style profile flag or both-branch modeling.
+4. INK2 deadlines (verified): by bokslutsdatum — sep–dec → 1 jul (paper)/1 aug (digital); jan–apr → 1 nov/1 dec; maj–jun → 15 dec/15 jan; **jul–aug → 1 mars/1 april** (next year). Skatteverket's INK2 e-tjänst for FY ends jan–aug 2026 opens 2026-08-24. Not modeled in the tax calendar at all (gap noted above).
+
+### 2026-08-20 (later) — 16-agent readiness verification (6 audits + 10 adversarial refutations)
+
+Full matrix + build plan: [`docs/superpowers/specs/2026-08-20-kapitas-replacement-readiness.md`](superpowers/specs/2026-08-20-kapitas-replacement-readiness.md). Key corrections to the morning's entry established by the refute pass:
+
+- **SIE 4I import is a general-purpose posting path, not just migration**: `planSieImport` accepts any balanced N-line voucher on ANY account (CoA is display-name only, `classifyAccountNumber` first-digit fallback covers statements) — so utlägg-to-2899, revenue, prelskatt, avskrivningar, periodiseringsfond, resultatdisposition, and rättelse vouchers are all postable TODAY via hand-authored SIE snippets. 8 of 10 "impossible" verdicts fell to this path.
+- **Confirmed unrefutable**: VAT boxes 20/21/30-32 are structurally always 0 (`vat/boxes.ts:98-100` hardcoded + `consumedRates` starvation) and boxes 39/40 don't exist — the momsdeklaration is wrong for any company with EU purchases or export revenue regardless of how lines are posted. This + no-evidence-attach-to-imports are the two real product blockers.
+- New confirmed facts: box 05 skipped for imported lines (`vatCode:"NA"` forced) → internally inconsistent VAT return on imported domestic sales; `#RAR 0`/fy-token boundary wrong for an irregular first FY (recurring MM-DD anchor only); V-numbers burn at intake (rejected drafts leave silent gaps); journal/huvudbok have no print path; demo mode is restart-volatile; hosted deploy has unverified migrations 0005-0008 + missing storage RBAC; **no backup tooling exists**; CP437 map lacks æ/ø.
+
+### Open questions
+
+- Should `buildSieExport` become period-scoped (per fiscal year) with `#RAR`, `#IB`, `#UB`, `#RES` blocks? (Required for handing one FY to an årsredovisning tool or revisor.)
+- Priority call between "close checklist engine" (CloseRunGenerated + period lock + manual journal entries) vs "INK2 deadline in tax calendar" (one afternoon: add deadline kind parameterized by FY end month per Skatteverket's four filing windows).
+- Tax-calendar helårsmoms fix needs an "EU-handel" boolean on `WorkspaceProfile` — schema + settings + calendar change, touches contracts (CONVENTIONS rule 1 schema-sync applies).
+
+---
+
 ## 2026-08-06 — Wave F′ docs truth pass (P1-11 / F-1–F-3)
 
 - **DEV_STATUS** Last reviewed → 2026-08-06; Waves 0 + A–C COMPLETE banner; integration gate rewritten to `pnpm db:test` / `DATABASE_TEST_URL` (+ legacy `SUPABASE_DB_URL` alias note).

@@ -4,6 +4,7 @@ import type {
   ComplianceAlert,
   CloseRun,
   EvidenceComposeInput,
+  EvidenceComposeResult,
   EvidenceContext,
   EvidenceCreateInput,
   EvidenceCreateResult,
@@ -11,6 +12,8 @@ import type {
   EvidencePacket,
   ExtractionResult,
   LedgerEvent,
+  ManualVoucherInput,
+  ManualVoucherResult,
   ReportBundle,
   ReportPack,
   ReviewDecisionInput,
@@ -48,14 +51,18 @@ import {
   planComplianceMerge,
   planEvidenceCreate,
   planExtractionRefresh,
+  planManualVoucher,
   planReviewDecision,
 } from "./store-planning";
 import {
   DEMO_ACTOR_ID,
+  DRAFT_VOUCHER_NUMBER,
+  INTAKE_DRAFT_DISCARD_NOTES,
   InvalidReviewEditError,
   ReviewBlockedError,
   buildPostingLines,
   deriveBookedAt,
+  isPostedVoucherStatus,
   isValidCalendarDay,
   localDayOfTimestamp,
   mergeExtractedFields,
@@ -75,10 +82,13 @@ import {
 // statically constructs MemoryLedgerStore for the demo fallback (P1 stretch).
 export {
   DEMO_ACTOR_ID,
+  DRAFT_VOUCHER_NUMBER,
+  INTAKE_DRAFT_DISCARD_NOTES,
   InvalidReviewEditError,
   ReviewBlockedError,
   buildPostingLines,
   deriveBookedAt,
+  isPostedVoucherStatus,
   isValidCalendarDay,
   localDayOfTimestamp,
   mergeExtractedFields,
@@ -89,7 +99,7 @@ export {
 };
 export type { ActorAttribution, ApprovalGate, ReviewAction };
 
-import { DEFAULT_TENANT_SCOPE } from "./tenant";
+import { DEFAULT_TENANT_SCOPE, type TenantScope } from "./tenant";
 
 /**
  * Inclusive local-calendar day window (`YYYY-MM-DD` strings) for scoping the
@@ -107,6 +117,20 @@ export class ReviewNotFoundError extends Error {
   constructor(public readonly missingIds: string[]) {
     super(`Review(s) not found in this workspace: ${missingIds.join(", ")}`);
     this.name = "ReviewNotFoundError";
+  }
+}
+
+/**
+ * Thrown when `composeEvidence` is given a `targetVoucherId` that doesn't
+ * exist in scope. Distinguished from generic Error so the HTTP layer maps to
+ * 404 instead of catch-all 500 (CONVENTIONS Rule 16) — same pattern as
+ * `ReviewNotFoundError`. Thrown BEFORE any mutation, so a miss leaves zero
+ * state behind in either store.
+ */
+export class VoucherNotFoundError extends Error {
+  constructor(public readonly voucherId: string) {
+    super(`Voucher not found in this workspace: ${voucherId}`);
+    this.name = "VoucherNotFoundError";
   }
 }
 
@@ -144,6 +168,26 @@ export class SieImportError extends Error {
 
 export const SIE_IMPORT_MAX_VOUCHERS = 500;
 export const SIE_IMPORT_MAX_LINES_PER_VOUCHER = 100;
+
+/** Max parse warnings threaded into a `SieImportResult` before summarizing. */
+export const SIE_IMPORT_MAX_RESULT_WARNINGS = 50;
+
+/**
+ * Thread `ParsedSieFile.warnings` into the import result under a hard cap
+ * (CONVENTIONS Rule 25 — bounded accumulation). `parseSie` emits one warning
+ * per ignored line, so a pathological 32 MiB upload (the API's SIE body limit)
+ * of junk lines would otherwise serialize millions of strings back to the
+ * browser. Real files stay far under the cap; when they don't, the tail is
+ * replaced by a single count line so the reader still learns nothing was
+ * hidden. Shared by both stores so the field can't drift (Rule 11 parity).
+ */
+export function summarizeSieWarnings(warnings: readonly string[]): string[] {
+  if (warnings.length <= SIE_IMPORT_MAX_RESULT_WARNINGS) return [...warnings];
+  return [
+    ...warnings.slice(0, SIE_IMPORT_MAX_RESULT_WARNINGS),
+    `… and ${warnings.length - SIE_IMPORT_MAX_RESULT_WARNINGS} more parse warnings (not shown).`,
+  ];
+}
 
 export type SieImportInput = ActorAttribution & { file: ParsedSieFile };
 
@@ -258,9 +302,78 @@ export function planSieImport(
   return { vouchers, skipped };
 }
 
+/**
+ * Build the lightweight, already-posted Voucher row materialized for a SIE
+ * import (KFR Phase D / Task 1, readiness G3 — imported history was previously
+ * invisible to evidence attach). Shared by MemoryLedgerStore and
+ * PostgresLedgerStore so the shape can't drift (CONVENTIONS Rule 11 store
+ * parity). `voucherNumber` reuses `planned.reference` ("<series> <number>")
+ * verbatim — the same string the journal/reports already display for `sie_*`
+ * ids, and unique per workspace because `aggregateId` is derived from the same
+ * series+number pair (`ledger_vouchers_number_idx`).
+ *
+ * `status: "posted"` — NOT "approved": the entry arrived already booked and
+ * never passed a review decision, so it carries no ReviewTask. It stays out of
+ * the review feed for exactly that reason.
+ */
+export function buildImportedVoucher(
+  planned: SiePlannedVoucher,
+  ctx: TenantScope & { actorId: string; createdAt: string },
+): Voucher {
+  return {
+    id: planned.aggregateId,
+    organizationId: ctx.organizationId,
+    workspaceId: ctx.workspaceId,
+    evidencePacketId: null,
+    voucherNumber: planned.reference,
+    status: "posted",
+    origin: "import",
+    accountingMethod: "invoice",
+    extractedFields: [],
+    voucherFields: {
+      description: planned.text ?? planned.reference,
+      transactionDate: planned.date,
+      currency: "SEK",
+    },
+    createdAt: ctx.createdAt,
+    createdBy: ctx.actorId,
+    // Migrated history stands on its own: no evidence spawned it, so attaching
+    // a receipt to it later must never discard anything (KFR E.5).
+    intakeEvidenceId: null,
+  };
+}
+
 export interface LedgerStore {
   createEvidence(input: EvidenceCreateInput & ActorAttribution): Promise<EvidenceCreateResult>;
-  composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket>;
+  /**
+   * Bundle evidence into a NEW packet (packets are never edited in place) and
+   * link it to a voucher. Link resolution, in order:
+   *
+   * 1. `input.targetVoucherId` when given (KFR Phase D / Task 2) — the only
+   *    way to reach an imported or manual voucher, which starts with
+   *    `evidencePacketId: null` and so leaves no packet breadcrumb. An id
+   *    naming no voucher in this workspace throws `VoucherNotFoundError`
+   *    BEFORE any mutation (→ HTTP 404 `voucher_not_found`).
+   * 2. Otherwise auto-detect: the voucher currently linked to the first
+   *    prior packet any of `evidenceIds` belonged to.
+   *
+   * A resolved link repoints `voucher.evidencePacketId` and appends one
+   * `EvidenceRelinked` event (WS-B B6b) — the relink is chain-visible, never a
+   * silent read-model repoint. No voucher's review LINKAGE is ever disturbed.
+   * With no link resolved, only the packet is created and NO event is appended.
+   *
+   * KFR Phase E / E.5 — an EXPLICIT attach additionally discards the intake
+   * drafts it orphans, in the SAME transaction as the relink: for each
+   * evidence id, the `origin: "capture"` voucher whose `intakeEvidenceId` is
+   * that evidence (and which is not the attach target itself) has its
+   * still-undecided review REJECTED, appending `ReviewRejected` after
+   * `EvidenceRelinked`. Rejection posts no lines and burns no voucher number,
+   * so the ledger does not move — it just stops an evidence-less draft from
+   * sitting in the review queue as a double-booking trap. Their ids come back
+   * in `discardedReviewIds` so the caller can say what happened; the
+   * auto-detect path (no `targetVoucherId`) never discards anything.
+   */
+  composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidenceComposeResult>;
   getEvidenceContext(
     evidenceId: string,
   ): Promise<{ evidence: EvidenceObject; packet?: EvidencePacket; voucher?: Voucher } | undefined>;
@@ -277,10 +390,33 @@ export interface LedgerStore {
    * Import a parsed SIE 4 file. Append-only: one `VoucherImported` event per
    * accepted voucher (payload carries the derived `lines` — replay truth);
    * re-imports skip duplicates via the `sie_<series>_<number>` aggregate id.
-   * Imported vouchers are already booked, so no voucher/review rows are
-   * created (documented v1 scope). Bounds violations throw `SieImportError`.
+   * Each accepted voucher also materializes an already-posted Voucher row
+   * (`buildImportedVoucher` — `origin: "import"`, `status: "posted"`,
+   * `evidencePacketId: null`) keyed by that same aggregate id, so migrated
+   * history is attachable and displays its real series+number (KFR Phase D /
+   * Task 1). No ReviewTask is created — the entry is already booked.
+   * Bounds violations throw `SieImportError`.
    */
   importSie(input: SieImportInput): Promise<SieImportResult>;
+  /**
+   * Create a manual N-line journal entry (KFR Phase B / D2): a Voucher
+   * (`origin: "manual"`, `evidencePacketId: null`) plus a ReviewTask
+   * (`needs-review`) whose suggestion carries the verbatim lines. Approval
+   * posts those lines unchanged — the review queue stays the only path to a
+   * posted voucher, same invariant as every other posting route. Throws
+   * `InvalidManualVoucherError` (→ HTTP 422) before any mutation when the
+   * lines don't balance to the exact öre.
+   *
+   * Not idempotent by design (unlike `createEvidence`'s content dedupe): a
+   * hand-typed entry carries no content hash to dedupe on, and two identical
+   * entries are a legitimate double booking the reviewer may intend. Repeat
+   * submissions are the caller's problem to gate.
+   *
+   * `actorId` is optional server-derived attribution (`ActorAttribution`) —
+   * absent means "no authenticated subject" and the store resolves
+   * `DEMO_ACTOR_ID`, exactly like `createEvidence`.
+   */
+  createManualVoucher(input: ManualVoucherInput & ActorAttribution): Promise<ManualVoucherResult>;
   findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined>;
   getReviewFeed(): Promise<ReviewTask[]>;
   getReports(range?: ReportRange): Promise<ReportBundle>;
@@ -408,7 +544,6 @@ export class MemoryLedgerStore implements LedgerStore {
     if (duplicate) return duplicate;
 
     const plan = planEvidenceCreate(input, {
-      voucherIndex: this.vouchers.size,
       organizationId: defaultOrganizationId,
       workspaceId: defaultWorkspaceId,
     });
@@ -435,8 +570,69 @@ export class MemoryLedgerStore implements LedgerStore {
     };
   }
 
-  async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidencePacket> {
+  /**
+   * Reject the intake drafts this attach just orphaned (KFR Phase E / E.5).
+   *
+   * A capture voucher exists BECAUSE a receipt arrived (`intakeEvidenceId`).
+   * Move that receipt onto another voucher and the draft is left backing
+   * nothing — a double-booking trap one approval away from booking the same
+   * cost twice. `intakeEvidenceId` is what makes this decidable: the packet
+   * graph cannot distinguish "the draft this receipt created" from "a voucher
+   * this receipt was attached to a minute ago", because `evidencePacketId`
+   * follows every re-attach.
+   *
+   * Narrow on purpose — a draft is discarded only when it was spawned by this
+   * exact evidence, is `origin: "capture"`, is NOT the attach target itself,
+   * and still has an undecided review. Rejection posts no lines and burns no
+   * voucher number (E.1 numbers at posting time), so the ledger never moves.
+   *
+   * Runs in the same synchronous block as the relink — Memory's equivalent of
+   * the Postgres transaction, so an attach and its discard are never half-done.
+   */
+  private discardOrphanedIntakeDrafts(evidenceIds: readonly string[], targetVoucherId: string, actorId: string) {
+    const discardedReviewIds: string[] = [];
+    for (const evidenceId of evidenceIds) {
+      const voucher = [...this.vouchers.values()].find(
+        (candidate) =>
+          candidate.intakeEvidenceId === evidenceId &&
+          candidate.origin === "capture" &&
+          candidate.id !== targetVoucherId,
+      );
+      if (!voucher) continue;
+      const reviewId = this.voucherIdToReviewId.get(voucher.id);
+      const review = reviewId ? this.reviews.get(reviewId) : undefined;
+      if (!review || review.status !== "needs-review") continue;
+
+      // Reject never posts, so `postedVoucherCount` is irrelevant — pass 0 and
+      // skip the scan, exactly as `applyReviewDecision` does for a reject.
+      const plan = planReviewDecision(
+        review,
+        voucher,
+        "reject",
+        { actorId, notes: INTAKE_DRAFT_DISCARD_NOTES },
+        { postedVoucherCount: 0 },
+      );
+      if (plan.kind === "replay") continue;
+
+      this.reviews.set(review.id, plan.updatedReview);
+      this.vouchers.set(voucher.id, plan.updatedVoucher);
+      for (const event of plan.events) {
+        this.appendEvent(event);
+      }
+      discardedReviewIds.push(review.id);
+    }
+    return discardedReviewIds;
+  }
+
+  async composeEvidence(input: EvidenceComposeInput & ActorAttribution): Promise<EvidenceComposeResult> {
     const actorId = input.actorId ?? DEMO_ACTOR_ID;
+    // KFR Phase D / Task 2: validate the explicit target BEFORE anything is
+    // written, so an unknown id leaves zero state behind (no packet row, no
+    // event) rather than a dangling packet.
+    if (input.targetVoucherId !== undefined && !this.vouchers.has(input.targetVoucherId)) {
+      throw new VoucherNotFoundError(input.targetVoucherId);
+    }
+
     const packet: EvidencePacket = {
       id: createId("packet"),
       evidenceIds: input.evidenceIds,
@@ -445,12 +641,16 @@ export class MemoryLedgerStore implements LedgerStore {
     };
     this.evidencePackets.set(packet.id, packet);
 
-    let voucherIdToRelink: string | undefined;
+    // An explicit targetVoucherId overrides auto-detection entirely — this is
+    // how a packet attaches to a voucher that never had one (imported vouchers
+    // start with `evidencePacketId: null`, so there is no packet-history
+    // breadcrumb for the auto-detect loop below to follow).
+    let voucherIdToRelink = input.targetVoucherId;
     for (const eid of input.evidenceIds) {
       const previousPacketId = this.evidenceIdToPacketId.get(eid);
-      if (previousPacketId) {
+      if (previousPacketId && voucherIdToRelink === undefined) {
         const linkedVoucherId = this.packetIdToVoucherId.get(previousPacketId);
-        if (linkedVoucherId && !voucherIdToRelink) {
+        if (linkedVoucherId) {
           voucherIdToRelink = linkedVoucherId;
         }
       }
@@ -460,7 +660,10 @@ export class MemoryLedgerStore implements LedgerStore {
     if (voucherIdToRelink) {
       this.packetIdToVoucherId.set(packet.id, voucherIdToRelink);
       const voucher = this.vouchers.get(voucherIdToRelink);
-      const previousPacketId = voucher?.evidencePacketId;
+      // `?? undefined` normalizes an imported voucher's NULL packet to an
+      // absent payload key, keeping the event hash identical to Postgres
+      // (canonicalJson drops undefined, jsonb never stores it).
+      const previousPacketId = voucher?.evidencePacketId ?? undefined;
       if (voucher && voucher.evidencePacketId !== packet.id) {
         this.vouchers.set(voucherIdToRelink, { ...voucher, evidencePacketId: packet.id });
       }
@@ -483,7 +686,16 @@ export class MemoryLedgerStore implements LedgerStore {
       });
     }
 
-    return packet;
+    // Discard AFTER the relink, so the chain reads in causal order: the
+    // evidence moved, therefore the draft it left behind was discarded. Only
+    // an explicit attach can orphan anything — the auto-detect path re-bundles
+    // evidence onto the voucher it already backs.
+    const discardedReviewIds =
+      input.targetVoucherId === undefined
+        ? []
+        : this.discardOrphanedIntakeDrafts(input.evidenceIds, input.targetVoucherId, actorId);
+
+    return { packet, discardedReviewIds };
   }
 
   async getEvidenceContext(evidenceId: string): Promise<
@@ -555,6 +767,8 @@ export class MemoryLedgerStore implements LedgerStore {
       importedVouchers: 0,
       importedTransactions: 0,
       skipped: [...skipped],
+      // Non-fatal parse notes ride along so the caller can surface them (D3).
+      warnings: summarizeSieWarnings(input.file.warnings),
     };
 
     // Idempotency: skip vouchers whose aggregate id was already imported.
@@ -563,6 +777,7 @@ export class MemoryLedgerStore implements LedgerStore {
     );
 
     const occurredAt = nowIso();
+    const actorId = input.actorId ?? DEMO_ACTOR_ID;
     for (const planned of vouchers) {
       if (alreadyImported.has(planned.aggregateId)) {
         result.skipped.push({ reference: planned.reference, reason: "duplicate" });
@@ -575,7 +790,7 @@ export class MemoryLedgerStore implements LedgerStore {
         aggregateType: "ledger",
         aggregateId: planned.aggregateId,
         eventType: "VoucherImported",
-        actorId: input.actorId ?? DEMO_ACTOR_ID,
+        actorId,
         occurredAt,
         payload: {
           source: "sie",
@@ -587,11 +802,57 @@ export class MemoryLedgerStore implements LedgerStore {
         },
       });
 
+      // KFR Phase D / Task 1: materialize the already-posted Voucher row so
+      // migrated history is attachable (Task 2) and displays its real
+      // series+number (Task 5) instead of the raw `sie_*` aggregate id. The
+      // `VoucherImported` event stays the source of truth — this row is a
+      // projection-side record, never a second source.
+      const voucher = buildImportedVoucher(planned, {
+        organizationId: defaultOrganizationId,
+        workspaceId: defaultWorkspaceId,
+        actorId,
+        createdAt: occurredAt,
+      });
+      this.vouchers.set(voucher.id, voucher);
+
       result.importedVouchers += 1;
       result.importedTransactions += planned.lines.length;
     }
 
     return result;
+  }
+
+  async createManualVoucher(input: ManualVoucherInput & ActorAttribution): Promise<ManualVoucherResult> {
+    // `planManualVoucher` requires a resolved actor (it stamps `createdBy` and
+    // both event `actorId`s); the sentinel fallback is the store's job, same
+    // as `planEvidenceCreate` does internally for createEvidence.
+    const plan = planManualVoucher(
+      { ...input, actorId: input.actorId ?? DEMO_ACTOR_ID },
+      {
+        organizationId: defaultOrganizationId,
+        workspaceId: defaultWorkspaceId,
+      },
+    );
+
+    // The planner throws (öre gate) before returning, so nothing below runs on
+    // a rejected entry — no read model, no event, no chain movement.
+    this.vouchers.set(plan.voucher.id, plan.voucher);
+    this.reviews.set(plan.review.id, plan.review);
+    // A manual plan's review ALWAYS carries the verbatim-line suggestion
+    // (planManualVoucher builds it unconditionally); assert rather than
+    // silently skip the suggestions index, which approval reads back.
+    const suggestion = plan.review.suggestion;
+    if (!suggestion) {
+      throw new Error(`Manual voucher plan for ${plan.voucher.id} produced no suggestion (invariant violation).`);
+    }
+    this.suggestions.set(plan.voucher.id, suggestion);
+    this.voucherIdToReviewId.set(plan.voucher.id, plan.review.id);
+
+    for (const event of plan.events) {
+      this.appendEvent(event);
+    }
+
+    return { voucherId: plan.voucher.id, reviewId: plan.review.id };
   }
 
   async findReviewByVoucher(voucherId: string): Promise<ReviewTask | undefined> {
@@ -631,6 +892,9 @@ export class MemoryLedgerStore implements LedgerStore {
     return buildReportPack(lines, {
       periodToken: input.period,
       fiscalYearStart: settings?.profile.fiscalYearStart ?? "01-01",
+      ...(settings?.profile.firstFiscalYearStart !== undefined
+        ? { firstFiscalYearStart: settings.profile.firstFiscalYearStart }
+        : {}),
     });
   }
 
@@ -657,6 +921,12 @@ export class MemoryLedgerStore implements LedgerStore {
   async suggestVoucher(voucherId: string): Promise<AccountingSuggestion | undefined> {
     const voucher = this.vouchers.get(voucherId);
     if (!voucher) return undefined;
+
+    // KFR D2: a manual voucher's suggestion IS the reviewer's verbatim lines —
+    // there is nothing to re-derive from extracted fields, and regenerating
+    // would drop `suggestion.lines` and turn the next approval into a
+    // "no verbatim lines" invariant 500. Return what was authored, unchanged.
+    if (voucher.origin === "manual") return this.suggestions.get(voucherId);
 
     const ruleHits = evaluateVoucherRules(voucher);
     const suggestion = buildDeterministicSuggestion(voucher, ruleHits);
@@ -685,7 +955,16 @@ export class MemoryLedgerStore implements LedgerStore {
     const voucher = this.vouchers.get(review.voucherId);
     if (!voucher) return undefined;
 
-    const plan = planReviewDecision(review, voucher, action, input);
+    // KFR E.1 posting-time numbering: count the workspace's already-posted
+    // vouchers ONLY when this decision can actually post — a reject or an
+    // already-decided replay must not pay for the scan (parity with the
+    // Postgres store's identically-guarded COUNT(*), Rule 11).
+    const willPost = review.status === "needs-review" && action !== "reject" && Boolean(review.suggestion);
+    const postedVoucherCount = willPost
+      ? [...this.vouchers.values()].filter((candidate) => isPostedVoucherStatus(candidate.status)).length
+      : 0;
+
+    const plan = planReviewDecision(review, voucher, action, input, { postedVoucherCount });
     if (plan.kind === "replay") return plan.review;
 
     // Clone-before-mutate (Rule 17): review/voucher may have been returned by

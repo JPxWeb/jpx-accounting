@@ -9,7 +9,7 @@ const byId = (deadlines: TaxDeadline[], id: string) => deadlines.find((deadline)
 
 test("every deadline validates against the contract and cites a known source", () => {
   const timeline = buildTaxTimeline({
-    profile: { vatPeriod: "monthly", fiscalYearStart: "01-01" },
+    profile: { vatPeriod: "monthly", fiscalYearStart: "01-01", euTrade: true },
     today: "2026-07-04",
     limit: 20,
   });
@@ -22,7 +22,7 @@ test("every deadline validates against the contract and cites a known source", (
 
 test("pinned: quarterly Q2 (fy 01-01) moms lands on 2026-08-17 — August 17th rule", () => {
   const timeline = buildTaxTimeline({
-    profile: { vatPeriod: "quarterly", fiscalYearStart: "01-01" },
+    profile: { vatPeriod: "quarterly", fiscalYearStart: "01-01", euTrade: true },
     today: "2026-07-04",
   });
   const q2 = byId(timeline, "tax_vat_2026-Q2");
@@ -36,7 +36,7 @@ test("pinned: quarterly Q2 (fy 01-01) moms lands on 2026-08-17 — August 17th r
 
 test("pinned: monthly May moms shifts from Sunday the 12th to Monday 2026-07-13", () => {
   const timeline = buildTaxTimeline({
-    profile: { vatPeriod: "monthly", fiscalYearStart: "01-01" },
+    profile: { vatPeriod: "monthly", fiscalYearStart: "01-01", euTrade: true },
     today: "2026-07-04",
   });
   const may = byId(timeline, "tax_vat_2026-05");
@@ -49,7 +49,7 @@ test("pinned: monthly May moms shifts from Sunday the 12th to Monday 2026-07-13"
 
 test("pinned: yearly moms for the FY ending December 2026 is due 2027-02-26", () => {
   const timeline = buildTaxTimeline({
-    profile: { vatPeriod: "yearly", fiscalYearStart: "01-01" },
+    profile: { vatPeriod: "yearly", fiscalYearStart: "01-01", euTrade: true },
     today: "2027-01-15",
   });
   const yearly = byId(timeline, "tax_vat_fy-2026");
@@ -63,7 +63,7 @@ test("yearly moms December rule: FY ending October → 27th, then weekend-shifte
   // fy-2025 with start 11-01 ends 2026-10-31; second month after is December
   // → the 27th, which is a Sunday in 2026 → Monday 2026-12-28.
   const timeline = buildTaxTimeline({
-    profile: { vatPeriod: "yearly", fiscalYearStart: "11-01" },
+    profile: { vatPeriod: "yearly", fiscalYearStart: "11-01", euTrade: true },
     today: "2026-11-15",
   });
   const yearly = byId(timeline, "tax_vat_fy-2025");
@@ -73,7 +73,7 @@ test("yearly moms December rule: FY ending October → 27th, then weekend-shifte
 
 test("pinned: årsredovisning for the FY ending 2026-06-30 is due 2027-01-31 (no weekend shift)", () => {
   const timeline = buildTaxTimeline({
-    profile: { vatPeriod: "quarterly", fiscalYearStart: "07-01" },
+    profile: { vatPeriod: "quarterly", fiscalYearStart: "07-01", euTrade: true },
     today: "2026-12-01",
   });
   const annual = byId(timeline, "tax_arsredovisning_fy-2025");
@@ -87,7 +87,7 @@ test("pinned: årsredovisning for the FY ending 2026-06-30 is due 2027-01-31 (no
 
 test("årsredovisning for a calendar FY lands on the following July 31st", () => {
   const timeline = buildTaxTimeline({
-    profile: { vatPeriod: "yearly", fiscalYearStart: "01-01" },
+    profile: { vatPeriod: "yearly", fiscalYearStart: "01-01", euTrade: true },
     today: "2027-05-01",
   });
   const annual = byId(timeline, "tax_arsredovisning_fy-2026");
@@ -97,7 +97,7 @@ test("årsredovisning for a calendar FY lands on the following July 31st", () =>
 
 test("employer declaration and F-skatt fall on the 12th, with the January 17th rule composing with the weekend shift", () => {
   const timeline = buildTaxTimeline({
-    profile: { vatPeriod: "quarterly", fiscalYearStart: "01-01" },
+    profile: { vatPeriod: "quarterly", fiscalYearStart: "01-01", euTrade: true },
     today: "2025-12-20",
     limit: 12,
   });
@@ -116,7 +116,7 @@ test("employer declaration and F-skatt fall on the 12th, with the January 17th r
 
 test("horizon and limit bound the timeline; order is dueDate then id", () => {
   const timeline = buildTaxTimeline({
-    profile: { vatPeriod: "monthly", fiscalYearStart: "01-01" },
+    profile: { vatPeriod: "monthly", fiscalYearStart: "01-01", euTrade: true },
     today: "2026-07-04",
   });
   assert.ok(timeline.length <= 8);
@@ -129,7 +129,7 @@ test("horizon and limit bound the timeline; order is dueDate then id", () => {
   assert.deepEqual(sortKeys, [...sortKeys].sort());
 
   const tight = buildTaxTimeline({
-    profile: { vatPeriod: "monthly", fiscalYearStart: "01-01" },
+    profile: { vatPeriod: "monthly", fiscalYearStart: "01-01", euTrade: true },
     today: "2026-07-04",
     horizonDays: 10,
   });
@@ -140,7 +140,7 @@ test("horizon and limit bound the timeline; order is dueDate then id", () => {
   );
 
   const limited = buildTaxTimeline({
-    profile: { vatPeriod: "monthly", fiscalYearStart: "01-01" },
+    profile: { vatPeriod: "monthly", fiscalYearStart: "01-01", euTrade: true },
     today: "2026-07-04",
     limit: 2,
   });
@@ -149,7 +149,10 @@ test("horizon and limit bound the timeline; order is dueDate then id", () => {
 
 test("timeline is deterministic for identical inputs", () => {
   const build = () =>
-    buildTaxTimeline({ profile: { vatPeriod: "quarterly", fiscalYearStart: "07-01" }, today: "2026-07-04" });
+    buildTaxTimeline({
+      profile: { vatPeriod: "quarterly", fiscalYearStart: "07-01", euTrade: true },
+      today: "2026-07-04",
+    });
   assert.deepEqual(build(), build());
 });
 
@@ -159,7 +162,7 @@ test("fiscal start 07-01: quarterly deadlines are CALENDAR quarters, joined via 
   // fiscal-grammar token that resolves to the same window (fy-2025 Q4 with
   // start 07-01 spans exactly Apr–Jun 2026), keeping the box-49 join alive.
   const timeline = buildTaxTimeline({
-    profile: { vatPeriod: "quarterly", fiscalYearStart: "07-01" },
+    profile: { vatPeriod: "quarterly", fiscalYearStart: "07-01", euTrade: true },
     today: "2026-07-04",
   });
   const q2 = byId(timeline, "tax_vat_2026-Q2");
@@ -178,11 +181,14 @@ test("broken fiscal year (05-01): quarterly VAT deadlines stay on calendar quart
   // (kalenderkvartal) have no unified-grammar token, so the rows are honest
   // date-only entries — no periodToken, amountRef null — but the DATES follow
   // the statutory calendar-quarter schedule, not the fiscal quarters.
+  // The limit must clear every row this 240-day window holds (21 as of the
+  // INK2 addition) — the assertion below is about the VAT schedule, not about
+  // where the `limit` truncation happens to fall.
   const timeline = buildTaxTimeline({
-    profile: { vatPeriod: "quarterly", fiscalYearStart: "05-01" },
+    profile: { vatPeriod: "quarterly", fiscalYearStart: "05-01", euTrade: true },
     today: "2026-07-04",
     horizonDays: 240,
-    limit: 20,
+    limit: 30,
   });
   const vatDeadlines = timeline.filter((deadline) => deadline.kind === "vat-return");
   assert.deepEqual(
@@ -218,4 +224,87 @@ test("currentVatPeriodToken quarterly is the CALENDAR quarter; broken fiscal yea
   // A May fiscal year has no token for the statutory calendar quarter — fall
   // back to the resolvable current-month token (honest subset window).
   assert.equal(currentVatPeriodToken("quarterly", "05-01", "2026-05-15"), "2026-05");
+});
+
+test("pinned: INK2 and yearly VAT (no EU trade) for FYE 2026-08-31 both land in the jul–aug digital window", () => {
+  // fy-2025 with start 09-01 ends 2026-08-31 (jul–aug FYE bucket).
+  const timeline = buildTaxTimeline({
+    profile: { vatPeriod: "yearly", fiscalYearStart: "09-01", euTrade: false },
+    today: "2027-01-01",
+    horizonDays: 120,
+    limit: 20,
+  });
+  const ink2 = byId(timeline, "tax_ink2_fy-2025");
+  assert.ok(ink2, "expected the INK2 deadline in the horizon");
+  assert.equal(ink2.kind, "income-tax-return");
+  assert.equal(ink2.dueDate, "2027-04-01");
+  assert.equal(ink2.amountRef, null);
+  assert.equal(ink2.sourceKey, "sv-ink2-digital");
+
+  const yearly = byId(timeline, "tax_vat_fy-2025");
+  assert.ok(yearly, "expected the yearly VAT deadline in the horizon");
+  assert.equal(yearly.dueDate, "2027-04-12");
+  assert.equal(yearly.periodToken, "fy-2025");
+  assert.equal(yearly.amountRef, "box49");
+  assert.equal(yearly.sourceKey, "sv-vat-yearly-coupled");
+});
+
+test("pinned: yearly VAT keeps the 26th-rule when euTrade is true, independent of INK2", () => {
+  // Same fy-2025/09-01 fiscal year as above, but euTrade:true selects the
+  // OLD 26th-of-second-month rule instead — INK2 is unconditional and stays
+  // at the same 2027-04-01 date either way.
+  const timeline = buildTaxTimeline({
+    profile: { vatPeriod: "yearly", fiscalYearStart: "09-01", euTrade: true },
+    today: "2026-09-01",
+    horizonDays: 250,
+    limit: 25,
+  });
+  const yearly = byId(timeline, "tax_vat_fy-2025");
+  assert.ok(yearly, "expected the yearly VAT deadline in the horizon");
+  assert.equal(yearly.dueDate, "2026-10-26");
+  assert.equal(yearly.sourceKey, "sv-vat-yearly-26");
+
+  const ink2 = byId(timeline, "tax_ink2_fy-2025");
+  assert.ok(ink2, "expected the INK2 deadline in the horizon");
+  assert.equal(ink2.dueDate, "2027-04-01");
+});
+
+test("pinned: INK2 for FYE 2025-12-31 shifts from Saturday 2026-08-01 to Monday 2026-08-03", () => {
+  const timeline = buildTaxTimeline({
+    profile: { vatPeriod: "yearly", fiscalYearStart: "01-01", euTrade: true },
+    today: "2026-06-01",
+    horizonDays: 120,
+    limit: 15,
+  });
+  const ink2 = byId(timeline, "tax_ink2_fy-2025");
+  assert.ok(ink2, "expected the INK2 deadline in the horizon");
+  assert.equal(ink2.kind, "income-tax-return");
+  assert.equal(ink2.dueDate, "2026-08-03");
+  assert.equal(ink2.amountRef, null);
+  assert.equal(ink2.sourceKey, "sv-ink2-digital");
+});
+
+test("pinned: coupled yearly VAT shifts from Sunday 2027-01-17 to Monday 2027-01-18 (maj–jun bucket)", () => {
+  // fy-2025 with start 07-01 ends 2026-06-30 — the maj–jun bucket, the ONE
+  // bucket whose coupled-VAT day (the 17th) can land on a weekend. This is
+  // the weekend-shift path of YEARLY_VAT_NON_EU_DUE_TABLE; the jul–aug cases
+  // above never exercise it (their raw 2027-04-12 is already a Monday).
+  const timeline = buildTaxTimeline({
+    profile: { vatPeriod: "yearly", fiscalYearStart: "07-01", euTrade: false },
+    today: "2026-12-01",
+    horizonDays: 120,
+    limit: 20,
+  });
+  const yearly = byId(timeline, "tax_vat_fy-2025");
+  assert.ok(yearly, "expected the yearly VAT deadline in the horizon");
+  assert.equal(yearly.kind, "vat-return");
+  assert.equal(yearly.dueDate, "2027-01-18");
+  assert.equal(yearly.sourceKey, "sv-vat-yearly-coupled");
+
+  // Same bucket, different table: INK2's maj–jun day is the 15th, which is a
+  // Friday in 2027 and stays put — so the two tables demonstrably diverge.
+  const ink2 = byId(timeline, "tax_ink2_fy-2025");
+  assert.ok(ink2, "expected the INK2 deadline in the horizon");
+  assert.equal(ink2.dueDate, "2027-01-15");
+  assert.equal(ink2.sourceKey, "sv-ink2-digital");
 });

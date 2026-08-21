@@ -2,7 +2,7 @@
 title: Årsredovisning för aktiebolag — innehåll och tidsfrister
 source: Årsredovisningslagen (1995:1554) 8 kap. 3 §; Bolagsverket — Årsredovisning för aktiebolag
 url: https://bolagsverket.se/foretag/aktiebolag/arsredovisningforaktiebolag
-effective: 2026-07-04
+effective: 2026-08-20
 ---
 
 ## Skyldighet och innehåll
@@ -18,7 +18,7 @@ effective: 2026-07-04
 - Årsstämman ska hållas inom sex månader från räkenskapsårets utgång och fastställer där resultat- och balansräkningen (aktiebolagslagen).
 - Årsredovisningen ska ha kommit in till Bolagsverket senast sju månader efter räkenskapsårets slut; fristen följer av att kopian ska ges in inom en månad efter det att stämman fastställde balans- och resultaträkningen (ÅRL 8 kap. 3 §).
 - För bolag med kalenderår som räkenskapsår betyder det senast den 31 juli året därpå.
-- Förseningsavgift för privata aktiebolag: 5 000 kronor vid försening, ytterligare 5 000 kronor efter två månader och ytterligare 10 000 kronor efter fyra månader.
+- Förseningsavgift för privata aktiebolag (Prop. 2024/25:8, i kraft sedan 2025-01-01): 7 500 kronor vid försenad årsredovisning, ytterligare 7 500 kronor om den fortfarande inte kommit in två månader efter första förseningen, och ytterligare 15 000 kronor om den fortfarande inte kommit in fyra månader efter första förseningen.
 - Om ingen årsredovisning kommit in inom elva månader från räkenskapsårets utgång kan Bolagsverket besluta att bolaget ska gå i likvidation, och styrelsen kan bli personligt ansvarig.
 
 ## Regelverk: K2 och K3
@@ -34,4 +34,6 @@ effective: 2026-07-04
 
 ## Digital inlämning
 
-- Årsredovisningen kan lämnas in digitalt (iXBRL) via Bolagsverkets e-tjänst; digital inlämning ger automatisk mottagningskontroll.
+- Digital inlämning (iXBRL) av årsredovisningen via Bolagsverkets e-tjänst är i nuläget frivillig — pappersinlämning är fortfarande ett giltigt alternativ.
+- Från och med räkenskapsår som inleds efter den 31 december 2025 blir digital iXBRL-inlämning obligatorisk för aktiebolag; de första obligatoriska inlämningarna väntas därför sommaren 2027 för bolag med kalenderår som räkenskapsår.
+- Digital inlämning ger automatisk mottagningskontroll och är normalt snabbare att handlägga än pappersinlämning.

@@ -140,6 +140,51 @@ export function joinInFlight<T>(registry: Map<string, Promise<T>>, key: string, 
 }
 
 /**
+ * Bounded-concurrency runner (readiness G9 — bulk capture backlog): promoting ~70 receipts at
+ * once fired unbounded parallel initUpload→uploadBlob→createEvidence pipelines and tripped the
+ * API's 60/min per-subject mutation limiter within seconds, leaving a tail of failed drafts to
+ * retry by hand. `limit` lanes pull from a shared cursor, so a lane starts its next item the
+ * moment ITS own worker settles (completion order is duration-driven, never input-ordered).
+ *
+ * A rejecting worker does NOT kill its lane: the lane records the failure and keeps draining, so
+ * every item still runs and one bad file can't strand the rest of the drop. The first failure is
+ * rethrown once the pool is empty (`Promise.all`'s reason semantics, deferred to full drain).
+ * Pure over its inputs, same testing style as `joinInFlight`.
+ */
+export async function runWithConcurrencyLimit<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+  let firstError: { reason: unknown } | undefined;
+
+  async function runLane(): Promise<void> {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      try {
+        await worker(items[index]!);
+      } catch (error) {
+        firstError ??= { reason: error };
+      }
+    }
+  }
+
+  // A non-positive limit degrades to one sequential lane — silently dropping the whole batch
+  // would be the worse failure mode. An empty list opens no lane at all.
+  const laneCount = Math.min(Math.max(1, limit), items.length);
+  await Promise.all(Array.from({ length: laneCount }, runLane));
+
+  if (firstError) {
+    throw firstError.reason;
+  }
+}
+
+/** Bulk-capture concurrency cap (readiness G9): 4 in-flight promotions per drop. */
+const CAPTURE_PROMOTION_CONCURRENCY = 4;
+
+/**
  * In-flight promotions keyed by draft id. Draft ids are stable across the auto-promote →
  * drafts-table-retry lifecycle, so a retry click (or double-click) while the original
  * fire-and-forget promotion is still running joins it instead of racing a second
@@ -230,11 +275,15 @@ export async function captureFiles(
     invalidateCaptureQueries(options.queryClient);
   }
 
-  for (const { draft } of saved) {
-    void promoteDraft(draft, options)
+  // Fire-and-forget, but capped (readiness G9): at most CAPTURE_PROMOTION_CONCURRENCY pipelines
+  // run at a time so a bulk drop paces itself against the API's mutation budget instead of
+  // stampeding into 429s. The worker never rejects (per-draft outcomes go to the callbacks), so
+  // the pool always drains.
+  void runWithConcurrencyLimit(saved, CAPTURE_PROMOTION_CONCURRENCY, ({ draft }) =>
+    promoteDraft(draft, options)
       .then((result) => options.onPromoted?.(draft, result))
-      .catch(() => options.onPromoteError?.(draft));
-  }
+      .catch(() => options.onPromoteError?.(draft)),
+  );
 
   return { saved, rejected };
 }

@@ -109,6 +109,17 @@ export function QuickAddGrid({ onDraftSaved }: { onDraftSaved?: () => void }) {
           ? tSie("importedWithSkipped", { vouchers: result.importedVouchers, skipped: result.skipped.length })
           : tSie("imported", { vouchers: result.importedVouchers }),
       );
+      // Non-fatal parse notes (ignored lines, a non-zero #IB opening balance …)
+      // ride on the result — a second, softer toast so the import success and
+      // the caveats stay distinguishable (D3).
+      if (result.warnings.length > 0) {
+        toast.warning(
+          tSie("warnings", {
+            count: result.warnings.length,
+            preview: result.warnings.slice(0, 3).join(" · "),
+          }),
+        );
+      }
       // Imported vouchers land directly in the journal — refresh every
       // ledger-derived view (snapshot, journal, reports, integrity), R18.
       invalidateLedgerDerived(queryClient);

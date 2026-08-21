@@ -247,13 +247,18 @@ export function ReviewQueueView({ viewToggle }: { viewToggle?: ReactNode }) {
       // blockedReason is set (hotkeys still fire even when the Accept button is disabled).
       const review = reviews.find((item) => item.id === id);
       if (review?.blockedReason && (action === "accept" || action === "edit")) return;
+      // KFR Phase E: manual-origin vouchers post their lines verbatim, so Edit
+      // and book-without-vat are omitted from the card. The E/B hotkeys must be
+      // gated too — a hotkey is not a lesser path to the same action.
+      const manualOrigin = review ? voucherById.get(review.voucherId)?.origin === "manual" : false;
+      if (manualOrigin && (action === "edit" || action === "book-without-vat")) return;
       if (action === "accept") approveReview.mutate(id);
       else if (action === "reject") rejectReview.mutate(id);
       else if (action === "book-without-vat") bookWithoutVatReview.mutate(id);
       // "edit" opens the editor sheet (button click or hotkey E — both route here).
       else setEditingReviewId(id);
     },
-    [approveReview, rejectReview, bookWithoutVatReview, editingReviewId, reviews],
+    [approveReview, rejectReview, bookWithoutVatReview, editingReviewId, reviews, voucherById],
   );
 
   const onAccept = useCallback((id: string) => handleAction(id, "accept"), [handleAction]);

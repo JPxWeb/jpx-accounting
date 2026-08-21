@@ -102,6 +102,35 @@ test("statutory tax timeline renders dated, source-cited deadlines", async ({ pa
   await expect(timeline.getByTestId("tax-timeline-source").first()).toContainText(/Skatteverket|Årsredovisningslagen/);
 });
 
+test("Export SIE downloads the SELECTED period, filename and #RAR window included", async ({ page, isMobile }) => {
+  // KFR Phase D / Task 7: the button exports the period the screen is showing,
+  // not full history — so the file name says which window, and the bytes
+  // declare the FISCAL YEAR that window belongs to in #RAR 0 (fix wave I-2b:
+  // #RAR is a fiscal-year declaration, never a one-month "fiscal year").
+  await page.goto("/reports?period=2026-03");
+  const exportButton = page.getByTestId("export-sie");
+  await expect(exportButton).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await activateControl(exportButton, isMobile);
+  const download = await downloadPromise;
+
+  expect(download.suggestedFilename()).toBe("jpx-export-2026-03.se");
+
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(chunk as Buffer);
+  // PC8/CP437 bytes; the header lines are pure ASCII, so latin1 reads them back.
+  const text = Buffer.concat(chunks).toString("latin1");
+  // Default (unset) company profile = calendar fiscal year, so March 2026 is
+  // declared as FY 2026-01-01…2026-12-31 while #VER stays scoped to March.
+  expect(text).toMatch(/^#RAR 0 20260101 20261231$/m);
+  // I-2a: whatever balances the window carries, #IB/#UB are balance accounts
+  // (1–2) and #RES result accounts (3–8) — never the same account under both.
+  expect(text).not.toMatch(/^#(IB|UB) 0 [3-8]\d{3} /m);
+  expect(text).not.toMatch(/^#RES 0 [12]\d{3} /m);
+});
+
 test("print media strips chrome and swaps chart SVGs for their data tables", async ({ page }) => {
   await page.goto("/reports");
   // Let the lazy chart chunks mount before switching media.

@@ -3,8 +3,24 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { CompanySettings, JournalEntryProjection } from "@jpx-accounting/contracts";
-import { buildSieExport, decodePc8, decodeSieBuffer, encodePc8, parseSie } from "@jpx-accounting/domain";
-import { MemoryLedgerStore, planSieImport, SieImportError } from "@jpx-accounting/domain/store";
+import { sieImportResultSchema } from "@jpx-accounting/contracts";
+import {
+  buildSieExport,
+  computeSieBalances,
+  decodePc8,
+  decodeSieBuffer,
+  encodePc8,
+  parseSie,
+  resolvePeriodToken,
+  sieDecodeWarnings,
+} from "@jpx-accounting/domain";
+import {
+  MemoryLedgerStore,
+  planSieImport,
+  SieImportError,
+  SIE_IMPORT_MAX_RESULT_WARNINGS,
+  summarizeSieWarnings,
+} from "@jpx-accounting/domain/store";
 
 const fixtureBytes = (name: string): Uint8Array =>
   new Uint8Array(readFileSync(new URL(`../fixtures/sie/${name}`, import.meta.url)));
@@ -71,7 +87,14 @@ const goldenSettings: CompanySettings = {
   postalCode: "111 22",
   city: "Stockholm",
   contactEmail: "golden@example.com",
-  profile: { country: "SE", locale: "sv-SE", currency: "SEK", fiscalYearStart: "01-01", vatPeriod: "quarterly" },
+  profile: {
+    country: "SE",
+    locale: "sv-SE",
+    currency: "SEK",
+    fiscalYearStart: "01-01",
+    vatPeriod: "quarterly",
+    euTrade: false,
+  },
   aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
 };
 
@@ -86,6 +109,28 @@ test("PC8 encode/decode are inverse over the Swedish subset; unmappable chars de
 
   assert.deepEqual([...encodePc8("€")], [0x3f], "unmappable encodes as '?'");
   assert.equal(decodePc8(new Uint8Array([0x41, 0xff])), "A�", "unmapped high byte decodes as U+FFFD");
+});
+
+test("CP437 map covers æ/Æ; an unmapped high byte (e.g. ø/Ø, no CP437 slot here) triggers a decode warning", () => {
+  assert.deepEqual([...encodePc8("æÆ")], [0x91, 0x92]);
+  assert.equal(decodePc8(encodePc8("æÆ")), "æÆ");
+
+  // Export side of the same gap: ø/Ø have no CP437 slot, so they degrade to
+  // '?' on the way out (the documented unmappable convention).
+  assert.deepEqual([...encodePc8("øØ")], [0x3f, 0x3f], "ø/Ø have no CP437 slot — exported as '?'");
+
+  assert.deepEqual(sieDecodeWarnings("clean text, no replacement chars"), []);
+
+  // 0xd8 is outside this subset's map — a stand-in for ø/Ø, which have no
+  // CP437 slot here (readiness G11).
+  const decoded = decodePc8(new Uint8Array([0x42, 0xd8, 0x6a, 0x6f, 0x72, 0x6e]));
+  assert.equal(decoded, "B�jorn");
+  const warnings = sieDecodeWarnings(decoded);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /1 character/);
+  // The warning must name the affected text — "review manually" is useless
+  // without pointing at the line to review.
+  assert.match(warnings[0]!, /B�jorn/);
 });
 
 test("decodeSieBuffer: strict UTF-8 first, CP437 subset on failure", () => {
@@ -153,6 +198,226 @@ test("golden export: serializer output is byte-identical to the fixture and pars
   assert.equal(parsed.vouchers[1]?.text, 'Pärmar och "kvitton"', "escaped quotes survive the round trip");
 });
 
+test("period-scoped SIE export: #IB/#UB/#RES computed from the full ledger, #VER scoped to the range", () => {
+  const fullJournal: JournalEntryProjection[] = [
+    {
+      id: "j_pre_1",
+      voucherId: "voucher_pre",
+      accountNumber: "1930",
+      accountName: "Företagskonto",
+      description: "Aktiekapital",
+      debit: 5000,
+      credit: 0,
+      bookedAt: "2026-02-15",
+    },
+    {
+      id: "j_pre_2",
+      voucherId: "voucher_pre",
+      accountNumber: "2091",
+      accountName: "Balanserad vinst",
+      description: "Aktiekapital",
+      debit: 0,
+      credit: 5000,
+      bookedAt: "2026-02-15",
+    },
+    ...goldenJournal,
+    {
+      id: "j_post_1",
+      voucherId: "voucher_post",
+      accountNumber: "6110",
+      accountName: "Kontorsmateriel",
+      description: "April purchase (out of range)",
+      debit: 300,
+      credit: 0,
+      bookedAt: "2026-04-10",
+    },
+    {
+      id: "j_post_2",
+      voucherId: "voucher_post",
+      accountNumber: "1930",
+      accountName: "Företagskonto",
+      description: "April purchase (out of range)",
+      debit: 0,
+      credit: 300,
+      bookedAt: "2026-04-10",
+    },
+  ];
+  const range = { from: "2026-03-01", to: "2026-03-31" };
+  const balances = computeSieBalances(fullJournal, range);
+
+  assert.deepEqual(balances.openingBalances, { "1930": 5000, "2091": -5000 });
+  assert.deepEqual(balances.closingBalances, {
+    "1930": 3550,
+    "2091": -5000,
+    "2641": 250,
+    "6110": 200,
+    "6540": 1000,
+  });
+  assert.deepEqual(balances.results, { "6110": 200, "6540": 1000 });
+
+  const text = buildSieExport({
+    journal: fullJournal,
+    settings: goldenSettings,
+    generatedAt: goldenGeneratedAt,
+    range,
+    ...balances,
+  });
+
+  const expected = [
+    "#FLAGGA 0",
+    '#PROGRAM "JPX Accounting" "0.1.0"',
+    "#FORMAT PC8",
+    "#GEN 20260704",
+    "#SIETYP 4",
+    "#ORGNR 556677-8899",
+    '#FNAMN "Guldexport AB"',
+    // #RAR 0 declares the FISCAL YEAR containing the window (I-2b), never the
+    // one-month window itself — a March export is a month OF FY2026.
+    "#RAR 0 20260101 20261231",
+    '#KONTO 1930 "Företagskonto"',
+    '#KONTO 2091 "Balanserad vinst"',
+    '#KONTO 2641 "Debiterad ingående moms"',
+    '#KONTO 6110 "Kontorsmateriel"',
+    '#KONTO 6540 "IT-tjänster"',
+    "#IB 0 1930 5000.00",
+    "#IB 0 2091 -5000.00",
+    // #UB carries BALANCE accounts (1–2) only; the result accounts below are
+    // declared once, under #RES (I-2a).
+    "#UB 0 1930 3550.00",
+    "#UB 0 2091 -5000.00",
+    "#UB 0 2641 250.00",
+    "#RES 0 6110 200.00",
+    "#RES 0 6540 1000.00",
+    '#VER A 1 20260305 "Programvara mars"',
+    "{",
+    "#TRANS 6540 {} 1000.00",
+    "#TRANS 2641 {} 250.00",
+    "#TRANS 1930 {} -1250.00",
+    "}",
+    '#VER A 2 20260312 "Pärmar och \\"kvitton\\""',
+    "{",
+    "#TRANS 6110 {} 200.00",
+    "#TRANS 1930 {} -200.00",
+    "}",
+    "",
+  ].join("\n");
+  assert.equal(text, expected);
+});
+
+// `fiscalYearWindow` now backs BOTH paths (I-2b): full history anchors it on
+// `generatedAt`, a period-scoped export on the range start. These two tests
+// cover the Phase D firstFiscalYearStart clamp and its `floor <= to` guard
+// through the full-history path; the period-scoped tests below pin that an
+// `fy-` window survives the anchoring byte-identically.
+const settingsWithFiscalYear = (firstFiscalYearStart?: string): CompanySettings => ({
+  ...goldenSettings,
+  profile: {
+    ...goldenSettings.profile,
+    fiscalYearStart: "09-01",
+    ...(firstFiscalYearStart !== undefined ? { firstFiscalYearStart } : {}),
+  },
+});
+
+const rarLine = (text: string): string | undefined => text.split("\n").find((line) => line.startsWith("#RAR "));
+
+test("full-history #RAR 0 floors to firstFiscalYearStart when it falls inside the fiscal-year window", () => {
+  // Anchor 09-01, generated 2026-07-04 → the window containing it is
+  // 2025-09-01…2026-08-31. A company incorporated 2025-10-15 shortens FY1's
+  // start, exactly as resolvePeriodToken's fy-/ytd clamp does.
+  const text = buildSieExport({
+    journal: goldenJournal,
+    settings: settingsWithFiscalYear("2025-10-15"),
+    generatedAt: goldenGeneratedAt,
+  });
+  assert.equal(rarLine(text), "#RAR 0 20251015 20260831");
+
+  // Without the floor the same profile reports the full anchor-derived year.
+  const unclamped = buildSieExport({
+    journal: goldenJournal,
+    settings: settingsWithFiscalYear(),
+    generatedAt: goldenGeneratedAt,
+  });
+  assert.equal(rarLine(unclamped), "#RAR 0 20250901 20260831");
+});
+
+test("full-history #RAR 0 leaves the window alone when firstFiscalYearStart is past its end (never inverted)", () => {
+  // Floor 2027-01-15 is AFTER the 2025-09-01…2026-08-31 window's end. Clamping
+  // it in would emit `#RAR 0 20270115 20260831` — a from > to window no SIE
+  // reader accepts. The `floor <= to` guard must leave the window untouched.
+  const text = buildSieExport({
+    journal: goldenJournal,
+    settings: settingsWithFiscalYear("2027-01-15"),
+    generatedAt: goldenGeneratedAt,
+  });
+  assert.equal(rarLine(text), "#RAR 0 20250901 20260831");
+
+  const [, from, to] = rarLine(text)!.split(" ").slice(1) as [string, string, string];
+  assert.ok(from <= to, "#RAR 0 must never be an inverted window");
+});
+
+test("period-scoped #RAR 0 declares the containing fiscal year for every token shape (I-2b)", () => {
+  const rarFor = (range: { from: string; to: string }, settings: CompanySettings): string | undefined =>
+    rarLine(buildSieExport({ journal: goldenJournal, settings, generatedAt: goldenGeneratedAt, range }));
+
+  // Calendar fiscal year: month, quarter and ytd windows all sit INSIDE FY2026.
+  assert.equal(rarFor({ from: "2026-03-01", to: "2026-03-31" }, goldenSettings), "#RAR 0 20260101 20261231");
+  assert.equal(rarFor({ from: "2026-04-01", to: "2026-06-30" }, goldenSettings), "#RAR 0 20260101 20261231");
+  assert.equal(rarFor({ from: "2026-01-01", to: "2026-07-04" }, goldenSettings), "#RAR 0 20260101 20261231");
+
+  // `?period=all` resolves to the 1900–2999 sentinel — no fiscal year contains
+  // it, so the export declares the year containing `generatedAt` instead of a
+  // 1100-year "fiscal year" (the parked D7 triage item).
+  assert.equal(rarFor({ from: "1900-01-01", to: "2999-12-31" }, goldenSettings), "#RAR 0 20260101 20261231");
+
+  // A broken (09-01) fiscal year: the September window belongs to FY2026/27,
+  // the August one to FY2025/26 — the anchor is the RANGE START, not today.
+  const broken = settingsWithFiscalYear();
+  assert.equal(rarFor({ from: "2026-09-01", to: "2026-09-30" }, broken), "#RAR 0 20260901 20270831");
+  assert.equal(rarFor({ from: "2026-08-01", to: "2026-08-31" }, broken), "#RAR 0 20250901 20260831");
+
+  // An `fy-` token needs no special case: `resolvePeriodToken`'s own window
+  // (incl. the firstFiscalYearStart clamp) survives the anchoring unchanged.
+  const fyResolved = resolvePeriodToken("fy-2025", { fiscalYearStart: "09-01", firstFiscalYearStart: "2025-10-15" });
+  assert.deepEqual([fyResolved.from, fyResolved.to], ["2025-10-15", "2026-08-31"]);
+  assert.equal(
+    rarFor({ from: fyResolved.from, to: fyResolved.to }, settingsWithFiscalYear("2025-10-15")),
+    "#RAR 0 20251015 20260831",
+    "the fy- window is reproduced byte-identically by the anchored derivation",
+  );
+});
+
+test("period-scoped balance blocks are class-disjoint: #IB/#UB for 1–2, #RES for 3–8 (I-2a)", () => {
+  const range = { from: "2026-03-01", to: "2026-03-31" };
+  const balances = computeSieBalances(goldenJournal, range);
+  const text = buildSieExport({
+    journal: goldenJournal,
+    settings: goldenSettings,
+    generatedAt: goldenGeneratedAt,
+    range,
+    ...balances,
+  });
+  const accountsFor = (label: "IB" | "UB" | "RES") =>
+    text
+      .split("\n")
+      .filter((line) => line.startsWith(`#${label} `))
+      .map((line) => line.split(" ")[2]!);
+
+  // The computation still tracks every account (opening balances need them);
+  // only the EMISSION is class-scoped.
+  assert.ok(Object.keys(balances.closingBalances).includes("6110"), "precondition: the closing map holds 6110");
+  for (const account of [...accountsFor("IB"), ...accountsFor("UB")]) {
+    assert.match(account, /^[12]/, `#IB/#UB must carry balance accounts only, got ${account}`);
+  }
+  for (const account of accountsFor("RES")) {
+    assert.match(account, /^[3-8]/, `#RES must carry result accounts only, got ${account}`);
+  }
+  assert.deepEqual(
+    accountsFor("UB").filter((account) => accountsFor("RES").includes(account)),
+    [],
+    "no account may be declared under both #UB and #RES",
+  );
+});
+
 test("escaping: quotes and backslashes survive serialize → parse", () => {
   const description = 'Text med "citat" och \\bakstreck\\';
   const journal: JournalEntryProjection[] = [
@@ -188,7 +453,15 @@ test("full round-trip: export → parse → importSie reproduces the journal eco
 
   const text = buildSieExport({ journal: goldenJournal, settings: null, generatedAt: goldenGeneratedAt });
   const result = await store.importSie({ actorId: "user_test", file: parseSie(text) });
-  assert.deepEqual(result, { accepted: true, importedVouchers: 2, importedTransactions: 5, skipped: [] });
+  // `warnings: []` is load-bearing: our own export must parse back without a
+  // single non-fatal note (D3).
+  assert.deepEqual(result, {
+    accepted: true,
+    importedVouchers: 2,
+    importedTransactions: 5,
+    skipped: [],
+    warnings: [],
+  });
 
   const journalAfter = (await store.getReports()).journal;
   assert.equal(journalAfter.length, journalBefore + 5);
@@ -196,6 +469,23 @@ test("full round-trip: export → parse → importSie reproduces the journal eco
     journalAfter.slice(-5).map((entry) => [entry.accountNumber, entry.debit, entry.credit]),
     goldenJournal.map((entry) => [entry.accountNumber, entry.debit, entry.credit]),
   );
+
+  // KFR Phase D / Task 1 (readiness G3): every accepted voucher materializes an
+  // already-posted Voucher row keyed by its `sie_<series>_<number>` aggregate id,
+  // so imported history is attachable and shows its real series+number.
+  const snapshot = await store.getSnapshot();
+  const firstImportedVoucher = snapshot.vouchers.find((voucher) => voucher.id === "sie_A_1");
+  assert.equal(firstImportedVoucher?.voucherNumber, "A 1");
+  assert.equal(firstImportedVoucher?.origin, "import");
+  assert.equal(firstImportedVoucher?.status, "posted");
+  assert.equal(firstImportedVoucher?.evidencePacketId, null);
+  assert.equal(snapshot.vouchers.filter((voucher) => voucher.origin === "import").length, 2);
+
+  // Re-import is idempotent on the ROW too: no duplicate/updated voucher rows.
+  const replay = await store.importSie({ actorId: "user_test", file: parseSie(text) });
+  assert.equal(replay.importedVouchers, 0);
+  const replaySnapshot = await store.getSnapshot();
+  assert.deepEqual(replaySnapshot.vouchers, snapshot.vouchers);
 });
 
 test("per-voucher isolation: unbalanced voucher skipped, balanced one imported (minimal fixture)", async () => {
@@ -221,6 +511,94 @@ test("parseSie: bare #TRANS outside #VER is ignored with a warning (old placehol
   const parsed = parseSie("#FLAGGA 0\n#TRANS 1930 {} -100\n#TRANS 6540 {} 100");
   assert.equal(parsed.vouchers.length, 0);
   assert.ok(parsed.warnings.some((warning) => warning.includes("#TRANS")));
+});
+
+test("parseSie: non-zero #IB warns (opening balances aren't imported this version); zero #IB is silent", () => {
+  const withBalance = parseSie('#IB 0 1930 15000.50\n#VER A 1 20260101 "x"\n{\n#TRANS 1930 {} 0\n}');
+  assert.ok(
+    withBalance.warnings.some((warning) => warning.includes("#IB") && warning.includes("1930")),
+    "non-zero #IB must warn",
+  );
+
+  const zeroBalance = parseSie("#IB 0 1930 0.00");
+  assert.ok(!zeroBalance.warnings.some((warning) => warning.includes("#IB")), "a zero #IB is not worth warning about");
+
+  // The shape a first-fiscal-year export from the incumbent actually has: an
+  // #IB row per account in the chart, all zero. It must import in total silence
+  // — one warning per chart account would bury every real signal.
+  const kapitasLike = parseSie(
+    [
+      "#FLAGGA 0",
+      "#SIETYP 4",
+      '#FNAMN "JPx Demo AB"',
+      "#RAR 0 20260101 20261231",
+      '#KONTO 1930 "Företagskonto"',
+      '#KONTO 2440 "Leverantörsskulder"',
+      "#IB 0 1930 0.00",
+      "#IB 0 2440 0",
+      "#IB 0 3011 -0.00",
+      '#VER A 1 20260115 "Första verifikatet"',
+      "{",
+      "#TRANS 6110 {} 250.00",
+      "#TRANS 1930 {} -250.00",
+      "}",
+      "#UB 0 1930 -250.00",
+    ].join("\n"),
+  );
+  assert.deepEqual(kapitasLike.warnings, [], "a zero-opening-balance FY1 export must import silently");
+  assert.equal(kapitasLike.vouchers.length, 1);
+});
+
+test("importSie threads parse warnings into the result and they survive the wire round-trip", async () => {
+  const store = new MemoryLedgerStore();
+  const file = parseSie(
+    [
+      "#IB 0 1930 15000.50",
+      '#VER A 9 20260401 "Kaffe"',
+      "{",
+      "#TRANS 5810 {} 100.00",
+      "#TRANS 1930 {} -100.00",
+      "}",
+    ].join("\n"),
+  );
+
+  const result = await store.importSie({ file });
+  assert.equal(result.importedVouchers, 1, "the voucher still imports — an #IB warning is never fatal");
+  assert.ok(
+    result.warnings.some((warning) => warning.includes("#IB") && warning.includes("1930")),
+    "the parse warning must reach the import result",
+  );
+
+  // What the browser actually receives: JSON over the wire, re-parsed by the
+  // api-client through this very schema (demo fallback returns the same object).
+  const overTheWire = sieImportResultSchema.parse(JSON.parse(JSON.stringify(result)));
+  assert.deepEqual(overTheWire.warnings, result.warnings);
+
+  // #IB is recognized to WARN only — no opening balance is ever booked.
+  const journal = (await store.getReports()).journal;
+  assert.equal(
+    journal.filter((entry) => entry.debit === 15000.5 || entry.credit === 15000.5).length,
+    0,
+    "opening balances are not imported",
+  );
+});
+
+test("decode-confidence warning reaches ParsedSieFile.warnings for a real garbled buffer", () => {
+  const garbled = new Uint8Array([0x23, 0x46, 0x4e, 0x41, 0x4d, 0x4e, 0x20, 0xd8]); // "#FNAMN " + an unmapped byte
+  const text = decodeSieBuffer(garbled);
+  const parsed = parseSie(text);
+  const merged = [...sieDecodeWarnings(text), ...parsed.warnings];
+  assert.ok(merged.some((warning) => warning.includes("could not be decoded")));
+});
+
+test("summarizeSieWarnings caps the threaded warnings so a junk file can't return an unbounded payload", () => {
+  const under = Array.from({ length: SIE_IMPORT_MAX_RESULT_WARNINGS }, (_, index) => `w${index}`);
+  assert.deepEqual(summarizeSieWarnings(under), under, "under the cap the list passes through verbatim");
+
+  const over = Array.from({ length: SIE_IMPORT_MAX_RESULT_WARNINGS + 7 }, (_, index) => `w${index}`);
+  const summarized = summarizeSieWarnings(over);
+  assert.equal(summarized.length, SIE_IMPORT_MAX_RESULT_WARNINGS + 1);
+  assert.equal(summarized.at(-1), "… and 7 more parse warnings (not shown).");
 });
 
 test("planSieImport enforces hard bounds via SieImportError", () => {

@@ -74,3 +74,54 @@ test("?period= filters the journal server-side (month and fiscal quarter windows
   await page.goto("/books?period=2026-Q1");
   await expect(journalView).toContainText("6110");
 });
+
+// Print (KFR Task E.6): the same contract reports.spec.ts pins for the report
+// pack — `emulateMedia` proves the CSS/markup contract without ever calling
+// `window.print()`, which Playwright cannot drive.
+test("print media on the journal view strips chrome and shows the print header", async ({ page }) => {
+  await page.goto("/books");
+  await expect(page.getByTestId("journal-view")).toBeVisible();
+
+  await page.emulateMedia({ media: "print" });
+
+  await expect(page.getByTestId("desktop-navigation")).toBeHidden();
+  await expect(page.getByTestId("mobile-dock")).toBeHidden();
+  await expect(page.getByTestId("books-print")).toBeHidden();
+  await expect(page.getByTestId("books-new-manual-entry")).toBeHidden();
+  await expect(page.getByTestId("period-selector")).toBeHidden();
+  await expect(page.getByTestId("report-print-header")).toBeVisible();
+
+  // Every posting row is unbreakable, so a printed grundbok never splits one
+  // booking across a page boundary.
+  const row = page.getByTestId("journal-view").locator("table tbody tr").first();
+  await expect(row).toBeVisible();
+  expect(await row.evaluate((el) => getComputedStyle(el).breakInside)).toBe("avoid");
+});
+
+test("print media on the general-ledger view expands and keeps account groups whole", async ({ page }) => {
+  await page.goto("/books?view=general-ledger");
+  const group = page.getByTestId("general-ledger-view").locator("details").first();
+  await expect(group).toBeVisible();
+  // On screen the postings stay behind the collapsed summary.
+  await expect(group.locator("li").first()).toBeHidden();
+
+  await page.emulateMedia({ media: "print" });
+
+  await expect(page.getByTestId("report-print-header")).toBeVisible();
+  await expect(page.getByTestId("books-print")).toBeHidden();
+  await expect(page.getByTestId("period-selector")).toBeHidden();
+
+  // A huvudbok without its postings is not a huvudbok: every account group
+  // opens on paper, and never splits across a page boundary.
+  await expect(group.locator("li").first()).toBeVisible();
+  expect(await group.evaluate((el) => getComputedStyle(el).breakInside)).toBe("avoid");
+});
+
+test("the print button only appears on the journal and general-ledger views", async ({ page }) => {
+  await page.goto("/books?view=trial-balance");
+  await expect(page.getByTestId("trial-balance-row").first()).toBeVisible();
+  await expect(page.getByTestId("books-print")).toHaveCount(0);
+
+  await page.goto("/books?view=general-ledger");
+  await expect(page.getByTestId("books-print")).toBeVisible();
+});

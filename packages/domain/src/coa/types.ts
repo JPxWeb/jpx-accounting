@@ -37,6 +37,12 @@ export type CoaRoleMap = {
   vatSettlement: string;
   fallbackExpense: string;
   rounding: string;
+  /** KFR D3: self-assessed output VAT liability on an EU reverse-charge service purchase. */
+  reverseChargeOutput: string;
+  /** KFR D3: self-assessed deductible input VAT on the same purchase. */
+  reverseChargeInput: string;
+  /** KFR D2: default non-bank settlement account for owner-paid utlägg. */
+  ownerSettlement: string;
 };
 
 export type CoaTemplate = {

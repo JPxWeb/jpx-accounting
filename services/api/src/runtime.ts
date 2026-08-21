@@ -86,6 +86,10 @@ export class UnavailableLedgerStore implements LedgerStore {
     return this.fail();
   }
 
+  async createManualVoucher() {
+    return this.fail();
+  }
+
   async findReviewByVoucher() {
     return this.fail();
   }
@@ -167,6 +171,7 @@ export function createApiRuntimeDependencies(config: ApiRuntimeConfig) {
   const blobUploader = createBlobUploader({
     accountName: config.azureStorage.accountName,
     containerName: config.azureStorage.containerName,
+    blobDir: config.localBlobDir,
     failClosed,
   });
   const documentIntelligence = createDocumentIntelligenceClient({

@@ -1,15 +1,16 @@
 import type {
   AccountingSuggestion,
   ExtractedField,
+  ManualVoucherLine,
   ReviewDecisionEdit,
   Voucher,
   VoucherField,
 } from "@jpx-accounting/contracts";
 
-import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
+import { classifyAccountNumber, defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import type { CoaTemplate } from "./coa/types";
 import { deriveVoucherFields } from "./evidence-defaults";
-import { assertBalancedPosting } from "./posting-invariants";
+import { assertBalancedPosting, assertOreExactLines, isOreExact } from "./posting-invariants";
 import type { LedgerLine } from "./projections";
 import { getVatRegime, type VatRegime } from "./vat/regime";
 
@@ -36,13 +37,45 @@ export class InvalidReviewEditError extends Error {
   }
 }
 /**
+ * Thrown when a manual voucher's lines fail the exact-öre balance check
+ * inside `planManualVoucher` (the wire schema only enforces ±0.005 —
+ * legitimate float noise, not a real imbalance). Client-correctable, so
+ * this is a 422 like `InvalidReviewEditError`, never the catch-all 500
+ * `UnbalancedPostingError` uses for internal invariant violations.
+ */
+export class InvalidManualVoucherError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidManualVoucherError";
+  }
+}
+/**
  * VAT codes a reviewer may select on an edited decision (WS-B B5): the
- * regime's rate vocabulary (VAT25/VAT12/VAT6/VAT0 for Sweden) plus the
- * VAT-neutral "NA". "VAT-REVIEW" is deliberately NOT selectable — it is the
- * system's blocked-marker, never a posting choice.
+ * regime's rate vocabulary (VAT25/VAT12/VAT6/VAT0 for Sweden), the
+ * VAT-neutral "NA", and "RC25" (KFR D3 EU reverse charge — the code that
+ * selects `buildPostingLines`' 4-line rc25 shape). "VAT-REVIEW" is
+ * deliberately NOT selectable — it is the system's blocked-marker, never a
+ * posting choice.
  */
 export function validEditVatCodes(regime: VatRegime): ReadonlySet<string> {
-  return new Set([...Object.keys(regime.rates), "NA"]);
+  return new Set([...Object.keys(regime.rates), "NA", "RC25"]);
+}
+
+/**
+ * Domestic RATED VAT codes of a regime (Sweden: VAT25/VAT12/VAT6) — the rate
+ * vocabulary minus the zero-rated entry. Regime-driven, never a hardcoded list,
+ * so a future regime's rate table stays the single source.
+ *
+ * Used by the revenue-shape guard below: the 2-line revenue posting models
+ * VAT-FREE sales only, so pairing it with a rated code would silently drop the
+ * output VAT (see `buildPostingLines`' revenue branch).
+ */
+export function ratedDomesticVatCodes(regime: VatRegime): ReadonlySet<string> {
+  return new Set(
+    Object.entries(regime.rates)
+      .filter(([, rate]) => rate.percent > 0)
+      .map(([id]) => id),
+  );
 }
 
 /**
@@ -58,22 +91,63 @@ export function validEditVatCodes(regime: VatRegime): ReadonlySet<string> {
  * `edited.accountName` is ignored so display names cannot be forged into the
  * ledger. Invalid values throw `InvalidReviewEditError` (→ HTTP 422) BEFORE
  * any mutation, in both stores.
+ *
+ * KFR D3: an optional `edited.settlementAccountNumber` is validated against the
+ * same registry and returned as `effectiveSettlementAccountNumber` for callers
+ * to thread into `buildPostingLines` (absent = `coa.roles.bank`).
  */
 export function resolveReviewDecisionEdit(
   voucher: Voucher,
   suggestion: AccountingSuggestion | undefined,
   edited: ReviewDecisionEdit,
   coa: CoaTemplate = defaultCoaTemplate,
-): { effectiveSuggestion: AccountingSuggestion | undefined; effectiveVoucher: Voucher } {
+): {
+  effectiveSuggestion: AccountingSuggestion | undefined;
+  effectiveVoucher: Voucher;
+  effectiveSettlementAccountNumber: string | undefined;
+} {
   const issues: string[] = [];
   const registryAccount = findCoaAccount(coa, edited.accountNumber);
   if (!registryAccount) {
     issues.push(`Edited accountNumber (${edited.accountNumber}) does not exist in the ${coa.id} chart of accounts.`);
   }
-  const vatVocabulary = validEditVatCodes(getVatRegime(coa.country));
+  const regime = getVatRegime(coa.country);
+  const vatVocabulary = validEditVatCodes(regime);
   if (!vatVocabulary.has(edited.vatCode)) {
     issues.push(
       `Edited vatCode (${edited.vatCode}) is not in the VAT regime vocabulary (${[...vatVocabulary].join(", ")}).`,
+    );
+  }
+  // I-1 (fix wave): the 2-line revenue shape credits the full amount to the
+  // revenue account and emits NO output-VAT line — it models VAT-FREE sales
+  // (export/EU B2B) only. Combining it with a rated domestic code (VAT25/12/6)
+  // would post a sale with zero utgående moms AND declare its gross in box 05:
+  // a silently wrong momsdeklaration. Domestic rated sales stay YAGNI (see the
+  // revenue branch of `buildPostingLines`); the combination is refused here —
+  // 422, before any mutation — rather than left reachable and silent. The same
+  // guard is what makes `simulateApprovals`' VAT delta honest, since no
+  // approvable edit can produce output VAT the preview does not model.
+  const editedShape = resolvePostingShape(
+    {
+      accountNumber: edited.accountNumber,
+      vatCode: edited.vatCode,
+      ...(suggestion?.direction !== undefined ? { direction: suggestion.direction } : {}),
+    },
+    coa,
+  );
+  if (editedShape === "revenue" && ratedDomesticVatCodes(regime).has(edited.vatCode)) {
+    issues.push(
+      `Edited vatCode (${edited.vatCode}) cannot be combined with revenue account ${edited.accountNumber}: ` +
+        `the revenue posting shape carries no output-VAT line, so a rated domestic sale would be booked without moms. ` +
+        `Use VAT0/NA for VAT-free sales (export, EU B2B), or book the sale on a cost/expense account.`,
+    );
+  }
+  // KFR D3: an edited settlement account (2899 utlägg, 1630 skattekonto, …
+  // instead of the default 1930 bank) must be a real CoA entry — same
+  // rigor as accountNumber above.
+  if (edited.settlementAccountNumber !== undefined && !findCoaAccount(coa, edited.settlementAccountNumber)) {
+    issues.push(
+      `Edited settlementAccountNumber (${edited.settlementAccountNumber}) does not exist in the ${coa.id} chart of accounts.`,
     );
   }
   const anyAmountGiven =
@@ -91,7 +165,7 @@ export function resolveReviewDecisionEdit(
         ["netAmount", edited.netAmount],
         ["vatAmount", edited.vatAmount],
       ] as const) {
-        if (!Number.isFinite(value) || Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) {
+        if (!isOreExact(value)) {
           issues.push(`Edited ${name} (${value}) must be öre-exact (at most two decimals).`);
         }
       }
@@ -147,7 +221,7 @@ export function resolveReviewDecisionEdit(
     voucherFields: { ...voucher.voucherFields, ...amountOverrides, ...bookedAtOverride },
   };
 
-  return { effectiveSuggestion, effectiveVoucher };
+  return { effectiveSuggestion, effectiveVoucher, effectiveSettlementAccountNumber: edited.settlementAccountNumber };
 }
 /**
  * Deferred-auth demo sentinel (WS-C R5, CONVENTIONS Rule 20 adjacency): when a
@@ -158,6 +232,43 @@ export function resolveReviewDecisionEdit(
  * the wire contracts and can never reach a store.
  */
 export const DEMO_ACTOR_ID = "user_founder";
+
+/**
+ * Draft-voucher display sentinel (KFR Phase E / readiness doc G8): every planner
+ * that creates a NEW Voucher row (capture intake, manual entry) assigns this
+ * literal instead of computing a `V-<n>` — the real number is assigned only
+ * once the voucher actually POSTS (approve or book-without-vat), inside
+ * `planReviewDecision`. A rejected review never posts, so its voucher keeps
+ * this sentinel forever: rejected drafts no longer burn V- numbers.
+ * SIE-imported vouchers never pass through this path at all (`importSie`
+ * assigns its own "<series> <number>" display directly) so there is no
+ * interaction with that numbering scheme.
+ */
+export const DRAFT_VOUCHER_NUMBER = "Utkast";
+
+/**
+ * Decision note stamped on an intake draft that `composeEvidence` discards
+ * because its evidence was attached to another voucher (KFR Phase E / E.5).
+ * Shared by both stores so the `ReviewRejected` payload is byte-identical
+ * (Rule 11), and a fixed English literal because it lands in an append-only
+ * event whose future reader's UI locale is unknowable — same call as the
+ * advisor's approval note.
+ */
+export const INTAKE_DRAFT_DISCARD_NOTES = "Draft discarded — evidence attached to another voucher";
+
+/**
+ * True for voucher/review statuses that correspond to an actual PostedToLedger
+ * event, i.e. the ones that consumed a `V-<n>` from the workspace sequence.
+ *
+ * Deliberately NOT `"posted"`: an SIE-imported voucher arrives already booked
+ * with `origin: "import"`, `status: "posted"` and its own "<series> <number>"
+ * display, never a `V-<n>`. Excluding it here is what keeps the native V-
+ * sequence dense and stable — importing a fiscal year of history must not
+ * shift the next captured voucher's number.
+ */
+export function isPostedVoucherStatus(status: Voucher["status"]): boolean {
+  return status === "approved" || status === "booked-without-vat";
+}
 
 /**
  * Server-derived actor threading for mutating store methods. Optional: absent
@@ -252,12 +363,44 @@ export function deriveBookedAt(
   return decisionDay;
 }
 
+/**
+ * KFR D3 shape selection: RC25 wins outright; otherwise direction (explicit or
+ * inferred from account class) picks expense vs. revenue. Takes only the three
+ * fields it reads so `resolveReviewDecisionEdit` can ask the SAME question of a
+ * not-yet-built edited suggestion (the I-1 guard) instead of re-deriving it.
+ */
+export function resolvePostingShape(
+  suggestion: Pick<AccountingSuggestion, "accountNumber" | "vatCode" | "direction">,
+  coa: CoaTemplate = defaultCoaTemplate,
+): "expense" | "rc25" | "revenue" {
+  if (suggestion.vatCode === "RC25") return "rc25";
+  const direction =
+    suggestion.direction ??
+    (classifyAccountNumber(suggestion.accountNumber, coa) === "revenue" ? "revenue" : "expense");
+  return direction === "revenue" ? "revenue" : "expense";
+}
+
+/**
+ * Build the journal lines for a reviewed voucher (KFR D3). Three shapes:
+ *
+ * - `expense` (default): cost debit + input-VAT debit + settlement credit.
+ * - `rc25`: EU reverse charge — cost debit, 2645 input-VAT debit, 2614
+ *   output-VAT credit, settlement credit of the NET price only.
+ * - `revenue`: settlement debit + revenue credit, no VAT line.
+ *
+ * `options.settlementAccountNumber` replaces the default `coa.roles.bank` credit
+ * (2899 utlägg, 1630 skattekonto, …); it is validated in
+ * `resolveReviewDecisionEdit` before it ever reaches here. Every shape returns
+ * through `assertBalancedPosting`, so an öre-unbalanced entry can never be
+ * appended.
+ */
 export function buildPostingLines(
   voucher: Voucher,
   suggestion: AccountingSuggestion,
   action: "approve" | "book-without-vat",
   occurredAt: string,
   coa: CoaTemplate = defaultCoaTemplate,
+  options?: { settlementAccountNumber?: string },
 ): LedgerLine[] {
   const fields = voucher.voucherFields;
   // R13: lines carry the ACCOUNTING date (voucher transaction/receipt date,
@@ -265,6 +408,116 @@ export function buildPostingLines(
   // bookedAt arrives here via resolveReviewDecisionEdit, which threads it into
   // the effective voucher's transactionDate.
   const bookedAt = deriveBookedAt(fields, occurredAt);
+  const description = fields.description ?? "Reviewed voucher";
+  const settlementAccountNumber = options?.settlementAccountNumber ?? coa.roles.bank;
+  const settlementAccountName = findCoaAccount(coa, settlementAccountNumber)?.name ?? settlementAccountNumber;
+  const shape = resolvePostingShape(suggestion, coa);
+
+  if (shape === "revenue") {
+    // D3(c): VAT0/export revenue — debit settlement, credit revenue, no VAT
+    // line. Output VAT on domestic sales is not modelled here (KFR Phase B
+    // scope: the revenue shape exists for the VAT-free export case).
+    //
+    // That YAGNI is safe ONLY because `resolveReviewDecisionEdit` refuses a
+    // revenue shape carrying a rated domestic code (VAT25/12/6) with a 422
+    // (I-1): the missing output-VAT line is therefore an unreachable state,
+    // not a silent one. If domestic rated sales are ever built here, drop that
+    // guard in the same change — never before.
+    const amount = fields.grossAmount ?? fields.netAmount ?? 0;
+    const lines: LedgerLine[] = [
+      {
+        voucherId: voucher.id,
+        accountNumber: settlementAccountNumber,
+        accountName: settlementAccountName,
+        description,
+        debit: amount,
+        credit: 0,
+        vatCode: "NA",
+        bookedAt,
+        deductible: false,
+      },
+      {
+        voucherId: voucher.id,
+        accountNumber: suggestion.accountNumber,
+        accountName: suggestion.accountName,
+        description,
+        debit: 0,
+        credit: amount,
+        vatCode: suggestion.vatCode,
+        bookedAt,
+        deductible: false,
+      },
+    ];
+    return assertBalancedPosting(lines, `voucher ${voucher.id}`);
+  }
+
+  if (shape === "rc25") {
+    // D3(b): EU reverse-charge service purchase. The foreign supplier never
+    // charges Swedish VAT, so the settlement leg only ever carries the NET
+    // price and the VAT nets to zero cash impact. Unlike the expense shape,
+    // the self-assessed OUTPUT liability is not a deduction the reviewer may
+    // decline: book-without-vat drops only the 2645 input claim (folding the
+    // undeducted VAT into the cost, Swedish practice) while 2614 still carries
+    // the full liability. The VAT is round2'd once here so every leg is
+    // öre-exact and Σdebit = Σcredit holds for any extracted triple.
+    const declaredVat = round2(fields.vatAmount ?? 0);
+    const invoiceTotal = fields.grossAmount ?? round2((fields.netAmount ?? 0) + declaredVat);
+    const netAmount = round2(invoiceTotal - declaredVat);
+    const inputAccount = coa.roles.reverseChargeInput;
+    const outputAccount = coa.roles.reverseChargeOutput;
+    const costDebit = action === "book-without-vat" ? round2(netAmount + declaredVat) : netAmount;
+    const inputVatDebit = action === "book-without-vat" ? 0 : declaredVat;
+    const lines: LedgerLine[] = [
+      {
+        voucherId: voucher.id,
+        accountNumber: suggestion.accountNumber,
+        accountName: suggestion.accountName,
+        description,
+        debit: costDebit,
+        credit: 0,
+        vatCode: "RC25",
+        bookedAt,
+        deductible: action !== "book-without-vat",
+      },
+      {
+        voucherId: voucher.id,
+        accountNumber: inputAccount,
+        accountName: findCoaAccount(coa, inputAccount)?.name ?? inputAccount,
+        description: `${description} VAT (omvänd skattskyldighet)`,
+        debit: inputVatDebit,
+        credit: 0,
+        vatCode: "RC25",
+        bookedAt,
+        deductible: action !== "book-without-vat",
+      },
+      {
+        voucherId: voucher.id,
+        accountNumber: outputAccount,
+        accountName: findCoaAccount(coa, outputAccount)?.name ?? outputAccount,
+        description: `${description} VAT (omvänd skattskyldighet)`,
+        debit: 0,
+        credit: declaredVat,
+        vatCode: "RC25",
+        bookedAt,
+        deductible: false,
+      },
+      {
+        voucherId: voucher.id,
+        accountNumber: settlementAccountNumber,
+        accountName: settlementAccountName,
+        description,
+        debit: 0,
+        credit: netAmount,
+        vatCode: "NA",
+        bookedAt,
+        deductible: false,
+      },
+    ];
+    return assertBalancedPosting(lines, `voucher ${voucher.id}`);
+  }
+
+  // shape === "expense": the original 3-line shape, generalized to a
+  // configurable settlement account. Byte-identical when `options` is omitted.
   // Non-deductible input VAT (book-without-vat) is part of the cost under
   // Swedish rules: claim 0 VAT and debit the full gross to the cost account.
   const vatAmount = action === "book-without-vat" ? 0 : (fields.vatAmount ?? 0);
@@ -273,9 +526,7 @@ export function buildPostingLines(
   // triples can be öre-inconsistent, and resolveReviewDecisionEdit admits a
   // ±0.01 tolerance — deriving is what keeps Σdebit = Σcredit unconditionally.
   const netAmount = round2(grossAmount - vatAmount);
-  const description = fields.description ?? "Reviewed voucher";
   const inputVatAccount = coa.roles.inputVat;
-  const bankAccount = coa.roles.bank;
 
   const lines: LedgerLine[] = [
     {
@@ -305,8 +556,8 @@ export function buildPostingLines(
     },
     {
       voucherId: voucher.id,
-      accountNumber: bankAccount,
-      accountName: findCoaAccount(coa, bankAccount)?.name ?? bankAccount,
+      accountNumber: settlementAccountNumber,
+      accountName: settlementAccountName,
       description,
       debit: 0,
       credit: grossAmount,
@@ -316,6 +567,43 @@ export function buildPostingLines(
     },
   ];
   return assertBalancedPosting(lines, `voucher ${voucher.id}`);
+}
+
+/**
+ * Post a manual voucher's lines VERBATIM (KFR D2) — no shape inference, no
+ * amount derivation. `deductible` is uniformly `false`: Phase B does not
+ * infer per-line VAT deductibility for hand-entered lines (same documented
+ * limitation `planSieImport` already carries for imported lines).
+ *
+ * Because the amounts are copied rather than derived, BOTH posting invariants
+ * are asserted here: öre-exactness per line and Σdebit === Σcredit. Balance
+ * alone is not enough — `postingImbalanceOre` compares integer öre, so a
+ * sub-öre amount reads as balanced and would then be stored verbatim.
+ * `planManualVoucher` already rejects such input at creation time (as a 422),
+ * but this is the posting boundary: any other writer that ever reaches
+ * `suggestion.lines` is caught here too.
+ */
+export function buildManualPostingLines(
+  voucher: Voucher,
+  lines: ManualVoucherLine[],
+  occurredAt: string,
+  coa: CoaTemplate = defaultCoaTemplate,
+): LedgerLine[] {
+  const bookedAt = deriveBookedAt(voucher.voucherFields, occurredAt);
+  const description = voucher.voucherFields.description ?? "Manual entry";
+  const context = `manual voucher ${voucher.id}`;
+  const posted: LedgerLine[] = lines.map((line) => ({
+    voucherId: voucher.id,
+    accountNumber: line.accountNumber,
+    accountName: findCoaAccount(coa, line.accountNumber)?.name ?? `Konto ${line.accountNumber}`,
+    description,
+    debit: line.debit,
+    credit: line.credit,
+    vatCode: line.vatCode,
+    bookedAt,
+    deductible: false,
+  }));
+  return assertBalancedPosting(assertOreExactLines(posted, context), context);
 }
 
 /**

@@ -12,6 +12,7 @@ import {
   evidenceComposeInputSchema,
   evidenceCreateInputSchema,
   knowledgeQuerySchema,
+  manualVoucherInputSchema,
   reviewDecisionInputSchema,
   type ReviewDecisionInput,
   simulationRequestSchema,
@@ -25,15 +26,19 @@ import type { DocumentIntelligenceClient } from "@jpx-accounting/document-intell
 import { pickModelForDocument } from "@jpx-accounting/document-intelligence";
 import {
   buildSieExport,
+  computeSieBalances,
   currentMonthToken,
   decodeSieBuffer,
   DEMO_ACTOR_ID,
   encodePc8,
+  InvalidManualVoucherError,
   InvalidPeriodTokenError,
   InvalidReviewEditError,
   nowIso,
   parseSie,
+  resolvePeriodToken,
   ReviewBlockedError,
+  sieDecodeWarnings,
   summarizeEventIntegrity,
   today,
   type ReviewAction,
@@ -42,6 +47,7 @@ import {
   MemoryLedgerStore,
   ReviewNotFoundError,
   SieImportError,
+  VoucherNotFoundError,
   type LedgerStore,
   type ReportRange,
 } from "@jpx-accounting/domain/store";
@@ -49,7 +55,16 @@ import {
 import { AdvisorDisabledError, AdvisorValidationError, createAdvisorChatHandler } from "./advisor/chat";
 import { createAdvisorModel, type AdvisorModelConfig } from "./advisor/model";
 import type { BlobUploader } from "./blob";
-import { BlobUploaderUnavailableError, MAX_UPLOAD_BYTES, UploadValidationError } from "./blob";
+import {
+  BlobUploaderUnavailableError,
+  inferLocalBlobContentType,
+  LocalBlobConflictError,
+  LocalBlobNotFoundError,
+  LocalBlobTokenError,
+  LocalDiskBlobUploader,
+  MAX_UPLOAD_BYTES,
+  UploadValidationError,
+} from "./blob";
 import { DEFAULT_SUPABASE_JWT_ALGS, type CorsRuntimePolicy, type SupabaseJwtAlgorithm } from "./config";
 import { queryKnowledge } from "./knowledge";
 import type { AiRuntimeMetadata } from "./runtime";
@@ -369,6 +384,19 @@ export function createApp({
   // limit below, matching MAX_UPLOAD_BYTES, instead of the 512 KiB JSON ceiling.
   const isStubUploadPut = (c: Context<AppEnv>) => c.req.method === "PUT" && /^\/api\/uploads\/[^/]+$/.test(c.req.path);
 
+  // Local-disk blob byte-transfer routes (D1): ONE predicate shared by the body-limit gate below
+  // and the JWKS-auth exemption further down — both must agree on exactly which requests these are.
+  // Deliberately narrow on all three axes: the local backend must actually be wired, the method
+  // must be one of the two the handlers below register, and the path must be a single token
+  // segment. Anything else keeps the normal auth + body-limit treatment.
+  const LOCAL_BLOB_ROUTE_PATTERN = /^\/api\/blobs\/local\/[^/]+$/;
+  const localBlobStorageActive = blobUploader instanceof LocalDiskBlobUploader;
+  const isLocalBlobByteTransfer = (c: Context<AppEnv>) =>
+    localBlobStorageActive &&
+    (c.req.method === "PUT" || c.req.method === "GET") &&
+    LOCAL_BLOB_ROUTE_PATTERN.test(c.req.path);
+  const isLocalBlobPut = (c: Context<AppEnv>) => c.req.method === "PUT" && isLocalBlobByteTransfer(c);
+
   app.use("/api/*", async (c, next) => {
     if (!["POST", "PUT", "PATCH"].includes(c.req.method)) {
       return next();
@@ -377,6 +405,9 @@ export function createApp({
       return next();
     }
     if (isStubUploadPut(c)) {
+      return next();
+    }
+    if (isLocalBlobPut(c)) {
       return next();
     }
     return defaultJsonBodyLimit(c, next);
@@ -392,6 +423,21 @@ export function createApp({
         return next();
       }
       return uploadBodyLimit(c, next);
+    });
+  }
+
+  // Local-disk blob PUTs carry file bytes like the stub upload route above — same MAX_UPLOAD_BYTES
+  // ceiling instead of the 512 KiB JSON default (which the gate above already skips for them).
+  if (blobUploader instanceof LocalDiskBlobUploader) {
+    const localBlobPutBodyLimit = bodyLimit({
+      maxSize: MAX_UPLOAD_BYTES,
+      onError: (inner) => jsonError(inner, "Request body too large.", runtimeMode, 413),
+    });
+    app.use("/api/blobs/local/:token", async (c, next) => {
+      if (!isLocalBlobPut(c)) {
+        return next();
+      }
+      return localBlobPutBodyLimit(c, next);
     });
   }
 
@@ -414,6 +460,16 @@ export function createApp({
       // Art. 50) must render before login. CORS preflights never reach here — the cors
       // middleware above short-circuits OPTIONS.
       if (c.req.method === "GET" && c.req.path === "/api/runtime-info") {
+        return next();
+      }
+      // Exactly the two local-disk byte-transfer combinations (D1) — PUT and GET on a single
+      // token segment, and only while the local backend is wired — are guarded by their own
+      // short-lived HMAC token embedded in the URL, mirroring how an Azure SAS URL carries its
+      // own credential and never reaches this app's JWT gate either (it's not even routed
+      // through this app). A browser <img>/fetch reading an evidence preview cannot attach an
+      // Authorization header. Every other method on that path keeps the JWT gate, so a future
+      // handler mounted there can never inherit an accidental bypass.
+      if (isLocalBlobByteTransfer(c)) {
         return next();
       }
       // /api/testing/reset is route-gated on allowTestReset already, but layering JWT defense in
@@ -518,12 +574,27 @@ export function createApp({
       return jsonError(c, error.message, runtimeMode, 404, { code: "review_not_found" });
     }
 
+    if (error instanceof VoucherNotFoundError) {
+      // POST /api/evidence/compose with a targetVoucherId that names no
+      // voucher in scope (KFR Phase D / Task 2) → 404, not catch-all 500.
+      return jsonError(c, error.message, runtimeMode, 404, { code: "voucher_not_found" });
+    }
+
     if (error instanceof InvalidReviewEditError) {
       // Well-formed JSON but semantically unprocessable amounts → 422 (Rule 16).
       return jsonError(c, error.message, runtimeMode, 422, {
         code: "invalid_review_edit",
         issues: error.issues.map((message) => ({ path: ["edited"], message })),
       });
+    }
+
+    if (error instanceof InvalidManualVoucherError) {
+      // Well-formed JSON (the wire schema only tolerates ±0.005 float noise and
+      // a YYYY-MM-DD shape) but non-öre-exact / öre-unbalanced lines, or a
+      // bookedAt that is not a real calendar day or is in the future → 422
+      // (Rule 16), same family as InvalidReviewEditError. Thrown by
+      // planManualVoucher before any mutation.
+      return jsonError(c, error.message, runtimeMode, 422, { code: "invalid_manual_voucher" });
     }
 
     if (error instanceof ReviewBlockedError) {
@@ -544,6 +615,20 @@ export function createApp({
 
     if (error instanceof BlobUploaderUnavailableError) {
       return jsonError(c, error.message, runtimeMode, 503, { code: error.code });
+    }
+
+    if (error instanceof LocalBlobTokenError) {
+      // Bad signature, wrong method, or expired token — the URL's token is the credential (401).
+      return jsonError(c, error.message, runtimeMode, 401, { code: error.code });
+    }
+
+    if (error instanceof LocalBlobConflictError) {
+      // Write-once violation: the blob already exists (409), never an overwrite.
+      return jsonError(c, error.message, runtimeMode, 409, { code: error.code });
+    }
+
+    if (error instanceof LocalBlobNotFoundError) {
+      return jsonError(c, error.message, runtimeMode, 404, { code: error.code });
     }
 
     if (error instanceof LedgerStoreUnavailableError || error instanceof AiRuntimeUnavailableError) {
@@ -615,10 +700,10 @@ export function createApp({
       ledgerOk = false;
     }
     const aiOk = isAiRuntimeOperational(aiRuntime);
-    // Wave G′ / P1-4: peripherals report live Azure only (explicit `kind === "azure"`).
-    // Demo stubs keep overall ready true (labeled intentional backends); unavailable
-    // fail-closed peripherals take the process out of ready.
-    const blobOk = blobUploader.kind === "azure";
+    // Wave G′ / P1-4 + D1: peripherals report live Azure OR the local-disk self-host backend —
+    // both are real (non-discarding) storage. Demo stubs keep overall ready true (labeled
+    // intentional backends); unavailable fail-closed peripherals take the process out of ready.
+    const blobOk = blobUploader.kind === "azure" || blobUploader.kind === "local";
     const docintelOk = documentIntelligence.kind === "azure";
     const peripheralsOk = blobUploader.kind !== "unavailable" && documentIntelligence.kind !== "unavailable";
     const ready = ledgerOk && aiOk && peripheralsOk;
@@ -706,6 +791,29 @@ export function createApp({
     });
   }
 
+  // Local-disk blob byte transfer (D1). The `:token` IS the credential — a method-bound,
+  // short-lived HMAC token minted by initUpload (PUT) / mintReadSas (GET); see the JWKS-auth
+  // exemption above. Writes are write-once, so a replayed upload URL answers 409, not an
+  // overwrite — evidence bytes are never silently replaced.
+  if (blobUploader instanceof LocalDiskBlobUploader) {
+    app.put("/api/blobs/local/:token", async (context) => {
+      const blobPath = blobUploader.verifyToken(context.req.param("token"), "PUT");
+      const bytes = new Uint8Array(await context.req.arrayBuffer());
+      await blobUploader.writeOnce(blobPath, bytes);
+      return context.json({ ok: true }, 201);
+    });
+
+    app.get("/api/blobs/local/:token", async (context) => {
+      const blobPath = blobUploader.verifyToken(context.req.param("token"), "GET");
+      const bytes = await blobUploader.readBlob(blobPath);
+      context.header("content-type", inferLocalBlobContentType(blobPath));
+      // Response bodies are typed as `Uint8Array<ArrayBuffer>` while fs hands back the wider
+      // `Uint8Array<ArrayBufferLike>`. A file read is never SharedArrayBuffer-backed, so this
+      // narrowing is sound — and it beats copying up to 16 MiB per preview request.
+      return context.body(bytes as Uint8Array<ArrayBuffer>);
+    });
+  }
+
   app.post("/api/evidence/:id/extract", async (context) => {
     const evidenceId = context.req.param("id");
     const extraction = await currentStore.getEvidenceContext(evidenceId);
@@ -787,14 +895,15 @@ export function createApp({
     });
   });
 
-  // Short-lived read SAS for previews. Only real Azure blobs qualify: the stub uploader discards
-  // bytes (previews come from the client-side blob cache) and legacy/seed evidence has a synthetic
-  // blobPath, so both answer 404 preview_unavailable.
+  // Short-lived read URL for previews. Azure and the local-disk self-host backend both qualify:
+  // the stub uploader discards bytes (previews come from the client-side blob cache) and
+  // legacy/seed evidence has a synthetic blobPath, so both answer 404 preview_unavailable.
   app.get("/api/evidence/:id/file-url", async (context) => {
     const evidenceContext = await currentStore.getEvidenceContext(context.req.param("id"));
     if (!evidenceContext) throw new HTTPException(404, { message: "Evidence not found" });
     const { blobPath } = evidenceContext.evidence;
-    if (blobUploader.kind !== "azure" || !blobPath.startsWith("evidence-uploads/")) {
+    const uploaderSupportsPreview = blobUploader.kind === "azure" || blobUploader.kind === "local";
+    if (!uploaderSupportsPreview || !blobPath.startsWith("evidence-uploads/")) {
       return jsonError(context, "No file preview is available for this evidence.", runtimeMode, 404, {
         code: "preview_unavailable",
       });
@@ -808,6 +917,19 @@ export function createApp({
     const suggestion = await currentStore.suggestVoucher(context.req.param("id"));
     if (!suggestion) throw new HTTPException(404, { message: "Voucher not found" });
     return context.json(suggestion);
+  });
+
+  // Manual journal entry (KFR Phase B / D2). Registered on the plain
+  // `/api/vouchers/manual` path — no collision with `/api/vouchers/:id/suggest`
+  // above, which is a four-segment route. Inherits the whole `/api/*` mutation
+  // middleware stack registered further up (JSON body limit, JWKS JWT gate when
+  // configured, per-subject mutation rate limiter); nothing is duplicated here.
+  // Actor attribution is spread LAST so a client-posted `actorId` (already
+  // stripped by the Zod object) can never win (WS-C R5).
+  app.post("/api/vouchers/manual", jsonValidated(manualVoucherInputSchema), async (context) => {
+    const input = context.req.valid("json");
+    const result = await currentStore.createManualVoucher({ ...input, actorId: deriveActorId(context) });
+    return context.json(result, 201);
   });
 
   app.post("/api/reviews/:id/approve", jsonValidated(reviewDecisionInputSchema), async (c) =>
@@ -838,18 +960,48 @@ export function createApp({
     // Attribution is server-derived (R5) — the old `?actorId=` override let any
     // caller stamp arbitrary identities into the 7-year audit trail.
     const bytes = new Uint8Array(await context.req.arrayBuffer());
-    const parsed = parseSie(decodeSieBuffer(bytes));
+    const text = decodeSieBuffer(bytes);
+    const parsed = parseSie(text);
+    // Decode fallout first: a byte our CP437 subset can't map (e.g. ø/Ø) would
+    // otherwise silently mangle voucher text (readiness G11).
+    parsed.warnings = [...sieDecodeWarnings(text), ...parsed.warnings];
     const result = await currentStore.importSie({ actorId: deriveActorId(context), file: parsed });
     return context.json(result);
   });
 
+  // Optional `?period=<token>` (Phase D, Task 7) scopes the export: #VER blocks
+  // and #RAR 0 follow the resolved window, and #IB/#UB/#RES are derived from
+  // the FULL ledger so opening balances carry pre-period history. Absent
+  // `?period=` = full-history export, byte-identical to before.
   app.get("/api/exports/sie", async (context) => {
     const [reports, settings] = await Promise.all([currentStore.getReports(), currentStore.getCompanySettings()]);
-    const text = buildSieExport({ journal: reports.journal, settings, generatedAt: nowIso() });
+    const periodParam = context.req.query("period");
+
+    let range: { from: string; to: string } | undefined;
+    let balances: ReturnType<typeof computeSieBalances> | undefined;
+    if (periodParam !== undefined) {
+      // Unknown tokens throw InvalidPeriodTokenError → 422 (same as /api/reports/pack).
+      const resolved = resolvePeriodToken(periodParam, {
+        fiscalYearStart: settings?.profile.fiscalYearStart ?? "01-01",
+        today: today(),
+        ...(settings?.profile.firstFiscalYearStart !== undefined
+          ? { firstFiscalYearStart: settings.profile.firstFiscalYearStart }
+          : {}),
+      });
+      range = { from: resolved.from, to: resolved.to };
+      balances = computeSieBalances(reports.journal, range);
+    }
+
+    const text = buildSieExport({
+      journal: reports.journal,
+      settings,
+      generatedAt: nowIso(),
+      ...(range ? { range, ...balances } : {}),
+    });
     // Spec-valid PC8 (CP437) bytes — NOT UTF-8. `charset=ibm437` is the IANA
     // name browsers/tools recognize for CP437.
     context.header("content-type", "text/plain; charset=ibm437");
-    context.header("content-disposition", `attachment; filename="jpx-export-${today()}.se"`);
+    context.header("content-disposition", `attachment; filename="jpx-export-${periodParam ?? today()}.se"`);
     return context.body(encodePc8(text));
   });
 

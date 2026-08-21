@@ -261,3 +261,20 @@ test("describeBootPosture reports unavailable ledger store and disabled rate lim
   });
   assert.equal(describeBootPosture(demoTestInstance).rateLimitEnabled, false);
 });
+
+// ---------------------------------------------------------------------------
+// D1: ACCOUNTING_BLOB_DIR resolves to localBlobDir
+// ---------------------------------------------------------------------------
+
+test("readApiRuntimeConfig resolves ACCOUNTING_BLOB_DIR to localBlobDir", () => {
+  const config = readApiRuntimeConfig({ ACCOUNTING_RUNTIME_MODE: "demo", ACCOUNTING_BLOB_DIR: "/data/jpx-blobs" });
+  assert.equal(config.localBlobDir, "/data/jpx-blobs");
+});
+
+test("readApiRuntimeConfig leaves localBlobDir undefined when ACCOUNTING_BLOB_DIR is unset or blank", () => {
+  assert.equal(readApiRuntimeConfig({ ACCOUNTING_RUNTIME_MODE: "demo" }).localBlobDir, undefined);
+  assert.equal(
+    readApiRuntimeConfig({ ACCOUNTING_RUNTIME_MODE: "demo", ACCOUNTING_BLOB_DIR: "   " }).localBlobDir,
+    undefined,
+  );
+});

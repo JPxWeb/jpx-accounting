@@ -7,6 +7,7 @@ import {
   countryValidationRegistry,
   DEFAULT_AI_POSTURE,
   DEFAULT_WORKSPACE_PROFILE,
+  taxDeadlineKindSchema,
   workspaceProfileSchema,
 } from "@jpx-accounting/contracts";
 
@@ -26,6 +27,7 @@ test("DEFAULT_WORKSPACE_PROFILE carries the Sweden defaults", () => {
     currency: "SEK",
     fiscalYearStart: "01-01",
     vatPeriod: "quarterly",
+    euTrade: false,
   });
 });
 
@@ -63,6 +65,46 @@ test("fiscalYearStart rejects impossible months and days", () => {
   assert.equal(workspaceProfileSchema.safeParse({ fiscalYearStart: "07-01" }).success, true);
 });
 
+test("firstFiscalYearStart is optional, ISO-day shaped, and absent by default", () => {
+  // Absent (not `undefined`-valued) on the default profile — the key must not
+  // appear at all, so `exactOptionalPropertyTypes` spreads stay clean.
+  assert.equal("firstFiscalYearStart" in DEFAULT_WORKSPACE_PROFILE, false);
+
+  const parsed = workspaceProfileSchema.parse({ firstFiscalYearStart: "2025-10-15" });
+  assert.equal(parsed.firstFiscalYearStart, "2025-10-15");
+
+  assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "2025-10" }).success, false);
+  assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "10-15" }).success, false);
+  assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "" }).success, false);
+});
+
+test("firstFiscalYearStart rejects calendar-impossible dates the shape regex would accept", () => {
+  // The shape regex alone passes both of these; only the calendar round trip
+  // catches them (Date silently rolls Feb 30 over into March).
+  const impossibleMonthAndDay = workspaceProfileSchema.safeParse({ firstFiscalYearStart: "2025-13-45" });
+  assert.equal(impossibleMonthAndDay.success, false);
+
+  const rolloverDay = workspaceProfileSchema.safeParse({ firstFiscalYearStart: "2025-02-30" });
+  assert.equal(rolloverDay.success, false);
+  if (!rolloverDay.success) {
+    assert.ok(rolloverDay.error.issues.some((entry) => entry.path[0] === "firstFiscalYearStart"));
+    assert.match(rolloverDay.error.issues[0]!.message, /real calendar date/);
+  }
+
+  // Leap days are real — 2024 is a leap year, 2025 is not.
+  assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "2024-02-29" }).success, true);
+  assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "2025-02-29" }).success, false);
+
+  // The real Kapitas-replacement incorporation date still parses.
+  assert.equal(workspaceProfileSchema.safeParse({ firstFiscalYearStart: "2025-10-15" }).success, true);
+
+  // And the whole settings record rejects it end-to-end (the PUT's 400 path).
+  assert.equal(
+    companySettingsSchema.safeParse({ ...validBase, profile: { firstFiscalYearStart: "2025-02-30" } }).success,
+    false,
+  );
+});
+
 test("profile round-trips custom values through the settings schema", () => {
   const parsed = companySettingsSchema.parse({
     ...validBase,
@@ -89,6 +131,22 @@ test("vatPeriod round-trips and rejects unknown cadences", () => {
   assert.equal(parsed.profile.vatPeriod, "monthly");
   assert.equal(workspaceProfileSchema.safeParse({ vatPeriod: "yearly" }).success, true);
   assert.equal(workspaceProfileSchema.safeParse({ vatPeriod: "weekly" }).success, false);
+});
+
+test("euTrade defaults false and round-trips through the settings schema", () => {
+  assert.equal(workspaceProfileSchema.parse({}).euTrade, false);
+  const parsed = companySettingsSchema.parse({ ...validBase, profile: { euTrade: true } });
+  assert.equal(parsed.profile.euTrade, true);
+});
+
+test("taxDeadlineKindSchema includes the INK2 income-tax-return kind", () => {
+  assert.deepEqual(taxDeadlineKindSchema.options, [
+    "vat-return",
+    "employer-declaration",
+    "f-skatt",
+    "annual-report",
+    "income-tax-return",
+  ]);
 });
 
 test("DEFAULT_AI_POSTURE enables both AI surfaces", () => {

@@ -7,19 +7,27 @@ import type {
   EvidencePacket,
   ExtractionResult,
   LedgerEvent,
+  ManualVoucherInput,
   ReviewDecisionInput,
   ReviewTask,
   Voucher,
 } from "@jpx-accounting/contracts";
 
+import { defaultCoaTemplate, findCoaAccount } from "./coa/registry";
 import { buildExtractedFields, deriveVoucherFields, guessAccountingMethod } from "./evidence-defaults";
 import { buildEventHash } from "./hash-chain";
 import { createId, nowIso } from "./ids";
+import { isOreExact, postingImbalanceOre } from "./posting-invariants";
 import type { LedgerLine } from "./projections";
 import { buildDeterministicSuggestion, evaluateVoucherRules } from "./rules";
 import {
+  buildManualPostingLines,
   buildPostingLines,
   DEMO_ACTOR_ID,
+  DRAFT_VOUCHER_NUMBER,
+  InvalidManualVoucherError,
+  isValidCalendarDay,
+  localDayOfTimestamp,
   mergeExtractedFields,
   recomputeVoucherFields,
   resolveReviewDecisionEdit,
@@ -126,7 +134,7 @@ function snapshotEvidenceContext(
  */
 export function planEvidenceCreate(
   input: EvidenceCreateInput & ActorAttribution,
-  ctx: { voucherIndex: number; now?: string; organizationId: string; workspaceId: string },
+  ctx: { now?: string; organizationId: string; workspaceId: string },
 ): EvidenceCreatePlan {
   const actorId = input.actorId ?? DEMO_ACTOR_ID;
   const createdAt = ctx.now ?? nowIso();
@@ -163,13 +171,20 @@ export function planEvidenceCreate(
     organizationId: ctx.organizationId,
     workspaceId: ctx.workspaceId,
     evidencePacketId: packetId,
-    voucherNumber: `V-${ctx.voucherIndex + 1001}`,
+    // KFR E.1: intake never mints a number — `planReviewDecision` does, at the
+    // instant the voucher posts. See DRAFT_VOUCHER_NUMBER.
+    voucherNumber: DRAFT_VOUCHER_NUMBER,
     status: "needs-review",
     accountingMethod: guessAccountingMethod(input),
     extractedFields,
     voucherFields: deriveVoucherFields(extractedFields, input),
     createdAt,
     createdBy: actorId,
+    origin: "capture",
+    // KFR E.5: the fact that THIS evidence is why this voucher exists. Recorded
+    // now because it is not recoverable later — `evidencePacketId` follows every
+    // re-attach, so a re-attached receipt leaves no trace of its intake draft.
+    intakeEvidenceId: evidenceId,
   };
 
   const ruleHits = evaluateVoucherRules(voucher);
@@ -237,16 +252,181 @@ export function planEvidenceCreate(
   return { evidence, packet, voucher, review, suggestion, events };
 }
 
+export type ManualVoucherPlan = { voucher: Voucher; review: ReviewTask; events: PlannedEvent[] };
+
+/**
+ * Pure re-entrant planner for `createManualVoucher` (KFR Phase B / D2).
+ * Mirrors `planEvidenceCreate`'s shape but skips evidence/packet entirely:
+ * the voucher is `origin: "manual"` with `evidencePacketId: null`, and its
+ * review's suggestion carries the verbatim lines the reviewer typed —
+ * `planReviewDecision` detects `voucher.origin === "manual"` and posts
+ * them unchanged at approval time (buildManualPostingLines).
+ */
+export function planManualVoucher(
+  input: ManualVoucherInput & { actorId: string },
+  ctx: { now?: string; organizationId: string; workspaceId: string },
+): ManualVoucherPlan {
+  // Exact-öre gate BEFORE any id/event is derived: the wire schema only
+  // enforces ±0.005 (float noise tolerance), not the real invariant.
+  //
+  // Per-line precision first, via the shared `isOreExact` predicate: a sub-öre
+  // amount (100.003 against a 100 credit) rounds away in `postingImbalanceOre`
+  // and reports a balanced entry, so balance alone would let it through. Caught
+  // again at the posting boundary by `buildManualPostingLines`; here it is a
+  // client-correctable 422 rather than an invariant violation.
+  for (const line of input.lines) {
+    for (const [name, value] of [
+      ["debit", line.debit],
+      ["credit", line.credit],
+    ] as const) {
+      if (!isOreExact(value)) {
+        throw new InvalidManualVoucherError(
+          `Manual voucher line on account ${line.accountNumber} has a ${name} (${value}) that is not öre-exact (at most two decimals).`,
+        );
+      }
+    }
+  }
+  const imbalance = postingImbalanceOre(input.lines);
+  if (imbalance !== 0) {
+    throw new InvalidManualVoucherError(
+      `Manual voucher lines do not balance to the öre (Σdebit − Σcredit = ${(imbalance / 100).toFixed(2)} kr).`,
+    );
+  }
+
+  const actorId = input.actorId;
+  const createdAt = ctx.now ?? nowIso();
+
+  // Booking-date gate, same policy as R13's edited-bookedAt guard in
+  // `resolveReviewDecisionEdit` — and for the same reason, one step earlier.
+  //
+  // `bookedAt` becomes `voucherFields.transactionDate`, which `deriveBookedAt`
+  // consults at approval. That helper SILENTLY SKIPS a candidate that is not a
+  // real calendar day or that post-dates the decision, falling back to the
+  // approval day. For extraction noise (its original purpose) discarding is
+  // right; for a date a human typed on purpose it is data substitution the UI
+  // never shows — and a manual review has no Edit action to correct it after
+  // the fact. Refuse it here as a client-correctable 422 instead.
+  //
+  // One day of slack absorbs client/server timezone skew, exactly as R13
+  // documents: a Stockholm browser is a calendar day ahead of a UTC-hosted API
+  // between 00:00 and 02:00 local, and its "today" must not 422.
+  const latestBookableDay = localDayOfTimestamp(
+    new Date(new Date(createdAt).getTime() + 24 * 60 * 60 * 1000).toISOString(),
+  );
+  if (!isValidCalendarDay(input.bookedAt)) {
+    throw new InvalidManualVoucherError(
+      `Manual voucher bookedAt (${input.bookedAt}) must be a valid YYYY-MM-DD calendar day.`,
+    );
+  }
+  if (input.bookedAt > latestBookableDay) {
+    throw new InvalidManualVoucherError(`Manual voucher bookedAt (${input.bookedAt}) must not be in the future.`);
+  }
+
+  const voucherId = createId("voucher");
+  const firstLine = input.lines[0]!;
+  const firstAccount = findCoaAccount(defaultCoaTemplate, firstLine.accountNumber);
+
+  const voucher: Voucher = {
+    id: voucherId,
+    organizationId: ctx.organizationId,
+    workspaceId: ctx.workspaceId,
+    evidencePacketId: null,
+    // KFR E.1: same draft sentinel as capture intake. Manual entries share the
+    // ONE posting-time sequence (`planReviewDecision`) rather than running a
+    // parallel intake-time counter that would collide with captured vouchers.
+    voucherNumber: DRAFT_VOUCHER_NUMBER,
+    status: "needs-review",
+    // Manual entries carry no cash/invoice distinction — "invoice" is a
+    // fixed, documented default (the schema requires a value).
+    accountingMethod: "invoice",
+    extractedFields: [],
+    voucherFields: {
+      description: input.description,
+      transactionDate: input.bookedAt,
+      currency: "SEK",
+    },
+    createdAt,
+    createdBy: actorId,
+    origin: "manual",
+    // No spawning evidence — a manual entry stands on its own, so an attach
+    // that later moves evidence off it must never discard its review (E.5).
+    intakeEvidenceId: null,
+  };
+
+  const suggestion: AccountingSuggestion = {
+    id: createId("sug"),
+    voucherId,
+    accountNumber: firstLine.accountNumber,
+    accountName: firstAccount?.name ?? `Konto ${firstLine.accountNumber}`,
+    vatCode: firstLine.vatCode,
+    confidence: 1,
+    reasoning: "Manual journal entry — lines entered directly by a reviewer.",
+    kind: "recommendation",
+    citations: [],
+    ruleHits: [],
+    // Defensive copy: the suggestion is stored and later posted VERBATIM, so it
+    // must not alias an array the caller can still mutate after planning.
+    lines: [...input.lines],
+  };
+
+  const review: ReviewTask = {
+    id: createId("review"),
+    voucherId,
+    // KFR E.4: titled from the entry the human typed, NOT from the voucher
+    // number. A manual voucher is a draft at intake, so `Review ${number}`
+    // would render the literal "Review Utkast" in the queue until approval.
+    // The description is the only human-meaningful handle a manual entry has
+    // (it carries no supplier name for `ReviewCard`'s heading to fall back to).
+    // English literal, matching every sibling planner string in this module.
+    title: `Manual entry: ${input.description}`,
+    status: "needs-review",
+    suggestedAction: "Approve the manual entry.",
+    suggestion,
+    provenanceTimeline: [{ id: createId("step"), label: "Manual entry created", timestamp: createdAt, actor: actorId }],
+  };
+
+  const events: PlannedEvent[] = [
+    {
+      organizationId: ctx.organizationId,
+      workspaceId: ctx.workspaceId,
+      aggregateType: "voucher",
+      aggregateId: voucherId,
+      eventType: "VoucherCreated",
+      actorId,
+      occurredAt: createdAt,
+      payload: voucher as unknown as Record<string, unknown>,
+    },
+    {
+      organizationId: ctx.organizationId,
+      workspaceId: ctx.workspaceId,
+      aggregateType: "review",
+      aggregateId: review.id,
+      eventType: "SuggestionGenerated",
+      actorId,
+      occurredAt: createdAt,
+      payload: suggestion as unknown as Record<string, unknown>,
+    },
+  ];
+
+  return { voucher, review, events };
+}
+
 /**
  * Pure re-entrant planner for review decisions. Replay when already decided;
  * otherwise derive edit/posting inputs and planned events without mutating args.
+ *
+ * `ctx.postedVoucherCount` is the workspace's current count of NATIVE posted
+ * vouchers (`isPostedVoucherStatus`), read by the caller immediately before
+ * planning — under the workspace advisory lock in Postgres, so two concurrent
+ * approvals can never observe the same count and mint the same `V-<n>`. It is
+ * only consulted on a branch that actually posts; omitted it defaults to 0.
  */
 export function planReviewDecision(
   review: ReviewTask,
   voucher: Voucher,
   action: ReviewAction,
   input: ReviewDecisionInput & ActorAttribution & ApprovalGate,
-  now?: string,
+  ctx: { now?: string; postedVoucherCount?: number } = {},
 ): ReviewDecisionPlan {
   if (review.status !== "needs-review") {
     return { kind: "replay", review: { ...review } };
@@ -260,16 +440,24 @@ export function planReviewDecision(
   }
 
   const actorId = input.actorId ?? DEMO_ACTOR_ID;
-  const edited = action !== "reject" ? input.edited : undefined;
+  // KFR D2: manual-origin vouchers bypass edit resolution and
+  // buildPostingLines entirely — approval always posts the lines exactly as
+  // authored. A client-supplied `edited` payload is silently ignored (not
+  // an error — just inapplicable) rather than validated against a
+  // single-account suggestion shape that doesn't describe a manual entry.
+  const isManual = voucher.origin === "manual";
+  const edited = action !== "reject" && !isManual ? input.edited : undefined;
   let postingSuggestion = review.suggestion;
   let postingVoucher = voucher;
+  let settlementAccountNumber: string | undefined;
   if (edited) {
     const resolved = resolveReviewDecisionEdit(voucher, review.suggestion, edited);
     postingSuggestion = resolved.effectiveSuggestion;
     postingVoucher = resolved.effectiveVoucher;
+    settlementAccountNumber = resolved.effectiveSettlementAccountNumber;
   }
 
-  const occurredAt = now ?? nowIso();
+  const occurredAt = ctx.now ?? nowIso();
   const newStatus = reviewStatusForAction(action);
   const timelineStep = {
     id: createId("step"),
@@ -278,12 +466,50 @@ export function planReviewDecision(
     actor: actorId,
   };
 
+  // Posting lines are derived BEFORE the read models because they are what
+  // decides whether this decision actually posts — and therefore whether the
+  // voucher earns its number (KFR E.1 / G8).
+  let lines: LedgerLine[] | undefined;
+  if (action !== "reject") {
+    if (isManual) {
+      const manualLines = postingSuggestion?.lines;
+      if (!manualLines) {
+        throw new Error(
+          `Manual-origin voucher ${voucher.id} has a review with no verbatim lines (invariant violation).`,
+        );
+      }
+      lines = buildManualPostingLines(voucher, manualLines, occurredAt);
+    } else if (postingSuggestion) {
+      lines = buildPostingLines(postingVoucher, postingSuggestion, action, occurredAt, undefined, {
+        // exactOptionalPropertyTypes: an absent override must be an absent key,
+        // not an explicit `undefined`.
+        ...(settlementAccountNumber !== undefined ? { settlementAccountNumber } : {}),
+      });
+    }
+  }
+
+  // Posting-time numbering (KFR E.1 / G8): the voucher only earns its real
+  // `V-<n>` the instant it actually posts. Reject never posts, so it keeps
+  // whatever voucherNumber it already had (DRAFT_VOUCHER_NUMBER at intake) —
+  // rejected drafts never burn a number. The count is read by the caller
+  // immediately before planning, under the workspace lock in Postgres.
+  const postedVoucherNumber = lines ? `V-${(ctx.postedVoucherCount ?? 0) + 1001}` : voucher.voucherNumber;
+  // The draft-derived review label must not survive onto a posted entry — an
+  // archived review reading "Review Utkast" would be an audit-trail lie.
+  // Guarded on the EXACT planner-generated draft label so a curated title (the
+  // demo seed's "Approve AI subscription posting") and a manual entry's
+  // description-derived title (`planManualVoucher`, KFR E.4 — never draft-
+  // derived, so nothing to repair) are never clobbered.
+  const draftReviewTitle = `Review ${DRAFT_VOUCHER_NUMBER}`;
+  const postedReviewTitle = lines && review.title === draftReviewTitle ? `Review ${postedVoucherNumber}` : review.title;
+
   let updatedReview: ReviewTask = {
     ...review,
     status: newStatus,
+    title: postedReviewTitle,
     provenanceTimeline: [...review.provenanceTimeline, timelineStep],
   };
-  const updatedVoucher: Voucher = { ...voucher, status: newStatus };
+  const updatedVoucher: Voucher = { ...voucher, status: newStatus, voucherNumber: postedVoucherNumber };
   if (edited && postingSuggestion) {
     updatedReview = { ...updatedReview, suggestion: postingSuggestion };
   }
@@ -305,9 +531,7 @@ export function planReviewDecision(
     },
   ];
 
-  let lines: LedgerLine[] | undefined;
-  if (action !== "reject" && postingSuggestion) {
-    lines = buildPostingLines(postingVoucher, postingSuggestion, action, occurredAt);
+  if (lines) {
     events.push({
       organizationId: updatedVoucher.organizationId,
       workspaceId: updatedVoucher.workspaceId,

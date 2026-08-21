@@ -86,13 +86,14 @@ export function ReportsScreen() {
     setExporting(true);
     try {
       // PC8/CP437 bytes from the real domain serializer — never re-encode as UTF-8.
-      const bytes = await apiClient.fetchSieExport();
+      // Scoped to the selected period (Phase D, Task 7), so the file carries
+      // #IB/#UB/#RES for that window and the name says which one.
+      const bytes = await apiClient.fetchSieExport(raw);
       const blob = new Blob([bytes], { type: "text/plain;charset=ibm437" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
-      const day = new Date().toISOString().slice(0, 10);
       anchor.href = url;
-      anchor.download = `jpx-export-${day}.se`;
+      anchor.download = `jpx-export-${raw}.se`;
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {

@@ -8,10 +8,14 @@ import type {
   AccountBalanceProjection,
   CompanySettings,
   ComplianceAlert,
+  EvidenceComposeInput,
+  EvidenceComposeResult,
   EvidenceContext,
   EvidenceCreateInput,
   IntegritySummary,
   JournalEntryProjection,
+  ManualVoucherInput,
+  ManualVoucherResult,
   ReportPack,
   ReviewDecisionInput,
   ReviewTask,
@@ -27,9 +31,11 @@ import {
   accountBalanceProjectionSchema,
   complianceAlertSchema,
   evidenceContextSchema,
+  evidenceComposeResultSchema,
   evidenceCreateResultSchema,
   integritySummarySchema,
   journalEntryProjectionSchema,
+  manualVoucherResultSchema,
   reportPackSchema,
   reviewTaskSchema,
   runtimeInfoSchema,
@@ -40,11 +46,14 @@ import {
 } from "@jpx-accounting/contracts";
 import {
   buildSieExport,
+  computeSieBalances,
   decodeSieBuffer,
   deriveDeterministicExtraction,
   encodePc8,
   nowIso,
   parseSie,
+  resolvePeriodToken,
+  sieDecodeWarnings,
   summarizeEventIntegrity,
   today,
 } from "@jpx-accounting/domain";
@@ -115,6 +124,66 @@ function reportRangeQuery(range?: ReportRange): string {
   return query ? `?${query}` : "";
 }
 
+/**
+ * Bounded retry knobs for transient 429s (readiness G9 — bulk capture backlog).
+ * The API's mutation limiter is a 60 s fixed window, so a server-advertised wait
+ * tops out just under a minute: the delay cap sits just past that window so a
+ * legitimate `Retry-After` / `reset=` is honored IN FULL (waiting out the window
+ * is the whole point — a shorter cap would burn all three retries inside the
+ * same exhausted window and hard-fail a bulk drop), while a bogus or hostile
+ * header (`Retry-After: 3600`) still can't park the client for an hour.
+ */
+const RATE_LIMIT_MAX_RETRIES = 3;
+const RATE_LIMIT_FALLBACK_DELAY_MS = 500;
+const RATE_LIMIT_MAX_DELAY_MS = 65_000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** `reset=<seconds>` out of hono-rate-limiter's draft-7 combined `RateLimit` header. */
+function parseRateLimitResetSeconds(header: string | null): number | undefined {
+  if (header === null) return undefined;
+  const match = /reset=(\d+)/.exec(header);
+  return match ? Number(match[1]) : undefined;
+}
+
+/** Delay before the next attempt: `Retry-After` (seconds) → `RateLimit: reset=` → exponential fallback. */
+function rateLimitDelayMs(response: Response, attempt: number): number {
+  const retryAfterHeader = response.headers.get("retry-after");
+  if (retryAfterHeader !== null) {
+    // Only the delta-seconds form is understood; an HTTP-date parses to NaN and falls through.
+    const seconds = Number(retryAfterHeader);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, RATE_LIMIT_MAX_DELAY_MS);
+  }
+  const resetSeconds = parseRateLimitResetSeconds(response.headers.get("ratelimit"));
+  if (resetSeconds !== undefined) return Math.min(resetSeconds * 1000, RATE_LIMIT_MAX_DELAY_MS);
+  return Math.min(RATE_LIMIT_FALLBACK_DELAY_MS * 2 ** attempt, RATE_LIMIT_MAX_DELAY_MS);
+}
+
+/**
+ * Wrap a fetch call with bounded 429 retry-with-backoff (readiness G9). Retrying
+ * is safe for EVERY route, mutations included: hono-rate-limiter's middleware
+ * answers 429 from its own handler BEFORE `next()` reaches the route, so a 429
+ * proves no server-side work happened and the retry is a first execution, not a
+ * second one (no double approval, no duplicate ledger event). Scoped strictly to
+ * 429 for exactly that reason — a 5xx may well have executed, so it is surfaced
+ * unretried. Bodies passed through here are re-sendable (string / Blob /
+ * TypedArray), never one-shot streams.
+ */
+async function fetchWithRateLimitRetry(fetchImpl: FetchLike, input: string, init: RequestInit): Promise<Response> {
+  let attempt = 0;
+  for (;;) {
+    const response = await fetchImpl(input, init);
+    if (response.status !== 429 || attempt >= RATE_LIMIT_MAX_RETRIES) return response;
+    const wait = rateLimitDelayMs(response, attempt);
+    // Release the discarded 429 body so a bulk drop's retries don't pile up unread streams.
+    void response.body?.cancel().catch(() => undefined);
+    await delay(wait);
+    attempt += 1;
+  }
+}
+
 async function requestJson<T>(
   fetchImpl: FetchLike,
   baseUrl: string,
@@ -139,7 +208,7 @@ async function requestJson<T>(
     init.body = JSON.stringify(options.json);
   }
 
-  const response = await fetchImpl(`${baseUrl}${path}`, init);
+  const response = await fetchWithRateLimitRetry(fetchImpl, `${baseUrl}${path}`, init);
 
   if (!response.ok) {
     const payload = await response.json().catch(() => undefined as { error?: string; message?: string } | undefined);
@@ -251,6 +320,53 @@ export class AccountingApiClient {
     if (this.fallbackStore) return this.fallbackStore.createEvidence(input);
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     return requestJson(this.authorizedFetch, this.baseUrl, "/api/evidence", evidenceCreateResultSchema, {
+      method: "POST",
+      json: input,
+    });
+  }
+
+  /**
+   * Compose evidence into a packet, optionally attaching it to a specific
+   * voucher (`POST /api/evidence/compose`) — this is what backs the
+   * evidence-detail "Koppla till verifikation" picker (KFR Phase E / Task 5).
+   * `targetVoucherId` overrides packet-history auto-detection entirely, which
+   * is the only way to attach to an imported voucher (those start with
+   * `evidencePacketId: null`, so there is no breadcrumb to follow). An id that
+   * names no voucher in scope throws `VoucherNotFoundError` offline and an
+   * `AccountingApiError` 404 (`voucher_not_found`) over the wire — in both
+   * cases before any mutation, so nothing dangles.
+   *
+   * No actorId (WS-C R5): the API derives attribution from the verified JWT
+   * subject and the demo store stamps its own sentinel.
+   *
+   * Returns `{ packet, discardedReviewIds }` (KFR Phase E / E.5): an explicit
+   * attach also rejects, in the same store transaction, the intake drafts it
+   * orphaned — the caller reads `discardedReviewIds` to report what happened
+   * rather than issuing a second reject call of its own.
+   */
+  async composeEvidence(input: EvidenceComposeInput): Promise<EvidenceComposeResult> {
+    if (this.fallbackStore) return this.fallbackStore.composeEvidence(input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/evidence/compose", evidenceComposeResultSchema, {
+      method: "POST",
+      json: input,
+    });
+  }
+
+  /**
+   * Manual N-line journal entry (`POST /api/vouchers/manual`, KFR Phase E /
+   * Task 4): creates a Voucher (`origin: "manual"`) + ReviewTask through the
+   * SAME review gate as captured evidence — nothing posts to the ledger until
+   * a human approves. Lines that don't balance to the öre are refused before
+   * any mutation (`AccountingApiError` 422 `invalid_manual_voucher` over the
+   * wire, `InvalidManualVoucherError` from the offline store).
+   *
+   * No actorId (WS-C R5) — attribution is server-derived.
+   */
+  async createManualVoucher(input: ManualVoucherInput): Promise<ManualVoucherResult> {
+    if (this.fallbackStore) return this.fallbackStore.createManualVoucher(input);
+    if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
+    return requestJson(this.authorizedFetch, this.baseUrl, "/api/vouchers/manual", manualVoucherResultSchema, {
       method: "POST",
       json: input,
     });
@@ -379,7 +495,14 @@ export class AccountingApiClient {
     };
     // Only API-relative stub uploads get the bearer token: the absolute Azure SAS
     // URL is its own credential and the session token must not leak to the storage host.
-    const response = isApiRelative ? await this.authorizedFetch(target, init) : await fetch(target, init);
+    const send: FetchLike = isApiRelative ? this.authorizedFetch : (url, requestInit) => fetch(url, requestInit);
+    // The PUT is the second of ~4 mutating calls per receipt and, in the local-blob backend, it
+    // lands on the API's own rate-limited surface — without the same bounded 429 retry a bulk
+    // drop would still strand drafts here (readiness G9). Retrying is safe because a 429 proves
+    // NO write was attempted: this API's rate limiter answers before `next()`, so the refused
+    // request never reached the uploader. (Not because the write itself is idempotent — the
+    // local-disk backend is write-once and answers 409 on a second PUT to the same path.)
+    const response = await fetchWithRateLimitRetry(send, target, init);
     if (!response.ok) {
       throw new AccountingApiError(response.status, `Blob upload failed: ${response.status} ${response.statusText}`);
     }
@@ -428,10 +551,17 @@ export class AccountingApiClient {
       });
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    const response = await this.authorizedFetch(`${this.baseUrl}/api/evidence/${evidenceId}/extract`, {
-      method: "POST",
-      headers: { accept: "application/json" },
-    });
+    // Fourth mutating call per receipt, and the one a bulk drop sheds first: the caller fires it
+    // best-effort, so an unretried 429 would silently leave a whole import un-extracted. Bounded
+    // retry keeps the extraction (readiness G9); after exhaustion the caller's catch still wins.
+    const response = await fetchWithRateLimitRetry(
+      this.authorizedFetch,
+      `${this.baseUrl}/api/evidence/${evidenceId}/extract`,
+      {
+        method: "POST",
+        headers: { accept: "application/json" },
+      },
+    );
     if (response.status === 404) return undefined;
     if (!response.ok) {
       throw new AccountingApiError(response.status, `extractEvidence failed: ${response.status}`);
@@ -442,9 +572,9 @@ export class AccountingApiClient {
   }
 
   /**
-   * Short-lived read URL for the evidence file (Azure User-Delegation SAS).
-   * Returns `null` when no preview is available: stub storage, legacy synthetic
-   * blob paths, or the offline demo fallback.
+   * Short-lived read URL for the evidence file (Azure User-Delegation SAS, or the local-disk
+   * self-host backend's own HMAC-token URL). Returns `null` when no preview is available: stub
+   * storage, legacy synthetic blob paths, or the offline demo fallback.
    */
   async getEvidenceFileUrl(evidenceId: string): Promise<{ url: string } | null> {
     if (this.fallbackStore) return null;
@@ -458,7 +588,12 @@ export class AccountingApiClient {
     }
     const payload = (await response.json().catch(() => undefined)) as { url?: unknown } | undefined;
     if (!payload || typeof payload.url !== "string") return null;
-    return { url: payload.url };
+    // Azure SAS URLs are absolute and pass through untouched; the local-disk backend's HMAC-token
+    // read URL is API-relative (`/api/blobs/local/{token}`) and needs the same resolution
+    // uploadBlob already applies to stub uploads, or a browser hitting it directly would 404 on
+    // the web origin instead of reaching the API (possibly via the web api-proxy).
+    const isApiRelative = payload.url.startsWith("/") && this.baseUrl !== undefined;
+    return { url: isApiRelative ? `${this.baseUrl}${payload.url}` : payload.url };
   }
 
   /**
@@ -521,17 +656,35 @@ export class AccountingApiClient {
    * SIE 4 export of the current workspace as PC8/CP437 bytes (matches
    * `GET /api/exports/sie`). Offline demo builds the same bytes locally via
    * the domain serializer instead of failing with a 503.
+   *
+   * An optional `period` token (Phase D, Task 7) scopes the export to that
+   * window and adds the #IB/#UB/#RES blocks; omitting it exports full history.
    */
-  async fetchSieExport(): Promise<Uint8Array<ArrayBuffer>> {
+  async fetchSieExport(period?: string): Promise<Uint8Array<ArrayBuffer>> {
     if (this.fallbackStore) {
       const [reports, settings] = await Promise.all([
         this.fallbackStore.getReports(),
         this.fallbackStore.getCompanySettings(),
       ]);
+      if (period !== undefined) {
+        // Same resolver the API route uses, so the demo bytes match the wire.
+        const resolved = resolvePeriodToken(period, {
+          fiscalYearStart: settings?.profile.fiscalYearStart ?? "01-01",
+          ...(settings?.profile.firstFiscalYearStart !== undefined
+            ? { firstFiscalYearStart: settings.profile.firstFiscalYearStart }
+            : {}),
+        });
+        const range = { from: resolved.from, to: resolved.to };
+        const balances = computeSieBalances(reports.journal, range);
+        return encodePc8(
+          buildSieExport({ journal: reports.journal, settings, generatedAt: nowIso(), range, ...balances }),
+        );
+      }
       return encodePc8(buildSieExport({ journal: reports.journal, settings, generatedAt: nowIso() }));
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
-    const response = await this.authorizedFetch(`${this.baseUrl}/api/exports/sie`, {
+    const query = period !== undefined ? `?period=${encodeURIComponent(period)}` : "";
+    const response = await this.authorizedFetch(`${this.baseUrl}/api/exports/sie${query}`, {
       headers: { accept: "text/plain,*/*" },
     });
     if (!response.ok) {
@@ -553,7 +706,12 @@ export class AccountingApiClient {
     const asBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     if (this.fallbackStore) {
       // No actorId: the store attributes to the demo sentinel (WS-C R5).
-      return this.fallbackStore.importSie({ file: parseSie(decodeSieBuffer(asBytes)) });
+      const text = decodeSieBuffer(asBytes);
+      const parsed = parseSie(text);
+      // Mirror the API route: decode fallout (e.g. ø/Ø, unmapped in our CP437
+      // subset) is surfaced as a warning, never silently mangled (G11).
+      parsed.warnings = [...sieDecodeWarnings(text), ...parsed.warnings];
+      return this.fallbackStore.importSie({ file: parsed });
     }
     if (!this.baseUrl) throw new AccountingApiError(503, "Accounting API base URL is not configured.");
     const response = await this.authorizedFetch(`${this.baseUrl}/api/imports/sie`, {

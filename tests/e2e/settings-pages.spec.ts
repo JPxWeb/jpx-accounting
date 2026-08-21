@@ -68,6 +68,29 @@ test("fiscal-year: start month persists through the company-settings path", asyn
   await expect(page.getByTestId("company-profile-fiscal-year-start")).toContainText("July");
 });
 
+test("fiscal-year: first fiscal year start floors the window preview and persists", async ({ page, isMobile }) => {
+  await page.goto("/settings/fiscal-year");
+  await expect(page.getByTestId("company-fiscal-year-form")).toBeVisible();
+
+  const windowPreview = page.getByTestId("fiscal-year-window");
+  const beforeFloor = (await windowPreview.textContent()) ?? "";
+
+  // The anchor is the 01-01 contract default, so a floor dated inside the
+  // CURRENT calendar year always lands inside the current fiscal year — the
+  // preview must move regardless of which day the suite runs on.
+  const floor = `${new Date().getFullYear()}-02-01`;
+  await page.getByTestId("first-fiscal-year-start-input").fill(floor);
+  await expect(windowPreview).not.toHaveText(beforeFloor);
+
+  await activateControl(page.getByTestId("fiscal-year-save"), isMobile);
+  await expect(page.getByText("Fiscal year saved.")).toBeVisible();
+
+  // Survives a reload through the ordinary company-settings record.
+  await page.reload();
+  await expect(page.getByTestId("first-fiscal-year-start-input")).toHaveValue(floor);
+  await expect(page.getByTestId("fiscal-year-window")).not.toHaveText(beforeFloor);
+});
+
 test("compliance: integrity panel renders the chain verdict, recent events, and the retention source", async ({
   page,
 }) => {
