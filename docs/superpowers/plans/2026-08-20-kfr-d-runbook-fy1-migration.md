@@ -33,7 +33,7 @@ Import is append-only and idempotent, so this is belt-and-braces — but the rec
 
 ### 0.3 A bearer token for the API steps
 
-Normal mode gates **every** `/api/*` route behind `SUPABASE_JWKS_URL` (only `GET /api/runtime-info` is exempt). Set two shell variables:
+Normal mode gates **every** `/api/*` route behind `SUPABASE_JWKS_URL` — the only exemptions are `GET /api/runtime-info` (the public AI-transparency panel) and the local-disk blob byte-transfer routes, which carry their own signed-token credential. Set two shell variables:
 
 ```bash
 export API_BASE=http://localhost:3001
@@ -69,7 +69,14 @@ Why first: this floor raises the `from` of the `fy-`/`ytd` window that _contains
 
 Calendar-impossible dates (`2025-02-30`) are rejected by the settings contract, so a typo fails loudly rather than skewing every report.
 
-Verify: `/reports?period=fy-2025` shows a window starting `2025-10-15`. The definitive check is the `#RAR 0` line in §9.
+Verify the window, not just the saved field — the reports screen prints the period _label_ ("Räkenskapsår 2025"), never its dates:
+
+```bash
+curl -sS "$API_BASE/api/reports/pack?period=fy-2025" -H "authorization: Bearer $TOKEN" | jq .period
+# {"token":"fy-2025","kind":"fiscal-year","from":"2025-10-15","to":"2026-08-31"}
+```
+
+The other definitive check is the `#RAR 0` line in §9.
 
 ---
 
@@ -247,7 +254,7 @@ curl -sS "$API_BASE/api/exports/sie?period=fy-2025" \
 iconv -f CP437 -t UTF-8 fy-2025.se | head -40
 ```
 
-Rapporter → **"Exportera SIE"** with `fy-2025` selected downloads the same bytes. The file is **CP437/PC8, not UTF-8** — never re-save it as UTF-8.
+Rapporter → **"Exportera SIE"** with `fy-2025` selected downloads the same bytes (named `jpx-export-fy-2025.se`). The file is **CP437/PC8, not UTF-8** — never re-save it as UTF-8. If `iconv` isn't on your PATH, open the file in an editor with the encoding set to IBM437/CP437 instead; the ASCII-range labels (`#RAR`, `#UB`, account numbers, amounts) are readable either way.
 
 Confirm:
 
