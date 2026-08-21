@@ -106,10 +106,12 @@ test("saves the EU-trade toggle and persists it across reload", async ({ page, i
   // The checkbox is reachable BY ITS LABEL, not just by testid: `FormLabel`'s
   // htmlFor and `FormControl`'s Slot-injected id have to agree, and a silent
   // break there is invisible to a testid-only assertion.
-  await expect(page.getByLabel("Do you trade within the EU?")).toHaveAttribute(
-    "data-testid",
-    "company-profile-eu-trade",
-  );
+  // I-9: the label names the actual statutory trigger (EU SALES that go into
+  // the periodisk sammanställning), not the ambiguous "do you trade in the EU?"
+  // — this branch's own RC25 EU PURCHASES must not be read as a yes.
+  await expect(
+    page.getByLabel("Do you sell goods or services to VAT-registered buyers in other EU countries (EC sales list)?"),
+  ).toHaveAttribute("data-testid", "company-profile-eu-trade");
 
   await fillCompanyBasics(page);
   await checkControl(page.getByTestId("company-profile-eu-trade"), isMobile);
