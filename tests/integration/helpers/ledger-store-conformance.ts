@@ -8,7 +8,13 @@
 import assert from "node:assert/strict";
 
 import type { ExtractionResult } from "@jpx-accounting/contracts";
-import { deriveDeterministicExtraction, InvalidPeriodTokenError, parseSie, today } from "@jpx-accounting/domain";
+import {
+  deriveDeterministicExtraction,
+  DRAFT_VOUCHER_NUMBER,
+  InvalidPeriodTokenError,
+  parseSie,
+  today,
+} from "@jpx-accounting/domain";
 import { ReviewNotFoundError, type LedgerStore } from "@jpx-accounting/domain/store";
 
 export type ConformanceHarness = {
@@ -774,6 +780,93 @@ export async function scenarioManualVoucherLifecycle(h: ConformanceHarness): Pro
   };
 }
 
+/**
+ * Posting-time voucher numbering (KFR E.1 / G8) — the parity that matters most
+ * here is that BOTH stores derive the same `V-<n>` from the same sequence of
+ * decisions, because the two compute the posted count by completely different
+ * means (a Map scan vs. a `COUNT(*)` under the workspace advisory lock).
+ *
+ * Pinned behavior: intake never numbers; reject never burns a number; approve
+ * AND book-without-vat both do; manual entries share the ONE sequence with
+ * captured vouchers; a replayed decision never re-mints; and an already-posted
+ * voucher is never renumbered by later postings.
+ */
+export async function scenarioPostingTimeNumbering(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  const create = async (label: string) =>
+    h.store.createEvidence({
+      actorId: h.actorId,
+      title: `Numbering ${label}`,
+      originalFilename: `numbering-${label}.pdf`,
+      mimeType: "application/pdf",
+      modalities: ["pdf"],
+      extractedText: `Numbering ${label} body`,
+    });
+
+  const numberOf = async (voucherId: string): Promise<string | null> =>
+    (await h.store.getSnapshot()).vouchers.find((voucher) => voucher.id === voucherId)?.voucherNumber ?? null;
+
+  const rejected = await create("rejected");
+  const approved = await create("approved");
+  const bookedWithoutVat = await create("booked");
+
+  const numbersAtIntake = [
+    await numberOf(rejected.voucher.id),
+    await numberOf(approved.voucher.id),
+    await numberOf(bookedWithoutVat.voucher.id),
+  ];
+
+  await h.store.applyReviewDecision(rejected.review.id, "reject", { actorId: h.actorId });
+  const rejectedNumber = await numberOf(rejected.voucher.id);
+
+  await h.store.applyReviewDecision(approved.review.id, "approve", { actorId: h.actorId });
+  const approvedNumber = await numberOf(approved.voucher.id);
+
+  await h.store.applyReviewDecision(bookedWithoutVat.review.id, "book-without-vat", { actorId: h.actorId });
+  const bookedNumber = await numberOf(bookedWithoutVat.voucher.id);
+
+  // Manual entries run through the SAME posting branch — one shared sequence.
+  const manual = await h.store.createManualVoucher({
+    actorId: h.actorId,
+    description: "Numbering manual entry",
+    bookedAt: "2026-03-20",
+    lines: [
+      { accountNumber: "6991", debit: 100, credit: 0, vatCode: "NA" },
+      { accountNumber: "2899", debit: 0, credit: 100, vatCode: "NA" },
+    ],
+  });
+  const manualNumberAtIntake = await numberOf(manual.voucherId);
+  await h.store.applyReviewDecision(manual.reviewId, "approve", { actorId: h.actorId });
+  const manualNumber = await numberOf(manual.voucherId);
+
+  // Replay: a second decision on a decided review must not re-mint a number.
+  await h.store.applyReviewDecision(approved.review.id, "approve", { actorId: h.actorId });
+
+  // Absolute pins, not just parity: both harnesses start with zero POSTED
+  // vouchers (Memory's demo seed is needs-review, a fresh PG namespace is
+  // empty), so the sequence is deterministic and dense on both sides.
+  assert.deepEqual(
+    numbersAtIntake,
+    [DRAFT_VOUCHER_NUMBER, DRAFT_VOUCHER_NUMBER, DRAFT_VOUCHER_NUMBER],
+    `${h.label}: intake must never mint a voucher number`,
+  );
+  assert.equal(rejectedNumber, DRAFT_VOUCHER_NUMBER, `${h.label}: a rejected draft never burns a V-number`);
+  assert.equal(approvedNumber, "V-1001", `${h.label}: the first posting takes V-1001`);
+  assert.equal(bookedNumber, "V-1002", `${h.label}: book-without-vat posts, so it takes the next number`);
+  assert.equal(manualNumberAtIntake, DRAFT_VOUCHER_NUMBER, `${h.label}: manual entries are drafts at intake too`);
+  assert.equal(manualNumber, "V-1003", `${h.label}: manual entries share the ONE posting sequence`);
+
+  return {
+    numbersAtIntake,
+    rejectedNumber,
+    approvedNumber,
+    bookedNumber,
+    manualNumberAtIntake,
+    manualNumber,
+    approvedNumberAfterLaterPostings: await numberOf(approved.voucher.id),
+    rejectedNumberAtEnd: await numberOf(rejected.voucher.id),
+  };
+}
+
 export const CONFORMANCE_SCENARIOS: Array<{
   name: string;
   run: (h: ConformanceHarness) => Promise<ConformanceOutcome>;
@@ -789,6 +882,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "review reject", run: scenarioReviewReject },
   { name: "review approve with edits", run: scenarioReviewApproveEdited },
   { name: "manual voucher lifecycle", run: scenarioManualVoucherLifecycle },
+  { name: "posting-time voucher numbering", run: scenarioPostingTimeNumbering },
 ];
 
 export function assertConformanceParity(

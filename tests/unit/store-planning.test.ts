@@ -9,13 +9,14 @@ import {
   planManualVoucher,
   planReviewDecision,
 } from "../../packages/domain/src/store-planning.ts";
+import { DRAFT_VOUCHER_NUMBER } from "../../packages/domain/src/store-shared.ts";
 import { InvalidManualVoucherError, NonOreExactPostingError, postingImbalanceOre } from "@jpx-accounting/domain";
 
 const BLOCKED_REASON = "Mandatory bookkeeping or VAT data must be confirmed before deductible VAT can be approved.";
 const BLOCKED_ACTION = "Request more evidence or post without VAT deduction.";
 
 describe("planEvidenceCreate", () => {
-  it("numbers vouchers from voucherIndex and emits 4 events with extractor/ai sentinels", () => {
+  it("assigns the DRAFT_VOUCHER_NUMBER sentinel at intake and emits 4 events with extractor/ai sentinels", () => {
     const plan = planEvidenceCreate(
       {
         title: "Test",
@@ -25,13 +26,12 @@ describe("planEvidenceCreate", () => {
         actorId: "user:test",
       },
       {
-        voucherIndex: 0,
         now: "2026-03-15T12:00:00.000Z",
         organizationId: "org_jpx",
         workspaceId: "workspace_main",
       },
     );
-    assert.equal(plan.voucher.voucherNumber, "V-1001");
+    assert.equal(plan.voucher.voucherNumber, DRAFT_VOUCHER_NUMBER);
     assert.deepEqual(
       plan.events.map((e) => e.eventType),
       ["EvidenceReceived", "FieldsExtracted", "VoucherCreated", "SuggestionGenerated"],
@@ -61,7 +61,6 @@ describe("planEvidenceCreate", () => {
         actorId: "user:test",
       },
       {
-        voucherIndex: 1,
         now: "2026-03-15T12:00:00.000Z",
         organizationId: "org_jpx",
         workspaceId: "workspace_main",
@@ -115,6 +114,97 @@ describe("planReviewDecision", () => {
     assert.notEqual(plan.review, review);
   });
 
+  it("assigns V-<n> only on posting via ctx.postedVoucherCount; reject keeps the draft sentinel", () => {
+    const voucher = {
+      id: "v1",
+      organizationId: "org_jpx",
+      workspaceId: "workspace_main",
+      evidencePacketId: "p1",
+      voucherNumber: DRAFT_VOUCHER_NUMBER,
+      status: "needs-review",
+      accountingMethod: "cash",
+      extractedFields: [],
+      voucherFields: { currency: "SEK", grossAmount: 125, netAmount: 100, vatAmount: 25 },
+      createdAt: "2026-03-15T12:00:00.000Z",
+      createdBy: "user:x",
+      origin: "capture",
+    } as Voucher;
+    const suggestion = {
+      id: "sug1",
+      voucherId: "v1",
+      accountNumber: "6110",
+      accountName: "Kontorsmateriel",
+      vatCode: "VAT25",
+      confidence: 0.9,
+      reasoning: "test",
+      kind: "recommendation",
+      citations: [],
+      ruleHits: [],
+    } as AccountingSuggestion;
+    const review = {
+      id: "r1",
+      voucherId: "v1",
+      title: `Review ${DRAFT_VOUCHER_NUMBER}`,
+      status: "needs-review",
+      suggestedAction: "Approve the proposed posting.",
+      suggestion,
+      provenanceTimeline: [],
+    } as ReviewTask;
+
+    const approved = planReviewDecision(review, voucher, "approve", { actorId: "user:x" }, { postedVoucherCount: 3 });
+    if (approved.kind !== "apply") throw new Error("unreachable");
+    assert.equal(approved.updatedVoucher.voucherNumber, "V-1004");
+    // The draft-derived review title follows the voucher onto the ledger, so an
+    // archived/posted review never reads "Utkast" (KFR E.1).
+    assert.equal(approved.updatedReview.title, "Review V-1004");
+
+    const bookedWithoutVat = planReviewDecision(
+      review,
+      voucher,
+      "book-without-vat",
+      { actorId: "user:x" },
+      { postedVoucherCount: 3 },
+    );
+    if (bookedWithoutVat.kind !== "apply") throw new Error("unreachable");
+    assert.equal(
+      bookedWithoutVat.updatedVoucher.voucherNumber,
+      "V-1004",
+      "book-without-vat posts, so it earns a number too",
+    );
+
+    const rejected = planReviewDecision(review, voucher, "reject", { actorId: "user:x" }, { postedVoucherCount: 3 });
+    if (rejected.kind !== "apply") throw new Error("unreachable");
+    assert.equal(rejected.updatedVoucher.voucherNumber, DRAFT_VOUCHER_NUMBER, "rejected drafts never burn a V-number");
+    assert.equal(rejected.updatedReview.title, `Review ${DRAFT_VOUCHER_NUMBER}`);
+  });
+
+  it("never renumbers a voucher that already carries a real number (replay-safe)", () => {
+    const voucher = {
+      id: "v1",
+      organizationId: "org_jpx",
+      workspaceId: "workspace_main",
+      evidencePacketId: "p1",
+      voucherNumber: "V-1002",
+      status: "approved",
+      accountingMethod: "cash",
+      extractedFields: [],
+      voucherFields: { currency: "SEK", grossAmount: 125, netAmount: 100, vatAmount: 25 },
+      createdAt: "2026-03-15T12:00:00.000Z",
+      createdBy: "user:x",
+      origin: "capture",
+    } as Voucher;
+    const review = {
+      id: "r1",
+      voucherId: "v1",
+      title: "Review V-1002",
+      status: "approved",
+      suggestedAction: "Approve the proposed posting.",
+      provenanceTimeline: [],
+    } as ReviewTask;
+    const plan = planReviewDecision(review, voucher, "approve", { actorId: "user:x" }, { postedVoucherCount: 7 });
+    assert.equal(plan.kind, "replay", "an already-decided review replays and never re-mints a number");
+  });
+
   it("reject produces decision event without PostedToLedger", () => {
     const voucher = {
       id: "v1",
@@ -146,7 +236,7 @@ describe("planReviewDecision", () => {
         actorId: "user:x",
         notes: "duplicate",
       },
-      "2026-03-15T13:00:00.000Z",
+      { now: "2026-03-15T13:00:00.000Z" },
     );
     assert.equal(plan.kind, "apply");
     if (plan.kind !== "apply") throw new Error("unreachable");
@@ -214,11 +304,13 @@ describe("planReviewDecision", () => {
       voucher,
       "approve",
       { actorId: "user:x", edited },
-      "2026-03-15T13:00:00.000Z",
+      { now: "2026-03-15T13:00:00.000Z" },
     );
     assert.equal(plan.kind, "apply");
     if (plan.kind !== "apply") throw new Error("unreachable");
     assert.equal(plan.updatedReview.status, "approved");
+    // Default postedVoucherCount is 0 when omitted — the first posting is V-1001.
+    assert.equal(plan.updatedVoucher.voucherNumber, "V-1001");
     assert.equal(plan.updatedReview.suggestion?.accountNumber, "6110");
     assert.equal(plan.updatedReview.provenanceTimeline.at(-1)?.label, "Approved with edits");
     assert.ok(plan.lines && plan.lines.length === 3);
@@ -281,7 +373,7 @@ describe("planReviewDecision", () => {
       voucher,
       "approve",
       { actorId: "user:x", edited: { accountNumber: "6110", vatCode: "VAT25", settlementAccountNumber: "2899" } },
-      "2026-03-15T13:00:00.000Z",
+      { now: "2026-03-15T13:00:00.000Z" },
     );
     assert.equal(plan.kind, "apply");
     if (plan.kind !== "apply") throw new Error("unreachable");
@@ -338,7 +430,7 @@ describe("planReviewDecision", () => {
       voucher,
       "approve",
       { actorId: "user:x", edited: { accountNumber: "6540", vatCode: "RC25" } },
-      "2026-03-15T13:00:00.000Z",
+      { now: "2026-03-15T13:00:00.000Z" },
     );
     assert.equal(plan.kind, "apply");
     if (plan.kind !== "apply") throw new Error("unreachable");
@@ -353,7 +445,9 @@ describe("planReviewDecision", () => {
       organizationId: "org_jpx",
       workspaceId: "workspace_main",
       evidencePacketId: null,
-      voucherNumber: "V-1001",
+      // Manual entries are drafts at intake exactly like captured ones (KFR E.1):
+      // the real number comes from the posting branch below.
+      voucherNumber: DRAFT_VOUCHER_NUMBER,
       status: "needs-review",
       accountingMethod: "invoice",
       extractedFields: [],
@@ -394,6 +488,9 @@ describe("planReviewDecision", () => {
     });
     assert.equal(plan.kind, "apply");
     if (plan.kind !== "apply") throw new Error("unreachable");
+    // Manual vouchers earn their V-number on the SAME posting branch as captured
+    // ones — one shared sequence, no parallel manual numbering (KFR E.1).
+    assert.equal(plan.updatedVoucher.voucherNumber, "V-1001");
     assert.equal(plan.lines?.length, 2);
     assert.equal(plan.lines?.[0]?.accountNumber, "6110");
     assert.equal(plan.lines?.[0]?.debit, 100);
@@ -442,7 +539,13 @@ describe("planReviewDecision", () => {
       },
       provenanceTimeline: [],
     } as ReviewTask;
-    const plan = planReviewDecision(review, voucher, "approve", { actorId: "user:x" }, "2026-03-20T10:00:00.000Z");
+    const plan = planReviewDecision(
+      review,
+      voucher,
+      "approve",
+      { actorId: "user:x" },
+      { now: "2026-03-20T10:00:00.000Z" },
+    );
     assert.equal(plan.kind, "apply");
     if (plan.kind !== "apply") throw new Error("unreachable");
     assert.deepEqual(
@@ -492,7 +595,13 @@ describe("planReviewDecision", () => {
       },
       provenanceTimeline: [],
     } as ReviewTask;
-    const plan = planReviewDecision(review, voucher, "reject", { actorId: "user:x" }, "2026-03-20T10:00:00.000Z");
+    const plan = planReviewDecision(
+      review,
+      voucher,
+      "reject",
+      { actorId: "user:x" },
+      { now: "2026-03-20T10:00:00.000Z" },
+    );
     assert.equal(plan.kind, "apply");
     if (plan.kind !== "apply") throw new Error("unreachable");
     assert.equal(plan.lines, undefined);
@@ -612,7 +721,6 @@ describe("planManualVoucher", () => {
     ],
   };
   const ctx = {
-    voucherIndex: 3,
     organizationId: "org_jpx",
     workspaceId: "workspace_main",
     now: "2026-03-20T09:00:00.000Z",
@@ -623,7 +731,9 @@ describe("planManualVoucher", () => {
     assert.equal(plan.voucher.origin, "manual");
     assert.equal(plan.voucher.evidencePacketId, null);
     assert.equal(plan.voucher.status, "needs-review");
-    assert.equal(plan.voucher.voucherNumber, "V-1004");
+    // KFR E.1: manual entries are drafts at intake — no intake-time numbering,
+    // so they can never collide with the captured-voucher sequence.
+    assert.equal(plan.voucher.voucherNumber, DRAFT_VOUCHER_NUMBER);
     assert.equal(plan.review.status, "needs-review");
     assert.deepEqual(plan.review.suggestion?.lines, input.lines);
     assert.equal(plan.events.map((e) => e.eventType).join(","), "VoucherCreated,SuggestionGenerated");

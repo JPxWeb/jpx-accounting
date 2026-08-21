@@ -24,6 +24,7 @@ import {
   buildManualPostingLines,
   buildPostingLines,
   DEMO_ACTOR_ID,
+  DRAFT_VOUCHER_NUMBER,
   InvalidManualVoucherError,
   mergeExtractedFields,
   recomputeVoucherFields,
@@ -131,7 +132,7 @@ function snapshotEvidenceContext(
  */
 export function planEvidenceCreate(
   input: EvidenceCreateInput & ActorAttribution,
-  ctx: { voucherIndex: number; now?: string; organizationId: string; workspaceId: string },
+  ctx: { now?: string; organizationId: string; workspaceId: string },
 ): EvidenceCreatePlan {
   const actorId = input.actorId ?? DEMO_ACTOR_ID;
   const createdAt = ctx.now ?? nowIso();
@@ -168,7 +169,9 @@ export function planEvidenceCreate(
     organizationId: ctx.organizationId,
     workspaceId: ctx.workspaceId,
     evidencePacketId: packetId,
-    voucherNumber: `V-${ctx.voucherIndex + 1001}`,
+    // KFR E.1: intake never mints a number — `planReviewDecision` does, at the
+    // instant the voucher posts. See DRAFT_VOUCHER_NUMBER.
+    voucherNumber: DRAFT_VOUCHER_NUMBER,
     status: "needs-review",
     accountingMethod: guessAccountingMethod(input),
     extractedFields,
@@ -255,7 +258,7 @@ export type ManualVoucherPlan = { voucher: Voucher; review: ReviewTask; events: 
  */
 export function planManualVoucher(
   input: ManualVoucherInput & { actorId: string },
-  ctx: { voucherIndex: number; now?: string; organizationId: string; workspaceId: string },
+  ctx: { now?: string; organizationId: string; workspaceId: string },
 ): ManualVoucherPlan {
   // Exact-öre gate BEFORE any id/event is derived: the wire schema only
   // enforces ±0.005 (float noise tolerance), not the real invariant.
@@ -295,7 +298,10 @@ export function planManualVoucher(
     organizationId: ctx.organizationId,
     workspaceId: ctx.workspaceId,
     evidencePacketId: null,
-    voucherNumber: `V-${ctx.voucherIndex + 1001}`,
+    // KFR E.1: same draft sentinel as capture intake. Manual entries share the
+    // ONE posting-time sequence (`planReviewDecision`) rather than running a
+    // parallel intake-time counter that would collide with captured vouchers.
+    voucherNumber: DRAFT_VOUCHER_NUMBER,
     status: "needs-review",
     // Manual entries carry no cash/invoice distinction — "invoice" is a
     // fixed, documented default (the schema requires a value).
@@ -366,13 +372,19 @@ export function planManualVoucher(
 /**
  * Pure re-entrant planner for review decisions. Replay when already decided;
  * otherwise derive edit/posting inputs and planned events without mutating args.
+ *
+ * `ctx.postedVoucherCount` is the workspace's current count of NATIVE posted
+ * vouchers (`isPostedVoucherStatus`), read by the caller immediately before
+ * planning — under the workspace advisory lock in Postgres, so two concurrent
+ * approvals can never observe the same count and mint the same `V-<n>`. It is
+ * only consulted on a branch that actually posts; omitted it defaults to 0.
  */
 export function planReviewDecision(
   review: ReviewTask,
   voucher: Voucher,
   action: ReviewAction,
   input: ReviewDecisionInput & ActorAttribution & ApprovalGate,
-  now?: string,
+  ctx: { now?: string; postedVoucherCount?: number } = {},
 ): ReviewDecisionPlan {
   if (review.status !== "needs-review") {
     return { kind: "replay", review: { ...review } };
@@ -403,7 +415,7 @@ export function planReviewDecision(
     settlementAccountNumber = resolved.effectiveSettlementAccountNumber;
   }
 
-  const occurredAt = now ?? nowIso();
+  const occurredAt = ctx.now ?? nowIso();
   const newStatus = reviewStatusForAction(action);
   const timelineStep = {
     id: createId("step"),
@@ -412,12 +424,48 @@ export function planReviewDecision(
     actor: actorId,
   };
 
+  // Posting lines are derived BEFORE the read models because they are what
+  // decides whether this decision actually posts — and therefore whether the
+  // voucher earns its number (KFR E.1 / G8).
+  let lines: LedgerLine[] | undefined;
+  if (action !== "reject") {
+    if (isManual) {
+      const manualLines = postingSuggestion?.lines;
+      if (!manualLines) {
+        throw new Error(
+          `Manual-origin voucher ${voucher.id} has a review with no verbatim lines (invariant violation).`,
+        );
+      }
+      lines = buildManualPostingLines(voucher, manualLines, occurredAt);
+    } else if (postingSuggestion) {
+      lines = buildPostingLines(postingVoucher, postingSuggestion, action, occurredAt, undefined, {
+        // exactOptionalPropertyTypes: an absent override must be an absent key,
+        // not an explicit `undefined`.
+        ...(settlementAccountNumber !== undefined ? { settlementAccountNumber } : {}),
+      });
+    }
+  }
+
+  // Posting-time numbering (KFR E.1 / G8): the voucher only earns its real
+  // `V-<n>` the instant it actually posts. Reject never posts, so it keeps
+  // whatever voucherNumber it already had (DRAFT_VOUCHER_NUMBER at intake) —
+  // rejected drafts never burn a number. The count is read by the caller
+  // immediately before planning, under the workspace lock in Postgres.
+  const postedVoucherNumber = lines ? `V-${(ctx.postedVoucherCount ?? 0) + 1001}` : voucher.voucherNumber;
+  // The draft-derived review label must not survive onto a posted entry — an
+  // archived review reading "Review Utkast" would be an audit-trail lie.
+  // Guarded on the EXACT planner-generated draft label so a curated title (the
+  // demo seed's "Approve AI subscription posting") is never clobbered.
+  const draftReviewTitle = `Review ${DRAFT_VOUCHER_NUMBER}`;
+  const postedReviewTitle = lines && review.title === draftReviewTitle ? `Review ${postedVoucherNumber}` : review.title;
+
   let updatedReview: ReviewTask = {
     ...review,
     status: newStatus,
+    title: postedReviewTitle,
     provenanceTimeline: [...review.provenanceTimeline, timelineStep],
   };
-  const updatedVoucher: Voucher = { ...voucher, status: newStatus };
+  const updatedVoucher: Voucher = { ...voucher, status: newStatus, voucherNumber: postedVoucherNumber };
   if (edited && postingSuggestion) {
     updatedReview = { ...updatedReview, suggestion: postingSuggestion };
   }
@@ -439,24 +487,6 @@ export function planReviewDecision(
     },
   ];
 
-  let lines: LedgerLine[] | undefined;
-  if (action !== "reject") {
-    if (isManual) {
-      const manualLines = postingSuggestion?.lines;
-      if (!manualLines) {
-        throw new Error(
-          `Manual-origin voucher ${voucher.id} has a review with no verbatim lines (invariant violation).`,
-        );
-      }
-      lines = buildManualPostingLines(voucher, manualLines, occurredAt);
-    } else if (postingSuggestion) {
-      lines = buildPostingLines(postingVoucher, postingSuggestion, action, occurredAt, undefined, {
-        // exactOptionalPropertyTypes: an absent override must be an absent key,
-        // not an explicit `undefined`.
-        ...(settlementAccountNumber !== undefined ? { settlementAccountNumber } : {}),
-      });
-    }
-  }
   if (lines) {
     events.push({
       organizationId: updatedVoucher.organizationId,

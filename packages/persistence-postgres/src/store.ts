@@ -619,18 +619,11 @@ export class PostgresLedgerStore implements LedgerStore {
         const duplicate = await this.findDuplicateEvidence(tx, input);
         if (duplicate) return duplicate;
 
-        // Voucher number sequencing: COUNT(*) inside the workspace, just like
-        // MemoryLedgerStore which uses `this.vouchers.size + 1001`. Planner is
-        // called INSIDE the retry closure so fork retries re-derive ids.
-        const voucherCountRows = await tx<{ count: string }[]>`
-        SELECT COUNT(*)::text AS count
-        FROM ledger.vouchers
-        WHERE organization_id = ${this.defaults.organizationId}
-          AND workspace_id = ${this.defaults.workspaceId}
-      `;
-        const voucherCount = Number(voucherCountRows[0]?.count ?? "0");
+        // Voucher number: DRAFT_VOUCHER_NUMBER at intake — the real V-<n> is
+        // assigned only when the voucher posts (applyReviewDecision), KFR E.1 /
+        // G8. Planner is called INSIDE the retry closure so fork retries
+        // re-derive ids.
         const plan = planEvidenceCreate(input, {
-          voucherIndex: voucherCount,
           organizationId: this.defaults.organizationId,
           workspaceId: this.defaults.workspaceId,
         });
@@ -1203,21 +1196,13 @@ export class PostgresLedgerStore implements LedgerStore {
       this.client.begin(async (tx) => {
         const tailHash = await this.lockWorkspaceTail(tx);
 
-        // Voucher-number sequencing: COUNT(*) inside the workspace under the
-        // advisory lock, identical to createEvidence (and to Memory's
-        // `this.vouchers.size`). Planner runs INSIDE the retry closure so a
-        // fork retry re-derives every id and hash.
-        const voucherCountRows = await tx<{ count: string }[]>`
-          SELECT COUNT(*)::text AS count
-          FROM ledger.vouchers
-          WHERE organization_id = ${this.defaults.organizationId}
-            AND workspace_id = ${this.defaults.workspaceId}
-        `;
-        const voucherCount = Number(voucherCountRows[0]?.count ?? "0");
+        // Voucher number: DRAFT_VOUCHER_NUMBER at intake, identical to
+        // createEvidence — manual entries earn their V-<n> on the shared
+        // posting branch (applyReviewDecision), KFR E.1 / G8. Planner runs
+        // INSIDE the retry closure so a fork retry re-derives every id and hash.
         const plan = planManualVoucher(
           { ...input, actorId },
           {
-            voucherIndex: voucherCount,
             organizationId: this.defaults.organizationId,
             workspaceId: this.defaults.workspaceId,
           },
@@ -1562,14 +1547,36 @@ export class PostgresLedgerStore implements LedgerStore {
 
         const voucher = rowToVoucher(voucherRow);
 
+        // KFR E.1 posting-time numbering: count the workspace's already-posted
+        // vouchers ONLY when this decision can actually post. The read happens
+        // inside the SAME advisory-locked transaction as `lockWorkspaceTail`
+        // above, so two concurrent approvals serialize and can never observe
+        // the same count — no two vouchers ever get the same V-<n>.
+        // `status = 'posted'` (SIE imports) is deliberately excluded: those
+        // carry their own "<series> <number>" and never consume a V-number.
+        // Same guard as MemoryLedgerStore (Rule 11).
+        const willPost = review.status === "needs-review" && action !== "reject" && Boolean(review.suggestion);
+        let postedVoucherCount = 0;
+        if (willPost) {
+          const postedCountRows = await tx<{ count: string }[]>`
+        SELECT COUNT(*)::text AS count
+        FROM ledger.vouchers
+        WHERE organization_id = ${this.defaults.organizationId}
+          AND workspace_id = ${this.defaults.workspaceId}
+          AND status IN ('approved', 'booked-without-vat')
+      `;
+          postedVoucherCount = Number(postedCountRows[0]?.count ?? "0");
+        }
+
         // Planner validates edits (InvalidReviewEditError) before any write and
         // is re-entered on every chain-fork retry.
-        const plan = planReviewDecision(review, voucher, action, input);
+        const plan = planReviewDecision(review, voucher, action, input, { postedVoucherCount });
         if (plan.kind === "replay") return plan.review;
 
         await tx`
         UPDATE ledger.review_tasks
         SET status = ${plan.updatedReview.status},
+            title = ${plan.updatedReview.title},
             provenance_timeline = ${tx.json(plan.updatedReview.provenanceTimeline as unknown as Parameters<typeof tx.json>[0])},
             suggestion = ${plan.updatedReview.suggestion ? tx.json(plan.updatedReview.suggestion as unknown as Parameters<typeof tx.json>[0]) : null}
         WHERE id = ${plan.updatedReview.id}
@@ -1577,7 +1584,8 @@ export class PostgresLedgerStore implements LedgerStore {
 
         await tx`
         UPDATE ledger.vouchers
-        SET status = ${plan.updatedVoucher.status}
+        SET status = ${plan.updatedVoucher.status},
+            voucher_number = ${plan.updatedVoucher.voucherNumber}
         WHERE id = ${plan.updatedVoucher.id}
           AND organization_id = ${this.defaults.organizationId}
           AND workspace_id = ${this.defaults.workspaceId}

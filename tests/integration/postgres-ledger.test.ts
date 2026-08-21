@@ -5,6 +5,7 @@ import type { EvidenceCreateInput, ExtractionResult, ReportPack } from "@jpx-acc
 import {
   buildEventHash,
   deriveDeterministicExtraction,
+  DRAFT_VOUCHER_NUMBER,
   InvalidPeriodTokenError,
   InvalidReviewEditError,
   legacyDjb2EventHash,
@@ -1468,10 +1469,40 @@ test("R15: two concurrent connections appending to one workspace produce a singl
     assert.equal(summary.payloadVerified, true);
     assert.equal(summary.payloadMismatchCount, 0);
 
-    // Advisory-lock side benefit: the voucher-number COUNT(*) serialized too.
+    // Posting-time numbering (KFR E.1): freshly created vouchers are all still
+    // drafts — same sentinel, not yet distinct.
     const snapshot = await storeA.getSnapshot();
-    const voucherNumbers = snapshot.vouchers.map((voucher) => voucher.voucherNumber);
-    assert.equal(new Set(voucherNumbers).size, 8, "8 distinct voucher numbers under concurrency");
+    assert.ok(
+      snapshot.vouchers.every((voucher) => voucher.voucherNumber === DRAFT_VOUCHER_NUMBER),
+      "unposted vouchers all render the draft sentinel, not distinct numbers",
+    );
+
+    // The advisory-lock serialization guarantee this test protects now lives at
+    // POSTING time — approve all 8 reviews concurrently (still racing storeA vs
+    // storeB) and confirm no two get the same V-<n>.
+    const reviewIds = snapshot.reviews.map((review) => review.id);
+    assert.equal(reviewIds.length, 8);
+    const half = Math.ceil(reviewIds.length / 2);
+    await Promise.all([
+      ...reviewIds.slice(0, half).map((id) => storeA.applyReviewDecision(id, "approve", {})),
+      ...reviewIds.slice(half).map((id) => storeB.applyReviewDecision(id, "approve", {})),
+    ]);
+    const postedSnapshot = await storeA.getSnapshot();
+    const postedNumbers = postedSnapshot.vouchers.map((voucher) => voucher.voucherNumber);
+    assert.equal(new Set(postedNumbers).size, 8, "8 distinct posted voucher numbers under concurrency");
+    assert.deepEqual(
+      [...postedNumbers].sort(),
+      ["V-1001", "V-1002", "V-1003", "V-1004", "V-1005", "V-1006", "V-1007", "V-1008"].sort(),
+      "the posted sequence is dense — no gaps, no duplicates",
+    );
+
+    // Concurrent approvals must not have forked the chain either.
+    const postDecisionEvents = await storeA.getEvents();
+    const postSummary = summarizeEventIntegrity(postDecisionEvents, {
+      verifiedAt: new Date().toISOString(),
+      verifyPayloads: true,
+    });
+    assert.equal(postSummary.chainLinked, true, "concurrent approvals must never fork the chain");
   } finally {
     await requireCtx().cleanupOrganization(orgId);
   }

@@ -192,6 +192,33 @@ export function resolveReviewDecisionEdit(
 export const DEMO_ACTOR_ID = "user_founder";
 
 /**
+ * Draft-voucher display sentinel (KFR Phase E / readiness doc G8): every planner
+ * that creates a NEW Voucher row (capture intake, manual entry) assigns this
+ * literal instead of computing a `V-<n>` — the real number is assigned only
+ * once the voucher actually POSTS (approve or book-without-vat), inside
+ * `planReviewDecision`. A rejected review never posts, so its voucher keeps
+ * this sentinel forever: rejected drafts no longer burn V- numbers.
+ * SIE-imported vouchers never pass through this path at all (`importSie`
+ * assigns its own "<series> <number>" display directly) so there is no
+ * interaction with that numbering scheme.
+ */
+export const DRAFT_VOUCHER_NUMBER = "Utkast";
+
+/**
+ * True for voucher/review statuses that correspond to an actual PostedToLedger
+ * event, i.e. the ones that consumed a `V-<n>` from the workspace sequence.
+ *
+ * Deliberately NOT `"posted"`: an SIE-imported voucher arrives already booked
+ * with `origin: "import"`, `status: "posted"` and its own "<series> <number>"
+ * display, never a `V-<n>`. Excluding it here is what keeps the native V-
+ * sequence dense and stable — importing a fiscal year of history must not
+ * shift the next captured voucher's number.
+ */
+export function isPostedVoucherStatus(status: Voucher["status"]): boolean {
+  return status === "approved" || status === "booked-without-vat";
+}
+
+/**
  * Server-derived actor threading for mutating store methods. Optional: absent
  * means "no authenticated subject" and stores default to `DEMO_ACTOR_ID`.
  * Never populated from a client payload.

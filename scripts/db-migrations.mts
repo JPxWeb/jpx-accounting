@@ -630,6 +630,28 @@ export async function runCapabilityAssertions(sql: PostgresClient | ReservedSql)
     }),
   );
 
+  results.push(
+    await safeCheck("draft-voucher-number-index", async () => {
+      // KFR E.1: unposted vouchers all share the 'Utkast' sentinel, so the
+      // voucher-number unique index MUST be partial on that predicate — a full
+      // index makes the second draft in a workspace fail with 23505.
+      const rows = await sql<{ indexdef: string }[]>`
+        select indexdef from pg_indexes
+        where schemaname = 'ledger' and tablename = 'vouchers' and indexname = 'ledger_vouchers_number_idx'
+      `;
+      const indexdef = rows[0]?.indexdef ?? "";
+      const pass = indexdef.includes("Utkast");
+      return {
+        name: "draft-voucher-number-index",
+        pass,
+        detail: pass
+          ? "ledger_vouchers_number_idx is partial — the draft-number sentinel is exempt from uniqueness."
+          : `ledger_vouchers_number_idx is not partial on the draft sentinel (definition: ${indexdef || "missing"}).`,
+        ...(pass ? {} : { remediation: "Apply migration 0011_draft_voucher_numbers.sql." }),
+      };
+    }),
+  );
+
   return results;
 }
 

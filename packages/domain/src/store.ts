@@ -55,10 +55,12 @@ import {
 } from "./store-planning";
 import {
   DEMO_ACTOR_ID,
+  DRAFT_VOUCHER_NUMBER,
   InvalidReviewEditError,
   ReviewBlockedError,
   buildPostingLines,
   deriveBookedAt,
+  isPostedVoucherStatus,
   isValidCalendarDay,
   localDayOfTimestamp,
   mergeExtractedFields,
@@ -78,10 +80,12 @@ import {
 // statically constructs MemoryLedgerStore for the demo fallback (P1 stretch).
 export {
   DEMO_ACTOR_ID,
+  DRAFT_VOUCHER_NUMBER,
   InvalidReviewEditError,
   ReviewBlockedError,
   buildPostingLines,
   deriveBookedAt,
+  isPostedVoucherStatus,
   isValidCalendarDay,
   localDayOfTimestamp,
   mergeExtractedFields,
@@ -524,7 +528,6 @@ export class MemoryLedgerStore implements LedgerStore {
     if (duplicate) return duplicate;
 
     const plan = planEvidenceCreate(input, {
-      voucherIndex: this.vouchers.size,
       organizationId: defaultOrganizationId,
       workspaceId: defaultWorkspaceId,
     });
@@ -747,7 +750,6 @@ export class MemoryLedgerStore implements LedgerStore {
     const plan = planManualVoucher(
       { ...input, actorId: input.actorId ?? DEMO_ACTOR_ID },
       {
-        voucherIndex: this.vouchers.size,
         organizationId: defaultOrganizationId,
         workspaceId: defaultWorkspaceId,
       },
@@ -874,7 +876,16 @@ export class MemoryLedgerStore implements LedgerStore {
     const voucher = this.vouchers.get(review.voucherId);
     if (!voucher) return undefined;
 
-    const plan = planReviewDecision(review, voucher, action, input);
+    // KFR E.1 posting-time numbering: count the workspace's already-posted
+    // vouchers ONLY when this decision can actually post — a reject or an
+    // already-decided replay must not pay for the scan (parity with the
+    // Postgres store's identically-guarded COUNT(*), Rule 11).
+    const willPost = review.status === "needs-review" && action !== "reject" && Boolean(review.suggestion);
+    const postedVoucherCount = willPost
+      ? [...this.vouchers.values()].filter((candidate) => isPostedVoucherStatus(candidate.status)).length
+      : 0;
+
+    const plan = planReviewDecision(review, voucher, action, input, { postedVoucherCount });
     if (plan.kind === "replay") return plan.review;
 
     // Clone-before-mutate (Rule 17): review/voucher may have been returned by
