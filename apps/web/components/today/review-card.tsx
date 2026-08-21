@@ -241,6 +241,7 @@ export function ReviewCard({ review, voucher, index, focused, onFocus, onAction,
             onAction={onAction}
             disabled={!isActionable}
             approveDisabled={Boolean(review.blockedReason)}
+            manualOrigin={voucher?.origin === "manual"}
           />
         </div>
       </div>

@@ -16,9 +16,17 @@ type Props = {
    * stay available (same as the planner).
    */
   approveDisabled?: boolean;
+  /**
+   * KFR Phase E: a manual-origin voucher (`origin === "manual"`) offers
+   * approve/reject ONLY. There is no AI suggestion to correct — the lines ARE
+   * the entry, posted verbatim by `planReviewDecision` — and no VAT leg to
+   * drop, so Edit and book-without-vat are OMITTED rather than disabled: a
+   * disabled control still advertises an action that does not exist here.
+   */
+  manualOrigin?: boolean;
 };
 
-export function ReviewCardActions({ onAction, disabled, approveDisabled = false }: Props) {
+export function ReviewCardActions({ onAction, disabled, approveDisabled = false, manualOrigin = false }: Props) {
   const t = useTranslations("today.actions");
   const approveBlocked = disabled || approveDisabled;
 
@@ -33,17 +41,26 @@ export function ReviewCardActions({ onAction, disabled, approveDisabled = false 
       >
         {t("accept")} <Kbd>Y</Kbd>
       </Button>
-      <Button variant="secondary" onClick={() => onAction("edit")} disabled={approveBlocked} data-testid="review-edit">
-        {t("edit")} <Kbd>E</Kbd>
-      </Button>
-      <Button
-        variant="ghost"
-        onClick={() => onAction("book-without-vat")}
-        disabled={disabled}
-        data-testid="review-book-without-vat"
-      >
-        {t("bookWithoutVat")} <Kbd>B</Kbd>
-      </Button>
+      {manualOrigin ? null : (
+        <Button
+          variant="secondary"
+          onClick={() => onAction("edit")}
+          disabled={approveBlocked}
+          data-testid="review-edit"
+        >
+          {t("edit")} <Kbd>E</Kbd>
+        </Button>
+      )}
+      {manualOrigin ? null : (
+        <Button
+          variant="ghost"
+          onClick={() => onAction("book-without-vat")}
+          disabled={disabled}
+          data-testid="review-book-without-vat"
+        >
+          {t("bookWithoutVat")} <Kbd>B</Kbd>
+        </Button>
+      )}
       <Button variant="destructive" onClick={() => onAction("reject")} disabled={disabled} data-testid="review-reject">
         {t("reject")} <Kbd>N</Kbd>
       </Button>
