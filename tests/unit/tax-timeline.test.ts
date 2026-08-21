@@ -281,4 +281,30 @@ test("pinned: INK2 for FYE 2025-12-31 shifts from Saturday 2026-08-01 to Monday 
   assert.equal(ink2.kind, "income-tax-return");
   assert.equal(ink2.dueDate, "2026-08-03");
   assert.equal(ink2.amountRef, null);
+  assert.equal(ink2.sourceKey, "sv-ink2-digital");
+});
+
+test("pinned: coupled yearly VAT shifts from Sunday 2027-01-17 to Monday 2027-01-18 (maj–jun bucket)", () => {
+  // fy-2025 with start 07-01 ends 2026-06-30 — the maj–jun bucket, the ONE
+  // bucket whose coupled-VAT day (the 17th) can land on a weekend. This is
+  // the weekend-shift path of YEARLY_VAT_NON_EU_DUE_TABLE; the jul–aug cases
+  // above never exercise it (their raw 2027-04-12 is already a Monday).
+  const timeline = buildTaxTimeline({
+    profile: { vatPeriod: "yearly", fiscalYearStart: "07-01", euTrade: false },
+    today: "2026-12-01",
+    horizonDays: 120,
+    limit: 20,
+  });
+  const yearly = byId(timeline, "tax_vat_fy-2025");
+  assert.ok(yearly, "expected the yearly VAT deadline in the horizon");
+  assert.equal(yearly.kind, "vat-return");
+  assert.equal(yearly.dueDate, "2027-01-18");
+  assert.equal(yearly.sourceKey, "sv-vat-yearly-coupled");
+
+  // Same bucket, different table: INK2's maj–jun day is the 15th, which is a
+  // Friday in 2027 and stays put — so the two tables demonstrably diverge.
+  const ink2 = byId(timeline, "tax_ink2_fy-2025");
+  assert.ok(ink2, "expected the INK2 deadline in the horizon");
+  assert.equal(ink2.dueDate, "2027-01-15");
+  assert.equal(ink2.sourceKey, "sv-ink2-digital");
 });
