@@ -1005,6 +1005,97 @@ export async function scenarioAttachDiscardsOnlyItsOwnIntakeDraft(h: Conformance
   };
 }
 
+export async function scenarioAutoDetectResolvesNewestPacket(h: ConformanceHarness): Promise<ConformanceOutcome> {
+  // I-7: once a receipt has lived on TWO vouchers, an auto-detect compose (no
+  // targetVoucherId) has two candidate packets to choose from. Memory resolves
+  // through `evidenceIdToPacketId`, i.e. always the NEWEST packet; Postgres
+  // used to take an unordered `LIMIT 1` and could pick either. Both stores must
+  // land on the voucher the evidence most recently belonged to.
+  const create = async (label: string) =>
+    h.store.createEvidence({
+      actorId: h.actorId,
+      title: `Auto detect ${label}`,
+      originalFilename: `auto-detect-${label}.jpg`,
+      mimeType: "image/jpeg",
+      modalities: ["camera"],
+      extractedText: `Auto detect ${label} body`,
+    });
+
+  // `receipt` starts on its own intake draft (packet 1, voucher A); `target`
+  // is the voucher it is then explicitly attached to (packet 2, voucher B).
+  const receipt = await create("receipt");
+  const target = await create("target");
+
+  // `created_at` on evidence_packets has millisecond resolution, and this
+  // scenario's whole point is which packet is NEWER — space the two composes so
+  // the ordering can never come down to the id tiebreak.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+
+  const attached = await h.store.composeEvidence({
+    actorId: h.actorId,
+    evidenceIds: [receipt.evidence.id],
+    targetVoucherId: target.voucher.id,
+  });
+  const contextAfterAttach = await h.store.getEvidenceContext(receipt.evidence.id);
+  assert.equal(
+    contextAfterAttach?.voucher?.id,
+    target.voucher.id,
+    `${h.label}: precondition — the explicit attach moved the receipt to the target voucher`,
+  );
+  // The receipt's own intake voucher keeps packet 1, which still CONTAINS the
+  // receipt — that is what makes the auto-detect below ambiguous.
+  const snapshotAfterAttach = await h.store.getSnapshot();
+  assert.equal(
+    snapshotAfterAttach.vouchers.find((voucher) => voucher.id === receipt.voucher.id)?.evidencePacketId,
+    receipt.packet.id,
+    `${h.label}: precondition — the intake voucher still points at the older packet`,
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+
+  // --- the auto-detect compose: no target, two candidates ------------------
+  const auto = await h.store.composeEvidence({ actorId: h.actorId, evidenceIds: [receipt.evidence.id] });
+  const contextAfterAuto = await h.store.getEvidenceContext(receipt.evidence.id);
+  const events = await h.store.getEvents();
+  const relink = events.findLast((event) => event.eventType === "EvidenceRelinked");
+  const snapshotFinal = await h.store.getSnapshot();
+
+  assert.equal(
+    contextAfterAuto?.voucher?.id,
+    target.voucher.id,
+    `${h.label}: auto-detect must resolve to the NEWEST packet's voucher, not an arbitrary earlier one`,
+  );
+  assert.equal(
+    relink?.aggregateId,
+    target.voucher.id,
+    `${h.label}: the relink event names the same voucher the read model resolved to`,
+  );
+  assert.deepEqual(
+    auto.discardedReviewIds,
+    [],
+    `${h.label}: an auto-detect compose never discards — only an explicit attach can orphan a draft`,
+  );
+
+  return {
+    autoDetectResolvedTo:
+      contextAfterAuto?.voucher?.id === target.voucher.id
+        ? "attach-target"
+        : contextAfterAuto?.voucher?.id === receipt.voucher.id
+          ? "intake-draft"
+          : "other",
+    autoLinkedToNewPacket: contextAfterAuto?.voucher?.evidencePacketId === auto.packet.id,
+    autoPacketIsContextPacket: contextAfterAuto?.packet?.id === auto.packet.id,
+    autoRelinkAggregateIsTarget: relink?.aggregateId === target.voucher.id,
+    autoRelinkPreviousPacketIsAttachPacket: relink?.payload.previousPacketId === attached.packet.id,
+    autoDiscardCount: auto.discardedReviewIds.length,
+    // The intake voucher is left exactly where it was — auto-detect repoints
+    // the resolved voucher only.
+    intakeVoucherKeepsOwnPacket:
+      snapshotFinal.vouchers.find((voucher) => voucher.id === receipt.voucher.id)?.evidencePacketId ===
+      receipt.packet.id,
+  };
+}
+
 export const CONFORMANCE_SCENARIOS: Array<{
   name: string;
   run: (h: ConformanceHarness) => Promise<ConformanceOutcome>;
@@ -1016,6 +1107,7 @@ export const CONFORMANCE_SCENARIOS: Array<{
   { name: "SIE import idempotency + reports window", run: scenarioSieImportIdempotency },
   { name: "compose evidence with explicit targetVoucherId", run: scenarioComposeEvidenceTargetVoucher },
   { name: "attach discards only its own intake draft", run: scenarioAttachDiscardsOnlyItsOwnIntakeDraft },
+  { name: "auto-detect compose resolves the newest packet", run: scenarioAutoDetectResolvesNewestPacket },
   { name: "settings / alerts / simulation / unknown ids", run: scenarioSettingsAlertsSimulation },
   { name: "append-only event vocabulary", run: scenarioAppendOnlyEventVocabulary },
   { name: "review reject", run: scenarioReviewReject },

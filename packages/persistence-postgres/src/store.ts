@@ -852,14 +852,23 @@ export class PostgresLedgerStore implements LedgerStore {
         // Auto-detect only runs when no explicit target was given (Task 2).
         if (voucherIdToRelink === undefined) {
           for (const evidenceId of input.evidenceIds) {
+            // Store parity (Rule 11): MemoryLedgerStore resolves this through
+            // `evidenceIdToPacketId`, which always holds the NEWEST packet the
+            // evidence was composed into. An unordered LIMIT 1 let Postgres
+            // pick either voucher once a receipt had lived on two of them —
+            // ordinary state since the explicit attach flow landed — so order
+            // by packet recency, with the packet id as a stable same-timestamp
+            // tiebreak (fix wave I-7).
             const linkedRows = await tx<Array<{ voucher_id: string; evidence_packet_id: string }>>`
             SELECT v.id AS voucher_id, v.evidence_packet_id
             FROM ledger.vouchers v
             JOIN ledger.evidence_packet_items i ON i.evidence_packet_id = v.evidence_packet_id
+            JOIN ledger.evidence_packets p ON p.id = v.evidence_packet_id
             WHERE i.evidence_object_id = ${evidenceId}
               AND i.evidence_packet_id != ${packet.id}
               AND v.organization_id = ${this.defaults.organizationId}
               AND v.workspace_id = ${this.defaults.workspaceId}
+            ORDER BY p.created_at DESC, p.id DESC
             LIMIT 1
           `;
             if (linkedRows[0]?.voucher_id && !voucherIdToRelink) {
