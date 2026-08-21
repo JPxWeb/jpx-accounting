@@ -478,7 +478,17 @@ test("JWKS gate requires a token on /api/* reads, keeps runtime-info public, and
       assert.equal(fetchCalls, 1);
 
       // A tampered signature still answers 401 (keys already cached — no refetch).
-      const tampered = `${token.slice(0, -2)}${token.endsWith("aa") ? "bb" : "aa"}`;
+      //
+      // Tamper a MIDDLE character of the signature segment, never the trailing
+      // pair (fix wave I-6): the FINAL base64url group encodes one byte across
+      // two characters, so the old "aa"→"bb" flip always decoded to the same
+      // last byte (105 / 109) and whenever the genuine signature already ended
+      // in that byte the "tampered" token verified — a ~1/256 flake.
+      // Any interior character sits fully inside decoded bytes, so flipping one
+      // always changes the signature.
+      const [header, payload, signature] = token.split(".") as [string, string, string];
+      const tamperedSignature = `${signature.slice(0, 10)}${signature[10] === "A" ? "B" : "A"}${signature.slice(11)}`;
+      const tampered = `${header}.${payload}.${tamperedSignature}`;
       const forged = await app.request("http://localhost/api/workspace", {
         headers: { authorization: `Bearer ${tampered}` },
       });
