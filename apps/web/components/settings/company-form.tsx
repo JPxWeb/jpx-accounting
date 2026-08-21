@@ -20,7 +20,7 @@ import { apiClient } from "../../lib/client";
 import { messagesLocale } from "../../lib/message-locale";
 import { invalidateLedgerDerived } from "../../lib/query-invalidation";
 import { Button } from "../ui/button";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "../ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "../ui/form";
 import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { ScreenSkeleton } from "../ui/skeleton";
@@ -275,6 +275,38 @@ function CompanyFormFields({ defaultData }: { defaultData: CompanySettings }) {
               testId="company-vat-period"
             />
           </div>
+          {/*
+            Paired with `vatPeriod` above, not folded into the 2-column select
+            grid: a checkbox needs its consequence spelled out, and the hint is
+            the only place the user learns that helårsmoms has two different
+            statutory due-date tables (`buildTaxTimeline` branches on this).
+          */}
+          <FormField
+            control={form.control}
+            name="profile.euTrade"
+            render={({ field }) => (
+              <FormItem className="flex items-start gap-3 space-y-0 rounded-lg border border-border p-3">
+                <FormControl>
+                  {/* Native checkbox, `checked`/`event.target.checked` rather
+                      than {...field}: RHF's `value` is not a checkbox's state. */}
+                  <input
+                    type="checkbox"
+                    checked={field.value}
+                    onChange={(event) => field.onChange(event.target.checked)}
+                    data-testid="company-profile-eu-trade"
+                    className="mt-1 size-4 shrink-0 rounded border-border"
+                  />
+                </FormControl>
+                <div className="space-y-1">
+                  <FormLabel className="font-normal">{t("euTrade")}</FormLabel>
+                  {/* FormDescription, not a bare <p>: FormControl always emits
+                      aria-describedby={formDescriptionId}, so only this element
+                      makes that reference resolve. */}
+                  <FormDescription className="leading-6">{t("euTradeHint")}</FormDescription>
+                </div>
+              </FormItem>
+            )}
+          />
         </fieldset>
         <Button type="submit" disabled={mutation.isPending} data-testid="company-form-submit">
           {mutation.isPending ? t("saving") : t("save")}

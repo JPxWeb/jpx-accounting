@@ -947,6 +947,8 @@
       "currency": "Valuta",
       "fiscalYearStart": "Räkenskapsårets start",
       "vatPeriod": "Momsperiod",
+      "euTrade": "Bedriver ni EU-handel?",
+      "euTradeHint": "Styr momsdeklarationens tidpunkt vid helårsmoms — med EU-handel gäller 26:e-regeln, annars kopplas tidpunkten till inkomstdeklarationen.",
       "save": "Spara företag",
       "saving": "Sparar…",
       "saved": "Företagsinställningarna sparade.",

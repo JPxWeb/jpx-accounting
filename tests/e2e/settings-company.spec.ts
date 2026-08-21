@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { activateControl, pickSelectOption, resetApiState } from "./test-helpers";
+import { expectAccessible } from "./a11y-helpers";
+import { activateControl, checkControl, pickSelectOption, resetApiState } from "./test-helpers";
 
 test.beforeEach(async ({ request }) => {
   await resetApiState(request);
@@ -93,4 +94,34 @@ test("rejects an invalid Swedish organization number with the registry message",
   await activateControl(page.getByTestId("company-form-submit"), isMobile);
 
   await expect(page.getByText("Swedish org number format is XXXXXX-XXXX")).toBeVisible();
+});
+
+test("saves the EU-trade toggle and persists it across reload", async ({ page, isMobile }) => {
+  await page.goto("/settings/company");
+  await expect(page.getByTestId("company-form")).toBeVisible();
+
+  // Off by default — the Swedish SMB default assumes no EU-handel.
+  await expect(page.getByTestId("company-profile-eu-trade")).not.toBeChecked();
+
+  // The checkbox is reachable BY ITS LABEL, not just by testid: `FormLabel`'s
+  // htmlFor and `FormControl`'s Slot-injected id have to agree, and a silent
+  // break there is invisible to a testid-only assertion.
+  await expect(page.getByLabel("Do you trade within the EU?")).toHaveAttribute(
+    "data-testid",
+    "company-profile-eu-trade",
+  );
+
+  await fillCompanyBasics(page);
+  await checkControl(page.getByTestId("company-profile-eu-trade"), isMobile);
+
+  await activateControl(page.getByTestId("company-form-submit"), isMobile);
+  await expect(page.getByText("Company settings saved.")).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByTestId("company-form")).toBeVisible();
+  await expect(page.getByTestId("company-profile-eu-trade")).toBeChecked();
+
+  // /settings/company had no axe scan before this field; the new checkbox is
+  // the first non-Input control on the form, so pin WCAG 2.2 AA here.
+  await expectAccessible(page);
 });

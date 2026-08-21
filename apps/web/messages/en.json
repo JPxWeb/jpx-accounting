@@ -947,6 +947,8 @@
       "currency": "Currency",
       "fiscalYearStart": "Fiscal year start",
       "vatPeriod": "VAT period",
+      "euTrade": "Do you trade within the EU?",
+      "euTradeHint": "Controls the timing of the yearly VAT return — with EU trade the 26th-of-month rule applies, otherwise the deadline is coupled to the income tax return.",
       "save": "Save company",
       "saving": "Saving…",
       "saved": "Company settings saved.",
