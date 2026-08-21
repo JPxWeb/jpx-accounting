@@ -92,8 +92,41 @@ PR #14 (original `deploy → main`) was closed as superseded by the 8-PR port. P
 ### Data-layer (small, well-scoped)
 
 - **Manual integration test** against a live Postgres before the next deploy: prefer `pnpm db:test`, or `DATABASE_TEST_URL=…/jpx_test_* JPX_REQUIRE_DATABASE_TESTS=true pnpm test:integration`, to exercise the round-trips (`runSimulation` real diff + `ReviewNotFoundError`, `answerAssistantQuestion` persists, `refreshComplianceAlerts` idempotency, settings round-trip).
-- **Hosted migrations `0005`–`0008`** still need owner apply on the production DB (local Compose/`pnpm db:migrate` covers them). Migration `0004` requires PG ≥ 15 (Supabase ships PG 17).
+- **Hosted migrations `0005`–`0012`** still need owner apply on the production DB (local Compose/`pnpm db:migrate` covers them). Migration `0004` requires PG ≥ 15 (Supabase ships PG 17). Migration `0011` has a pre-deploy density gate on any DB with pre-KFR posted voucher numbers — see [`SELF_HOST.md`](./SELF_HOST.md).
 - **Document Intelligence persistence — DONE (pivot Phase 3, verified 2026-07-18)** — `BlobUploader.mintReadSas()` landed in the 2026-05-28 sweep; `/api/evidence/:id/extract` mints real SAS. `LedgerStore.updateEvidenceExtraction()` and the `ExtractionRefreshed` event both exist in `packages/domain/src/store.ts` (interface + `MemoryLedgerStore`) with the Postgres counterpart in `packages/persistence-postgres/src/store.ts`; extraction results persist append-only and regenerate suggestions (see the Phase 3 entry above).
+
+### KFR follow-ups (2026-08-21, triaged from the per-task review ledgers)
+
+Items the KFR reviews parked as non-blocking. None affect posted figures; each is a self-contained task.
+
+**Product / behaviour**
+
+- **`/reports` "Export SIE" exports the selected period** (a product call made during Phase D): a user on `?period=2026-03` gets a one-month file. Decide whether the button should default to the fiscal year.
+- **`?period=all` SIE export emits `#RAR 0 19000101 29991231`** — the `all` token should fall back to the full-history `#RAR` derivation (or omit the row).
+- **SIE export renumbers every voucher as series A** — preserving the original series on imported vouchers would make Kapitas→JPX→SIE round-trips collision-free.
+- **Manual-voucher evidence attach discards the evidence's orphan draft without a confirm step** (one-way, disclosed in the copy). A confirm dialog before `discardedReviewIds` is acted on is the natural follow-up.
+- **`targetVoucherId: ""` returns 404, not 400** — add `.min(1)` to `evidenceComposeInputSchema.targetVoucherId`.
+- **Repointing a packet diverges between stores** (pre-existing, surfaced in Phase D): `MemoryLedgerStore` keeps the other evidence's voucher link, `PostgresLedgerStore` drops it; the auto-detect path shares the bug. Needs a conformance scenario + parity fix.
+- **`simulateApprovals` ignores domestic output VAT in `vatDelta`** — latent: no current posting shape produces domestic rated revenue (the revenue shape is VAT0-only by construction). Revisit if domestic sales land.
+
+**UI / visual**
+
+- **Systemic `text-white` on `bg-primary`** in ~18 components (dark-mode contrast). Sweep to `text-primary-foreground` and re-baseline as ONE change.
+- **Demo seed's own input VAT blocks absolute VAT-box E2E assertions** — a seed-date/seed-shape override in the test server would unlock them (`vat-return-golden.test.ts` covers the arithmetic today).
+- **Two desktop `settings-company` baselines are marginally stale-but-passing** — pick up in the next re-baseline sweep (delete before regenerating; `--update-snapshots` skips passing baselines).
+- Minor: Swedish-first sweep of VAT-leg labels (`"VAT (omvänd skattskyldighet)"`); dedicated testid on the Imported chip; decode-warning excerpt centred on the first U+FFFD; `#IB` rows with unparseable balances should warn rather than stay silent.
+
+**Code hygiene**
+
+- **`willPost` predicate duplicated verbatim** in `MemoryLedgerStore` and `PostgresLedgerStore` — extract to `store-shared.ts`.
+- **`reverseChargeOutputAccounts(regime)`** set-build duplicated by three consumers in `vat/` — extract + add a disjointness assert for input / outputByRate / reverseChargeOutputByRate account sets.
+- **`LocalDiskBlobUploader.writeOnce` and `scripts/db-backup.mts`** write in place (no temp+rename); a crash mid-write leaves a truncated file that is not flagged.
+- Test-depth items: pin `defaultVatCode` of the 10 new CoA accounts in `coa-registry.test.ts`; pin the 0.005 boundary / `max(100)` / refine-issue path of `manualVoucherLineSchema` directly; commit the empty-body / tampered-token / encoded-slash probes for `/api/blobs/local/:token` as regression tests; a regression test on `db-backup` argv construction.
+
+**Operational (owner)**
+
+- **`check:corpus` staleness half fails on `bokforingslagen-verifikationer.md`** (effective 2024-07-01) — needs a real re-verification against the statute, not a date bump, before `check:corpus` can join CI.
+- **FY1 rehearsal** against the real Kapitas SIE4 export per [`2026-08-20-kfr-d-runbook-fy1-migration.md`](./superpowers/plans/2026-08-20-kfr-d-runbook-fy1-migration.md) is manual and unrun.
 
 ### UI follow-ups from Track B Phase 7 (2026-05-26 fix passes)
 
