@@ -379,6 +379,42 @@
         "title": "Periodavslut är inte tillgängligt ännu",
         "message": "Checklistor för månadsavslut visas här när periodavslut är implementerat. Granskningskön är fortfarande vägen till bokförda verifikat."
       }
+    },
+    "print": {
+      "button": "Skriv ut / spara som PDF"
+    },
+    "newManualEntry": "Ny verifikation",
+    "manualEntry": {
+      "eyebrow": "Ny verifikation",
+      "title": "Manuell bokföringspost",
+      "description": "Bokför en verifikation med valfria konton. Posten läggs i granskningskön — inget bokförs direkt.",
+      "descriptionLabel": "Beskrivning",
+      "descriptionPlaceholder": "Vad gäller verifikationen?",
+      "descriptionRequired": "Beskrivningen behövs innan verifikationen kan skickas.",
+      "bookedAtLabel": "Bokföringsdatum",
+      "bookedAtInvalid": "Ange ett giltigt datum (ÅÅÅÅ-MM-DD).",
+      "accountLabel": "Konto",
+      "accountPlaceholder": "Kontonummer",
+      "accountInvalid": "Ange ett giltigt 4-siffrigt kontonummer.",
+      "accountUnknown": "Konto utanför kontoplanen — bokförs ändå.",
+      "debitLabel": "Debet",
+      "creditLabel": "Kredit",
+      "vatCodeLabel": "Momskod",
+      "removeRow": "Ta bort",
+      "removeRowAria": "Ta bort rad {row}",
+      "addRow": "Lägg till rad",
+      "totalDebit": "Summa debet",
+      "totalCredit": "Summa kredit",
+      "diff": "Differens",
+      "imbalanceHint": "Summa debet måste vara lika med summa kredit innan verifikationen kan skickas.",
+      "rowError": "Varje rad behöver ett giltigt konto och exakt ett belopp (debet eller kredit).",
+      "submit": "Skicka till granskning",
+      "submitting": "Skickar…",
+      "createSuccess": "Verifikationen skapades och väntar på granskning.",
+      "openReviewQueue": "Öppna granskningskön",
+      "createError": "Verifikationen kunde inte skapas. Försök igen.",
+      "createErrorValidation": "Verifikationen avvisades av servern: kontrollera konton, belopp och datum.",
+      "createErrorImbalance": "Verifikationen balanserar inte på öret. Justera beloppen och försök igen."
     }
   },
   "reports": {

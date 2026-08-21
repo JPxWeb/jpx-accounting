@@ -379,6 +379,42 @@
         "title": "Period close not available yet",
         "message": "Month-end checklists will appear here once period-close runs are implemented. The review queue remains the path to posted vouchers."
       }
+    },
+    "print": {
+      "button": "Print / save as PDF"
+    },
+    "newManualEntry": "New voucher",
+    "manualEntry": {
+      "eyebrow": "New voucher",
+      "title": "Manual journal entry",
+      "description": "Book a voucher against any accounts. The entry lands in the review queue — nothing posts directly.",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "What is this voucher for?",
+      "descriptionRequired": "A description is required before the voucher can be submitted.",
+      "bookedAtLabel": "Booking date",
+      "bookedAtInvalid": "Enter a valid date (YYYY-MM-DD).",
+      "accountLabel": "Account",
+      "accountPlaceholder": "Account number",
+      "accountInvalid": "Enter a valid 4-digit account number.",
+      "accountUnknown": "Account outside the chart of accounts — booked anyway.",
+      "debitLabel": "Debit",
+      "creditLabel": "Credit",
+      "vatCodeLabel": "VAT code",
+      "removeRow": "Remove",
+      "removeRowAria": "Remove row {row}",
+      "addRow": "Add row",
+      "totalDebit": "Total debit",
+      "totalCredit": "Total credit",
+      "diff": "Difference",
+      "imbalanceHint": "Total debit must equal total credit before the voucher can be submitted.",
+      "rowError": "Every row needs a valid account and exactly one amount (debit or credit).",
+      "submit": "Send to review",
+      "submitting": "Sending…",
+      "createSuccess": "The voucher was created and is waiting for review.",
+      "openReviewQueue": "Open the review queue",
+      "createError": "The voucher could not be created. Please try again.",
+      "createErrorValidation": "The server rejected the voucher: check the accounts, amounts, and date.",
+      "createErrorImbalance": "The voucher does not balance to the öre. Adjust the amounts and try again."
     }
   },
   "reports": {
