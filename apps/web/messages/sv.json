@@ -393,6 +393,7 @@
       "descriptionRequired": "Beskrivningen behövs innan verifikationen kan skickas.",
       "bookedAtLabel": "Bokföringsdatum",
       "bookedAtInvalid": "Ange ett giltigt datum (ÅÅÅÅ-MM-DD).",
+      "bookedAtFuture": "Bokföringsdatumet kan inte ligga i framtiden.",
       "accountLabel": "Konto",
       "accountPlaceholder": "Kontonummer",
       "accountInvalid": "Ange ett giltigt 4-siffrigt kontonummer.",

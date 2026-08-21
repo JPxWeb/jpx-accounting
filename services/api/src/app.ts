@@ -589,9 +589,11 @@ export function createApp({
     }
 
     if (error instanceof InvalidManualVoucherError) {
-      // Well-formed JSON (the wire schema only tolerates ±0.005 float noise) but
-      // non-öre-exact or öre-unbalanced lines → 422 (Rule 16), same family as
-      // InvalidReviewEditError. Thrown by planManualVoucher before any mutation.
+      // Well-formed JSON (the wire schema only tolerates ±0.005 float noise and
+      // a YYYY-MM-DD shape) but non-öre-exact / öre-unbalanced lines, or a
+      // bookedAt that is not a real calendar day or is in the future → 422
+      // (Rule 16), same family as InvalidReviewEditError. Thrown by
+      // planManualVoucher before any mutation.
       return jsonError(c, error.message, runtimeMode, 422, { code: "invalid_manual_voucher" });
     }
 

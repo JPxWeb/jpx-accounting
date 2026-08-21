@@ -76,9 +76,12 @@ export function ManualEntryView() {
   const t = useTranslations("books.manualEntry");
   const queryClient = useQueryClient();
   const router = useRouter();
+  // Local calendar parts, never `toISOString().slice(0, 10)` — the UTC path
+  // mis-buckets the hours either side of midnight in a UTC+N workspace.
+  const localToday = localTodayIso();
 
   const [description, setDescription] = useState("");
-  const [bookedAt, setBookedAt] = useState(() => localTodayIso());
+  const [bookedAt, setBookedAt] = useState(localToday);
   const [rows, setRows] = useState<ManualEntryRow[]>(() => [emptyRow(), emptyRow()]);
 
   function updateRow(id: string, patch: Partial<ManualEntryRow>) {
@@ -106,10 +109,11 @@ export function ManualEntryView() {
   const balanced = imbalanceOre === 0;
   const rowsValid = parsedRows.every((row) => isRowValid(row.accountNumber, row.debitNumber, row.creditNumber));
   const descriptionValid = description.trim().length > 0 && description.trim().length <= MAX_DESCRIPTION;
-  // Calendar validity only — deliberately NOT `<= today`. A future booking date
-  // is the store's business to judge, and gating the button on "now" would make
-  // this form's submittability depend on the wall clock.
-  const bookedAtValid = isValidCalendarDay(bookedAt);
+  // A future booking date is refused by `planManualVoucher` (422), because
+  // `deriveBookedAt` would otherwise discard it at approval and silently book
+  // the entry on the approval day. Mirror that gate client-side so the refusal
+  // is visible before submit rather than after.
+  const bookedAtValid = isValidCalendarDay(bookedAt) && bookedAt <= localToday;
 
   /**
    * HTTP-status branching (the client drops the machine code, so the status is
@@ -150,9 +154,11 @@ export function ManualEntryView() {
       ? t("rowError")
       : !descriptionValid
         ? t("descriptionRequired")
-        : !bookedAtValid
+        : !isValidCalendarDay(bookedAt)
           ? t("bookedAtInvalid")
-          : null
+          : !bookedAtValid
+            ? t("bookedAtFuture")
+            : null
     : null;
 
   const submitError = createManualVoucher.error ? describeError(createManualVoucher.error) : null;
@@ -207,6 +213,10 @@ export function ManualEntryView() {
                 data-testid="manual-entry-booked-at"
                 data-visual-mask
                 type="date"
+                // The picker's own ceiling; the JS gate above is what actually
+                // blocks submit (the form is `noValidate`, so a `max` violation
+                // never silently swallows a submission).
+                max={localToday}
                 value={bookedAt}
                 onChange={(event) => setBookedAt(event.target.value)}
                 className="glass-panel-inset mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums outline-none"
@@ -369,7 +379,13 @@ export function ManualEntryView() {
                 <SectionLabel>{t("totalCredit")}</SectionLabel>
                 <Money value={totalCredit} className="mt-1 block font-semibold" />
               </div>
-              <div data-testid="manual-entry-diff" className={balanced ? "text-success" : "text-danger"}>
+              {/* Announced politely: a screen-reader user typing amounts hears the
+                  running difference reach zero without leaving the field. */}
+              <div
+                data-testid="manual-entry-diff"
+                aria-live="polite"
+                className={balanced ? "text-success" : "text-danger"}
+              >
                 <SectionLabel>{t("diff")}</SectionLabel>
                 <Money value={imbalanceOre / 100} className="mt-1 block font-semibold" />
               </div>

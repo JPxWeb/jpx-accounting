@@ -26,6 +26,8 @@ import {
   DEMO_ACTOR_ID,
   DRAFT_VOUCHER_NUMBER,
   InvalidManualVoucherError,
+  isValidCalendarDay,
+  localDayOfTimestamp,
   mergeExtractedFields,
   recomputeVoucherFields,
   resolveReviewDecisionEdit,
@@ -289,6 +291,33 @@ export function planManualVoucher(
 
   const actorId = input.actorId;
   const createdAt = ctx.now ?? nowIso();
+
+  // Booking-date gate, same policy as R13's edited-bookedAt guard in
+  // `resolveReviewDecisionEdit` — and for the same reason, one step earlier.
+  //
+  // `bookedAt` becomes `voucherFields.transactionDate`, which `deriveBookedAt`
+  // consults at approval. That helper SILENTLY SKIPS a candidate that is not a
+  // real calendar day or that post-dates the decision, falling back to the
+  // approval day. For extraction noise (its original purpose) discarding is
+  // right; for a date a human typed on purpose it is data substitution the UI
+  // never shows — and a manual review has no Edit action to correct it after
+  // the fact. Refuse it here as a client-correctable 422 instead.
+  //
+  // One day of slack absorbs client/server timezone skew, exactly as R13
+  // documents: a Stockholm browser is a calendar day ahead of a UTC-hosted API
+  // between 00:00 and 02:00 local, and its "today" must not 422.
+  const latestBookableDay = localDayOfTimestamp(
+    new Date(new Date(createdAt).getTime() + 24 * 60 * 60 * 1000).toISOString(),
+  );
+  if (!isValidCalendarDay(input.bookedAt)) {
+    throw new InvalidManualVoucherError(
+      `Manual voucher bookedAt (${input.bookedAt}) must be a valid YYYY-MM-DD calendar day.`,
+    );
+  }
+  if (input.bookedAt > latestBookableDay) {
+    throw new InvalidManualVoucherError(`Manual voucher bookedAt (${input.bookedAt}) must not be in the future.`);
+  }
+
   const voucherId = createId("voucher");
   const firstLine = input.lines[0]!;
   const firstAccount = findCoaAccount(defaultCoaTemplate, firstLine.accountNumber);

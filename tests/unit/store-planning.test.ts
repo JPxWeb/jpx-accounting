@@ -788,6 +788,56 @@ describe("planManualVoucher", () => {
       (error: unknown) => error instanceof InvalidManualVoucherError && /do not balance to the öre/.test(error.message),
     );
   });
+
+  // Booking-date gate (KFR E.4 review). Without it a future bookedAt reaches
+  // `voucherFields.transactionDate`, where `deriveBookedAt` SILENTLY discards it
+  // at approval and books the entry on the approval day instead — a data
+  // substitution no surface reveals, and manual reviews have no Edit action to
+  // repair it. Same policy as R13's edited-bookedAt guard, one step earlier.
+  it("rejects a bookedAt in the future rather than letting deriveBookedAt swallow it", () => {
+    // Two days past ctx.now, so it clears the one-day timezone-skew slack.
+    const future = { ...input, bookedAt: "2026-03-22" };
+    assert.throws(
+      () => planManualVoucher(future, ctx),
+      (error: unknown) => error instanceof InvalidManualVoucherError && /must not be in the future/.test(error.message),
+    );
+  });
+
+  it("rejects a bookedAt that matches the wire regex but is not a real calendar day", () => {
+    // `manualVoucherInputSchema` only enforces /^\d{4}-\d{2}-\d{2}$/, and
+    // `deriveBookedAt` skips non-calendar candidates just as silently.
+    const impossible = { ...input, bookedAt: "2026-02-31" };
+    assert.throws(
+      () => planManualVoucher(impossible, ctx),
+      (error: unknown) =>
+        error instanceof InvalidManualVoucherError && /valid YYYY-MM-DD calendar day/.test(error.message),
+    );
+  });
+
+  it("accepts today's date (the skew slack keeps a client one calendar day ahead out of 422)", () => {
+    const today = { ...input, bookedAt: "2026-03-20" };
+    assert.equal(planManualVoucher(today, ctx).voucher.voucherFields.transactionDate, "2026-03-20");
+    const skewed = { ...input, bookedAt: "2026-03-21" };
+    assert.equal(planManualVoucher(skewed, ctx).voucher.voucherFields.transactionDate, "2026-03-21");
+  });
+
+  it("accepts a past date and posts the approved lines on it, not on the approval day", () => {
+    const backdated = { ...input, bookedAt: "2026-02-14" };
+    const plan = planManualVoucher(backdated, ctx);
+    const decided = planReviewDecision(
+      plan.review,
+      plan.voucher,
+      "approve",
+      { actorId: "user:x" },
+      // Approved months later: the posting must still carry the business date.
+      { now: "2026-05-04T11:00:00.000Z", postedVoucherCount: 0 },
+    );
+    if (decided.kind !== "apply") throw new Error("unreachable");
+    assert.equal(decided.lines?.length, 2);
+    for (const line of decided.lines ?? []) {
+      assert.equal(line.bookedAt, "2026-02-14");
+    }
+  });
 });
 
 describe("planComplianceMerge", () => {

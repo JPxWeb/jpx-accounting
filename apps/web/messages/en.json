@@ -393,6 +393,7 @@
       "descriptionRequired": "A description is required before the voucher can be submitted.",
       "bookedAtLabel": "Booking date",
       "bookedAtInvalid": "Enter a valid date (YYYY-MM-DD).",
+      "bookedAtFuture": "The booking date cannot be in the future.",
       "accountLabel": "Account",
       "accountPlaceholder": "Account number",
       "accountInvalid": "Enter a valid 4-digit account number.",

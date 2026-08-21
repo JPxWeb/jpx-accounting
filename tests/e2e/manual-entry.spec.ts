@@ -40,14 +40,23 @@ const POSTED_VOUCHER_NUMBER = /^V-\d{4}$/;
 const ANY_VOUCHER_NUMBER = /V-\d{4}/;
 
 /**
- * A date inside the CURRENT month: the journal defaults to the current-month
- * period scope (`use-period-scope.ts`), so a hardcoded calendar date would
- * silently drop out of the default window the moment the month rolls over.
+ * A date inside the CURRENT month that is never in the FUTURE. Two constraints
+ * meet here:
+ *  - the journal defaults to the current-month period scope
+ *    (`use-period-scope.ts`), so a hardcoded calendar date would silently drop
+ *    out of the default window the moment the month rolls over;
+ *  - `planManualVoucher` refuses a future `bookedAt` with 422, because
+ *    `deriveBookedAt` would otherwise discard it at approval and book the entry
+ *    on the approval day instead. A fixed 10th would therefore be rejected on
+ *    the 1st–9th of any month.
+ * Local calendar parts throughout — `toISOString()` would shift the day either
+ * side of midnight in a UTC+N workspace.
  */
 function currentMonthDate() {
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  return { bookedAt: `${month}-10`, period: month };
+  const day = String(Math.min(10, now.getDate())).padStart(2, "0");
+  return { bookedAt: `${month}-${day}`, period: month };
 }
 
 test("manual entry posts a balanced 2-line voucher through the review gate", async ({ page, isMobile }) => {
