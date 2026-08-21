@@ -213,11 +213,48 @@ precedence over `ACCOUNTING_BLOB_DIR` automatically) completes the cutover. Set
 direct-to-Azure PUTs and read-SAS previews.
 
 For the ledger itself: re-point `DATABASE_URL` at the hosted Postgres and replay `pnpm db:migrate`
-there, or use `pg_restore` with the latest `pnpm db:backup` dump. `GET /api/exports/sie` already
-serializes the ledger as SIE; Phase D of the KFR master plan makes that export period-scoped
-(`?period=fy-2025`, with `#IB`/`#UB`/`#RES` blocks), at which point a per-fiscal-year SIE export
-becomes an additional portable handoff path for a revisor's tooling, independent of the
-Postgres-level migration above.
+there, or use `pg_restore` with the latest `pnpm db:backup` dump. `GET /api/exports/sie?period=…`
+serializes the ledger as SIE and is period-scoped (`?period=fy-2025`, with `#IB`/`#UB`/`#RES`
+blocks), so a per-fiscal-year SIE export is an additional portable handoff path for a revisor's
+tooling, independent of the Postgres-level migration above.
+
+### PRE-DEPLOY GATE: voucher-number density before migration `0011`
+
+Run this **once, before `pnpm db:migrate` first applies `0011_draft_voucher_numbers.sql`** to any
+database that already holds posted vouchers created under the old intake-numbering scheme. A **fresh
+local database — or one whose history arrived through the FY1 SIE import — is unaffected** and needs
+nothing here: imported vouchers carry their own `"<series> <number>"` and never consume a V-number.
+
+Why: before Task E.1, a voucher was numbered `V-<total voucher count + 1001>` at **intake**, so a
+draft that was later rejected still burned its number and the surviving posted numbers can be
+**sparse** (`V-1001`, `V-1003`, with `V-1002` rejected). From `0011` on, numbers are minted at
+**posting** time as `V-<count of approved/booked-without-vat vouchers + 1001>`, which is **dense**.
+Against a sparse history the next mint lands on a number an existing row already holds, and `0011`'s
+partial unique index turns that into a **visible `23505` on the first approval after cutover** — a
+user-facing failure, not a silent one.
+
+```sql
+select organization_id,
+       workspace_id,
+       count(*)                                              as posted,
+       min(replace(voucher_number, 'V-', '')::int)           as lowest,
+       max(replace(voucher_number, 'V-', '')::int)           as highest,
+       count(*) = max(replace(voucher_number, 'V-', '')::int)
+                - min(replace(voucher_number, 'V-', '')::int) + 1
+         and min(replace(voucher_number, 'V-', '')::int) = 1001
+                                                             as dense_ok
+  from ledger.vouchers
+ where voucher_number like 'V-%'
+   and status in ('approved', 'booked-without-vat')
+ group by organization_id, workspace_id;
+```
+
+`dense_ok = true` for every workspace (or zero rows returned) means the numbers form the contiguous
+run `1001 … 1000 + posted` the new counter expects — proceed. Any `false` means that workspace's
+posted numbers have gaps, and it must be **renumbered to a dense run before `0011` is applied**
+(update `ledger.vouchers.voucher_number` only — voucher numbers are a read-model label and the
+`VoucherCreated` event payloads must stay exactly as they were appended; `0011` itself follows the
+same rule when it normalizes never-posted rows back to the `Utkast` sentinel).
 
 ## Running it as a service
 

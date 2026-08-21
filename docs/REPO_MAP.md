@@ -2,7 +2,7 @@
 
 **Purpose:** the WHERE-IS-WHAT index for this monorepo — route inventories, module export maps, event-append sites, journey→files traces, and the gotchas that mislead newcomers (human or AI). Complements [CLAUDE.md](../CLAUDE.md) / [AGENTS.md](../AGENTS.md) (conventions + commands) and [architecture.md](architecture.md) (runtime shape); supersedes the short "Repo map" table in [CONTRIBUTING.md](CONTRIBUTING.md) for navigation purposes.
 
-**Verified against code:** 2026-08-06 (commit `1da068f` + working tree). Line numbers drift — treat them as anchors, not gospel. Update this file when adding routes, events, packages, or storage keys.
+**Verified against code:** 2026-08-21 (KFR Phases A–E on `feat/kapitas-full-replacement`; previously 2026-08-06 / `1da068f`). Line numbers drift — treat them as anchors, not gospel. Update this file when adding routes, events, packages, or storage keys.
 
 ---
 
@@ -50,49 +50,52 @@ Entry: [services/api/src/index.ts](../services/api/src/index.ts) (telemetry → 
 1. `*` request-id (accept `x-request-id` or mint uuid; echoed on response)
 2. `/api/*` CORS — wildcard in demo, allowlist from `ACCOUNTING_CORS_ORIGINS` in normal
 3. Body limits: `/api/imports/sie` **32 MiB**; stub `PUT /api/uploads/:id` **16 MiB** (`MAX_UPLOAD_BYTES`); all other `/api/*` POST/PUT/PATCH **512 KiB**
-4. `/api/*` **JWT** via `hono/jwk` when `jwksUrl` set — TTL-cached single-flight JWKS fetcher `createCachedJwksFetcher` (10 min). Sole exemption: `GET /api/runtime-info`
+4. `/api/*` **JWT** via `hono/jwk` when `jwksUrl` set — TTL-cached single-flight JWKS fetcher `createCachedJwksFetcher` (10 min). Exemptions: `GET /api/runtime-info`, plus **exactly** `PUT` and `GET` on `/api/blobs/local/:token` and only while the local-disk blob backend is wired — those carry their own short-lived HMAC token in the URL (an `<img>` preview cannot attach an `Authorization` header), mirroring an Azure SAS URL. Every other method on that path keeps the gate
 5. Rate limits: mutations **60/min**, reads (`/api/reports/*` + `/api/exports/*`) **120/min**. Key = `sub:<jwt sub>` else `ip:<clientIpKey>`. Bypassed only when `allowTestReset && demo`
 6. `secureHeaders` — CSP `default-src 'none'`, `frame-ancestors 'none'`
 7. `app.onError` — the single error→HTTP mapping (`ApiValidationError`→400; advisor/review-edit/SIE/period errors→422; `AdvisorDisabledError`→403; `ReviewNotFoundError` / `VoucherNotFoundError`→404; store/AI-unavailable + JWKS-fetch→503; PG `23505`→409; PG `08*`/`57*`→503)
 
 ### Routes
 
-| Method | Path                                | Purpose                                                                 | Backing dep                                                 |
-| ------ | ----------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------- |
-| GET    | `/health`                           | Liveness `{ok, runtimeMode}` (public, outside `/api`)                   | none                                                        |
-| GET    | `/ready`                            | Readiness — `pingLedgerStore` + `isAiRuntimeOperational` (public)       | store + aiRuntime                                           |
-| GET    | `/api/runtime-info`                 | AI Act Art. 50 transparency — **public even with auth on**              | `aiMetadata`                                                |
-| GET    | `/api/workspace`                    | Full `WorkspaceSnapshot`                                                | `store.getSnapshot()`                                       |
-| GET    | `/api/reviews/feed`                 | Review queue                                                            | `store.getReviewFeed()`                                     |
-| GET    | `/api/reports/journal`              | Journal lines, optional `?from=&to=`                                    | `store.getReports()`                                        |
-| GET    | `/api/reports/general-ledger`       | Balances                                                                | `store.getReports()`                                        |
-| GET    | `/api/reports/trial-balance`        | ⚠ **identical handler** to general-ledger (`reportBalances`)            | `store.getReports()`                                        |
-| GET    | `/api/reports/vat-prep`             | VAT projection rows                                                     | `store.getReports()`                                        |
-| GET    | `/api/reports/pack`                 | ONE `ReportPack` per `?period=` token                                   | `store.getReportPack()`                                     |
-| GET    | `/api/integrity`                    | Hash-chain summary (`verifyPayloads: true`)                             | `summarizeEventIntegrity(store.getEvents())`                |
-| POST   | `/api/evidence`                     | Create evidence (201); actor server-derived                             | `store.createEvidence()`                                    |
-| POST   | `/api/evidence/compose`             | Compose evidence packet; optional `targetVoucherId` attaches it (201)   | `store.composeEvidence()`                                   |
-| POST   | `/api/uploads/init`                 | Mint upload URL (Azure SAS or stub)                                     | `blobUploader.initUpload()`                                 |
-| PUT    | `/api/uploads/:uploadId`            | **Stub uploader only** — accept-and-discard bytes                       | `blobUploader.kind === "stub"`                              |
-| POST   | `/api/evidence/:id/extract`         | DocIntel on real blobs, persist refreshed extraction, fail-soft         | DocIntel + `mintReadSas` + `store.updateEvidenceExtraction` |
-| GET    | `/api/evidence/:id`                 | Evidence context + review join                                          | `store.getEvidenceContext`                                  |
-| GET    | `/api/evidence/:id/file-url`        | Short-lived read SAS; 404 `preview_unavailable` unless azure uploader   | `blobUploader.mintReadSas`                                  |
-| POST   | `/api/vouchers/:id/suggest`         | Deterministic accounting suggestion                                     | `store.suggestVoucher()`                                    |
-| POST   | `/api/reviews/:id/approve`          | Approve → posts to ledger                                               | `postReviewDecision(..., "approve")`                        |
-| POST   | `/api/reviews/:id/reject`           | Reject                                                                  | `postReviewDecision(..., "reject")`                         |
-| POST   | `/api/reviews/:id/book-without-vat` | Book without VAT deduction                                              | `postReviewDecision(..., "book-without-vat")`               |
-| POST   | `/api/imports/sie`                  | Raw SIE 4 bytes → parse → import                                        | `decodeSieBuffer` + `parseSie` + `store.importSie`          |
-| GET    | `/api/exports/sie`                  | PC8/CP437 `.se` download (`charset=ibm437`)                             | `buildSieExport` + `encodePc8`                              |
-| POST   | `/api/advisor/chat`                 | AI SDK 7 UI-message SSE stream                                          | `advisorChat` handler                                       |
-| POST   | `/api/knowledge/query`              | BM25-lite (or pgvector) retrieval                                       | `queryKnowledge()`                                          |
-| POST   | `/api/simulations/run`              | What-if approval simulation (201)                                       | `store.runSimulation()`                                     |
-| POST   | `/api/close-runs`                   | Returns current close run (201)                                         | `store.getCloseRun()`                                       |
-| GET    | `/api/close-runs/:id`               | Only current close-run id valid; else 404                               | `store.getCloseRun()`                                       |
-| POST   | `/api/compliance-watch/refresh`     | Re-run detectors; `?includeResolved=true`                               | `store.refreshComplianceAlerts()`                           |
-| GET    | `/api/settings/company`             | Company settings or `null`                                              | `store.getCompanySettings()`                                |
-| PUT    | `/api/settings/company`             | Save company settings                                                   | `store.putCompanySettings()`                                |
-| POST   | `/api/testing/reset`                | Swap in fresh `MemoryLedgerStore` — 404 unless `allowTestReset && demo` | in-proc                                                     |
-| POST   | `/mcp`                              | **Demo mode only** — echo stub listing tool names (no real MCP server)  | none                                                        |
+| Method | Path                                | Purpose                                                                                                          | Backing dep                                                 |
+| ------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| GET    | `/health`                           | Liveness `{ok, runtimeMode}` (public, outside `/api`)                                                            | none                                                        |
+| GET    | `/ready`                            | Readiness — `pingLedgerStore` + `isAiRuntimeOperational` (public)                                                | store + aiRuntime                                           |
+| GET    | `/api/runtime-info`                 | AI Act Art. 50 transparency — **public even with auth on**                                                       | `aiMetadata`                                                |
+| GET    | `/api/workspace`                    | Full `WorkspaceSnapshot`                                                                                         | `store.getSnapshot()`                                       |
+| GET    | `/api/reviews/feed`                 | Review queue                                                                                                     | `store.getReviewFeed()`                                     |
+| GET    | `/api/reports/journal`              | Journal lines, optional `?from=&to=`                                                                             | `store.getReports()`                                        |
+| GET    | `/api/reports/general-ledger`       | Balances                                                                                                         | `store.getReports()`                                        |
+| GET    | `/api/reports/trial-balance`        | ⚠ **identical handler** to general-ledger (`reportBalances`)                                                     | `store.getReports()`                                        |
+| GET    | `/api/reports/vat-prep`             | VAT projection rows                                                                                              | `store.getReports()`                                        |
+| GET    | `/api/reports/pack`                 | ONE `ReportPack` per `?period=` token                                                                            | `store.getReportPack()`                                     |
+| GET    | `/api/integrity`                    | Hash-chain summary (`verifyPayloads: true`)                                                                      | `summarizeEventIntegrity(store.getEvents())`                |
+| POST   | `/api/evidence`                     | Create evidence (201); actor server-derived                                                                      | `store.createEvidence()`                                    |
+| POST   | `/api/evidence/compose`             | Compose packet; optional `targetVoucherId` attaches it. → `{packet, discardedReviewIds}` (201)                   | `store.composeEvidence()`                                   |
+| POST   | `/api/uploads/init`                 | Mint upload URL (Azure SAS or stub)                                                                              | `blobUploader.initUpload()`                                 |
+| PUT    | `/api/uploads/:uploadId`            | **Stub uploader only** — accept-and-discard bytes                                                                | `blobUploader.kind === "stub"`                              |
+| POST   | `/api/evidence/:id/extract`         | DocIntel on real blobs, persist refreshed extraction, fail-soft                                                  | DocIntel + `mintReadSas` + `store.updateEvidenceExtraction` |
+| GET    | `/api/evidence/:id`                 | Evidence context + review join                                                                                   | `store.getEvidenceContext`                                  |
+| GET    | `/api/evidence/:id/file-url`        | Short-lived read SAS; 404 `preview_unavailable` unless azure uploader                                            | `blobUploader.mintReadSas`                                  |
+| PUT    | `/api/blobs/local/:token`           | **Local-disk uploader only** — store bytes (`MAX_UPLOAD_BYTES` limit); **JWKS-exempt**, HMAC token in URL        | `LocalDiskBlobUploader`                                     |
+| GET    | `/api/blobs/local/:token`           | **Local-disk uploader only** — serve bytes for preview; **JWKS-exempt**, HMAC token in URL                       | `LocalDiskBlobUploader`                                     |
+| POST   | `/api/vouchers/:id/suggest`         | Deterministic accounting suggestion                                                                              | `store.suggestVoucher()`                                    |
+| POST   | `/api/vouchers/manual`              | Manual N-line journal entry → review gate (201); 4-segment `:id/suggest` never collides                          | `store.createManualVoucher()`                               |
+| POST   | `/api/reviews/:id/approve`          | Approve → posts to ledger                                                                                        | `postReviewDecision(..., "approve")`                        |
+| POST   | `/api/reviews/:id/reject`           | Reject                                                                                                           | `postReviewDecision(..., "reject")`                         |
+| POST   | `/api/reviews/:id/book-without-vat` | Book without VAT deduction                                                                                       | `postReviewDecision(..., "book-without-vat")`               |
+| POST   | `/api/imports/sie`                  | Raw SIE 4 bytes → parse → import                                                                                 | `decodeSieBuffer` + `parseSie` + `store.importSie`          |
+| GET    | `/api/exports/sie?period=`          | PC8/CP437 `.se` download (`charset=ibm437`); `?period=` adds `#IB`/`#UB`/`#RES` for that window, bad token → 422 | `buildSieExport` + `encodePc8`                              |
+| POST   | `/api/advisor/chat`                 | AI SDK 7 UI-message SSE stream                                                                                   | `advisorChat` handler                                       |
+| POST   | `/api/knowledge/query`              | BM25-lite (or pgvector) retrieval                                                                                | `queryKnowledge()`                                          |
+| POST   | `/api/simulations/run`              | What-if approval simulation (201)                                                                                | `store.runSimulation()`                                     |
+| POST   | `/api/close-runs`                   | Returns current close run (201)                                                                                  | `store.getCloseRun()`                                       |
+| GET    | `/api/close-runs/:id`               | Only current close-run id valid; else 404                                                                        | `store.getCloseRun()`                                       |
+| POST   | `/api/compliance-watch/refresh`     | Re-run detectors; `?includeResolved=true`                                                                        | `store.refreshComplianceAlerts()`                           |
+| GET    | `/api/settings/company`             | Company settings or `null`                                                                                       | `store.getCompanySettings()`                                |
+| PUT    | `/api/settings/company`             | Save company settings                                                                                            | `store.putCompanySettings()`                                |
+| POST   | `/api/testing/reset`                | Swap in fresh `MemoryLedgerStore` — 404 unless `allowTestReset && demo`                                          | in-proc                                                     |
+| POST   | `/mcp`                              | **Demo mode only** — echo stub listing tool names (no real MCP server)                                           | none                                                        |
 
 ⚠ Retired: `POST /api/assistant/sessions` (removed Phase 6, superseded by `/api/advisor/chat`) — but `store.answerAssistantQuestion()` + `packages/domain/src/assistant.ts` still exist with no live route (see §12).
 
@@ -201,23 +204,23 @@ Siblings: `api-errors.ts` (JSON error envelope), `countries.ts` (⚠ NOT re-expo
 
 Defined in `packages/contracts/src/index.ts` (`eventTypeSchema`). 19 names, **7 reserved (never emitted)**.
 
-| Event                                                          | Emitted?          | Append sites                                                                                                         |
-| -------------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `EvidenceReceived`                                             | ✅                | `domain/store.ts` + `persistence-postgres/store.ts` (createEvidence)                                                 |
-| `EvidenceClassified`                                           | ❌ reserved       | —                                                                                                                    |
-| `EvidenceRelinked`                                             | ✅                | both stores (composeEvidence)                                                                                        |
-| `FieldsExtracted`                                              | ✅                | both stores (createEvidence)                                                                                         |
-| `ExtractionRefreshed`                                          | ✅                | both stores (updateEvidenceExtraction)                                                                               |
-| `VoucherCreated`                                               | ✅                | both stores (createEvidence)                                                                                         |
-| `RuleSetApplied`                                               | ❌ reserved       | rule hits ride `SuggestionGenerated` payloads                                                                        |
-| `SuggestionGenerated`                                          | ✅ ×2 sites/store | createEvidence + extraction refresh                                                                                  |
-| `ReviewApproved` / `ReviewRejected` / `ReviewBookedWithoutVat` | ✅                | both stores (applyReviewDecision ternary)                                                                            |
-| `PostedToLedger`                                               | ✅                | both stores; **the projection source** — Postgres reads `WHERE event_type = ANY('PostedToLedger','VoucherImported')` |
-| `VoucherImported`                                              | ✅                | both stores (importSie; dedupe scan first)                                                                           |
-| `CorrectionPosted` / `PeriodLocked`                            | ❌ reserved       | land with period close                                                                                               |
-| `PolicyVersionActivated`                                       | ❌ reserved       | —                                                                                                                    |
-| `SimulationExecuted`                                           | ✅                | both stores (runSimulation)                                                                                          |
-| `CloseRunGenerated` / `ExportGenerated`                        | ❌ reserved       | close run is an honest empty shell; exports don't append                                                             |
+| Event                                                          | Emitted?          | Append sites                                                                                                                                                                                                                                |
+| -------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EvidenceReceived`                                             | ✅                | `domain/store.ts` + `persistence-postgres/store.ts` (createEvidence)                                                                                                                                                                        |
+| `EvidenceClassified`                                           | ❌ reserved       | —                                                                                                                                                                                                                                           |
+| `EvidenceRelinked`                                             | ✅                | both stores (composeEvidence)                                                                                                                                                                                                               |
+| `FieldsExtracted`                                              | ✅                | both stores (createEvidence)                                                                                                                                                                                                                |
+| `ExtractionRefreshed`                                          | ✅                | both stores (updateEvidenceExtraction)                                                                                                                                                                                                      |
+| `VoucherCreated`                                               | ✅ ×2 sites/store | createEvidence + **createManualVoucher** (KFR Phase B)                                                                                                                                                                                      |
+| `RuleSetApplied`                                               | ❌ reserved       | rule hits ride `SuggestionGenerated` payloads                                                                                                                                                                                               |
+| `SuggestionGenerated`                                          | ✅ ×3 sites/store | createEvidence + extraction refresh + createManualVoucher (carries the verbatim lines)                                                                                                                                                      |
+| `ReviewApproved` / `ReviewRejected` / `ReviewBookedWithoutVat` | ✅                | both stores (`reviewDecisionEventType` in `planReviewDecision`) — reached from `applyReviewDecision` **and**, for `ReviewRejected` only, from `composeEvidence`, which discards the attached evidence's own orphaned intake draft (KFR E.5) |
+| `PostedToLedger`                                               | ✅                | both stores; **the projection source** — Postgres reads `WHERE event_type = ANY('PostedToLedger','VoucherImported')`                                                                                                                        |
+| `VoucherImported`                                              | ✅                | both stores (importSie; dedupe scan first) — still the **only** import event; KFR Phase D added no new event type, it only materializes `ledger.vouchers` rows alongside it                                                                 |
+| `CorrectionPosted` / `PeriodLocked`                            | ❌ reserved       | land with period close                                                                                                                                                                                                                      |
+| `PolicyVersionActivated`                                       | ❌ reserved       | —                                                                                                                                                                                                                                           |
+| `SimulationExecuted`                                           | ✅                | both stores (runSimulation)                                                                                                                                                                                                                 |
+| `CloseRunGenerated` / `ExportGenerated`                        | ❌ reserved       | close run is an honest empty shell; exports don't append                                                                                                                                                                                    |
 
 There is no `EvidenceAdded` event — the name is `EvidenceReceived`.
 
@@ -291,7 +294,7 @@ Alternate entry: `apps/web/app/share/route.ts` (PWA share target; demo-only unde
 
 ## 7. Tests layout
 
-### `tests/unit/` — 47 files, `tsx --test`, kebab-case `<subject>.test.ts`
+### `tests/unit/` — 65 files, `tsx --test`, kebab-case `<subject>.test.ts`
 
 Notable pinned regression tests:
 
@@ -317,7 +320,7 @@ Coverage: `.c8rc.json` + `pnpm test:unit:coverage` (ratcheting floors).
 
 Gating: `helpers/postgres-test-context.ts` — URL resolution `DATABASE_TEST_URL → DATABASE_URL → SUPABASE_DB_URL`; DB name **must** start `jpx_test_`; `JPX_REQUIRE_DATABASE_TESTS=true` turns skips into failures. Shared scenarios: `helpers/ledger-store-conformance.ts`.
 
-### `tests/e2e/` — 22 specs (~75 tests), Playwright
+### `tests/e2e/` — 24 specs, Playwright
 
 Projects `desktop-chromium` + `mobile-chromium` (Pixel 7); servers API `127.0.0.1:3201` / web `127.0.0.1:3200`. Helpers: `test-helpers.ts` (**`activateControl`** — keyboard activation on mobile; the Chromium visual-viewport 51 px offset bug makes pointer clicks unreliable), `a11y-helpers.ts` (`expectAccessible`, axe WCAG 2.2 AA). Visual baselines: `visual-regression.spec.ts-snapshots/` — 40 PNGs = 5 screens × 2 themes × 2 viewports × 2 platforms (`-win32`, `-linux`); procedure in `scripts/visual-baselines.md`. Fixtures: `tests/fixtures/` (`invoice.pdf`, `receipt.jpg`, `sie/golden-export.se`, `sie/minimal-4i.se`).
 
