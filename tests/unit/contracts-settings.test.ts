@@ -7,6 +7,7 @@ import {
   countryValidationRegistry,
   DEFAULT_AI_POSTURE,
   DEFAULT_WORKSPACE_PROFILE,
+  taxDeadlineKindSchema,
   workspaceProfileSchema,
 } from "@jpx-accounting/contracts";
 
@@ -26,6 +27,7 @@ test("DEFAULT_WORKSPACE_PROFILE carries the Sweden defaults", () => {
     currency: "SEK",
     fiscalYearStart: "01-01",
     vatPeriod: "quarterly",
+    euTrade: false,
   });
 });
 
@@ -129,6 +131,22 @@ test("vatPeriod round-trips and rejects unknown cadences", () => {
   assert.equal(parsed.profile.vatPeriod, "monthly");
   assert.equal(workspaceProfileSchema.safeParse({ vatPeriod: "yearly" }).success, true);
   assert.equal(workspaceProfileSchema.safeParse({ vatPeriod: "weekly" }).success, false);
+});
+
+test("euTrade defaults false and round-trips through the settings schema", () => {
+  assert.equal(workspaceProfileSchema.parse({}).euTrade, false);
+  const parsed = companySettingsSchema.parse({ ...validBase, profile: { euTrade: true } });
+  assert.equal(parsed.profile.euTrade, true);
+});
+
+test("taxDeadlineKindSchema includes the INK2 income-tax-return kind", () => {
+  assert.deepEqual(taxDeadlineKindSchema.options, [
+    "vat-return",
+    "employer-declaration",
+    "f-skatt",
+    "annual-report",
+    "income-tax-return",
+  ]);
 });
 
 test("DEFAULT_AI_POSTURE enables both AI surfaces", () => {

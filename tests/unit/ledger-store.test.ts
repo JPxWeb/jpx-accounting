@@ -530,6 +530,7 @@ test("MemoryLedgerStore.getCompanySettings/putCompanySettings round-trip", async
       currency: "EUR",
       fiscalYearStart: "07-01",
       vatPeriod: "quarterly" as const,
+      euTrade: false,
     },
     aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
   };
@@ -558,6 +559,7 @@ test("MemoryLedgerStore.putCompanySettings normalizes legacy payloads without a 
     currency: "SEK",
     fiscalYearStart: "01-01",
     vatPeriod: "quarterly",
+    euTrade: false,
   });
 });
 
@@ -636,6 +638,7 @@ test("MemoryLedgerStore.getReportPack composes the period pack and reads fiscalY
       currency: "SEK",
       fiscalYearStart: "07-01",
       vatPeriod: "quarterly" as const,
+      euTrade: false,
     },
     aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
   });
@@ -668,6 +671,7 @@ test("MemoryLedgerStore.getReportPack floors the first fiscal year from settings
       // FY1 actually began at incorporation on 2025-10-15.
       fiscalYearStart: "09-01",
       vatPeriod: "quarterly" as const,
+      euTrade: false,
     },
     aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
   };

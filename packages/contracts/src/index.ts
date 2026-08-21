@@ -736,6 +736,15 @@ export const workspaceProfileSchema = z.object({
     .optional(),
   /** VAT reporting cadence — defaulted so pre-Phase-5 payloads keep parsing (no migration). */
   vatPeriod: vatPeriodSchema.default("quarterly"),
+  /**
+   * Bedriver EU-handel (unionsvaruhandel/unionstjänstehandel)? Selects which
+   * yearly-moms deadline table `buildTaxTimeline` uses when `vatPeriod` is
+   * "yearly": `true` keeps the 26th-of-second-month rule; `false` couples the
+   * deadline to the income declaration instead (Skatteverket "När ska jag
+   * deklarera moms" — see docs/findings.md 2026-08-20). Defaulted so
+   * pre-Phase-F payloads keep parsing (no migration).
+   */
+  euTrade: z.boolean().default(false),
 });
 export type WorkspaceProfile = z.infer<typeof workspaceProfileSchema>;
 export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = workspaceProfileSchema.parse({});
@@ -852,7 +861,13 @@ export const workspaceSnapshotSchema = z.object({
  * web, the API, and the pure packages all speak the same shapes.
  */
 
-export const taxDeadlineKindSchema = z.enum(["vat-return", "employer-declaration", "f-skatt", "annual-report"]);
+export const taxDeadlineKindSchema = z.enum([
+  "vat-return",
+  "employer-declaration",
+  "f-skatt",
+  "annual-report",
+  "income-tax-return",
+]);
 
 export const taxDeadlineSchema = z.object({
   /** Deterministic id, e.g. `tax_vat_2026-Q2`. */

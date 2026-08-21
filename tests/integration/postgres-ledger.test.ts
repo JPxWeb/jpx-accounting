@@ -1075,6 +1075,7 @@ test("PostgresLedgerStore.getCompanySettings/putCompanySettings round-trip", { s
         currency: "EUR",
         fiscalYearStart: "07-01",
         vatPeriod: "quarterly" as const,
+        euTrade: false,
       },
       aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
     };
@@ -1112,7 +1113,10 @@ test("PostgresLedgerStore.getCompanySettings normalizes legacy jsonb rows withou
       locale: "sv-SE",
       currency: "SEK",
       fiscalYearStart: "01-01",
+      // A pre-Phase-F jsonb row carries no euTrade key; the Zod default fills
+      // it on read, so stored profiles keep parsing without a migration.
       vatPeriod: "quarterly",
+      euTrade: false,
     });
   } finally {
     await requireCtx().cleanupOrganization(orgId);

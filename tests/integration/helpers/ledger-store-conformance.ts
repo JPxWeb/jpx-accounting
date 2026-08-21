@@ -466,6 +466,7 @@ export async function scenarioSettingsAlertsSimulation(h: ConformanceHarness): P
       // must feed it to `buildReportPack`.
       firstFiscalYearStart: "2025-10-15",
       vatPeriod: "quarterly" as const,
+      euTrade: false,
     },
     aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
   };

@@ -86,7 +86,14 @@ const goldenSettings: CompanySettings = {
   postalCode: "111 22",
   city: "Stockholm",
   contactEmail: "golden@example.com",
-  profile: { country: "SE", locale: "sv-SE", currency: "SEK", fiscalYearStart: "01-01", vatPeriod: "quarterly" },
+  profile: {
+    country: "SE",
+    locale: "sv-SE",
+    currency: "SEK",
+    fiscalYearStart: "01-01",
+    vatPeriod: "quarterly",
+    euTrade: false,
+  },
   aiPosture: { advisorEnabled: true, suggestionsEnabled: true },
 };
 
