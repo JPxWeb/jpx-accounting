@@ -63,7 +63,13 @@ export function BooksScreen() {
                   type="button"
                   data-testid="books-new-manual-entry"
                   onClick={() => void setView("manual-entry")}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm print:hidden"
+                  // `text-primary-foreground`, never a hardcoded `text-white`:
+                  // the design system INVERTS in dark mode (--primary is a
+                  // mid-lightness teal there, --primary-foreground near-black),
+                  // so white-on-teal lands around 2.6:1 — under the WCAG 2.2 AA
+                  // 4.5:1 target this project commits to (fix wave I-4; the
+                  // pre-pivot nav-chip contrast CI red was this same class).
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm print:hidden"
                 >
                   {t("newManualEntry")}
                 </button>
