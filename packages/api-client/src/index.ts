@@ -498,8 +498,10 @@ export class AccountingApiClient {
     const send: FetchLike = isApiRelative ? this.authorizedFetch : (url, requestInit) => fetch(url, requestInit);
     // The PUT is the second of ~4 mutating calls per receipt and, in the local-blob backend, it
     // lands on the API's own rate-limited surface — without the same bounded 429 retry a bulk
-    // drop would still strand drafts here (readiness G9). Overwriting the same blob path with the
-    // same bytes is idempotent, so a retry can only ever repeat itself.
+    // drop would still strand drafts here (readiness G9). Retrying is safe because a 429 proves
+    // NO write was attempted: this API's rate limiter answers before `next()`, so the refused
+    // request never reached the uploader. (Not because the write itself is idempotent — the
+    // local-disk backend is write-once and answers 409 on a second PUT to the same path.)
     const response = await fetchWithRateLimitRetry(send, target, init);
     if (!response.ok) {
       throw new AccountingApiError(response.status, `Blob upload failed: ${response.status} ${response.statusText}`);
