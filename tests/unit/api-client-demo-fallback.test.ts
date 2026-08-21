@@ -386,7 +386,9 @@ test("fetchSieExport(period): demo fallback emits a period-scoped file; no perio
   const client = createAccountingApiClient({ runtimeMode: "demo" });
 
   const scoped = decodeSieBuffer(await client.fetchSieExport("2026-03"));
-  assert.match(scoped, /^#RAR 0 20260301 20260331$/m, "the requested window is declared verbatim");
+  // I-2b: #RAR 0 declares the fiscal year the window belongs to (calendar year
+  // on the default profile), never the one-month window itself.
+  assert.match(scoped, /^#RAR 0 20260101 20261231$/m, "the containing fiscal year is declared");
 
   const full = decodeSieBuffer(await client.fetchSieExport());
   assert.doesNotMatch(full, /^#(IB|UB|RES) /m, "full history carries no balance blocks");

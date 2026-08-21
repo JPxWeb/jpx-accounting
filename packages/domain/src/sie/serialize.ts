@@ -2,6 +2,7 @@ import type { CompanySettings, JournalEntryProjection } from "@jpx-accounting/co
 
 import { defaultCoaTemplate, findCoaAccount } from "../coa/registry";
 import type { CoaTemplate } from "../coa/types";
+import { ALL_PERIOD_FROM, ALL_PERIOD_TO } from "../reports/period";
 import { round2 } from "../store-shared";
 
 /**
@@ -9,8 +10,9 @@ import { round2 } from "../store-shared";
  * is pinned by the plan and by tests/e2e/api.spec.ts (the `#PROGRAM` line is
  * asserted byte-identical): `#FLAGGA` · `#PROGRAM` · `#FORMAT PC8` · `#GEN` ·
  * `#SIETYP 4` · `#ORGNR`/`#FNAMN` (when settings exist) · `#RAR 0` ·
- * `#KONTO` per distinct account · `#IB`/`#UB`/`#RES` (period-scoped exports
- * only) · `#VER` blocks grouped by voucher.
+ * `#KONTO` per distinct account · `#IB`/`#UB` (balance accounts 1–2) ·
+ * `#RES` (result accounts 3–8) — all three period-scoped exports only ·
+ * `#VER` blocks grouped by voucher.
  *
  * Output is a JS string; callers encode with `encodePc8` before writing bytes.
  */
@@ -23,8 +25,9 @@ export type SieExportInput = {
   coa?: CoaTemplate;
   /**
    * Period-scoped export (Phase D, Task 7): #VER blocks are limited to
-   * entries whose bookedAt falls in [range.from, range.to], and #RAR 0 uses
-   * this window directly. Omitted = full-history export (unchanged).
+   * entries whose bookedAt falls in [range.from, range.to]. #RAR 0 declares
+   * the FISCAL YEAR containing this window, not the window itself (I-2b).
+   * Omitted = full-history export (unchanged).
    */
   range?: { from: string; to: string };
   /** Per-account signed (debit positive) balance as of range.from, exclusive. Emits `#IB 0`. */
@@ -34,6 +37,23 @@ export type SieExportInput = {
   /** Per-account in-range movement for BAS result accounts (3xxx-8xxx). Emits `#RES 0`. */
   results?: Record<string, number>;
 };
+
+/**
+ * SIE 4 account classes. `#IB`/`#UB` are opening/closing balances of BALANCE
+ * accounts (BAS classes 1–2); `#RES` is the period saldo of RESULT accounts
+ * (classes 3–8). Emitting one account under both labels is redundant at best
+ * and double-counted (or rejected) by a receiving tool at worst — the two
+ * predicates below are what keeps the emission disjoint (fix wave I-2a).
+ */
+function isBalanceAccount(accountNumber: string): boolean {
+  const firstDigit = accountNumber.charAt(0);
+  return firstDigit >= "1" && firstDigit <= "2";
+}
+
+function isResultAccount(accountNumber: string): boolean {
+  const firstDigit = accountNumber.charAt(0);
+  return firstDigit >= "3" && firstDigit <= "8";
+}
 
 /**
  * Compute opening/closing/result balances for a period-scoped export (Phase
@@ -59,9 +79,7 @@ export function computeSieBalances(
       opening[entry.accountNumber] = round2((opening[entry.accountNumber] ?? 0) + signed);
     } else if (day <= range.to) {
       movement[entry.accountNumber] = round2((movement[entry.accountNumber] ?? 0) + signed);
-      // BAS result accounts are 3xxx–8xxx; 1xxx/2xxx are balance-sheet only.
-      const firstDigit = entry.accountNumber.charAt(0);
-      if (firstDigit >= "3" && firstDigit <= "8") {
+      if (isResultAccount(entry.accountNumber)) {
         results[entry.accountNumber] = round2((results[entry.accountNumber] ?? 0) + signed);
       }
     }
@@ -112,6 +130,15 @@ function fiscalYearWindow(
   return { start: clampedStart, end };
 }
 
+/**
+ * True for the `all` token's sentinel window (`resolvePeriodToken`). It spans
+ * a century, so no fiscal year contains it — such an export declares the
+ * fiscal year containing `generatedAt`, exactly like a full-history export.
+ */
+function isAllPeriodRange(range: { from: string; to: string }): boolean {
+  return range.from <= ALL_PERIOD_FROM && range.to >= ALL_PERIOD_TO;
+}
+
 export function buildSieExport({
   journal,
   settings,
@@ -133,16 +160,20 @@ export function buildSieExport({
   if (settings?.organizationNumber) lines.push(`#ORGNR ${settings.organizationNumber}`);
   if (settings?.organizationName) lines.push(`#FNAMN ${quote(settings.organizationName)}`);
 
-  // A period-scoped export declares the requested window verbatim (the caller
-  // already clamped it through resolvePeriodToken); full history falls back to
-  // the fiscal year containing `generatedAt`.
-  const { start, end } = range
-    ? { start: range.from, end: range.to }
-    : fiscalYearWindow(
-        generatedAt,
-        settings?.profile.fiscalYearStart ?? "01-01",
-        settings?.profile.firstFiscalYearStart,
-      );
+  // #RAR 0 always declares a FISCAL YEAR (SIE 4), never the requested window:
+  // a `?period=2026-03` export is one month OF a fiscal year, not a one-month
+  // fiscal year, and `?period=all` is certainly not a 1900–2999 one (I-2b).
+  // Anchor the window on the range START — the fiscal year containing it —
+  // and fall back to `generatedAt` for full-history exports and for the `all`
+  // sentinel range, which spans no single year. An `fy-` token needs no
+  // special case: `resolvePeriodToken`'s fiscal-year window and the anchored
+  // window here are the same window, including the firstFiscalYearStart clamp.
+  const fiscalAnchor = range && !isAllPeriodRange(range) ? range.from : generatedAt;
+  const { start, end } = fiscalYearWindow(
+    fiscalAnchor,
+    settings?.profile.fiscalYearStart ?? "01-01",
+    settings?.profile.firstFiscalYearStart,
+  );
   lines.push(`#RAR 0 ${compactDay(start)} ${compactDay(end)}`);
 
   // #KONTO per distinct account, sorted by number for a deterministic export.
@@ -162,17 +193,23 @@ export function buildSieExport({
   // Balance blocks (period-scoped exports only — absent maps emit nothing, so
   // the full-history export stays byte-identical). Sorted by account for a
   // deterministic file; a zero balance carries no information and is dropped.
-  const emitBalances = (label: "IB" | "UB" | "RES", balances?: Record<string, number>) => {
+  const emitBalances = (
+    label: "IB" | "UB" | "RES",
+    balances: Record<string, number> | undefined,
+    belongsToLabel: (accountNumber: string) => boolean,
+  ) => {
     if (!balances) return;
     for (const account of Object.keys(balances).sort()) {
+      // I-2a: an account only ever appears under the label its CLASS owns.
+      if (!belongsToLabel(account)) continue;
       const amount = balances[account]!;
       if (Math.abs(amount) < 0.005) continue;
       lines.push(`#${label} 0 ${account} ${amount.toFixed(2)}`);
     }
   };
-  emitBalances("IB", openingBalances);
-  emitBalances("UB", closingBalances);
-  emitBalances("RES", results);
+  emitBalances("IB", openingBalances, isBalanceAccount);
+  emitBalances("UB", closingBalances, isBalanceAccount);
+  emitBalances("RES", results, isResultAccount);
 
   // #VER emission is range-scoped; #KONTO above deliberately is not, so an
   // account that only carries an opening balance still gets a name.

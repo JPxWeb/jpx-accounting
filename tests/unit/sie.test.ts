@@ -11,6 +11,7 @@ import {
   decodeSieBuffer,
   encodePc8,
   parseSie,
+  resolvePeriodToken,
   sieDecodeWarnings,
 } from "@jpx-accounting/domain";
 import {
@@ -270,7 +271,9 @@ test("period-scoped SIE export: #IB/#UB/#RES computed from the full ledger, #VER
     "#SIETYP 4",
     "#ORGNR 556677-8899",
     '#FNAMN "Guldexport AB"',
-    "#RAR 0 20260301 20260331",
+    // #RAR 0 declares the FISCAL YEAR containing the window (I-2b), never the
+    // one-month window itself — a March export is a month OF FY2026.
+    "#RAR 0 20260101 20261231",
     '#KONTO 1930 "Företagskonto"',
     '#KONTO 2091 "Balanserad vinst"',
     '#KONTO 2641 "Debiterad ingående moms"',
@@ -278,11 +281,11 @@ test("period-scoped SIE export: #IB/#UB/#RES computed from the full ledger, #VER
     '#KONTO 6540 "IT-tjänster"',
     "#IB 0 1930 5000.00",
     "#IB 0 2091 -5000.00",
+    // #UB carries BALANCE accounts (1–2) only; the result accounts below are
+    // declared once, under #RES (I-2a).
     "#UB 0 1930 3550.00",
     "#UB 0 2091 -5000.00",
     "#UB 0 2641 250.00",
-    "#UB 0 6110 200.00",
-    "#UB 0 6540 1000.00",
     "#RES 0 6110 200.00",
     "#RES 0 6540 1000.00",
     '#VER A 1 20260305 "Programvara mars"',
@@ -301,11 +304,11 @@ test("period-scoped SIE export: #IB/#UB/#RES computed from the full ledger, #VER
   assert.equal(text, expected);
 });
 
-// The FULL-HISTORY path (no `range`) is the ONLY caller of the serializer's
-// internal `fiscalYearWindow`, so the Phase D firstFiscalYearStart clamp and
-// its `floor <= to` guard are unreachable from a period-scoped export. These
-// two tests cover that branch directly — the route-level fy-2025 test passes
-// `resolved.from/to` straight through and never reaches this code.
+// `fiscalYearWindow` now backs BOTH paths (I-2b): full history anchors it on
+// `generatedAt`, a period-scoped export on the range start. These two tests
+// cover the Phase D firstFiscalYearStart clamp and its `floor <= to` guard
+// through the full-history path; the period-scoped tests below pin that an
+// `fy-` window survives the anchoring byte-identically.
 const settingsWithFiscalYear = (firstFiscalYearStart?: string): CompanySettings => ({
   ...goldenSettings,
   profile: {
@@ -350,6 +353,69 @@ test("full-history #RAR 0 leaves the window alone when firstFiscalYearStart is p
 
   const [, from, to] = rarLine(text)!.split(" ").slice(1) as [string, string, string];
   assert.ok(from <= to, "#RAR 0 must never be an inverted window");
+});
+
+test("period-scoped #RAR 0 declares the containing fiscal year for every token shape (I-2b)", () => {
+  const rarFor = (range: { from: string; to: string }, settings: CompanySettings): string | undefined =>
+    rarLine(buildSieExport({ journal: goldenJournal, settings, generatedAt: goldenGeneratedAt, range }));
+
+  // Calendar fiscal year: month, quarter and ytd windows all sit INSIDE FY2026.
+  assert.equal(rarFor({ from: "2026-03-01", to: "2026-03-31" }, goldenSettings), "#RAR 0 20260101 20261231");
+  assert.equal(rarFor({ from: "2026-04-01", to: "2026-06-30" }, goldenSettings), "#RAR 0 20260101 20261231");
+  assert.equal(rarFor({ from: "2026-01-01", to: "2026-07-04" }, goldenSettings), "#RAR 0 20260101 20261231");
+
+  // `?period=all` resolves to the 1900–2999 sentinel — no fiscal year contains
+  // it, so the export declares the year containing `generatedAt` instead of a
+  // 1100-year "fiscal year" (the parked D7 triage item).
+  assert.equal(rarFor({ from: "1900-01-01", to: "2999-12-31" }, goldenSettings), "#RAR 0 20260101 20261231");
+
+  // A broken (09-01) fiscal year: the September window belongs to FY2026/27,
+  // the August one to FY2025/26 — the anchor is the RANGE START, not today.
+  const broken = settingsWithFiscalYear();
+  assert.equal(rarFor({ from: "2026-09-01", to: "2026-09-30" }, broken), "#RAR 0 20260901 20270831");
+  assert.equal(rarFor({ from: "2026-08-01", to: "2026-08-31" }, broken), "#RAR 0 20250901 20260831");
+
+  // An `fy-` token needs no special case: `resolvePeriodToken`'s own window
+  // (incl. the firstFiscalYearStart clamp) survives the anchoring unchanged.
+  const fyResolved = resolvePeriodToken("fy-2025", { fiscalYearStart: "09-01", firstFiscalYearStart: "2025-10-15" });
+  assert.deepEqual([fyResolved.from, fyResolved.to], ["2025-10-15", "2026-08-31"]);
+  assert.equal(
+    rarFor({ from: fyResolved.from, to: fyResolved.to }, settingsWithFiscalYear("2025-10-15")),
+    "#RAR 0 20251015 20260831",
+    "the fy- window is reproduced byte-identically by the anchored derivation",
+  );
+});
+
+test("period-scoped balance blocks are class-disjoint: #IB/#UB for 1–2, #RES for 3–8 (I-2a)", () => {
+  const range = { from: "2026-03-01", to: "2026-03-31" };
+  const balances = computeSieBalances(goldenJournal, range);
+  const text = buildSieExport({
+    journal: goldenJournal,
+    settings: goldenSettings,
+    generatedAt: goldenGeneratedAt,
+    range,
+    ...balances,
+  });
+  const accountsFor = (label: "IB" | "UB" | "RES") =>
+    text
+      .split("\n")
+      .filter((line) => line.startsWith(`#${label} `))
+      .map((line) => line.split(" ")[2]!);
+
+  // The computation still tracks every account (opening balances need them);
+  // only the EMISSION is class-scoped.
+  assert.ok(Object.keys(balances.closingBalances).includes("6110"), "precondition: the closing map holds 6110");
+  for (const account of [...accountsFor("IB"), ...accountsFor("UB")]) {
+    assert.match(account, /^[12]/, `#IB/#UB must carry balance accounts only, got ${account}`);
+  }
+  for (const account of accountsFor("RES")) {
+    assert.match(account, /^[3-8]/, `#RES must carry result accounts only, got ${account}`);
+  }
+  assert.deepEqual(
+    accountsFor("UB").filter((account) => accountsFor("RES").includes(account)),
+    [],
+    "no account may be declared under both #UB and #RES",
+  );
 });
 
 test("escaping: quotes and backslashes survive serialize → parse", () => {
